@@ -3,53 +3,97 @@ import Observation
 import SwiftUI
 import TeaNodeKit
 
-// Voice messages in a chat: the button held to talk, the strip that shows the
+// Voice messages in a chat: the area held to talk, which also shows the
 // recording, and the bubble that plays one.
 
-/// HoldToTalkButton is the composer's field in voice mode: a wide capsule held
-/// to record. Letting go sends, sliding up past a distance and letting go
-/// discards. With VoiceOver running, a hold cannot be made, so a tap starts
-/// the recording and another sends it, and "Cancel" is an action.
+/// HoldToTalkButton is the hold area of the composer in voice mode: no fill
+/// of its own at rest, just a microphone and "Hold to talk". Holding records,
+/// letting go sends, sliding up past a distance and letting go discards. While
+/// it records the area shows the time, the live level and what letting go does.
+/// With VoiceOver running, a hold cannot be made, so a tap starts the
+/// recording and another sends it, and "Cancel" is an action.
 struct HoldToTalkButton: View {
     let recorder: VoiceMessageRecorder
-    let heightPoints: CGFloat
     /// Called when a hold begins.
     let onStart: () -> Void
     /// Called when it ends, with whether the finger had slid up to cancel.
     let onEnd: (Bool) -> Void
     @Environment(\.accessibilityVoiceOverEnabled) private var isVoiceOverRunning
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var isHolding = false
 
     /// How far up the finger slides to arm cancelling, in points.
     static let cancelDragPoints: CGFloat = 80
 
-    private var fill: AnyShapeStyle {
-        if recorder.isRecording, recorder.isCancelArmed { return AnyShapeStyle(Color.red) }
-        if recorder.isRecording { return AnyShapeStyle(.tint) }
-        return AnyShapeStyle(Color(.tertiarySystemFill))
+    /// At the accessibility sizes the hint goes under the time, so it wraps
+    /// rather than being cut off.
+    private var recordingLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 10))
     }
 
-    private var wordsText: Text {
-        if recorder.isRecording, recorder.isCancelArmed { return Text("Release to cancel") }
-        if recorder.isRecording, isVoiceOverRunning { return Text("Tap to send") }
-        if recorder.isRecording { return Text("Release to send") }
-        return Text("Hold to talk")
+    private var isCancelTinted: Bool { recorder.isRecording && recorder.isCancelArmed }
+
+    @ViewBuilder
+    private var content: some View {
+        if recorder.isRecording {
+            recordingLayout {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 8, height: 8)
+                    if recorder.isCountingDown {
+                        Text("\(VoiceMessageRecorder.clockText(recorder.secondsLeft)) left")
+                            .font(.body.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(Color.red)
+                            .contentTransition(.numericText())
+                            .fixedSize()
+                    } else {
+                        Text(verbatim: VoiceMessageRecorder.clockText(recorder.elapsedSeconds))
+                            .font(.body.weight(.semibold).monospacedDigit())
+                            .contentTransition(.numericText())
+                            .fixedSize()
+                    }
+                    LevelBars(levels: recorder.recentLevels, isCancelArmed: recorder.isCancelArmed)
+                }
+                hintText
+                    .font(.footnote)
+                    .foregroundStyle(recorder.isCancelArmed ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+            }
+            .padding(.horizontal, 8)
+        } else {
+            HStack(spacing: 8) {
+                Image(systemName: "mic")
+                    .foregroundStyle(.secondary)
+                if let notice = recorder.hintText {
+                    Text(notice)
+                } else {
+                    Text("Hold to talk")
+                }
+            }
+            .font(.body.weight(.medium))
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 8)
+        }
+    }
+
+    private var hintText: Text {
+        if recorder.isCancelArmed { return Text("Let go to cancel") }
+        if isVoiceOverRunning { return Text("Tap to send") }
+        return Text("Slide up to cancel")
     }
 
     private var label: some View {
-        HStack(spacing: 8) {
-            Image(systemName: recorder.isRecording && recorder.isCancelArmed ? "trash" : "mic.fill")
-            wordsText
-        }
-        .font(.body.weight(.medium))
-        .foregroundStyle(recorder.isRecording ? Color.white : Color.primary)
-        .frame(maxWidth: .infinity, minHeight: max(heightPoints, 44))
-        .background(fill, in: .capsule)
-        .contentShape(.capsule)
-        .animation(.default, value: recorder.isCancelArmed)
-        .animation(.default, value: recorder.isRecording)
-        .sensoryFeedback(.start, trigger: recorder.startedCount)
-        .sensoryFeedback(.selection, trigger: recorder.isCancelArmed)
+        content
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: recorder.isRecording ? .leading : .center)
+            .background(isCancelTinted ? Color.red.opacity(0.18) : Color.clear, in: .rect(cornerRadius: 18, style: .continuous))
+            .contentShape(.rect)
+            .animation(.easeOut(duration: 0.15), value: recorder.isCancelArmed)
+            .animation(.easeOut(duration: 0.15), value: recorder.isRecording)
+            .sensoryFeedback(.start, trigger: recorder.startedCount)
+            .sensoryFeedback(.selection, trigger: recorder.isCancelArmed)
     }
 
     var body: some View {
@@ -86,65 +130,23 @@ struct HoldToTalkButton: View {
     }
 }
 
-/// RecordingStrip floats over the composer while a voice message is being
-/// recorded: the time, the level, and what letting go does. With nothing
-/// recording it holds a hint for a moment.
-struct RecordingStrip: View {
-    let recorder: VoiceMessageRecorder
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    /// At the accessibility sizes what letting go does goes under the time,
-    /// which would otherwise wrap a digit at a time.
-    private var layout: AnyLayout {
-        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 10))
-    }
+/// LevelBars is the live level of the microphone while recording: one thin
+/// bar per recent reading, the newest on the right.
+private struct LevelBars: View {
+    let levels: [Float]
+    let isCancelArmed: Bool
 
     var body: some View {
-        layout {
-            if recorder.isRecording {
-                HStack(spacing: 10) {
-                    Image(systemName: recorder.isCancelArmed ? "trash" : "mic.fill")
-                        .foregroundStyle(recorder.isCancelArmed ? AnyShapeStyle(Color.red) : AnyShapeStyle(.tint))
-                    if recorder.isCountingDown {
-                        Text("\(VoiceMessageRecorder.clockText(recorder.secondsLeft)) left")
-                            .monospacedDigit()
-                            .contentTransition(.numericText())
-                            .fixedSize()
-                    } else {
-                        Text(verbatim: VoiceMessageRecorder.clockText(recorder.elapsedSeconds))
-                            .monospacedDigit()
-                            .contentTransition(.numericText())
-                            .fixedSize()
-                    }
-                    meter
-                }
-                cancelText
-                    .font(.footnote)
-                    .foregroundStyle(recorder.isCancelArmed ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-            } else if let hintText = recorder.hintText {
-                Text(hintText)
+        HStack(spacing: 2) {
+            ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
+                Capsule()
+                    .fill(isCancelArmed ? AnyShapeStyle(Color.red) : AnyShapeStyle(.tint))
+                    .frame(width: 3, height: 4 + 18 * CGFloat(level))
             }
         }
-        .font(.callout)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .glassEffect(.regular, in: dynamicTypeSize.isAccessibilitySize ? AnyShape(RoundedRectangle(cornerRadius: 24, style: .continuous)) : AnyShape(Capsule()))
-        .accessibilityElement(children: .combine)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-
-    private var cancelText: Text {
-        recorder.isCancelArmed ? Text("Release to cancel") : Text("Slide up to cancel")
-    }
-
-    private var meter: some View {
-        Capsule()
-            .fill(.tint)
-            .frame(width: 8 + 40 * CGFloat(recorder.level), height: 6)
-            .frame(width: 48, alignment: .leading)
-            .animation(.linear(duration: 0.05), value: recorder.level)
-            .accessibilityHidden(true)
+        .frame(height: 22)
+        .animation(.linear(duration: 0.05), value: levels)
+        .accessibilityHidden(true)
     }
 }
 

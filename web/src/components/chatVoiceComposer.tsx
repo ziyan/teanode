@@ -11,7 +11,7 @@ import {
   clockOf,
 } from '../voice/voiceMessageRecorder'
 import { VoiceMeter } from '../voice/voiceMeter'
-import { KeyboardIcon } from './icons'
+import { KeyboardIcon, MicrophoneIcon } from './icons'
 import { useToast } from './toast'
 import { Tooltip } from './tooltip'
 
@@ -48,9 +48,9 @@ export function useChatComposerMode(): [ChatComposerMode, (mode: ChatComposerMod
   return [mode, setMode]
 }
 
-// SLIDE_TO_CANCEL_PX is how far up from where the press began the finger or
-// pointer must go for a release to cancel.
-export const SLIDE_TO_CANCEL_PX = 60
+// SLIDE_TO_CANCEL_DISTANCE_PIXELS is how far up from where the press began
+// the finger or pointer must go for a release to cancel.
+export const SLIDE_TO_CANCEL_DISTANCE_PIXELS = 80
 
 const UPLOAD_VOICE_MESSAGE = '/api/v1/agent/attachments?isVoiceMessage=true'
 
@@ -256,22 +256,9 @@ export function ChatVoiceComposer({
   const remainingMS = LONGEST_VOICE_MESSAGE_MS - elapsedMS
   const isEnding = elapsedMS >= COUNTDOWN_VOICE_MESSAGE_MS
 
+  const remainingSeconds = Math.max(0, Math.ceil(remainingMS / 1000))
   return (
-    <div className="agent-drawer-input chat-voice-composer">
-      {isRecording && (
-        <div
-          className={['chat-voice-strip', isCancelArmed ? 'is-canceling' : ''].filter(Boolean).join(' ')}
-          role="status"
-        >
-          <VoiceMeter level={level} isHearing={!isCancelArmed} isSpeaking={false} isAnswering={false} />
-          <span className={['chat-voice-time', isEnding ? 'is-ending' : ''].filter(Boolean).join(' ')}>
-            {clockOf(isEnding ? remainingMS : elapsedMS)}
-          </span>
-          <span className="chat-voice-hint">
-            {isCancelArmed ? t('chat.releaseToCancel') : t('chat.slideUpToCancel')}
-          </span>
-        </div>
-      )}
+    <div className="agent-drawer-input agent-composer chat-voice-composer">
       <Tooltip label={t('chat.useKeyboard')}>
         <button
           type="button"
@@ -283,11 +270,14 @@ export function ChatVoiceComposer({
           <KeyboardIcon size={18} />
         </button>
       </Tooltip>
+      <span className="chat-voice-separator" aria-hidden="true" />
       <button
         type="button"
         className={['chat-hold-to-talk', isRecording ? 'is-recording' : '', isCancelArmed ? 'is-canceling' : '']
           .filter(Boolean)
           .join(' ')}
+        // The words inside change while recording; the name stays.
+        aria-label={t('chat.holdToTalk')}
         disabled={isDisabled || phase === 'sending'}
         aria-busy={phase === 'sending'}
         aria-keyshortcuts="Space Enter"
@@ -299,7 +289,7 @@ export function ChatVoiceComposer({
         }}
         onPointerMove={(event) => {
           if (holdBy.current !== 'pointer' || phaseNow.current === 'idle' || phaseNow.current === 'sending') return
-          setArmed(pressedAtY.current - event.clientY > SLIDE_TO_CANCEL_PX)
+          setArmed(pressedAtY.current - event.clientY > SLIDE_TO_CANCEL_DISTANCE_PIXELS)
         }}
         onPointerUp={() => {
           if (holdBy.current === 'pointer') release()
@@ -323,7 +313,23 @@ export function ChatVoiceComposer({
         onBlur={cancel}
         onContextMenu={(event) => event.preventDefault()}
       >
-        {t('chat.holdToTalk')}
+        {isRecording ? (
+          <span className="chat-voice-recording" role="status">
+            <span className="chat-voice-dot" aria-hidden="true" />
+            <span className={['chat-voice-time', isEnding ? 'is-ending' : ''].filter(Boolean).join(' ')}>
+              {isEnding ? t('chat.secondsLeft', { count: remainingSeconds }) : clockOf(elapsedMS)}
+            </span>
+            <VoiceMeter level={level} isHearing={!isCancelArmed} isSpeaking={false} isAnswering={false} />
+            <span className="chat-voice-hint">
+              {isCancelArmed ? t('chat.releaseToCancel') : t('chat.slideUpToCancel')}
+            </span>
+          </span>
+        ) : (
+          <>
+            <MicrophoneIcon size={16} />
+            <span>{t('chat.holdToTalk')}</span>
+          </>
+        )}
       </button>
     </div>
   )

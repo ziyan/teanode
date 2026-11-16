@@ -32,6 +32,10 @@ final class ConversationModel {
     private var interactions: [AgentInteraction] = []
     private(set) var total = 0
     private(set) var isLoadingEarlier = false
+    /// Why the last read of earlier messages failed, shown in the row at the top of the transcript with a Try again button.
+    private(set) var earlierProblemText: String?
+    /// How many earlier messages one pull reads.
+    static let earlierPageSize = 30
     var earlierCount: Int { max(0, total - messages.count) }
 
     /// The agent's list for this conversation, and whose agent this is when
@@ -329,16 +333,17 @@ final class ConversationModel {
     func loadEarlier() async {
         guard earlierCount > 0, !isLoadingEarlier else { return }
         isLoadingEarlier = true
+        earlierProblemText = nil
         defer { isLoadingEarlier = false }
         do {
-            let page = try await connection.conversation(conversationId, first: 100, offset: messages.count)
+            let page = try await connection.conversation(conversationId, first: Self.earlierPageSize, offset: messages.count)
             let known = Set(messages.map(\.id))
             let earlierMessages = page.messages.filter { !known.contains($0.id) }
             messages = earlierMessages + messages
             total = page.total
             transcript.prepend(messages: messages, earlierCount: earlierMessages.count, isChat: isChat)
         } catch {
-            sendProblemText = app.describe(error)
+            earlierProblemText = app.describe(error)
         }
     }
 

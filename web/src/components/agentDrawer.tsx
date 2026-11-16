@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   AGENT_ASK_EVENT,
@@ -969,6 +969,32 @@ type PlacementGesture = {
 // How far a pointer goes before a press on the bar becomes a move: a click
 // that wobbles by a pixel is still a click, and pins nothing.
 const GESTURE_THRESHOLD = 3
+
+// EARLIER_PAGE_SIZE is how many older messages one load brings in.
+const EARLIER_PAGE_SIZE = 30
+// A pull past the top of the list arms the load at the first distance and
+// disarms below the second, so a finger hovering near the line does not
+// flicker between the two wordings.
+const EARLIER_ARM_DISTANCE_PIXELS = 72
+const EARLIER_DISARM_DISTANCE_PIXELS = 56
+// Where the message that was first shown lands after older ones are put in
+// front of it, as a share of the list's height from its top.
+const EARLIER_ANCHOR_FRACTION = 0.15
+// A picture or card above the anchor can change height after the first
+// placement, so the placement is repeated once after this long.
+const EARLIER_SETTLE_DELAY_MS = 400
+
+// The composer is one row (a pill) until the draft would wrap, then a card.
+// Until the field has been measured its width is estimated from the box
+// width, so a saved draft does not open as a pill and jump to a card.
+const COMPOSER_MAXIMUM_WIDTH_PIXELS = 752
+const COMPOSER_SIDE_MARGIN_PIXELS = 12
+const COMPOSER_BOX_CHROME_PIXELS = 18
+const COMPOSER_ROUND_BUTTON_TARGET_PIXELS = 44
+const COMPOSER_FIELD_PADDING_PIXELS = 20
+// Width changes under this are measurement noise, not a resize.
+const COMPOSER_WIDTH_NOISE_PIXELS = 1
+const COMPOSER_CARD_MAXIMUM_HEIGHT_PIXELS = 160
 
 function isPhoneWidth(): boolean {
   return window.matchMedia(PHONE_QUERY).matches
@@ -3118,6 +3144,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // Whether the transcript is scrolled to its end. New words keep it
   // there; a person who scrolled up to read is left where they are.
   const [atBottom, setAtBottom] = useState(true)
+  // The newest line when the list was last at its end: anything newer
+  // came in while the person read further up, and the button to the end
+  // says so rather than being only an arrow.
+  const [newestKeyAtBottom, setNewestKeyAtBottom] = useState<string | undefined>(undefined)
+  // Whether the list is moved by touch, where pulling past the top loads
+  // earlier messages; with a mouse the row at the top is clicked instead,
+  // so it does not say to pull.
+  const [isTouchInput, setIsTouchInput] = useState(
+    () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches),
+  )
   const [initialConversationId] = useState(() => remembered(CONVERSATION_KEY))
   // The conversation as loaded, which the list does not always hold: a
   // run's transcript is opened from the agent page and is not in it.
@@ -3131,6 +3167,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // must be told so every time the drawer is open on it.
   const [actingAs, setActingAs] = useState<string | null>(null)
   const [lines, setLines] = useState<Line[]>([])
+  const newestLineKey = lines.length > 0 ? lines[lines.length - 1].key : undefined
+  useEffect(() => {
+    if (atBottom) setNewestKeyAtBottom(newestLineKey)
+  }, [atBottom, newestLineKey])
+  const hasNewMessages = !atBottom && newestLineKey !== newestKeyAtBottom
   // The files behind the citations the agent's answers have made, by
   // citation, and which citations have already been asked about. Asked
   // once each: a transcript is read many times over and the answer does
@@ -3148,6 +3189,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const messages = useRef<StoredMessage[]>([])
   const [total, setTotal] = useState(0)
   const [loadingEarlier, setLoadingEarlier] = useState(false)
+  // Why the last load of earlier messages failed, shown in the row at the
+  // top of the list with a way to try again. Empty when it did not.
+  const [earlierFailure, setEarlierFailure] = useState('')
+  // How far a finger has pulled the list down past its top, and whether
+  // letting go now would load. Armed at one distance, disarmed at a lower
+  // one.
+  const [pullDistancePixels, setPullDistancePixels] = useState(0)
+  const [isPullArmed, setIsPullArmed] = useState(false)
+  const isPullArmedNow = useRef(false)
+  const pullStartY = useRef<number | null>(null)
+  const earlierRow = useRef<HTMLDivElement>(null)
   // The agent's own task list for this conversation: its steps and how far
   // it has got, which the person reads and does not change.
   const [todos, setTodos] = useState<Todo[]>([])
@@ -3217,6 +3269,14 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // grew above, a phone's keyboard closed under it — and is put back.
   const movedAt = useRef(0)
   const input = useRef<HTMLTextAreaElement>(null)
+  const composerForm = useRef<HTMLFormElement>(null)
+  // A hidden copy of the draft on one line, to read how wide it would be.
+  const composerMirror = useRef<HTMLSpanElement>(null)
+  // The field's width while the composer is a pill; kept when it becomes a
+  // card, because a card's field is wider and says nothing about the pill's.
+  const pillFieldWidthPixels = useRef(0)
+  const [isDraftWrapping, setIsDraftWrapping] = useState(false)
+  const [composerResizes, setComposerResizes] = useState(0)
   const draftLoadedFor = useRef('')
   // A draft another page asked for before the conversation it belongs in was
   // read: put in the box, after what is kept, once it has been.
@@ -5292,19 +5352,25 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
 
-  // The hundred before the oldest loaded, put in front of what is shown,
-  // with the transcript held where the person was reading: the new
-  // lines add height above, so the scroll moves down by exactly that.
+  // The page before the oldest loaded, put in front of what is shown. The
+  // message that was first shown is found again afterwards and put a little
+  // below the top, so the person keeps their place with the end of the new
+  // page above it. It is that element that is followed, not the bottom: the
+  // list must not also be pinned to its end during the load.
   const loadEarlier = async () => {
     if (!conversationId || loadingEarlier) return
     setLoadingEarlier(true)
+    setEarlierFailure('')
     const element = transcript.current
+    // The first shown line follows the row; React keeps that element when
+    // lines are put in front of it, so it can be found again.
+    const anchor = earlierRow.current?.nextElementSibling ?? null
     const heightBefore = element?.scrollHeight ?? 0
     const loadedMessages = messages.current
     try {
       const response = await graphql<{
         ReadAgentConversation: { messages: StoredMessage[]; total?: number }
-      }>(CONVERSATION, { conversationId, first: 100, offset: messages.current.length })
+      }>(CONVERSATION, { conversationId, first: EARLIER_PAGE_SIZE, offset: messages.current.length })
       if (conversationRef.current !== conversationId || messages.current !== loadedMessages) return
       const earlier = response.ReadAgentConversation.messages
       messages.current = [...earlier, ...messages.current]
@@ -5317,16 +5383,52 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           (line) => (line.kind === 'question' && !line.answered) || (line.kind === 'confirmation' && !line.resolved),
         ),
       ])
-      requestAnimationFrame(() => {
-        if (element && conversationRef.current === conversationId) {
+      const keepPlace = (isFirstTime: boolean) => {
+        if (!element || conversationRef.current !== conversationId) return
+        if (anchor?.isConnected) {
+          const anchorTop = anchor.getBoundingClientRect().top - element.getBoundingClientRect().top
+          element.scrollTop += anchorTop - element.clientHeight * EARLIER_ANCHOR_FRACTION
+        } else if (isFirstTime) {
+          // The line was replaced (a day divider came or went): the height
+          // the page added is the next best measure.
           element.scrollTop += element.scrollHeight - heightBefore
         }
-      })
+      }
+      requestAnimationFrame(() => keepPlace(true))
+      window.setTimeout(() => keepPlace(false), EARLIER_SETTLE_DELAY_MS)
     } catch (caught) {
-      toast.failed(caught instanceof Error ? caught.message : String(caught))
+      setEarlierFailure(caught instanceof Error && caught.message ? caught.message : t('agentDrawer.earlierFailed'))
     } finally {
       setLoadingEarlier(false)
     }
+  }
+
+  // Pulling the list down past its top and letting go loads earlier
+  // messages. Reaching the top while scrolling loads nothing: that loaded
+  // pages nobody asked for and moved what was being read.
+  const pullMoved = (clientY: number) => {
+    const element = transcript.current
+    if (!element || total <= messages.current.length || loadingEarlier) return
+    if (element.scrollTop > 0) {
+      pullStartY.current = null
+      return
+    }
+    if (pullStartY.current === null) pullStartY.current = clientY
+    const distance = Math.max(0, clientY - pullStartY.current)
+    const isArmed = isPullArmedNow.current
+      ? distance >= EARLIER_DISARM_DISTANCE_PIXELS
+      : distance >= EARLIER_ARM_DISTANCE_PIXELS
+    isPullArmedNow.current = isArmed
+    setPullDistancePixels(distance)
+    setIsPullArmed(isArmed)
+  }
+  const pullEnded = () => {
+    const wasArmed = isPullArmedNow.current
+    pullStartY.current = null
+    isPullArmedNow.current = false
+    setPullDistancePixels(0)
+    setIsPullArmed(false)
+    if (wasArmed) void loadEarlier()
   }
 
   const toggleExpanded = (key: string) => {
@@ -5848,6 +5950,40 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   useEffect(() => {
     setHeadMenu(null)
   }, [conversationId])
+  // The composer is a pill until the draft would wrap at the pill's field
+  // width, or something is waiting to be sent; then it is a card. The same
+  // textarea is in both, so focus, the caret and an input method's marked
+  // text survive the change.
+  const hasPendingContent = references.length > 0 || pending.length > 0
+  const isCardShown = hasPendingContent || isDraftWrapping
+  useLayoutEffect(() => {
+    const field = input.current
+    const mirror = composerMirror.current
+    if (!field) return
+    if (!isCardShown && field.clientWidth > 0) {
+      const measured = field.clientWidth
+      if (Math.abs(measured - pillFieldWidthPixels.current) >= COMPOSER_WIDTH_NOISE_PIXELS) {
+        pillFieldWidthPixels.current = measured
+      }
+    }
+    const boxWidth = Math.min(COMPOSER_MAXIMUM_WIDTH_PIXELS, window.innerWidth - 2 * COMPOSER_SIDE_MARGIN_PIXELS)
+    const estimatedFieldWidth = boxWidth - COMPOSER_BOX_CHROME_PIXELS - 3 * COMPOSER_ROUND_BUTTON_TARGET_PIXELS
+    const fieldWidth = pillFieldWidthPixels.current > 0 ? pillFieldWidthPixels.current : estimatedFieldWidth
+    const textWidth = mirror?.offsetWidth ?? 0
+    setIsDraftWrapping(draft.includes('\n') || textWidth > fieldWidth - COMPOSER_FIELD_PADDING_PIXELS)
+    // A card's field grows with the words; a pill's is one line.
+    if (isCardShown) {
+      field.style.height = 'auto'
+      field.style.height = `${Math.min(field.scrollHeight, COMPOSER_CARD_MAXIMUM_HEIGHT_PIXELS)}px`
+    } else {
+      field.style.height = ''
+    }
+  }, [draft, isCardShown, composerResizes, conversationId, composerMode])
+  useEffect(() => {
+    const onResize = () => setComposerResizes((previous) => previous + 1)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
   if (!isReachable) {
     return null
   }
@@ -5949,6 +6085,53 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // nothing left to track and was taking the room above the box.
   const showTodos = todos.length > 0 && (running || todos.some((todo) => !todo.doneAt))
   const canSend = (draft.trim().length > 0 || pending.length > 0) && !uploading
+  const isTextComposerShown = !(isOfferShown || isFindingChat) && voiceState === 'off' && !isVoiceComposerShown
+  const pendingBlock = hasPendingContent ? (
+    <div className="agent-drawer-pending">
+      {replying && (
+        <ReplyQuote
+          reference={replying}
+          title={
+            replying.quotedRole === 'user'
+              ? t('agentDrawer.replyingToYourself')
+              : t('agentDrawer.replyingTo', {
+                  name: isInChat
+                    ? (
+                        lines.find((line) => line.kind === 'chat' && line.messageId === replying.agentMessageId) as
+                          ChatLine | undefined
+                      )?.authorName || t('chat.someone')
+                    : agentName.trim() || t('agent.title'),
+                })
+          }
+          onRemove={() => setReferences((previous) => previous.filter((reference) => !isReplyReference(reference)))}
+        />
+      )}
+      {chipped.length > 0 && (
+        <ReferenceChips
+          references={chipped}
+          onRemove={(removed) => setReferences((previous) => previous.filter((reference) => reference !== removed))}
+        />
+      )}
+      {pending.length > 0 && (
+        <div className="agent-attachments">
+          {pending.map((file, index) => (
+            <span key={`${file.name}-${index}`} className="agent-attachment-chip">
+              <PaperclipIcon size={12} /> {file.name} <span className="muted">{formatBytes(file.size)}</span>
+              <button
+                type="button"
+                className="icon-action"
+                title={t('agentDrawer.remove')}
+                aria-label={`${file.name}: ${t('agentDrawer.remove')}`}
+                onClick={() => setPending((previous) => previous.filter((_, at) => at !== index))}
+              >
+                <CloseIcon size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null
   // Where an agent can be asked, the box says how.
   const chatPlaceholder = mentionable.some((choice) => choice.kind === 'agent')
     ? t('chat.placeholderWithAgents')
@@ -6327,6 +6510,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               transcript.current = node
               setTranscriptElement(node)
             }}
+            onTouchStart={(event) => {
+              setIsTouchInput(true)
+              pullStartY.current = null
+              if (transcript.current && transcript.current.scrollTop <= 0) pullStartY.current = event.touches[0].clientY
+            }}
+            onTouchMove={(event) => pullMoved(event.touches[0].clientY)}
+            onTouchEnd={pullEnded}
+            onTouchCancel={() => {
+              isPullArmedNow.current = false
+              pullEnded()
+            }}
             onScroll={(event) => {
               const element = event.currentTarget
               const ended = element.scrollHeight - element.scrollTop - element.clientHeight < 40
@@ -6381,16 +6575,50 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 ) : null}
               </>
             )}
-            {total > messages.current.length && (
-              <button
-                type="button"
-                className="agent-drawer-earlier muted"
-                onClick={() => void loadEarlier()}
-                disabled={loadingEarlier}
-              >
-                {t('agentDrawer.earlier', { count: total - messages.current.length })}
-              </button>
-            )}
+            {messages.current.length > 0 &&
+              (total > messages.current.length ? (
+                loadingEarlier ? (
+                  <div ref={earlierRow} className="agent-earlier-row muted" role="status">
+                    <span className="agent-spinner" aria-hidden="true" />
+                    {t('agentDrawer.earlierLoading')}
+                  </div>
+                ) : earlierFailure ? (
+                  <div ref={earlierRow} className="agent-earlier-row muted" role="alert">
+                    <span>{earlierFailure}</span>
+                    <button type="button" onClick={() => void loadEarlier()}>
+                      {t('common.tryAgain')}
+                    </button>
+                  </div>
+                ) : (
+                  <div ref={earlierRow} className="agent-earlier-row">
+                    <button
+                      type="button"
+                      className="muted"
+                      aria-label={t('agentDrawer.earlierLoad')}
+                      onClick={() => void loadEarlier()}
+                    >
+                      <span
+                        className={['agent-earlier-arrow', isPullArmed ? 'is-armed' : ''].filter(Boolean).join(' ')}
+                        style={{
+                          opacity: 0.6 + 0.4 * Math.min(1, pullDistancePixels / EARLIER_ARM_DISTANCE_PIXELS),
+                        }}
+                        aria-hidden="true"
+                      >
+                        <ArrowDownIcon size={14} />
+                      </span>
+                      {isPullArmed
+                        ? t('agentDrawer.earlierRelease')
+                        : isTouchInput
+                          ? t('agentDrawer.earlierPull')
+                          : t('agentDrawer.earlierLoad')}
+                    </button>
+                  </div>
+                )
+              ) : (
+                <div ref={earlierRow} className="agent-earlier-row muted">
+                  {t('agentDrawer.earlierStart')}
+                </div>
+              ))}
             {lines.map((line, index) => {
               // A divider where the day changes.
               const at = 'at' in line ? line.at : undefined
@@ -6514,21 +6742,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               )}
           </div>
           {!atBottom && lines.length > 0 && (
-            <Tooltip label={t('agentDrawer.jumpToEnd')}>
-              <button
-                type="button"
-                className="icon-button agent-drawer-jump"
-                aria-label={t('agentDrawer.jumpToEnd')}
-                onClick={() => {
-                  const element = transcript.current
-                  if (element) element.scrollTop = element.scrollHeight
-                  sticking.current = true
-                  setAtBottom(true)
-                }}
-              >
-                <ArrowDownIcon size={16} />
-              </button>
-            </Tooltip>
+            <button
+              type="button"
+              className={['agent-drawer-jump', hasNewMessages ? 'has-new-messages' : ''].filter(Boolean).join(' ')}
+              aria-label={hasNewMessages ? t('agentDrawer.newMessages') : t('agentDrawer.jumpToEnd')}
+              onClick={() => {
+                const element = transcript.current
+                if (element) element.scrollTop = element.scrollHeight
+                sticking.current = true
+                setAtBottom(true)
+              }}
+            >
+              <ArrowDownIcon size={14} />
+              {hasNewMessages && t('agentDrawer.newMessages')}
+            </button>
           )}
           {/* The agent's task list, above what the person is about to
               type: its steps and how far it has got, one line each, the
@@ -6543,57 +6770,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               </ul>
             </div>
           )}
-          {(references.length > 0 || pending.length > 0) && (
-            <div className="agent-drawer-pending">
-              {replying && (
-                <ReplyQuote
-                  reference={replying}
-                  title={
-                    replying.quotedRole === 'user'
-                      ? t('agentDrawer.replyingToYourself')
-                      : t('agentDrawer.replyingTo', {
-                          name: isInChat
-                            ? (
-                                lines.find(
-                                  (line) => line.kind === 'chat' && line.messageId === replying.agentMessageId,
-                                ) as ChatLine | undefined
-                              )?.authorName || t('chat.someone')
-                            : agentName.trim() || t('agent.title'),
-                        })
-                  }
-                  onRemove={() =>
-                    setReferences((previous) => previous.filter((reference) => !isReplyReference(reference)))
-                  }
-                />
-              )}
-              {chipped.length > 0 && (
-                <ReferenceChips
-                  references={chipped}
-                  onRemove={(removed) =>
-                    setReferences((previous) => previous.filter((reference) => reference !== removed))
-                  }
-                />
-              )}
-              {pending.length > 0 && (
-                <div className="agent-attachments">
-                  {pending.map((file, index) => (
-                    <span key={`${file.name}-${index}`} className="agent-attachment-chip">
-                      <PaperclipIcon size={12} /> {file.name} <span className="muted">{formatBytes(file.size)}</span>
-                      <button
-                        type="button"
-                        className="icon-action"
-                        title={t('agentDrawer.remove')}
-                        aria-label={`${file.name}: ${t('agentDrawer.remove')}`}
-                        onClick={() => setPending((previous) => previous.filter((_, at) => at !== index))}
-                      >
-                        <CloseIcon size={12} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {isTextComposerShown ? null : pendingBlock}
           {actingAs ? (
             <div className="agent-drawer-readonly notice">{t('agentDrawer.actingAs', { name: actingAs })}</div>
           ) : null}
@@ -6707,12 +6884,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 </div>
               )}
               <form
-                className="agent-drawer-input"
+                ref={composerForm}
+                className={['agent-drawer-input', 'agent-composer', isCardShown ? 'is-card' : '']
+                  .filter(Boolean)
+                  .join(' ')}
+                // A click on the box's own empty area is a click on the field.
+                onClick={(event) => {
+                  if (event.target === event.currentTarget) input.current?.focus()
+                }}
                 onSubmit={(event) => {
                   event.preventDefault()
                   void send()
                 }}
               >
+                {pendingBlock}
                 <input
                   ref={filePicker}
                   type="file"
@@ -6723,28 +6908,54 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     event.target.value = ''
                   }}
                 />
-                <Tooltip label={t('agentDrawer.attach')}>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={t('agentDrawer.attach')}
-                    onClick={() => filePicker.current?.click()}
-                  >
-                    <PaperclipIcon size={16} />
-                  </button>
-                </Tooltip>
-                {isVoiceModeOffered && (
-                  <Tooltip label={t('chat.useVoice')}>
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label={t('chat.useVoice')}
-                      onClick={() => setComposerMode('voice')}
-                    >
-                      <WaveformIcon size={18} />
-                    </button>
-                  </Tooltip>
-                )}
+                <MenuButton
+                  label={t('agentDrawer.add')}
+                  className="icon-button agent-composer-add"
+                  placement="above"
+                  icon={<PlusIcon size={18} />}
+                  render={(close) => (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          close()
+                          filePicker.current?.click()
+                        }}
+                      >
+                        <PaperclipIcon size={16} />
+                        {t('agentDrawer.attach')}
+                      </button>
+                      {voiceSampleRate > 0 && !isInChat && (
+                        <button
+                          type="button"
+                          disabled={isRun || Boolean(actingAs)}
+                          onClick={() => {
+                            close()
+                            toggleVoice()
+                          }}
+                        >
+                          <PhoneIcon size={16} />
+                          {t('agentDrawer.talk')}
+                        </button>
+                      )}
+                      {isVoiceModeOffered && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            close()
+                            // Dictation and a voice message are two ways to
+                            // use the microphone; entering one ends the other.
+                            dictation.abort()
+                            setComposerMode('voice')
+                          }}
+                        >
+                          <WaveformIcon size={16} />
+                          {t('chat.voiceMessage')}
+                        </button>
+                      )}
+                    </>
+                  )}
+                />
                 {mention && mentionOffer.length > 0 && (
                   <MentionList
                     choices={mentionOffer}
@@ -6804,6 +7015,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     }
                   }}
                 />
+                <span ref={composerMirror} className="agent-composer-mirror" aria-hidden="true">
+                  {draft}
+                </span>
                 {running && (
                   <Tooltip label={t('agentDrawer.stop')}>
                     <button
@@ -6813,22 +7027,6 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                       onClick={() => void stop()}
                     >
                       ■
-                    </button>
-                  </Tooltip>
-                )}
-                {voiceSampleRate > 0 && !isInChat && (
-                  <Tooltip label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}>
-                    <button
-                      type="button"
-                      className={['icon-button', 'agent-voice', voiceState !== 'off' ? 'is-listening' : '']
-                        .filter(Boolean)
-                        .join(' ')}
-                      aria-label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}
-                      aria-pressed={voiceState !== 'off'}
-                      disabled={isRun || Boolean(actingAs)}
-                      onClick={toggleVoice}
-                    >
-                      <PhoneIcon size={16} />
                     </button>
                   </Tooltip>
                 )}
@@ -6855,7 +7053,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     aria-label={t('agentDrawer.send')}
                     disabled={!canSend || isReadingConversation}
                   >
-                    <ArrowUpIcon size={16} />
+                    {uploading ? <span className="agent-spinner" aria-hidden="true" /> : <ArrowUpIcon size={16} />}
                   </button>
                 </Tooltip>
               </form>

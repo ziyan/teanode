@@ -33,12 +33,43 @@ struct ConversationView: View {
     /// When the person last moved the conversation themselves, and the pending second look for its end after a card folds.
     @State private var lastScrolledAt = Date.distantPast
     @State private var refindEnd: Task<Void, Never>?
-    /// Whether the person has scrolled the transcript themselves. Until
-    /// they have, the earlier-messages row is not read on sight: a lazy
-    /// list lays itself out from the top for a moment when it comes back,
-    /// and reading the page before then left the conversation at that
-    /// page's edge, in the middle, rather than at its end.
-    @State private var hasPersonScrolled = false
+    /// Whether a finger is on the transcript. Earlier messages are pulled for
+    /// and new ones are followed only by what the list does on its own, so
+    /// neither is judged while the person is moving it.
+    @State private var isFingerOnList = false
+    /// How far the transcript is pulled down past its top, in whole points,
+    /// while a finger is on it.
+    @State private var pullDistancePoints = 0
+    /// Whether the pull has gone far enough that letting go reads the page.
+    @State private var isPullArmed = false
+    /// Whether a page of earlier messages is being read and the person's place
+    /// in the transcript put back. The list does not keep its bottom in place
+    /// meanwhile, or it would fight the scroll back to the reading place.
+    @State private var isRestoringReadingPlace = false
+    /// The id of the newest line when the transcript was last at its end, to
+    /// tell whether anything has come in since the person scrolled up.
+    @State private var lastLineIdWhenAtEnd: String?
+
+    /// The pull that arms reading earlier messages, and the shorter one below
+    /// which it disarms again, so it does not flicker at the edge.
+    private static let pullArmDistancePoints = 72
+    private static let pullDisarmDistancePoints = 56
+    /// Where the first message shown before the page lands when put back:
+    /// a little below the top, with the end of the new page above it.
+    private static let readingPlaceAnchor = UnitPoint(x: 0.5, y: 0.15)
+
+    /// Whether the list keeps its bottom edge in place as it grows, which is
+    /// how it follows new messages: only while a finger is off it and no page
+    /// of earlier messages is being put in place. Where the person has
+    /// scrolled up it does not move what they are reading.
+    private var sizeChangeAnchor: UnitPoint? {
+        isFingerOnList || isRestoringReadingPlace ? nil : .bottom
+    }
+
+    /// Whether lines have come in while the person was reading further up.
+    private var hasNewMessages: Bool {
+        !isAtEnd && model.transcript.lines.last?.id != lastLineIdWhenAtEnd
+    }
     @State private var status = StatusModel()
     @State private var isShowingStatus = false
     /// The sheet that chooses who a call in a group rings.
@@ -170,28 +201,66 @@ struct ConversationView: View {
             } action: { _, isNearEnd in
                 isAtEnd = isNearEnd
             }
-            .onScrollPhaseChange { _, phase in
-                if phase == .interacting {
-                    hasPersonScrolled = true
-                    lastScrolledAt = .now
+            // How far the top is pulled down, for the row that offers earlier messages.
+            .onScrollGeometryChange(for: Int.self) { geometry in
+                Int(max(0, -(geometry.contentOffset.y + geometry.contentInsets.top)).rounded())
+            } action: { _, pullPoints in
+                guard isFingerOnList else {
+                    pullDistancePoints = 0
+                    return
+                }
+                pullDistancePoints = pullPoints
+                if pullPoints >= Self.pullArmDistancePoints, !isPullArmed {
+                    isPullArmed = true
+                } else if pullPoints < Self.pullDisarmDistancePoints, isPullArmed {
+                    isPullArmed = false
                 }
             }
-            .defaultScrollAnchor(.bottom)
-            .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            // Earlier messages are read only by pulling the list down past its
+            // top and letting go. Reaching the top by scrolling reads nothing,
+            // which loaded pages by accident and moved what was being read.
+            .onScrollPhaseChange { oldPhase, phase in
+                let isFingerDown = phase == .tracking || phase == .interacting
+                if isFingerDown != isFingerOnList { isFingerOnList = isFingerDown }
+                if phase == .interacting { lastScrolledAt = .now }
+                if !isFingerDown {
+                    let wasArmed = isPullArmed
+                    isPullArmed = false
+                    pullDistancePoints = 0
+                    if wasArmed, oldPhase == .interacting { loadEarlier(scroller) }
+                }
+            }
+            .sensoryFeedback(.impact(weight: .light), trigger: isPullArmed) { _, isArmed in isArmed }
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .defaultScrollAnchor(.bottom, for: .alignment)
+            .defaultScrollAnchor(sizeChangeAnchor, for: .sizeChanges)
             .scrollDismissesKeyboard(.immediately)
-            .overlay(alignment: .bottomTrailing) {
+            .onChange(of: isAtEnd) { _, isNowAtEnd in
+                if isNowAtEnd { lastLineIdWhenAtEnd = model.transcript.lines.last?.id }
+            }
+            .onChange(of: model.transcript.lines.last?.id) { _, newestId in
+                if isAtEnd { lastLineIdWhenAtEnd = newestId }
+            }
+            .overlay(alignment: hasNewMessages ? .bottom : .bottomTrailing) {
                 if !isAtEnd {
                     Button {
                         withAnimation { scrollPosition.scrollTo(edge: .bottom) }
                     } label: {
-                        Image(systemName: "arrow.down")
-                            .font(.headline)
-                            .frame(minWidth: 44, minHeight: 44)
+                        if hasNewMessages {
+                            Label("New messages", systemImage: "arrow.down")
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 16)
+                                .frame(minHeight: 44)
+                        } else {
+                            Image(systemName: "arrow.down")
+                                .font(.headline)
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
                     }
                     // Mostly solid, so the words under it are not read through it.
-                    .background(Color(.systemBackground).opacity(0.85), in: .circle)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                    .accessibilityLabel("Jump to the end")
+                    .background(Color(.systemBackground).opacity(0.85), in: .capsule)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .accessibilityLabel(hasNewMessages ? Text("New messages") : Text("Jump to the end"))
                     .padding()
                 }
             }
@@ -227,7 +296,8 @@ struct ConversationView: View {
             }
             #if DEBUG
                 .task(id: model.isLoaded) {
-                    // `-TeaNodeScreen conversation-long-message`: scrolled back to the top, where the long message starts;
+                    // `-TeaNodeScreen conversation-long-message`: scrolled back to where the long message starts, its
+                    // first line at the top (the row that says what is above sits just out of sight);
                     // `conversation-long-message-read`: the whole of it open.
                     guard DemoServer.isRequested, let screen = DemoServer.screen, screen.hasPrefix("conversation-long-message"), model.isLoaded
                     else { return }
@@ -237,7 +307,11 @@ struct ConversationView: View {
                     // anchor for size changes pulls the view back down by the
                     // difference, which left its first line out of sight.
                     for _ in 0..<3 {
-                        scrollPosition.scrollTo(edge: .top)
+                        if let firstId = ConversationItem.items(of: shownLines).first?.id {
+                            scroller.scrollTo(firstId, anchor: .top)
+                        } else {
+                            scrollPosition.scrollTo(edge: .top)
+                        }
                         try? await Task.sleep(for: .milliseconds(500))
                     }
                     if screen == "conversation-long-message-read" {
@@ -282,24 +356,9 @@ struct ConversationView: View {
 
     private func messages(_ scroller: ScrollViewProxy) -> some View {
         LazyVStack(alignment: .leading, spacing: 10) {
-            if model.earlierCount > 0 {
-                // Reaching the top reads the page before it, and the
-                // line that was first stays where it was.
-                Button {
-                    loadEarlier(scroller)
-                } label: {
-                    if model.isLoadingEarlier {
-                        ProgressView()
-                    } else {
-                        Text("\(model.earlierCount) earlier messages")
-                    }
-                }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-                .frame(maxWidth: .infinity)
-                .onAppear {
-                    if hasPersonScrolled { loadEarlier(scroller) }
-                }
+            if model.isLoaded, !model.transcript.lines.isEmpty {
+                EarlierMessagesRow(
+                    situation: earlierRowState, pullDistancePoints: pullDistancePoints, onLoad: { loadEarlier(scroller) })
             }
             let items = ConversationItem.items(of: shownLines)
             let readers = model.chat.map { model.transcript.readers(of: $0.members, ownUserId: model.ownUserId) } ?? [:]
@@ -404,14 +463,31 @@ struct ConversationView: View {
         }
     }
 
+    /// What the row at the top of the transcript says.
+    private var earlierRowState: EarlierMessagesRow.Situation {
+        if model.isLoadingEarlier { return .loading }
+        if let problemText = model.earlierProblemText { return .failed(problemText) }
+        if model.earlierCount == 0 { return .atStart }
+        return isPullArmed ? .armed : .pulling
+    }
+
+    /// Reads the page before the first message shown, then puts that message
+    /// back where it was read: a little below the top, with the end of the new
+    /// page above it. Put back again once pictures and cards have settled.
     private func loadEarlier(_ scroller: ScrollViewProxy) {
-        guard model.isLoaded, !model.isLoadingEarlier else { return }
+        guard model.isLoaded, !model.isLoadingEarlier, model.earlierCount > 0 else { return }
         let firstId = ConversationItem.items(of: shownLines).first?.id
+        isRestoringReadingPlace = true
         Task {
             await model.loadEarlier()
             if let firstId {
-                scroller.scrollTo(firstId, anchor: .top)
+                // Once the new page has been laid out.
+                try? await Task.sleep(for: .milliseconds(50))
+                scroller.scrollTo(firstId, anchor: Self.readingPlaceAnchor)
+                try? await Task.sleep(for: .milliseconds(400))
+                scroller.scrollTo(firstId, anchor: Self.readingPlaceAnchor)
             }
+            isRestoringReadingPlace = false
         }
     }
 
@@ -2435,7 +2511,190 @@ struct ChoiceRow: View {
     }
 }
 
-/// Composer is where the person writes: a glass field floating over the
+/// EarlierMessagesRow is the first row of a transcript. It always says what is
+/// above: that pulling down reads earlier messages, that letting go will, that
+/// they are being read, that they could not be, or that there are none.
+struct EarlierMessagesRow: View {
+    enum Situation {
+        case pulling
+        case armed
+        case loading
+        case failed(String)
+        case atStart
+    }
+
+    let situation: Situation
+    /// How far the list is pulled down, in points, for the arrow's opacity.
+    let pullDistancePoints: Int
+    /// Reads the page, for VoiceOver where a pull cannot be made.
+    let onLoad: () -> Void
+
+    private var arrowOpacity: Double {
+        0.6 + 0.4 * min(1, Double(pullDistancePoints) / 72)
+    }
+
+    var body: some View {
+        content
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .animation(.easeOut(duration: 0.15), value: isArmed)
+    }
+
+    private var isArmed: Bool {
+        if case .armed = situation { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch situation {
+        case .pulling, .armed:
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.down")
+                    .opacity(arrowOpacity)
+                    .rotationEffect(.degrees(isArmed ? 180 : 0))
+                if isArmed {
+                    Text("Release to load earlier messages")
+                } else {
+                    Text("Pull down for earlier messages")
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Load earlier messages")
+            .accessibilityAction { onLoad() }
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Loading earlier messages…")
+            }
+            .accessibilityElement(children: .combine)
+        case .failed(let problemText):
+            VStack(spacing: 4) {
+                Text(problemText)
+                    .multilineTextAlignment(.center)
+                Button("Try again", action: onLoad)
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.small)
+            }
+            .padding(.vertical, 4)
+        case .atStart:
+            Text("Start of the conversation")
+                .foregroundStyle(.tertiary)
+        }
+    }
+}
+
+/// ComposerPart says which control of the composer a view is, so its layout
+/// can place each one in either shape without depending on their order.
+private enum ComposerPart {
+    case add, field, dictate, send
+}
+
+private struct ComposerPartKey: LayoutValueKey {
+    static let defaultValue = ComposerPart.field
+}
+
+extension View {
+    fileprivate func composerPart(_ part: ComposerPart) -> some View {
+        layoutValue(key: ComposerPartKey.self, value: part)
+    }
+
+    /// The one bordered shape of the composer: a rounded box with its
+    /// buttons inside, mostly solid so the messages behind it do not show
+    /// through as blurred words, with the glass giving it the edge and light.
+    fileprivate func composerBox() -> some View {
+        padding(ComposerBoxLayout.insetPoints)
+            .background(Color(.systemBackground).opacity(0.85), in: .rect(cornerRadius: 24, style: .continuous))
+            .glassEffect(.regular, in: .rect(cornerRadius: 24, style: .continuous))
+    }
+}
+
+/// ComposerBoxLayout arranges the composer in one of two shapes with the same
+/// views, so the text field keeps its focus and caret when the shape changes:
+/// a pill (add, field, dictate, send on one row), or a card (the field across
+/// the full width, with add on the left and dictate and send on the right
+/// under it).
+private struct ComposerBoxLayout: Layout {
+    let isCard: Bool
+    /// The width and height of each button's touch target.
+    let slotPoints: CGFloat
+
+    /// Space between the box's edge and its content. The round buttons sit in
+    /// a larger touch target than their circle, which makes up the rest of the
+    /// space the circle is inset by.
+    static let insetPoints: CGFloat = 4
+
+    private func frames(width: CGFloat, subviews: Subviews) -> (frames: [CGRect], height: CGFloat) {
+        var frames = Array(repeating: CGRect.zero, count: subviews.count)
+        let indexByPart = Dictionary(subviews.indices.map { (subviews[$0][ComposerPartKey.self], $0) }, uniquingKeysWith: { first, _ in first })
+        guard let fieldIndex = indexByPart[.field] else { return (frames, 0) }
+        let hasAdd = indexByPart[.add] != nil
+        let hasDictate = indexByPart[.dictate] != nil
+        let hasSend = indexByPart[.send] != nil
+        let trailingCount = (hasDictate ? 1 : 0) + (hasSend ? 1 : 0)
+        func place(_ part: ComposerPart, x: CGFloat, y: CGFloat) {
+            guard let index = indexByPart[part] else { return }
+            frames[index] = CGRect(x: x, y: y, width: slotPoints, height: slotPoints)
+        }
+        if isCard {
+            let fieldSize = subviews[fieldIndex].sizeThatFits(ProposedViewSize(width: width, height: nil))
+            frames[fieldIndex] = CGRect(x: 0, y: 0, width: width, height: fieldSize.height)
+            let rowY = fieldSize.height
+            place(.add, x: 0, y: rowY)
+            place(.send, x: width - slotPoints, y: rowY)
+            place(.dictate, x: width - slotPoints * CGFloat(trailingCount), y: rowY)
+            let hasButtonRow = hasAdd || trailingCount > 0
+            return (frames, fieldSize.height + (hasButtonRow ? slotPoints : 0))
+        }
+        let leadingWidth = hasAdd ? slotPoints : 0
+        let fieldWidth = max(0, width - leadingWidth - slotPoints * CGFloat(trailingCount))
+        let fieldSize = subviews[fieldIndex].sizeThatFits(ProposedViewSize(width: fieldWidth, height: nil))
+        let rowHeight = max(slotPoints, fieldSize.height)
+        // Buttons stay at the bottom of the row, as the field grows a line.
+        let buttonY = rowHeight - slotPoints
+        frames[fieldIndex] = CGRect(x: leadingWidth, y: rowHeight - fieldSize.height, width: fieldWidth, height: fieldSize.height)
+        place(.add, x: 0, y: buttonY)
+        place(.send, x: width - slotPoints, y: buttonY)
+        place(.dictate, x: width - slotPoints * CGFloat(trailingCount), y: buttonY)
+        return (frames, rowHeight)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 320
+        return CGSize(width: width, height: frames(width: width, subviews: subviews).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let plan = frames(width: bounds.width, subviews: subviews)
+        for index in subviews.indices {
+            let frame = plan.frames[index]
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), anchor: .topLeading,
+                proposal: ProposedViewSize(width: frame.width, height: frame.height))
+        }
+    }
+}
+
+/// ComposerCircle is the round button of the composer: a circle that grows
+/// with the text size inside a touch target of at least 44 points.
+private struct ComposerCircle<Content: View>: View {
+    let diameterPoints: CGFloat
+    let fill: AnyShapeStyle
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .frame(width: diameterPoints, height: diameterPoints)
+            .background(fill, in: .circle)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
+    }
+}
+
+/// Composer is where the person writes: a glass box floating over the
 /// conversation, with files to add and a button to send, or to stop the
 /// turn that is running.
 struct Composer: View {
@@ -2457,15 +2716,62 @@ struct Composer: View {
     /// The width and height of each round button, growing with the text size
     /// so its symbol is never larger than the circle that holds it.
     @ScaledMetric(relativeTo: .body) private var scaledButtonDiameterPoints: CGFloat = 36
+    /// The width of the field while the box is a pill, once measured. Only
+    /// measured while it is a pill: in the card the field is wider, and
+    /// measuring that would make the box flip back and forth.
+    @State private var measuredPillFieldWidthPoints: CGFloat?
+
+    /// The most the box grows in width on a wide screen.
+    private static let maxWidthPoints: CGFloat = 752
+    /// The space on each side of the field's words.
+    private static let fieldHorizontalPaddingPoints: CGFloat = 8
 
     /// The scaled size, held at what the buttons' symbols reach at the
-    /// largest size they follow (see the cap on the row of buttons).
+    /// largest size they follow (see the cap on the buttons).
     private var buttonDiameterPoints: CGFloat { min(scaledButtonDiameterPoints, 60) }
+
+    private var slotPoints: CGFloat { max(44, buttonDiameterPoints) }
 
     /// Whether the box is a button to hold: in a chat, once the person chose it, while the server takes voice messages and
     /// nothing else (a file) is waiting to go with the words.
     private var isVoiceMode: Bool {
         model.isChat && model.isVoiceMessageAvailable && model.canWrite && composerMode == "voice" && model.pendingFiles.isEmpty
+    }
+
+    private var isDictationOffered: Bool {
+        model.canDictate && model.conversation?.kind != "run"
+    }
+
+    private var hasAttachments: Bool {
+        !model.pendingFiles.isEmpty || loadingPictureCount > 0
+    }
+
+    /// The field's width as a pill, before it has been measured: the screen
+    /// less the box's margins and its round buttons, so a saved draft opens in
+    /// the shape it will keep rather than as a pill that then jumps to a card.
+    private var estimatedPillFieldWidthPoints: CGFloat {
+        let boxWidthPoints = min(UIScreen.main.bounds.width - 24, Self.maxWidthPoints)
+        let buttonCount: CGFloat = isDictationOffered ? 3 : 2
+        return boxWidthPoints - ComposerBoxLayout.insetPoints * 2 - slotPoints * buttonCount
+    }
+
+    /// Whether the draft would not fit one line of the pill's field.
+    private var doesDraftWrap: Bool {
+        let draft = model.draft
+        guard !draft.isEmpty else { return false }
+        if draft.contains("\n") { return true }
+        let fieldWidthPoints = (measuredPillFieldWidthPoints ?? estimatedPillFieldWidthPoints) - Self.fieldHorizontalPaddingPoints * 2
+        let font = UIFont.preferredFont(forTextStyle: .body)
+        let bounds = (draft as NSString).boundingRect(
+            with: CGSize(width: max(1, fieldWidthPoints), height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: font], context: nil)
+        return bounds.height > font.lineHeight * 1.5
+    }
+
+    /// Whether the box is the card, with the words across its full width: the
+    /// draft wraps, or files are waiting to go.
+    private var isCard: Bool {
+        hasAttachments || doesDraftWrap
     }
 
     var body: some View {
@@ -2475,34 +2781,15 @@ struct Composer: View {
                     recording: failedRecording, onRetry: { Task { await model.retryVoiceMessage() } },
                     onDiscard: { model.discardFailedRecording() })
             }
-            if isVoiceMode, model.voiceRecorder.isRecording || model.voiceRecorder.hintText != nil {
-                RecordingStrip(recorder: model.voiceRecorder)
-            }
-            if !model.pendingFiles.isEmpty || loadingPictureCount > 0 {
-                ScrollView(.horizontal) {
-                    HStack {
-                        ForEach(model.pendingFiles) { file in
-                            PendingFileChip(
-                                file: file, isUploading: model.uploadingFileIds.contains(file.id),
-                                isUploaded: model.uploadedFileIds.contains(file.id)
-                            ) {
-                                model.pendingFiles.removeAll { $0.id == file.id }
-                            }
-                        }
-                        ForEach(0..<loadingPictureCount, id: \.self) { _ in
-                            LoadingFileChip()
-                        }
-                    }
-                }
-                .scrollIndicators(.hidden)
-            }
             if isVoiceMode {
                 voicePanel
             } else {
                 textPanel
             }
         }
-        .padding(.horizontal)
+        .frame(maxWidth: Self.maxWidthPoints)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
         .padding(.bottom, 8)
         .photosPicker(isPresented: $isPickingPhotos, selection: $pickedItems, maxSelectionCount: 8, matching: .images)
         .cameraPicker(isPresented: $isTakingPicture) { picture in
@@ -2524,6 +2811,7 @@ struct Composer: View {
             Task { await add(items) }
         }
         .animation(.default, value: model.voiceRecorder.isRecording)
+        .onChange(of: dynamicTypeSize) { measuredPillFieldWidthPoints = nil }
         .onChange(of: dictation.problemText) { _, text in
             guard let text else { return }
             model.voiceProblemText = text
@@ -2546,9 +2834,10 @@ struct Composer: View {
             into: $model.draft, place: model.isChat ? .chat : .agent, connection: model.connection, sampleRate: model.voiceSampleRate ?? 24000)
     }
 
-    /// The box in voice mode: a button for the keyboard, and the wide button held to talk.
+    /// The box in voice mode, the size of the text box: a button for the
+    /// keyboard, a thin separator, and the area held to talk.
     private var voicePanel: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             Button {
                 withAnimation { composerMode = "keyboard" }
                 Task {
@@ -2556,38 +2845,215 @@ struct Composer: View {
                     isFocused = true
                 }
             } label: {
-                Image(systemName: "keyboard")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
-                    .background(Color(.tertiarySystemFill), in: .circle)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(.rect)
+                ComposerCircle(diameterPoints: buttonDiameterPoints, fill: AnyShapeStyle(Color(.tertiarySystemFill))) {
+                    Image(systemName: "keyboard")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.secondary)
+                }
             }
             .buttonStyle(.plain)
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             .accessibilityLabel("Use the keyboard")
+            Rectangle()
+                .fill(Color(.separator))
+                .frame(width: 1, height: buttonDiameterPoints * 0.7)
+                .padding(.trailing, 4)
+                .accessibilityHidden(true)
             HoldToTalkButton(
-                recorder: model.voiceRecorder, heightPoints: buttonDiameterPoints,
+                recorder: model.voiceRecorder,
                 onStart: { model.beginVoiceMessage() }, onEnd: { isCancelled in model.endVoiceMessage(isCancelled: isCancelled) })
         }
-        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-        .padding(6)
-        .background(Color(.systemBackground).opacity(0.85), in: .rect(cornerRadius: 26, style: .continuous))
-        .glassEffect(.regular, in: .rect(cornerRadius: 26, style: .continuous))
+        .composerBox()
     }
 
-    // One field with its buttons inside it, as the Claude app's: the
-    // words on top, adding files at the bottom left, dictating, calling
-    // and sending at the bottom right.
+    /// The files waiting to go with the words.
+    private var attachmentStrip: some View {
+        ScrollView(.horizontal) {
+            HStack {
+                ForEach(model.pendingFiles) { file in
+                    PendingFileChip(
+                        file: file, isUploading: model.uploadingFileIds.contains(file.id),
+                        isUploaded: model.uploadedFileIds.contains(file.id)
+                    ) {
+                        model.pendingFiles.removeAll { $0.id == file.id }
+                    }
+                }
+                ForEach(0..<loadingPictureCount, id: \.self) { _ in
+                    LoadingFileChip()
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+        .scrollIndicators(.hidden)
+        .padding(.bottom, 4)
+    }
+
+    /// The menu behind the plus: files to add, and the two ways of speaking
+    /// where the screen offers them.
+    private var addMenu: some View {
+        Menu {
+            Button {
+                isPickingPhotos = true
+            } label: {
+                Label("Photo library", systemImage: "photo.on.rectangle")
+            }
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button {
+                    isTakingPicture = true
+                } label: {
+                    Label("Camera", systemImage: "camera")
+                }
+            }
+            Button {
+                isPickingFiles = true
+            } label: {
+                Label("Files", systemImage: "folder")
+            }
+            // A screenshot just taken, pasted as the dashboard
+            // takes one pasted into its box.
+            if UIPasteboard.general.hasImages {
+                Button {
+                    if let picture = UIPasteboard.general.image,
+                        let file = PendingFile(picture: picture, index: model.pendingFiles.count)
+                    {
+                        model.pendingFiles.append(file)
+                    }
+                } label: {
+                    Label("Paste picture", systemImage: "doc.on.clipboard")
+                }
+            }
+            if model.canCall, model.draft.isEmpty, model.pendingFiles.isEmpty, model.conversation?.kind != "run" {
+                Button {
+                    dictation.stop()
+                    model.startCall()
+                } label: {
+                    Label("Talk", systemImage: "waveform")
+                }
+            }
+            // In a chat this turns the box into a button to hold, not a call.
+            if model.isChat, model.isVoiceMessageAvailable, model.canWrite, model.draft.isEmpty, model.pendingFiles.isEmpty {
+                Button {
+                    dictation.stop()
+                    withAnimation { composerMode = "voice" }
+                } label: {
+                    Label("Voice message", systemImage: "mic")
+                }
+            }
+        } label: {
+            ComposerCircle(diameterPoints: buttonDiameterPoints, fill: AnyShapeStyle(Color(.tertiarySystemFill))) {
+                Image(systemName: "plus")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityLabel("Add files")
+    }
+
+    /// The microphone that dictates into the box: a tonal circle, tinted
+    /// while it listens.
+    private var dictateButton: some View {
+        Button {
+            toggleDictation()
+        } label: {
+            ComposerCircle(
+                diameterPoints: buttonDiameterPoints,
+                fill: dictation.isDictating ? AnyShapeStyle(Color.accentColor.opacity(0.18)) : AnyShapeStyle(Color(.tertiarySystemFill))
+            ) {
+                Image(systemName: dictation.isDictating ? "mic.fill" : "mic")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(dictation.isDictating ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                    .symbolEffect(.pulse, isActive: dictation.dictationState == .hearing && !isMotionReduced)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(dictation.isDictating ? Text("Stop dictating") : Text("Dictate"))
+    }
+
+    @Environment(\.accessibilityReduceMotion) private var isMotionReduced
+
+    /// Stop while a turn runs and nothing is written, otherwise send.
+    @ViewBuilder
+    private var sendButton: some View {
+        if model.runningRunId != nil, model.draft.isEmpty, model.pendingFiles.isEmpty {
+            Button {
+                Task { await model.stop() }
+            } label: {
+                ComposerCircle(diameterPoints: buttonDiameterPoints, fill: AnyShapeStyle(Color.primary)) {
+                    Image(systemName: "stop.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Color(.systemBackground))
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stop")
+        } else {
+            Button {
+                dictation.stop()
+                Task { await model.send() }
+            } label: {
+                ComposerCircle(
+                    diameterPoints: buttonDiameterPoints,
+                    fill: model.canSend || model.isSending ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiaryLabel))
+                ) {
+                    if model.isSending {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "arrow.up")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(!model.canSend)
+            // Return is a new line; Command-Return sends, from a
+            // keyboard on the iPad.
+            .keyboardShortcut(.return, modifiers: .command)
+            .accessibilityLabel(model.isSending ? Text("Sending…") : Text("Send"))
+        }
+    }
+
+    /// The words. The placeholder is drawn by hand so that it stays on one
+    /// line, cut off with an ellipsis, and never makes the box taller.
+    private var field: some View {
+        TextField("", text: $model.draft, axis: .vertical)
+            .lineLimit(1...8)
+            .focused($isFocused)
+            .disabled(!model.canWrite)
+            .accessibilityLabel(placeholder)
+            .overlay(alignment: .leading) {
+                if model.draft.isEmpty {
+                    Text(placeholder)
+                        .foregroundStyle(Color(.placeholderText))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, Self.fieldHorizontalPaddingPoints)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { widthPoints in
+                guard !isCard else { return }
+                // Changes under a point are layout noise, and acting on them
+                // could flip the shape back and forth.
+                if let measured = measuredPillFieldWidthPoints, abs(measured - widthPoints) < 1 { return }
+                measuredPillFieldWidthPoints = widthPoints
+            }
+    }
+
+    // One box with its buttons inside it. At rest a pill: add, the words,
+    // dictating and sending on one row. When the words would wrap, or files
+    // wait to go, a card: the words on top, adding files at the bottom left,
+    // dictating and sending at the bottom right.
     private var textPanel: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            TextField(placeholder, text: $model.draft, axis: .vertical)
-                .lineLimit(1...8)
-                .focused($isFocused)
-                .disabled(!model.canWrite)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
+        VStack(alignment: .leading, spacing: 0) {
+            if hasAttachments {
+                attachmentStrip
+            }
             // The words being heard, until they are final and join the box.
             if !dictation.captionText.isEmpty {
                 Text(dictation.captionText)
@@ -2595,140 +3061,36 @@ struct Composer: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, Self.fieldHorizontalPaddingPoints)
             }
-            HStack(spacing: 4) {
-                Menu {
-                    Button {
-                        isPickingPhotos = true
-                    } label: {
-                        Label("Photo library", systemImage: "photo.on.rectangle")
-                    }
-                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                        Button {
-                            isTakingPicture = true
-                        } label: {
-                            Label("Camera", systemImage: "camera")
-                        }
-                    }
-                    Button {
-                        isPickingFiles = true
-                    } label: {
-                        Label("Files", systemImage: "folder")
-                    }
-                    // A screenshot just taken, pasted as the dashboard
-                    // takes one pasted into its box.
-                    if UIPasteboard.general.hasImages {
-                        Button {
-                            if let picture = UIPasteboard.general.image,
-                                let file = PendingFile(picture: picture, index: model.pendingFiles.count)
-                            {
-                                model.pendingFiles.append(file)
-                            }
-                        } label: {
-                            Label("Paste picture", systemImage: "doc.on.clipboard")
-                        }
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
-                        .background(Color(.tertiarySystemFill), in: .circle)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(.rect)
+            ComposerBoxLayout(isCard: isCard, slotPoints: slotPoints) {
+                addMenu
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                    .composerPart(.add)
+                field
+                    .composerPart(.field)
+                if isDictationOffered {
+                    dictateButton
+                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                        .composerPart(.dictate)
                 }
-                .accessibilityLabel("Add files")
-                Spacer()
-                if model.canDictate, model.conversation?.kind != "run" {
-                    DictationButton(dictation: dictation) { toggleDictation() }
-                }
-                if model.canCall, model.draft.isEmpty, model.pendingFiles.isEmpty, model.conversation?.kind != "run" {
-                    Button {
-                        dictation.stop()
-                        model.startCall()
-                    } label: {
-                        Image(systemName: "waveform")
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .accessibilityLabel("Call your agent")
-                }
-                // In a chat the waveform is for speaking a message, not for calling: it turns the box into a button to hold.
-                if model.isChat, model.isVoiceMessageAvailable, model.canWrite, model.draft.isEmpty, model.pendingFiles.isEmpty {
-                    Button {
-                        dictation.stop()
-                        withAnimation { composerMode = "voice" }
-                    } label: {
-                        Image(systemName: "waveform")
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .accessibilityLabel("Record voice messages")
-                }
-                if model.runningRunId != nil, model.draft.isEmpty, model.pendingFiles.isEmpty {
-                    Button {
-                        Task { await model.stop() }
-                    } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.footnote)
-                            .foregroundStyle(Color(.systemBackground))
-                            .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
-                            .background(Color.primary, in: .circle)
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .accessibilityLabel("Stop")
-                } else {
-                    Button {
-                        dictation.stop()
-                        Task { await model.send() }
-                    } label: {
-                        Group {
-                            if model.isSending {
-                                ProgressView().tint(.white)
-                            } else {
-                                Image(systemName: "arrow.up")
-                                    .font(.body.weight(.semibold))
-                                    .foregroundStyle(.white)
-                            }
-                        }
-                        .frame(width: buttonDiameterPoints, height: buttonDiameterPoints)
-                        .background(model.canSend || model.isSending ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiaryLabel)), in: .circle)
-                        .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .disabled(!model.canSend)
-                    // Return is a new line; Command-Return sends, from a
-                    // keyboard on the iPad.
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .accessibilityLabel(model.isSending ? Text("Sending…") : Text("Send"))
-                }
+                sendButton
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                    .composerPart(.send)
             }
-            // Past a point the buttons stop growing with the text: three
-            // of them in the biggest size would fill the whole row.
-            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-            .padding(.horizontal, 6)
-            .padding(.bottom, 4)
         }
-        // A tap anywhere on the panel outside its buttons starts typing,
-        // not only a tap on the words of the placeholder. The tap is
-        // caught behind the buttons, so it never takes theirs; and the
-        // glass is not interactive, as that is for a control and it
-        // took touches meant for the add menu.
+        // A tap anywhere on the box outside its buttons starts typing, not
+        // only a tap on the words of the placeholder. The tap is caught
+        // behind the buttons, so it never takes theirs; and the glass is not
+        // interactive, as that is for a control and it took touches meant for
+        // the add menu.
         .background {
             Color.clear
-                .contentShape(.rect(cornerRadius: 26, style: .continuous))
+                .contentShape(.rect(cornerRadius: 24, style: .continuous))
                 .onTapGesture { isFocused = true }
         }
-        // The glass alone lets the messages behind it show through as
-        // blurred words under the placeholder, so the field has a
-        // mostly solid surface of its own and the glass gives it the edge
-        // and the light.
-        .background(Color(.systemBackground).opacity(0.85), in: .rect(cornerRadius: 26, style: .continuous))
-        .glassEffect(.regular, in: .rect(cornerRadius: 26, style: .continuous))
+        .composerBox()
+        .animation(.easeOut(duration: 0.15), value: isCard)
     }
 
     private var placeholder: String {
