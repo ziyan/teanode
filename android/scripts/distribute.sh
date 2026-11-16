@@ -10,7 +10,9 @@
 #   google-services.json                         the Firebase app's configuration
 # and the Firebase CLI as FIREBASE_BINARY or on PATH.
 #
-# The build number is the commit count, so each build is newer than the last.
+# The build number is the minutes since 2026-01-01 (UTC), so each build is newer
+# than the last whatever happened to the history: a squash merge shortens the
+# commit count, and Android refuses to install a lower number over a higher one.
 # After a successful upload, and only then, it publishes {"version","build",
 # "installUrl"} as the asset android.json of the GitHub release
 # android-update-channel, which servers read to tell the app a newer build
@@ -52,7 +54,7 @@ done
 cp "${SECRETS_DIRECTORY}/google-services.json" android/app/google-services.json
 trap 'rm -f android/app/google-services.json' EXIT
 
-VERSION_CODE="$(git rev-list --count HEAD)"
+VERSION_CODE="$(( ( $(date -u +%s) - $(date -u -d 2026-01-01 +%s) ) / 60 ))"
 (cd android && TEANODE_ANDROID_SIGNING_DIRECTORY="${SECRETS_DIRECTORY}" \
     ./gradlew --no-daemon -q :app:assembleRelease -PteanodeVersionCode="${VERSION_CODE}")
 APK_FILE=android/app/build/outputs/apk/release/app-release.apk
