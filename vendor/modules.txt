@@ -399,7 +399,7 @@ github.com/pion/mdns/v2
 # github.com/pion/randutil v0.1.0
 ## explicit; go 1.14
 github.com/pion/randutil
-# github.com/pion/rtcp v1.2.19
+# github.com/pion/rtcp v1.2.20
 ## explicit; go 1.24.0
 github.com/pion/rtcp
 # github.com/pion/rtp v1.10.5
