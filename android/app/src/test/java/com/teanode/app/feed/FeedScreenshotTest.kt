@@ -172,6 +172,15 @@ class FeedScreenshotTest {
 
     @Test fun `deck of two light`() { drawFeed(Look.Light); scrollFeedTo(FeedDemoIDs.IDEA); composeRule.photograph("feed-deck-pair-light") }
 
+    @Test fun `closed deck with a short top card light`() { drawDeck(FeedDemoIDs.BRIEF_WEATHER, Look.Light); composeRule.photograph("feed-deck-short-top-light") }
+
+    @Test fun `closed deck with a short top card dark`() { drawDeck(FeedDemoIDs.BRIEF_WEATHER, Look.Dark); composeRule.photograph("feed-deck-short-top-dark") }
+
+    private fun drawDeck(topFeedItemId: String, look: Look) {
+        composeRule.setContent { DemoHost(appearance = look.appearance) { FeedDeckHost(topFeedItemId) } }
+        composeRule.waitForIdle()
+    }
+
     @Test fun `deck fanning out halfway`() {
         drawFeed(Look.Light)
         scrollFeedTo(FeedDemoIDs.BRIEF_AGENDA)
