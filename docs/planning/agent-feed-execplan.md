@@ -60,6 +60,8 @@ A new migration (the next free number, 0276 at the time of writing; check intern
     outcome_text          text, the agent's one line after a choice ("Signed out the other session.")
     feed_urgency          text: now, today, whenever
     feed_stack_key        text, empty for a card that stands alone (see Stacks)
+    feed_stack_title      text, the stack's title when it has one
+    stack_position        integer, nullable: a card's place inside its stack, lowest on top
     is_liked              boolean
     read_at, dismissed_at, created_at, updated_at, expires_at   timestamptz
 
@@ -90,7 +92,7 @@ GraphQL, in internal/api/v1api/apigraph/agent_feed.go, following agent_goal.go's
       choices: [{ choiceKey, choiceLabel, choiceRole }]   (choiceRole: action, dismiss, discuss, open),
       chosenChoiceKey (nullable), chosenAt (nullable), outcomeText, isOutcomePending (a resumed turn still running),
       feedUrgency, isLiked, isRead, isDismissed, postedAt, updatedAt,
-      feedStackKey, stackItemCount, stackUnreadCount   (the last two filled by ListAgentFeed on a stack's top card, 1 and 0 or 1 elsewhere)
+      feedStackKey, feedStackTitle, stackPosition (nullable), stackItemCount, stackUnreadCount   (the last two filled by ListAgentFeed on a stack's top card, 1 and 0 or 1 elsewhere)
     }
 
 pictureSymbol is an SF Symbol name (for example cloud.sun, lock.shield, chart.line.uptrend.xyaxis, newspaper); the dashboard maps the same names to its icon set and falls back to a newspaper. Command line: teanode agent feed list [--all], show ID, choose ID CHOICE, like ID, unlike ID, less ID, dismiss ID, read ID..., discuss ID, post --title ... (--json on every one).
@@ -116,6 +118,10 @@ A coding session (Claude Code or Codex in a herdr pane on one of the person's co
 ### Stacks
 
 Cards from the same source pile up (every story a news goal finds, every idea), so the feed shows them as stacks: one entry per stack, the newest card on top with "+N more from <source>", and tapping it opens the rest, newest first. Each card has a feed_stack_key (text, empty for a card that stands alone). By default a card posted by a goal or a schedule is stacked by its source (feedSourceKind and feedSourceId joined by a colon), ideas, memory checks and trip notes from speaking first stack as "speak_first:<reason>", and a turn's own post may name a stackKey; a card with action, dismiss or open choices, an alert card and a coding session question never stack, because each needs the person on its own. ListAgentFeed returns one entry per stack (the newest card of the stack, by updatedAt) with stackItemCount, how many cards the stack holds including that one (1 for a card alone), and stackUnreadCount; a new query ListAgentFeedStack(feedStackKey: String!, first: Int, after: String): AgentFeedPage lists one stack's cards newest first. Opening a stack marks its cards read as they are seen, as the main list does; unreadCount still counts cards. A stack is drawn as its top card with one or two card edges showing behind it.
+
+### A brief: a stack per run, in order
+
+A daily brief (for example every weekday at 7: today's plan, weather, five tech stories, five headlines, chat mentions, open review requests, mail worth reading) is a schedule whose run posts several cards that belong together. Three additions make that read well. First, a schedule run's cards stack per run, not per schedule: the default stack key of a schedule post is "schedule:<scheduleId>:<runId>", so each morning is its own stack and yesterday's sinks below today's. Second, a card may carry stack_position (integer, default 0); inside a stack, cards with a position sort by it ascending (the summary at 0 on top), and only cards without one sort newest first; the stack's top card in ListAgentFeed is the lowest position, or the newest when none has one. Third, a stack may carry a title (feed_stack_title, for example "Morning brief, Wed Nov 19"), taken from the first card that names one, shown instead of the source's name in "+N more from". A schedule also gains isNotifiedWhenPosted (default off): when on, the first card of each run sends one quiet notification "<schedule title> is ready" even though its cards are not urgent. The tool's post accepts stackKey, stackPosition and stackTitle. A brief's run uses only reading tools; anything it would do (archive newsletters, reply) is offered as an action choice on its own card, which stands outside the stack like every decision.
 
 ### Liking and why
 
@@ -184,6 +190,7 @@ None yet.
 - Decision (the person, 2026-11-18): an action choice is a message sent in the main conversation on the person's behalf with the card referenced, so the approval and what the agent did about it are in the conversation the person reads; dismiss choices and coding session answers send nothing.
 - Decision (the person): a coding session's question is a feed card too, its options as buttons that answer the session directly.
 - Decision (the person, 2026-11-18): cards from one source are coalesced into a stack that opens to show the rest; decisions, alerts and coding questions never stack.
+- Decision (2026-11-18, from the person's morning brief example): a schedule's cards stack per run, may be ordered inside the stack and titled, and a schedule may send one quiet "is ready" notification per run.
 - Decision: the card layout follows a reference screenshot the person gave (kept out of the repository): picture at the left, bold headline, a few lines with links, an optional table of facts, choices as buttons, and a footer of heart, Discuss, date and info.
 
 
