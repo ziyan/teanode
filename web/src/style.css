@@ -8096,6 +8096,23 @@ button.agent-reaction:focus-visible {
   padding-block: 1px;
 }
 
+/* A chip is never wider than the box it is in: its words give way, cut short
+   with an ellipsis, and its mark and the cross that takes it off keep their
+   size, so a long headline cannot push the cross out of reach. */
+.agent-reference-chip {
+  min-width: 0;
+}
+.agent-reference-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-reference-chip > svg,
+.agent-reference-chip .icon-action {
+  flex: none;
+}
+
 /* The cross that takes a chip off: an icon action, at the chip's size
    rather than a row's. */
 .agent-attachment-chip .icon-action,

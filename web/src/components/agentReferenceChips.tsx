@@ -129,7 +129,8 @@ export function ReferenceChips({
             label={referenceHint(reference)}
           >
             <span className="agent-reference-chip">
-              <ReferenceMark reference={reference} /> {label}
+              <ReferenceMark reference={reference} />
+              <span className="agent-reference-label">{label}</span>
               {onRemove && (
                 <button
                   type="button"
