@@ -1,5 +1,13 @@
 package com.teanode.app.feed
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -145,7 +153,10 @@ internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Mo
     var infoItem: AgentFeedItemView? by remember { mutableStateOf(null) }
     val list = model.list
     val failure = model.loadFailure
-    Box(modifier.fillMaxSize()) {
+    // Where each deck is on screen, so a tap outside an open one gathers it.
+    val deckBounds = remember(model) { HashMap<String, Rect>() }
+    var listCoordinates: LayoutCoordinates? by remember { mutableStateOf(null) }
+    Box(modifier.fillMaxSize().onGloballyPositioned { coordinates -> listCoordinates = coordinates }.gatherDecksOnTapOutside(model, deckBounds) { listCoordinates }) {
         when {
             list != null && list.feedItems.isEmpty() -> PullToRefresh(onRefresh = { model.load() }, Modifier.fillMaxSize()) {
                 // Scrollable, or the pull could not be made on an empty feed.
@@ -163,7 +174,10 @@ internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Mo
                             if (item.feedItemId == list.feedItems.last().feedItemId) model.loadMore()
                         }
                         if (areDecksShown && item.isStack) {
-                            FeedDeck(item, model, actions, onShowInfo = { shown -> infoItem = shown })
+                            FeedDeck(
+                                item, model, actions, onShowInfo = { shown -> infoItem = shown },
+                                modifier = Modifier.onGloballyPositioned { coordinates -> deckBounds[item.feedStackKey] = coordinates.boundsInRoot() },
+                            )
                         } else {
                             FeedCard(item, actions, onShowInfo = { infoItem = item })
                         }
@@ -188,3 +202,27 @@ internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Mo
         FeedInfoSheet(current, actions, onDismiss = { infoItem = null })
     }
 }
+
+/**
+ * A tap anywhere in the feed outside an open deck gathers it back, as on the dashboard. A drag is a scroll and leaves it
+ * open, and a tap inside it is the deck's own. A dialog, sheet or menu opened from a card is a window of its own, so a
+ * tap in one never reaches here.
+ */
+private fun Modifier.gatherDecksOnTapOutside(model: FeedModel, deckBounds: Map<String, Rect>, listCoordinates: () -> LayoutCoordinates?): Modifier =
+    pointerInput(model) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
+            if (model.openDeckKeys.isEmpty()) return@awaitEachGesture
+            var isTap = true
+            while (true) {
+                val change = awaitPointerEvent(PointerEventPass.Final).changes.firstOrNull { change -> change.id == down.id } ?: break
+                if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) isTap = false
+                if (!change.pressed) break
+            }
+            if (!isTap) return@awaitEachGesture
+            val point = listCoordinates()?.takeIf { coordinates -> coordinates.isAttached }?.localToRoot(down.position) ?: return@awaitEachGesture
+            for (feedStackKey in model.openDeckKeys.keys.toList()) {
+                if (deckBounds[feedStackKey]?.contains(point) != true) model.closeDeck(feedStackKey)
+            }
+        }
+    }

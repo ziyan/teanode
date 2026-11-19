@@ -18,12 +18,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -88,7 +89,7 @@ fun FeedCard(
     modifier: Modifier = Modifier,
     /** Fans out the deck a top card stands for; null inside an open stack's own screen, which shows its cards whole. */
     onOpenStack: ((AgentFeedItemView) -> Unit)? = null,
-    /** Whether the deck this card tops is fanned out: its edges are gone and its row is not shown (the open stack has its own "Show less"). */
+    /** Whether the deck this card tops is fanned out: its edges are gone and its row says "Show Less", which gathers the deck back. */
     isDeckOpen: Boolean = false,
 ) {
     val isStackShown = onOpenStack != null && item.isStack
@@ -126,13 +127,13 @@ fun FeedCard(
                     if (isLargeText) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             FeedPictureTile(item.pictureSymbol)
-                            FeedCardContent(item, actions, isStackShown && !isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
+                            FeedCardContent(item, actions, isStackShown, isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
                         }
                     } else {
                         Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
                             FeedPictureTile(item.pictureSymbol)
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                FeedCardContent(item, actions, isStackShown && !isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
+                                FeedCardContent(item, actions, isStackShown, isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
                             }
                         }
                     }
@@ -143,7 +144,7 @@ fun FeedCard(
 }
 
 @Composable
-private fun FeedCardContent(item: AgentFeedItemView, actions: FeedActions, isStackShown: Boolean, isLargeText: Boolean, onShowInfo: () -> Unit, onOpenStack: () -> Unit) {
+private fun FeedCardContent(item: AgentFeedItemView, actions: FeedActions, isStackShown: Boolean, isDeckOpen: Boolean, isLargeText: Boolean, onShowInfo: () -> Unit, onOpenStack: () -> Unit) {
     // A stack with a name of its own says it above its top card.
     if (isStackShown && item.feedStackTitle.isNotEmpty()) {
         Text(item.feedStackTitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -161,7 +162,7 @@ private fun FeedCardContent(item: AgentFeedItemView, actions: FeedActions, isSta
     Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     FeedLayoutBody(item, actions)
     FeedAnswerArea(item, actions)
-    if (isStackShown) StackRow(item, onOpenStack)
+    if (isStackShown) StackRow(item, isDeckOpen, onOpenStack)
     FeedFooter(item, actions, isLargeText, onShowInfo)
 }
 
@@ -238,17 +239,25 @@ private fun FeedChoiceButton(choice: AgentFeedChoice, isDisabled: Boolean, onPre
     }
 }
 
-/** "+3 more from News about humanoid robots": the row under a stack's top card that opens the rest. */
+/**
+ * "+3 more from News about humanoid robots": the row under a stack's top card that fans the rest out. While they are
+ * out it says "Show Less" in the same place and gathers them back, so the top card does not move.
+ */
 @Composable
-private fun StackRow(item: AgentFeedItemView, onClick: () -> Unit) {
-    val words = if (item.stackName.isEmpty()) stringResource(R.string.feed_more_in_stack_unnamed, item.moreInStackCount) else stringResource(R.string.feed_more_in_stack, item.moreInStackCount, item.stackName)
+private fun StackRow(item: AgentFeedItemView, isDeckOpen: Boolean, onClick: () -> Unit) {
+    val words = when {
+        isDeckOpen -> stringResource(R.string.feed_stack_show_less)
+        item.stackName.isEmpty() -> stringResource(R.string.feed_more_in_stack_unnamed, item.moreInStackCount)
+        else -> stringResource(R.string.feed_more_in_stack, item.moreInStackCount, item.stackName)
+    }
+    val hint = if (isDeckOpen) stringResource(R.string.feed_stack_gather_hint) else null
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button, onClick = onClick),
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button, onClickLabel = hint, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(words, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(20.dp))
+        Icon(if (isDeckOpen) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(20.dp))
     }
 }
 
