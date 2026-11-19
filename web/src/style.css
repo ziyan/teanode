@@ -25347,6 +25347,19 @@ button.voice-bubble-transcribe {
   order: -1;
 }
 
+/* What waits to be sent takes a line of the box and no more, whatever is in
+   it: a chip with a long title is cut short rather than widening the box. */
+.agent-composer > .agent-drawer-pending {
+  flex: 1 0 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.agent-drawer-pending .agent-references,
+.agent-drawer-pending .agent-attachments {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .agent-composer.is-card > .menu-button,
 .agent-composer.is-card > .icon-button {
   order: 1;
