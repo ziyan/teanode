@@ -38,7 +38,7 @@
     <string name="feed_open_chat">打开对话</string>
     <string name="feed_media_photo">照片</string>
     <string name="feed_media_video">视频</string>
-    <string name="feed_media_picture">图片</string>
+    <string name="feed_media_picture">网页图片</string>
     <string name="feed_media_play">播放</string>
     <string name="feed_media_pause">暂停</string>
     <string name="feed_media_mute">静音</string>

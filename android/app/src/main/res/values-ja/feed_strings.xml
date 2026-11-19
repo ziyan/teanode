@@ -38,7 +38,7 @@
     <string name="feed_open_chat">チャットを開く</string>
     <string name="feed_media_photo">写真</string>
     <string name="feed_media_video">ビデオ</string>
-    <string name="feed_media_picture">画像</string>
+    <string name="feed_media_picture">ページの画像</string>
     <string name="feed_media_play">再生</string>
     <string name="feed_media_pause">一時停止</string>
     <string name="feed_media_mute">ミュート</string>

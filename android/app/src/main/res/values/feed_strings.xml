@@ -38,7 +38,7 @@
     <string name="feed_open_chat">Open chat</string>
     <string name="feed_media_photo">Photo</string>
     <string name="feed_media_video">Video</string>
-    <string name="feed_media_picture">Picture</string>
+    <string name="feed_media_picture">Picture from the page</string>
     <string name="feed_media_play">Play</string>
     <string name="feed_media_pause">Pause</string>
     <string name="feed_media_mute">Mute</string>
