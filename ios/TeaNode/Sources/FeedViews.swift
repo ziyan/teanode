@@ -430,6 +430,10 @@ struct FeedList: View {
                         await model.loadStack(DemoServer.demoBriefStackKey)
                         model.setStackOpen(DemoServer.demoBriefStackKey, isOpen: true)
                         target = DemoServer.demoBriefTopId
+                    } else if DemoServer.screen == "feed-deck" {
+                        await model.loadFirstIfNeeded()
+                        await model.loadStack(DemoServer.demoBriefStackKey)
+                        target = DemoServer.demoBriefTopId
                     } else if DemoServer.screen == "feed-media" {
                         await model.loadFirstIfNeeded()
                         target = DemoServer.demoMediaTopId
@@ -519,7 +523,9 @@ struct FeedList: View {
             stackColumn(of: item, isOpen: isOpen)
                 .zIndex(0)
         }
-        .mask { Rectangle().padding(.horizontal, -40).padding(.top, -16).padding(.bottom, -12) }
+        // Cut off exactly at the top card's top edge: any room above it would show
+        // a tucked card taller than the top card in the gap over it.
+        .mask { Rectangle().padding(.horizontal, -40).padding(.bottom, -12) }
         .simultaneousGesture(gatherTap, including: isOpen || model.openStackKeys.isEmpty ? .subviews : .all)
         // The deck is the stack's own cards, so they are read with the feed.
         .task(id: item.feedStackKey) {
@@ -543,6 +549,10 @@ struct FeedList: View {
             }
         }
         .padding(.top, 12)
+        // Every card is laid out whole whatever the column's height, so a
+        // tucked card is the same card that slides out, not one squeezed into
+        // the deck's few points.
+        .fixedSize(horizontal: false, vertical: true)
         .coordinateSpace(.named(FeedDeckTuck.coordinateSpaceName))
         // Closed, the column is as tall as the feet that show below the top
         // card; the cards keep their places in it and are drawn tucked.
