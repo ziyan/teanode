@@ -414,6 +414,8 @@ struct FeedList: View {
                 .background { gatherTapArea }
             }
             .background { gatherTapArea }
+            // Cards sit on the grouped page, so in light mode they are white on grey.
+            .background(Color(.systemGroupedBackground))
             #if DEBUG
                 // `-TeaNodeScreen feed-stack-open`: the morning brief opened in place, scrolled to;
                 // `feed-media`: the feed scrolled to its first card with a picture.
@@ -646,10 +648,11 @@ struct FeedList: View {
 
 // MARK: A card
 
-/// FeedCard is one card of the feed: its picture at the left, the headline,
-/// the words, a short table of facts, the choices the agent offers or what
-/// was chosen and came of it, and a footer of heart, Discuss, date and
-/// information. It owns no sheet; the screen presents them.
+/// FeedCard is one card of the feed: its pictures, a header line of the
+/// card's badge, where it is from and when, the headline, the words, a short
+/// table of facts, the choices the agent offers or what was chosen and came
+/// of it, and a footer of heart, Discuss and information. The words use the
+/// card's whole width. It owns no sheet; the screen presents them.
 struct FeedCard: View {
     let item: AgentFeedItem
     let isLiked: Bool
@@ -667,46 +670,35 @@ struct FeedCard: View {
     /// Opens the stack this card tops in place; nil where a stack is not
     /// opened that way (a stack's own screen, the previews).
     var onToggleStack: (() -> Void)?
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
             FeedCardMedia(mediaItems: item.cardMedia)
-            wordsArea
-                .padding(14)
+            content
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                // The footer's buttons are 44 points tall, which is room enough
+                // under the last line.
+                .padding(.bottom, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
+        .background(FeedCard.surface, in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
         // The picture at the top of the card is cut to the card's corners.
         .clipShape(.rect(cornerRadius: Self.cornerRadius, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5) }
+        .overlay { RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous).strokeBorder(Color(.separator).opacity(0.6), lineWidth: 0.5) }
+        // A soft shadow lifts a card off the page in light mode; in dark mode
+        // the lighter surface does it.
+        .shadow(color: Color.primary.opacity(colorScheme == .dark ? 0 : 0.07), radius: 10, y: 3)
         .background(alignment: .bottom) { stackEdges }
         .padding(.bottom, stackEdgeCount * Self.stackEdgeStep)
         .sensoryFeedback(.success, trigger: item.chosenChoiceKey)
     }
 
-    private static let cornerRadius: CGFloat = 18
-
-    /// What is under the card's picture: the symbol and the words, which sit
-    /// side by side unless the text is too large or the card has a picture
-    /// of its own in place of the symbol.
-    @ViewBuilder
-    private var wordsArea: some View {
-        if !item.cardMedia.isEmpty {
-            content
-        } else if dynamicTypeSize.isAccessibilitySize {
-            // No room beside the picture for words this large.
-            VStack(alignment: .leading, spacing: 10) {
-                FeedPicture(pictureKind: item.pictureKind)
-                content
-            }
-        } else {
-            HStack(alignment: .top, spacing: 12) {
-                FeedPicture(pictureKind: item.pictureKind)
-                content
-            }
-        }
-    }
+    static let cornerRadius: CGFloat = 20
+    /// A card is the grouped surface on the grouped page: white on light grey
+    /// in light mode, dark grey on black in dark mode.
+    static let surface = Color(.secondarySystemGroupedBackground)
 
     /// How far each card edge behind the top one shows below it, in points.
     private static let stackEdgeStep: CGFloat = 6
@@ -735,8 +727,8 @@ struct FeedCard: View {
 
     private func stackEdge(inset: CGFloat, drop: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-            .fill(Color(.secondarySystemBackground))
-            .overlay { RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5) }
+            .fill(FeedCard.surface)
+            .overlay { RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous).strokeBorder(Color(.separator).opacity(0.6), lineWidth: 0.5) }
             .padding(.horizontal, inset)
             .offset(y: drop)
     }
@@ -798,10 +790,9 @@ struct FeedCard: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            headerLine
+            FeedCardHeader(item: item)
             Text(item.title)
                 .font(.headline)
-                .bold()
                 .fixedSize(horizontal: false, vertical: true)
             layoutBody
             answerArea
@@ -809,17 +800,6 @@ struct FeedCard: View {
             footer
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// The small line above the headline, as a news app labels a story: the
-    /// card's symbol and the first picture's site, else the source's name.
-    /// A card with no picture of its own has its symbol large beside the
-    /// words instead.
-    @ViewBuilder
-    private var headerLine: some View {
-        if !item.cardMedia.isEmpty, !item.headerText.isEmpty {
-            FeedHeaderLine(pictureKind: item.pictureKind, headerText: item.headerText)
-        }
     }
 
     /// The card's words and facts, or its structured layout, which the body
@@ -862,11 +842,19 @@ struct FeedCard: View {
             // The choice is no longer listed, but the answer is still given.
             outcome
         } else if !item.choices.isEmpty, !item.isDismissed {
-            VStack(spacing: 8) {
-                ForEach(orderedChoices) { choice in
-                    FeedChoiceButton(choice: choice, isDisabled: isBusy) { onChoose(choice) }
-                }
+            // Side by side and of equal width when every label fits on one
+            // line, else one under the other.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { choiceButtons }
+                VStack(spacing: 8) { choiceButtons }
             }
+            .padding(.top, 2)
+        }
+    }
+
+    private var choiceButtons: some View {
+        ForEach(orderedChoices) { choice in
+            FeedChoiceButton(choice: choice, isDisabled: isBusy) { onChoose(choice) }
         }
     }
 
@@ -895,60 +883,47 @@ struct FeedCard: View {
 
     // MARK: Footer
 
+    /// Heart and Discuss at the left and information at the right; each
+    /// button is 44 points wide, so the row reaches past the words' edges by
+    /// the room around the glyphs and the glyphs line up with the words.
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 4) {
-                Button {
-                    onToggleLike()
-                } label: {
-                    Image(systemName: isLiked ? "heart.fill" : "heart")
-                        .symbolEffect(.bounce, value: isLiked)
-                        .foregroundStyle(isLiked ? Color.accentColor : Color.secondary)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isLiked ? Text("Unlike") : Text("Like"))
-                .accessibilityHint(Text("Tells your agent to post more like this"))
-                Button {
-                    onDiscuss()
-                } label: {
-                    Label("Discuss", systemImage: "bubble.left")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.secondary)
-                        .frame(minHeight: 44)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint(Text("Opens your chat with your agent about this card"))
-                Spacer(minLength: 8)
-                if !dynamicTypeSize.isAccessibilitySize {
-                    dateText
-                }
-                Button {
-                    onShowInformation()
-                } label: {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(Color.secondary)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("About this card"))
+        HStack(spacing: 4) {
+            Button {
+                onToggleLike()
+            } label: {
+                Image(systemName: isLiked ? "heart.fill" : "heart")
+                    .symbolEffect(.bounce, value: isLiked)
+                    .foregroundStyle(isLiked ? Color.accentColor : Color.secondary)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
             }
-            if dynamicTypeSize.isAccessibilitySize {
-                dateText
+            .buttonStyle(.plain)
+            .accessibilityLabel(isLiked ? Text("Unlike") : Text("Like"))
+            .accessibilityHint(Text("Tells your agent to post more like this"))
+            Button {
+                onDiscuss()
+            } label: {
+                Label("Discuss", systemImage: "bubble.left")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.secondary)
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
             }
+            .buttonStyle(.plain)
+            .accessibilityHint(Text("Opens your chat with your agent about this card"))
+            Spacer(minLength: 8)
+            Button {
+                onShowInformation()
+            } label: {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(Color.secondary)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("About this card"))
         }
-    }
-
-    @ViewBuilder
-    private var dateText: some View {
-        if let shownAt = item.shownAt {
-            Text(shownAt.formatted(.relative(presentation: .named)))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
+        .padding(.horizontal, -12)
     }
 }
 
@@ -980,34 +955,115 @@ struct FeedChoiceButton: View {
     }
 }
 
-/// FeedPicture is a card's picture: its SF Symbol in color where the symbol
-/// has one, its emoji, or a newspaper when it has nothing this phone can draw.
-struct FeedPicture: View {
-    let pictureKind: AgentFeedPictureKind
+/// FeedCardHeader is the line above a card's headline, as a news app labels
+/// a story: the card's badge, where it is from (the first picture's site, the
+/// source's name, else what kind of card it is) and when it was posted. At the
+/// largest text sizes the time goes under it.
+struct FeedCardHeader: View {
+    let item: AgentFeedItem
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        symbolOrEmoji
-            .frame(minWidth: 44, minHeight: 44)
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) { badgeAndSource }
+                dateText
+            }
+        } else {
+            HStack(spacing: 8) {
+                badgeAndSource
+                Spacer(minLength: 8)
+                dateText
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var badgeAndSource: some View {
+        FeedBadge(pictureKind: item.pictureKind, badgeColor: item.badgeColor)
+        Text(item.headerText.isEmpty ? item.kindWord : item.headerText)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+    }
+
+    @ViewBuilder
+    private var dateText: some View {
+        if let shownAt = item.shownAt {
+            Text(shownAt.formatted(.relative(presentation: .named)))
+                .font(.footnote)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        }
+    }
+}
+
+/// FeedBadge is a card's picture, small, as iOS draws an app's icon in a
+/// notification: its symbol in white on a rounded square of the color of the
+/// card's kind, or its emoji on a plain fill. A symbol this phone does not
+/// have is the newspaper instead, since it would draw nothing.
+struct FeedBadge: View {
+    let pictureKind: AgentFeedPictureKind
+    let badgeColor: Color
+    @ScaledMetric(relativeTo: .footnote) private var badgeSide: CGFloat = 26
+
+    var body: some View {
+        glyph
+            .frame(width: badgeSide, height: badgeSide)
+            .background(fill, in: .rect(cornerRadius: badgeSide * 0.3, style: .continuous))
             .accessibilityHidden(true)
     }
 
     @ViewBuilder
-    private var symbolOrEmoji: some View {
+    private var glyph: some View {
         switch pictureKind {
         case .symbol(let name):
-            // A name this phone does not have draws nothing, so it is the
-            // newspaper instead.
-            Image(systemName: UIImage(systemName: name) == nil ? AgentFeedPictureKind.fallbackSymbolName : name)
-                .font(.title)
-                .symbolRenderingMode(.multicolor)
-                .foregroundStyle(Color.primary)
+            symbol(UIImage(systemName: name) == nil ? AgentFeedPictureKind.fallbackSymbolName : name)
         case .emoji(let text):
-            Text(text).font(.title)
+            Text(text).font(.footnote)
         case .fallback:
-            Image(systemName: AgentFeedPictureKind.fallbackSymbolName)
-                .font(.title)
-                .symbolRenderingMode(.multicolor)
-                .foregroundStyle(Color.primary)
+            symbol(AgentFeedPictureKind.fallbackSymbolName)
+        }
+    }
+
+    private func symbol(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.caption.weight(.semibold))
+            .symbolRenderingMode(.monochrome)
+            // White on the kind's color, as an app icon's glyph is.
+            .foregroundStyle(.white)
+    }
+
+    private var fill: AnyShapeStyle {
+        if case .emoji = pictureKind { return AnyShapeStyle(Color(.tertiarySystemFill)) }
+        return AnyShapeStyle(badgeColor.gradient)
+    }
+}
+
+extension AgentFeedItem {
+    /// The color of the card's badge, one for each kind of card, so cards of
+    /// a kind are told apart at a glance. Never green, which is kept for
+    /// what can be pressed.
+    var badgeColor: Color {
+        switch feedItemKind {
+        case "alert": .orange
+        case "decision": .indigo
+        case "news": .pink
+        case "report": .teal
+        case "idea": .purple
+        default: .blue
+        }
+    }
+
+    /// What kind of card it is, for the header of a card from no named source.
+    var kindWord: String {
+        switch feedItemKind {
+        case "alert": String(localized: "Alert")
+        case "decision": String(localized: "Decision")
+        case "news": String(localized: "News")
+        case "report": String(localized: "Report")
+        case "idea": String(localized: "Idea")
+        default: String(localized: "Update")
         }
     }
 }
