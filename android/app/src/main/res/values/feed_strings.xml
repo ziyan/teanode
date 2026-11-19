@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="feed_title">Feed</string>
+    <string name="feed_empty_title">Nothing in your feed yet</string>
+    <string name="feed_empty_description">When your agent has news, a question or an update for you, it shows up here.</string>
+    <string name="feed_loading_more">Loading more</string>
+    <string name="feed_discuss">Discuss</string>
+    <string name="feed_like">More like this</string>
+    <string name="feed_unlike">Take back the like</string>
+    <string name="feed_info">About this card</string>
+    <string name="feed_unread">Unread</string>
+    <string name="feed_urgent">Needs you now</string>
+    <string name="feed_working">Working on it</string>
+    <string name="feed_you_chose">You chose %1$s</string>
+    <string name="feed_open_chat">Open chat</string>
+    <string name="feed_open_session">Open the coding session</string>
+    <string name="feed_done">Done</string>
+    <string name="feed_said_dismissed">Card closed</string>
+    <string name="feed_said_less">You will see less like this</string>
+    <string name="feed_said_liked">Your agent will look for more like this</string>
+    <string name="feed_said_unliked">Like taken back</string>
+    <string name="feed_info_title">About this card</string>
+    <string name="feed_info_source">Source</string>
+    <string name="feed_info_posted">Posted</string>
+    <string name="feed_info_updated">Updated</string>
+    <string name="feed_info_links">Links</string>
+    <string name="feed_info_references">Related</string>
+    <string name="feed_info_show_less">Show less like this</string>
+    <string name="feed_info_dismiss">Close this card</string>
+    <string name="feed_info_close">Close</string>
+    <string name="feed_source_goal">Goal</string>
+    <string name="feed_source_schedule">Schedule</string>
+    <string name="feed_source_alert">Alert</string>
+    <string name="feed_source_speak_first">Your agent</string>
+    <string name="feed_source_coding_session">Coding session</string>
+    <string name="feed_source_agent">Your agent</string>
+    <string name="feed_open_link">Open %1$s</string>
+    <string name="feed_item_title">Card</string>
+    <string name="feed_more_in_stack">+%1$d more from %2$s</string>
+    <string name="feed_more_in_stack_unnamed">+%1$d more</string>
+    <string name="feed_open_stack">Show all</string>
+    <string name="feed_agenda_meeting">Meeting</string>
+    <string name="feed_agenda_focus">Focus time</string>
+    <string name="feed_agenda_task">Task</string>
+    <string name="feed_agenda_break">Break</string>
+    <string name="feed_weather_high_low">High %1$s, low %2$s</string>
+</resources>

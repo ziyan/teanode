@@ -1,6 +1,7 @@
 package com.teanode.app.notifications
 
 import com.teanode.app.coding.codingSessionRoute
+import com.teanode.app.feed.FeedRoutes
 import com.teanode.app.journal.JournalRoutes
 import com.teanode.app.settings.SettingsRoutes
 import com.teanode.app.shell.Routes
@@ -61,6 +62,7 @@ object NotificationOpening {
         is NotificationDestination.Shopping -> AppSection.Shopping
         is NotificationDestination.Coding, NotificationDestination.CodingHome -> AppSection.Coding
         is NotificationDestination.JournalDay -> AppSection.Journal
+        is NotificationDestination.FeedItem -> AppSection.Feed
         is NotificationDestination.Conversation, NotificationDestination.Main -> AppSection.Agent
     }
 
@@ -72,6 +74,7 @@ object NotificationOpening {
         val partRoute = Routes.home(sectionOf(destination))
         return when (destination) {
             is NotificationDestination.Conversation -> listOf(partRoute, Routes.child(AppSection.Agent, "conversation/${Uri.encode(destination.conversationId)}"))
+            is NotificationDestination.FeedItem -> listOf(partRoute, FeedRoutes.item(destination.feedItemId))
             NotificationDestination.Circles -> listOf(partRoute, SettingsRoutes.CIRCLES)
             is NotificationDestination.Shopping -> when {
                 !destination.storeName.isNullOrEmpty() -> listOf(partRoute, Routes.child(AppSection.Shopping, "store/${Uri.encode(destination.storeName)}"))

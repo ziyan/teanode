@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="feed_title">动态</string>
+    <string name="feed_empty_title">你的动态里还没有内容</string>
+    <string name="feed_empty_description">当智能体有新消息、问题或更新要告诉你时，会显示在这里。</string>
+    <string name="feed_loading_more">正在加载更多</string>
+    <string name="feed_discuss">讨论</string>
+    <string name="feed_like">多推荐这类内容</string>
+    <string name="feed_unlike">取消喜欢</string>
+    <string name="feed_info">关于这张卡片</string>
+    <string name="feed_unread">未读</string>
+    <string name="feed_urgent">需要你马上处理</string>
+    <string name="feed_working">正在处理</string>
+    <string name="feed_you_chose">你选择了%1$s</string>
+    <string name="feed_open_chat">打开对话</string>
+    <string name="feed_open_session">打开编程会话</string>
+    <string name="feed_done">完成</string>
+    <string name="feed_said_dismissed">卡片已关闭</string>
+    <string name="feed_said_less">以后会减少这类内容</string>
+    <string name="feed_said_liked">智能体会多找这类内容</string>
+    <string name="feed_said_unliked">已取消喜欢</string>
+    <string name="feed_info_title">关于这张卡片</string>
+    <string name="feed_info_source">来源</string>
+    <string name="feed_info_posted">发布于</string>
+    <string name="feed_info_updated">更新于</string>
+    <string name="feed_info_links">链接</string>
+    <string name="feed_info_references">相关内容</string>
+    <string name="feed_info_show_less">减少这类内容</string>
+    <string name="feed_info_dismiss">关闭这张卡片</string>
+    <string name="feed_info_close">关闭</string>
+    <string name="feed_source_goal">目标</string>
+    <string name="feed_source_schedule">定时任务</string>
+    <string name="feed_source_alert">提醒</string>
+    <string name="feed_source_speak_first">你的智能体</string>
+    <string name="feed_source_coding_session">编程会话</string>
+    <string name="feed_source_agent">你的智能体</string>
+    <string name="feed_open_link">打开%1$s</string>
+    <string name="feed_item_title">卡片</string>
+    <string name="feed_more_in_stack">还有 %1$d 条，来自%2$s</string>
+    <string name="feed_more_in_stack_unnamed">还有 %1$d 条</string>
+    <string name="feed_open_stack">查看全部</string>
+    <string name="feed_agenda_meeting">会议</string>
+    <string name="feed_agenda_focus">专注时间</string>
+    <string name="feed_agenda_task">任务</string>
+    <string name="feed_agenda_break">休息</string>
+    <string name="feed_weather_high_low">最高 %1$s，最低 %2$s</string>
+</resources>
