@@ -48,4 +48,10 @@
     <string name="feed_media_opens_page">Opens the page</string>
     <string name="feed_media_cannot_play">Cannot play this video</string>
     <string name="feed_stack_gather_hint">Gathers the cards back into a stack</string>
+    <string name="feed_kind_alert">Alert</string>
+    <string name="feed_kind_decision">Decision</string>
+    <string name="feed_kind_news">News</string>
+    <string name="feed_kind_report">Report</string>
+    <string name="feed_kind_idea">Idea</string>
+    <string name="feed_kind_update">Update</string>
 </resources>
