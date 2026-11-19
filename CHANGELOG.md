@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.229.1] - 2026-11-19
+
+### Fixed
+
+- The dashboard message box keeps the add button on the left and send on the right when a long message wraps. (#764)
+
 ## [0.229.0] - 2026-11-16
 
 ### Added
