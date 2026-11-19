@@ -104,7 +104,7 @@ The alert job (internal/agent/alert.go) posts each decided alert as a feed item 
 
 ### Choosing
 
-ChooseAgentFeedItem(feedItemId, choiceKey) records the choice and then, by role: a dismiss choice ("That's me", "Ignore") closes the card and resolves its durable card with that answer without starting a turn, unless the posting turn asked to be told (a flag on the choice); an action choice resolves the durable card through Agent.ResumeInteraction, so a new turn starts in the run conversation with the choice as the person's answer, and when that turn ends its last line is stored as the card's outcome_text; a discuss choice, and the Discuss button on every card, opens a conversation about the card (see the decision below) with the card attached as a reference, so the agent knows what is being discussed.
+ChooseAgentFeedItem(feedItemId, choiceKey) records the choice and then, by role: a dismiss choice ("That's me", "Ignore") closes the card and resolves its durable card with that answer without starting a turn, unless the posting turn asked to be told (a flag on the choice); an action choice sends a message in the person's main conversation on their behalf, with the card attached as a reference and worded as their choice ("Approve: Sort newsletters into a Newsletters folder"), which starts an ordinary main-conversation turn that carries the choice out (a durable approval card behind the feed card is resolved with the choice, so its one call is allowed in that turn); the card settles with the choice, and the first line of that turn's answer is stored as its outcome_text; a discuss choice, and the Discuss button on every card, opens a conversation about the card (see the decision below) with the card attached as a reference, so the agent knows what is being discussed.
 
 ### Coding session questions
 
@@ -174,6 +174,7 @@ None yet.
 - Decision (the person): Discuss opens the main conversation with the card attached, so the agent has the usual context and memory.
 - Decision (the person): only urgent cards (feedUrgency now) notify the phone, with a decision's choices as notification actions; the rest only raise the unread count.
 - Decision (the person): Feed is its own tab, first, on iPhone and Android, and first in the dashboard sidebar, with an unread count.
+- Decision (the person, 2026-11-18): an action choice is a message sent in the main conversation on the person's behalf with the card referenced, so the approval and what the agent did about it are in the conversation the person reads; dismiss choices and coding session answers send nothing.
 - Decision (the person): a coding session's question is a feed card too, its options as buttons that answer the session directly.
 - Decision: the card layout follows a reference screenshot the person gave (kept out of the repository): picture at the left, bold headline, a few lines with links, an optional table of facts, choices as buttons, and a footer of heart, Discuss, date and info.
 
