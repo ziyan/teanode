@@ -81,8 +81,11 @@ final class FeedModel {
             unreadCount = page.unreadCount
             hasLoaded = true
             loadFailedText = nil
-            // A stack open in place is read again with the feed.
-            for openStackKey in openStackKeys { await loadStack(openStackKey) }
+            // The stacks shown, open or tucked as decks, are read again with
+            // the feed, and those no longer in it are forgotten.
+            let shownStackKeys = Set(items.filter(\.isStack).map(\.feedStackKey))
+            stackItemsByKey = stackItemsByKey.filter { shownStackKeys.contains($0.key) }
+            for feedStackKey in Array(stackItemsByKey.keys) { await loadStack(feedStackKey) }
         } catch is CancellationError {
         } catch {
             guard (error as? URLError)?.code != .cancelled else { return }
@@ -499,8 +502,12 @@ struct FeedList: View {
     }
 
     /// A stack's top card, which stays where it is whether the stack is open
-    /// or not (its row turns into "Show Less" in place), and under it, when
-    /// open, the other cards, which slide down from under it.
+    /// or not (its row turns into "Show Less" in place), and under it the
+    /// stack's other cards: tucked under it as its deck, the feet of the first
+    /// two showing, or spread out under it when open. Opening and gathering
+    /// move those same cards. The stack is cut off at its top card's top edge
+    /// and its own bottom, so a tucked card never shows over the card above,
+    /// and a card shows below the top card only as it slides out.
     @ViewBuilder
     private func stackEntry(for item: AgentFeedItem) -> some View {
         let isOpen = isOpenInPlace(item)
@@ -509,53 +516,57 @@ struct FeedList: View {
                 .zIndex(1)
                 // A tap inside the open stack's cards is not a tap outside it.
                 .onTapGesture {}
-            if isOpen {
-                openedCards(of: item)
-                    .zIndex(0)
-            }
+            stackColumn(of: item, isOpen: isOpen)
+                .zIndex(0)
         }
+        .mask { Rectangle().padding(.horizontal, -40).padding(.top, -16).padding(.bottom, -12) }
         .simultaneousGesture(gatherTap, including: isOpen || model.openStackKeys.isEmpty ? .subviews : .all)
+        // The deck is the stack's own cards, so they are read with the feed.
+        .task(id: item.feedStackKey) {
+            if model.stackItems(item.feedStackKey) == nil { await model.loadStack(item.feedStackKey) }
+        }
     }
 
-    /// The cards of an open stack but its top card, each sliding down from
-    /// under the top card to its place a little after the one before.
-    private func openedCards(of item: AgentFeedItem) -> some View {
+    /// The cards of a stack but its top card, in their places, which the
+    /// column shows whole when the stack is open and only the deck's feet of
+    /// when it is not; each card is tucked or not by FeedDeckTuck.
+    private func stackColumn(of item: AgentFeedItem, isOpen: Bool) -> some View {
         let others = stackCards(of: item).filter { $0.feedItemId != item.feedItemId }
+        let footCount = min(FeedDeckTuck.footMost, others.isEmpty ? item.stackItemCount - 1 : others.count)
+        let closedHeight: CGFloat? = isOpen ? nil : FeedDeckTuck.footStep * CGFloat(max(0, footCount))
         return VStack(spacing: 12) {
             ForEach(Array(others.enumerated()), id: \.element.feedItemId) { index, stacked in
                 card(stacked, isStackShown: false, isStackOpen: false, onToggleStack: nil)
+                    // A card is drawn over the cards under it, as in a deck.
                     .zIndex(Double(-index))
-                    .transition(deckTransition(index: index, count: others.count))
-                    .onAppear { model.noteAppeared(stacked) }
+                    .modifier(FeedDeckTuck(tuckedFraction: isOpen ? 0 : 1, footLevel: min(index, max(0, footCount - 1))))
             }
         }
         .padding(.top, 12)
-        .coordinateSpace(.named(FeedDeckSlide.coordinateSpaceName))
+        .coordinateSpace(.named(FeedDeckTuck.coordinateSpaceName))
+        // Closed, the column is as tall as the feet that show below the top
+        // card; the cards keep their places in it and are drawn tucked.
+        .frame(height: closedHeight, alignment: .top)
+        .allowsHitTesting(isOpen)
+        .accessibilityHidden(!isOpen)
         // Taps inside the open stack's cards do not gather it.
         .onTapGesture {}
     }
 
-    /// The cards of an open stack; the top card alone until they are read.
+    /// The cards of a stack, the top one too; the top card alone until they
+    /// are read.
     private func stackCards(of item: AgentFeedItem) -> [AgentFeedItem] {
         model.stackItems(item.feedStackKey) ?? [item]
     }
 
-    /// The spring that moves cards out of the deck and back, about 0.38
-    /// seconds; none when the person asks for reduced motion.
-    private var deckAnimation: Animation? {
+    /// How the cards move out of the deck and back: every card and the
+    /// column on one curve, so they spread evenly and never cross, and none
+    /// when the person asks for reduced motion.
+    private func deckAnimation(isOpening: Bool) -> Animation? {
         if reduceMotion { return nil }
-        return .spring(duration: FeedDeckSlide.duration, bounce: 0.12)
-    }
-
-    /// A card slides down from under the top card, each 45 ms after the one
-    /// before; closing is the reverse, the last card going first. With
-    /// reduced motion there is no motion.
-    private func deckTransition(index: Int, count: Int) -> AnyTransition {
-        if reduceMotion { return .identity }
-        let slide = AnyTransition.modifier(active: FeedDeckSlide(progress: 0), identity: FeedDeckSlide(progress: 1))
-        let opening = Animation.spring(duration: FeedDeckSlide.duration, bounce: 0.12).delay(Double(index) * FeedDeckSlide.stagger)
-        let closing = Animation.spring(duration: FeedDeckSlide.duration, bounce: 0.12).delay(Double(count - 1 - index) * FeedDeckSlide.stagger)
-        return .asymmetric(insertion: slide.animation(opening), removal: slide.animation(closing))
+        return isOpening
+            ? .timingCurve(0.45, 0, 0.2, 1, duration: FeedDeckTuck.openDuration)
+            : .timingCurve(0.5, 0, 0.3, 1, duration: FeedDeckTuck.closeDuration)
     }
 
     /// Opens or gathers a stack: the cards are read when they are not known
@@ -572,19 +583,21 @@ struct FeedList: View {
         let feedStackKey = item.feedStackKey
         Task {
             if model.stackItems(feedStackKey) == nil { await model.loadStack(feedStackKey) }
-            guard model.stackItems(feedStackKey) != nil else { return }
-            withAnimation(deckAnimation) { model.setStackOpen(feedStackKey, isOpen: true) }
+            guard let stacked = model.stackItems(feedStackKey) else { return }
+            withAnimation(deckAnimation(isOpening: true)) { model.setStackOpen(feedStackKey, isOpen: true) }
+            // The cards are seen once they are spread out, not while tucked.
+            for stackedItem in stacked where stackedItem.feedItemId != item.feedItemId { model.noteAppeared(stackedItem) }
         }
     }
 
     private func gatherStack(_ item: AgentFeedItem) {
-        withAnimation(deckAnimation) { model.setStackOpen(item.feedStackKey, isOpen: false) }
+        withAnimation(deckAnimation(isOpening: false)) { model.setStackOpen(item.feedStackKey, isOpen: false) }
     }
 
     /// Gathers every stack that is open back into its deck.
     private func gatherAllStacks() {
         guard !model.openStackKeys.isEmpty else { return }
-        withAnimation(deckAnimation) {
+        withAnimation(deckAnimation(isOpening: false)) {
             for feedStackKey in Array(model.openStackKeys) { model.setStackOpen(feedStackKey, isOpen: false) }
         }
     }
@@ -690,8 +703,6 @@ struct FeedCard: View {
         // A soft shadow lifts a card off the page in light mode; in dark mode
         // the lighter surface does it.
         .shadow(color: Color.primary.opacity(colorScheme == .dark ? 0 : 0.07), radius: 10, y: 3)
-        .background(alignment: .bottom) { stackEdges }
-        .padding(.bottom, stackEdgeCount * Self.stackEdgeStep)
         .sensoryFeedback(.success, trigger: item.chosenChoiceKey)
     }
 
@@ -699,39 +710,6 @@ struct FeedCard: View {
     /// A card is the grouped surface on the grouped page: white on light grey
     /// in light mode, dark grey on black in dark mode.
     static let surface = Color(.secondarySystemGroupedBackground)
-
-    /// How far each card edge behind the top one shows below it, in points.
-    private static let stackEdgeStep: CGFloat = 6
-
-    /// One edge behind a stack of two, two behind a stack of more.
-    private var stackEdgeCount: CGFloat {
-        guard isStackShown, !isStackOpen, item.isStack else { return 0 }
-        // One edge for each card hidden, at most two.
-        return CGFloat(min(2, item.stackMoreCount))
-    }
-
-    /// The edges of the cards under the top one: the same card shape, each
-    /// narrower and lower than the one before it.
-    @ViewBuilder
-    private var stackEdges: some View {
-        if stackEdgeCount > 0 {
-            ZStack(alignment: .bottom) {
-                if stackEdgeCount > 1 {
-                    stackEdge(inset: 28, drop: 2 * Self.stackEdgeStep)
-                }
-                stackEdge(inset: 14, drop: Self.stackEdgeStep)
-            }
-            .accessibilityHidden(true)
-        }
-    }
-
-    private func stackEdge(inset: CGFloat, drop: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-            .fill(FeedCard.surface)
-            .overlay { RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous).strokeBorder(Color(.separator).opacity(0.6), lineWidth: 0.5) }
-            .padding(.horizontal, inset)
-            .offset(y: drop)
-    }
 
     /// The row under a stack's top card that opens the rest of it: in place
     /// when the feed says how, else on the stack's own screen.
@@ -1234,26 +1212,46 @@ private func previewCards() -> some View {
 
 // MARK: The deck opening
 
-/// FeedDeckSlide is how a card comes out of its deck: at progress 0 it sits
-/// behind the stack's top card, at the top of the column of cards, and at 1
-/// in its place. The distance is read from where the card is laid out in the
-/// column, so no height needs to be known.
-struct FeedDeckSlide: ViewModifier {
-    let progress: Double
+/// FeedDeckTuck places one of a stack's cards in its deck or in its own place.
+/// At a tucked fraction of 1 the card is under the stack's top card, scaled
+/// from its foot so it is narrower than the top card by the deck's inset, with
+/// only its foot showing below the top card; at 0 it is in its place. The
+/// distance is read from where the card is laid out in the column, so no
+/// height needs to be known, and the fraction is animated, so the card moves
+/// on the column's curve.
+struct FeedDeckTuck: ViewModifier, Animatable {
+    var tuckedFraction: Double
+    /// Which foot of the deck the card shows: 0 just under the top card, 1
+    /// under that; the cards further down hide behind the second.
+    let footLevel: Int
+
+    var animatableData: Double {
+        get { tuckedFraction }
+        set { tuckedFraction = newValue }
+    }
 
     static let coordinateSpaceName = "feedDeckColumn"
-    static let duration: Double = 0.38
-    static let stagger: Double = 0.045
-    /// How far under the top card the cards start, past the column's top.
-    private static let tuckedUnder: CGFloat = 40
+    static let openDuration: Double = 0.44
+    static let closeDuration: Double = 0.34
+    /// How much of each foot shows below the one above it, in points.
+    static let footStep: CGFloat = 6
+    /// How many feet the deck shows.
+    static let footMost = 2
+    /// How much narrower each foot is than the top card at either side.
+    private static let footInsets: [CGFloat] = [14, 28]
 
     func body(content: Content) -> some View {
-        let remaining = 1 - progress
+        let fraction = CGFloat(tuckedFraction)
+        let level = min(footLevel, Self.footInsets.count - 1)
         return content.visualEffect { effect, proxy in
-            let columnTop = proxy.frame(in: .named(Self.coordinateSpaceName)).minY
+            let frame = proxy.frame(in: .named(Self.coordinateSpaceName))
+            // The column's origin is the top card's foot.
+            let footY = Self.footStep * CGFloat(level + 1)
+            let width = max(proxy.size.width, 1)
+            let scale = (width - 2 * Self.footInsets[level]) / width
             return effect
-                .offset(y: -remaining * (columnTop + Self.tuckedUnder))
-                .opacity(min(1, progress * 4))
+                .scaleEffect(1 - fraction * (1 - scale), anchor: .bottom)
+                .offset(y: fraction * (footY - frame.maxY))
         }
     }
 }
