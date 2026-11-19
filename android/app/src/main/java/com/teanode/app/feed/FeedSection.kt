@@ -50,6 +50,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/** How many cards of a stack are read when its deck fans out, as the iPhone reads them. */
+private const val DECK_PAGE_SIZE = 50
+
 /** The test tag of the list of cards. */
 const val FEED_LIST_TAG = "feed-list"
 
@@ -72,7 +75,7 @@ fun FeedSection() {
     val model = remember(connection) {
         FeedModel(
             connection, scope, readPage = { after -> connection.agentFeed(after = after) }, onUnreadCount = { count -> session.setBadgeCount(AppSection.Feed, count) },
-            readStackPage = { feedStackKey, after -> connection.agentFeedStack(feedStackKey, after = after) },
+            readStackPage = { feedStackKey, after -> connection.agentFeedStack(feedStackKey, after = after, first = DECK_PAGE_SIZE) },
         )
     }
     TeaNodeScreen(title = stringResource(R.string.feed_title)) { contentPadding ->

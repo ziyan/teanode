@@ -17,7 +17,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** A stack drawn as a deck: pressing its row fans it out in place and "Show less" gathers it back. */
+/** A stack drawn as a deck: pressing its row fans it out in place and "Show Less" gathers it back. */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], qualifiers = PHONE_QUALIFIERS)
@@ -35,12 +35,12 @@ class FeedDeckTest {
         composeRule.waitForIdle()
         composeRule.mainClock.advanceTimeBy(1_000)
         composeRule.waitForIdle()
-        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithText("Show less", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        composeRule.onNodeWithText("Show less", useUnmergedTree = true).performClick()
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithText("Show Less", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        composeRule.onNodeWithText("Show Less", useUnmergedTree = true).performClick()
         composeRule.waitForIdle()
         composeRule.mainClock.advanceTimeBy(1_000)
         composeRule.waitForIdle()
-        composeRule.onAllNodesWithText("Show less", useUnmergedTree = true).assertCountEquals(0)
+        composeRule.onAllNodesWithText("Show Less", useUnmergedTree = true).assertCountEquals(0)
         composeRule.onNodeWithText("+6 more from Morning brief, Wed Nov 19").assertIsDisplayed()
     }
 }

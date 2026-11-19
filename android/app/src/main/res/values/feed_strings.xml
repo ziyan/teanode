@@ -43,5 +43,10 @@
     <string name="feed_media_pause">Pause</string>
     <string name="feed_media_mute">Mute</string>
     <string name="feed_media_unmute">Unmute</string>
-    <string name="feed_stack_show_less">Show less</string>
+    <string name="feed_stack_show_less">Show Less</string>
+    <string name="feed_media_plays_video">Plays the video</string>
+    <string name="feed_media_opens_page">Opens the page</string>
+    <string name="feed_media_cannot_play">Cannot play this video</string>
+    <string name="feed_stack_cards">%1$d cards</string>
+    <string name="feed_stack_gather_hint">Gathers the cards back into a stack</string>
 </resources>

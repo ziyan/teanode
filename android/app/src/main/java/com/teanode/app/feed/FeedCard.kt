@@ -149,13 +149,13 @@ private fun FeedCardContent(item: AgentFeedItemView, actions: FeedActions, isSta
         Text(item.feedStackTitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     // A small line above the headline names the site the picture comes from, as a news app labels a story.
-    if (item.siteName.isNotEmpty()) {
+    if (item.cardMedia.isNotEmpty() && item.headerText.isNotEmpty()) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             when (val picture = com.teanode.kit.feed.FeedPicture.of(item.pictureSymbol)) {
                 is com.teanode.kit.feed.FeedPicture.Symbol -> Icon(picture.kind.icon(), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
                 is com.teanode.kit.feed.FeedPicture.Emoji -> Text(picture.text, style = MaterialTheme.typography.labelSmall)
             }
-            Text(item.siteName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            Text(item.headerText, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
     }
     Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

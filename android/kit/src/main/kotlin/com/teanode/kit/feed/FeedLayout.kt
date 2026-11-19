@@ -90,11 +90,12 @@ data class FeedHour(val forecastHour: String, val forecastTemperature: String, v
 
 /** The sky a weather card is drawn on: its gradient is chosen by the condition. */
 enum class FeedWeatherSky(private val topColor: Long, private val bottomColor: Long) {
-    Clear(0xFF0B5394, 0xFF1B6FB5),
+    ClearDay(0xFF0B5394, 0xFF1B6FB5),
+    ClearNight(0xFF101B3D, 0xFF28386B),
     Cloudy(0xFF44546A, 0xFF5B6B80),
     Rain(0xFF2F4858, 0xFF41647A),
     Snow(0xFF4A6A8A, 0xFF56779A),
-    Night(0xFF101B3D, 0xFF28386B),
+    Storm(0xFF241F45, 0xFF433A6B),
     ;
 
     /** The gradient's two colors as ARGB, top and bottom; the dark theme's are a quarter darker, which only adds contrast to the white words on them. */
@@ -106,25 +107,18 @@ enum class FeedWeatherSky(private val topColor: Long, private val bottomColor: L
     }
 
     companion object {
-        /** The sky for a condition: by its symbol (`cloud.rain`, `moon.stars`), else by the words the weather says. */
+        /** The sky for a condition, read as the iPhone reads it: by the symbol's and the words' mention of a storm, snow, rain, the moon, the sun, else cloud. */
         fun of(conditionSymbol: String, conditionText: String): FeedWeatherSky {
             val symbol = conditionSymbol.lowercase()
-            val bySymbol = when {
-                symbol.startsWith("cloud.snow") || symbol.startsWith("snow") -> Snow
-                symbol.startsWith("cloud.rain") || symbol.startsWith("cloud.drizzle") || symbol.startsWith("cloud.heavyrain") || symbol.startsWith("cloud.bolt") -> Rain
-                symbol.startsWith("moon") || symbol.startsWith("cloud.moon") -> Night
-                symbol.startsWith("cloud.sun") || symbol.startsWith("sun") -> Clear
-                symbol.startsWith("cloud") -> Cloudy
-                else -> null
-            }
-            if (bySymbol != null) return bySymbol
             val words = conditionText.lowercase()
+            fun mentions(names: List<String>): Boolean = names.any { name -> name in symbol || name in words }
             return when {
-                "snow" in words || "sleet" in words -> Snow
-                "rain" in words || "shower" in words || "storm" in words || "drizzle" in words -> Rain
-                "night" in words || "moon" in words -> Night
-                "cloud" in words || "overcast" in words || "fog" in words -> Cloudy
-                else -> Clear
+                mentions(listOf("bolt", "storm", "thunder")) -> Storm
+                mentions(listOf("snow", "flurr", "sleet", "hail")) -> Snow
+                mentions(listOf("rain", "drizzle", "shower")) -> Rain
+                mentions(listOf("moon", "night")) -> ClearNight
+                mentions(listOf("sun", "clear")) -> ClearDay
+                else -> Cloudy
             }
         }
 

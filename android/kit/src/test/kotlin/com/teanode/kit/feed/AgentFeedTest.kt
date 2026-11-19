@@ -338,16 +338,56 @@ class AgentFeedTest {
         )
         assertEquals(AgentFeedMediaKind.Video, view.feedMedia[0].kind)
         assertTrue(view.feedMedia[0].isPortrait)
-        assertEquals("A clip", view.feedMedia[0].mediaCaption)
+        assertEquals("A clip", view.feedMedia[0].caption)
         assertEquals(listOf("m1"), view.cardMedia.map { each -> each.mediaKey })
         assertEquals(mapOf(2 to "m2"), view.rowThumbnails.mapValues { entry -> entry.value.mediaKey })
-        assertEquals("", view.siteName)
+        assertEquals("", view.headerText)
     }
 
     @Test
-    fun theSiteNameIsTheFirstCardPicturesNotARowsThumbnails() {
-        val view = AgentFeedItemView(feedItemId = "a", title = "T", feedMedia = listOf(media("t", rowIndex = 0, site = "Row Site"), media("m", kind = "picture", site = "Example News")))
-        assertEquals("Example News", view.siteName)
+    fun theHeaderLineIsTheFirstPicturesSiteElseTheSource() {
+        val withSite = AgentFeedItemView(feedItemId = "a", title = "T", feedSourceTitle = "News goal", feedMedia = listOf(media("t", rowIndex = 0, site = "Row Site"), media("m", kind = "picture", site = "Example News")))
+        assertEquals("Example News", withSite.headerText)
+        val withoutSite = AgentFeedItemView(feedItemId = "a", title = "T", feedSourceTitle = "News goal", feedMedia = listOf(media("m", kind = "photo")))
+        assertEquals("News goal", withoutSite.headerText)
+        assertEquals("", AgentFeedItemView(feedItemId = "a", title = "T").headerText)
+    }
+
+    @Test
+    fun aPictureWithNoImageIsLeftOutAndTheFirstThumbnailOfARowWins() {
+        val view = AgentFeedItemView(
+            feedItemId = "a", title = "T",
+            feedMedia = listOf(media("none", image = ""), media("first", rowIndex = 1), media("second", rowIndex = 1), media("whole")),
+        )
+        assertEquals(listOf("whole"), view.cardMedia.map { each -> each.mediaKey })
+        assertEquals("first", view.rowThumbnails.getValue(1).mediaKey)
+    }
+
+    @Test
+    fun mediaFieldsMayBeMissingOrNull() {
+        val view = TeaNodeJson.decodeFromString(
+            AgentFeedItemView.serializer(),
+            """{"feedItemId":"a","title":"T","feedMedia":[{"mediaKey":"m","feedMediaKind":"photo","imageUrl":"/p","videoUrl":null,"linkUrl":null,"siteName":null,"mediaCaption":null,"widthPixels":null,"heightPixels":null,"listRowIndex":null}]}""",
+        )
+        val only = view.feedMedia.single()
+        assertFalse(only.isPortrait)
+        assertEquals(16f / 9f, only.singleAspectRatio)
+        assertEquals("", only.caption)
+        assertNull(only.videoPath)
+        assertNull(only.pageAddress)
+    }
+
+    @Test
+    fun aPortraitPhotoIsCroppedToFourByFive() {
+        assertEquals(4f / 5f, media("a", width = 900, height = 1600).singleAspectRatio)
+    }
+
+    @Test
+    fun aVideoNamesItsPhotoInItsPath() {
+        val video = AgentFeedMediaView(mediaKey = "v", feedMediaKind = "video", imageUrl = "/p", videoUrl = "/api/v1/photos/photo-9/previews/video?size=video")
+        assertEquals("photo-9", video.videoPhotoId)
+        assertNull(AgentFeedMediaView(mediaKey = "v", videoUrl = "/somewhere/else").videoPhotoId)
+        assertNull(AgentFeedMediaView(mediaKey = "v").videoPhotoId)
     }
 
     @Test

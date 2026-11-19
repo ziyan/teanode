@@ -162,7 +162,7 @@ class FeedScreenshotTest {
         drawFeed(Look.Light)
         scrollFeedTo(FeedDemoIDs.BRIEF_AGENDA)
         openDeck("+6 more from Morning brief, Wed Nov 19")
-        composeRule.onNodeWithText("Show less", useUnmergedTree = true).performClick()
+        composeRule.onNodeWithText("Show Less", useUnmergedTree = true).performClick()
         composeRule.waitForIdle()
         composeRule.photograph("feed-deck-gathered-light")
     }
@@ -199,6 +199,8 @@ class FeedScreenshotTest {
     @Test fun `video light`() { drawCard(FeedDemoIDs.MEDIA_VIDEO, Look.Light); composeRule.photograph("feed-media-video-light") }
 
     @Test fun `video at the largest text`() { drawCard(FeedDemoIDs.MEDIA_VIDEO, Look.Light, 2f); composeRule.photograph("feed-media-video-largest-text-light") }
+
+    @Test fun `photo with no size`() { drawCard(FeedDemoIDs.MEDIA_UNSIZED, Look.Light); composeRule.photograph("feed-media-unsized-light") }
 
     @Test fun `picture with a site name light`() { drawCard(FeedDemoIDs.MEDIA_PICTURE, Look.Light); composeRule.photograph("feed-media-picture-light") }
 

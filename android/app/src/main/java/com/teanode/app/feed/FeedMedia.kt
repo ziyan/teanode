@@ -9,10 +9,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import com.teanode.kit.photos.photoPlaybackAddress
+import com.teanode.kit.photos.PhotoPlaybackSource
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,9 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.teanode.app.R
 import com.teanode.app.chats.PictureLightbox
@@ -74,56 +76,55 @@ fun rememberAreAnimationsOff(): Boolean {
 fun areAnimationsOff(context: Context): Boolean =
     runCatching { Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }.getOrDefault(false)
 
-private val GAP = 2.dp
+private val GRID_GAP = 6.dp
+private val ROW_GAP = 8.dp
+private val SCROLLED_TILE_WIDTH = 220.dp
 
 /**
- * The pictures of a card, at its top edge to edge: one full width (16:9, a portrait photo 4:5), two to four in a grid,
- * more in a row that scrolls sideways. A caption sits under a single picture in secondary text; in a grid or a row it
- * is on the picture. Every image is read from the server with the session, never from a public address.
+ * The pictures of a card, as the iPhone draws them (ios FeedMediaViews.swift, FeedCardMedia): one runs the card's whole
+ * width at its top edge, 16:9 (4:5 for a portrait photo, 16:9 when its size is not known), cut to the card's corners by
+ * the card; two to four are a grid of squares; more are a row that scrolls sideways. A caption sits under its picture in
+ * secondary text. Every image is read from the server with the session, never from a public address, and the space is
+ * kept for it while it comes, so a card that gets its picture later does not change shape when the picture arrives.
  */
 @Composable
 fun FeedMediaBlock(media: List<AgentFeedMediaView>, actions: FeedActions, modifier: Modifier = Modifier) {
     when (AgentFeedMediaArrangement.of(media)) {
         AgentFeedMediaArrangement.None -> Unit
-        AgentFeedMediaArrangement.Single, AgentFeedMediaArrangement.SinglePortrait -> {
-            val only = media.first()
-            Column(modifier.fillMaxWidth()) {
-                FeedMediaTile(only, actions, Modifier.fillMaxWidth().aspectRatio(if (only.isPortrait) 4f / 5f else 16f / 9f), isCaptionShown = false)
-                if (only.mediaCaption.isNotEmpty()) {
-                    Text(only.mediaCaption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
+        AgentFeedMediaArrangement.Single, AgentFeedMediaArrangement.SinglePortrait ->
+            FeedMediaTile(media.first(), actions, media.first().singleAspectRatio, modifier.fillMaxWidth(), captionInset = 14.dp)
+        AgentFeedMediaArrangement.Grid -> Column(modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 14.dp), verticalArrangement = Arrangement.spacedBy(GRID_GAP)) {
+            for (pair in media.chunked(2)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(GRID_GAP)) {
+                    for (each in pair) FeedMediaTile(each, actions, 1f, Modifier.weight(1f), cornerRadius = 10.dp)
+                    // A pair of one leaves the empty half empty, as the grid of two columns does.
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
-        AgentFeedMediaArrangement.Grid -> Box(modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-            when (media.size) {
-                2 -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(GAP)) {
-                    for (each in media) FeedMediaTile(each, actions, Modifier.weight(1f).fillMaxHeight())
-                }
-                3 -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(GAP)) {
-                    FeedMediaTile(media[0], actions, Modifier.weight(1f).fillMaxHeight())
-                    Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(GAP)) {
-                        FeedMediaTile(media[1], actions, Modifier.weight(1f).fillMaxWidth())
-                        FeedMediaTile(media[2], actions, Modifier.weight(1f).fillMaxWidth())
-                    }
-                }
-                else -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(GAP)) {
-                    for (pair in media.chunked(2)) {
-                        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(GAP)) {
-                            for (each in pair) FeedMediaTile(each, actions, Modifier.weight(1f).fillMaxHeight())
-                        }
-                    }
-                }
-            }
-        }
-        AgentFeedMediaArrangement.Row -> Row(modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(GAP)) {
-            for (each in media) FeedMediaTile(each, actions, Modifier.width(160.dp).height(110.dp))
+        AgentFeedMediaArrangement.Row -> Row(
+            modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, top = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(ROW_GAP), verticalAlignment = Alignment.Top,
+        ) {
+            for (each in media) FeedMediaTile(each, actions, 4f / 3f, Modifier.width(SCROLLED_TILE_WIDTH), cornerRadius = 10.dp)
         }
     }
 }
 
-/** One picture: its image cropped to fill, a play button on a video (which plays in place when pressed), a photo opens full screen, a page's picture opens the page. */
+/**
+ * One picture or video with its caption under it. A video shows a play button and plays in place, muted until the
+ * person unmutes it; a picture of a web page opens the page through the link opener; a photo opens full screen.
+ */
 @Composable
-fun FeedMediaTile(media: AgentFeedMediaView, actions: FeedActions, modifier: Modifier = Modifier, isCaptionShown: Boolean = true) {
+fun FeedMediaTile(
+    media: AgentFeedMediaView,
+    actions: FeedActions,
+    aspectRatio: Float,
+    modifier: Modifier = Modifier,
+    cornerRadius: androidx.compose.ui.unit.Dp = 0.dp,
+    /** How far the caption is kept from the sides, for a picture that runs to the card's edges. */
+    captionInset: androidx.compose.ui.unit.Dp = 0.dp,
+) {
     var isPlaying by remember(media.mediaKey) { mutableStateOf(false) }
     var isLightboxOpen by remember(media.mediaKey) { mutableStateOf(false) }
     val kindWords = stringResource(
@@ -133,30 +134,39 @@ fun FeedMediaTile(media: AgentFeedMediaView, actions: FeedActions, modifier: Mod
             AgentFeedMediaKind.Picture -> R.string.feed_media_picture
         },
     )
-    val description = media.mediaCaption.ifEmpty { media.siteName.ifEmpty { kindWords } }
+    val description = media.caption.ifEmpty { kindWords }
     val pageAddress = media.pageAddress
-    Box(modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
-        if (isPlaying && media.kind == AgentFeedMediaKind.Video) {
-            FeedVideoPlayer(media, Modifier.fillMaxSize())
-        } else {
-            FeedMediaImage(media.imagePath, description, Modifier.fillMaxSize().clickable(role = Role.Button, onClickLabel = if (media.kind == AgentFeedMediaKind.Video) stringResource(R.string.feed_media_play) else null) {
-                when {
-                    media.kind == AgentFeedMediaKind.Video && media.videoPath != null -> isPlaying = true
-                    media.kind == AgentFeedMediaKind.Photo -> isLightboxOpen = true
-                    pageAddress != null -> actions.followLink(pageAddress)
-                }
-            })
-            if (media.kind == AgentFeedMediaKind.Video) {
-                Box(Modifier.align(Alignment.Center).size(48.dp).background(Color.Black.copy(alpha = 0.55f), CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
-                }
-            }
-            if (isCaptionShown && media.mediaCaption.isNotEmpty()) {
-                Text(
-                    media.mediaCaption, style = MaterialTheme.typography.labelSmall, color = Color.White, maxLines = 2,
-                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 8.dp, vertical = 4.dp),
+    val canPlay = media.kind == AgentFeedMediaKind.Video && media.videoPhotoId != null
+    val pressHint = stringResource(if (media.kind == AgentFeedMediaKind.Video) R.string.feed_media_plays_video else R.string.feed_media_opens_page)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(aspectRatio).clip(RoundedCornerShape(cornerRadius)).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
+            if (isPlaying && canPlay) {
+                FeedVideoPlayer(media, Modifier.fillMaxSize())
+            } else {
+                val isPressable = canPlay || media.kind == AgentFeedMediaKind.Photo || (media.kind == AgentFeedMediaKind.Picture && pageAddress != null)
+                FeedMediaImage(
+                    media.imagePath, description,
+                    if (isPressable) {
+                        Modifier.fillMaxSize().clickable(role = Role.Button, onClickLabel = if (media.kind == AgentFeedMediaKind.Photo) null else pressHint) {
+                            when {
+                                canPlay -> isPlaying = true
+                                media.kind == AgentFeedMediaKind.Photo -> isLightboxOpen = true
+                                pageAddress != null -> actions.followLink(pageAddress)
+                            }
+                        }
+                    } else {
+                        Modifier.fillMaxSize()
+                    },
                 )
+                if (media.kind == AgentFeedMediaKind.Video) {
+                    Box(Modifier.align(Alignment.Center).size(48.dp).background(Color.Black.copy(alpha = 0.55f), CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+                    }
+                }
             }
+        }
+        if (media.caption.isNotEmpty()) {
+            Text(media.caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = captionInset))
         }
     }
     val path = media.imagePath
@@ -180,14 +190,15 @@ fun FeedMediaImage(path: String?, description: String, modifier: Modifier = Modi
 @Composable
 fun FeedRowThumbnail(media: AgentFeedMediaView, size: Dp, modifier: Modifier = Modifier) {
     FeedMediaImage(
-        media.imagePath, media.mediaCaption.ifEmpty { media.siteName },
-        modifier.size(size).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        media.imagePath, media.caption.ifEmpty { media.site },
+        modifier.size(size).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
     )
 }
 
 /**
- * A video played in place with ExoPlayer, from the server path with the session's token (never a public address). It
- * starts when pressed, muted: the sound is the person's to turn on. A tap on the picture pauses and plays.
+ * A video played in place with ExoPlayer, from the playable address the server gives for the photo it is (as the Photos
+ * viewer asks for one), never a public address. It starts when pressed, muted: the sound is the person's to turn on. A
+ * tap on the picture pauses and plays.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -195,36 +206,50 @@ fun FeedVideoPlayer(media: AgentFeedMediaView, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val connection = LocalConnection.current
     var player by remember(media.mediaKey) { mutableStateOf<ExoPlayer?>(null) }
+    var isFailed by remember(media.mediaKey) { mutableStateOf(false) }
     var isMuted by remember(media.mediaKey) { mutableStateOf(true) }
     var isPaused by remember(media.mediaKey) { mutableStateOf(false) }
     LaunchedEffect(media.mediaKey) {
-        val path = media.videoPath ?: return@LaunchedEffect
-        val token = runCatching { connection.accessToken() }.getOrNull() ?: return@LaunchedEffect
-        val factory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(mapOf("Authorization" to "Bearer $token"))
-        player = ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(factory)).build().apply {
-            volume = 0f
-            setMediaItem(MediaItem.fromUri(connection.account.server.endpoint(path).toString()))
-            prepare()
-            playWhenReady = true
+        val photoId = media.videoPhotoId
+        if (photoId == null) {
+            isFailed = true
+            return@LaunchedEffect
+        }
+        try {
+            val address = connection.photoPlaybackAddress(photoId, PhotoPlaybackSource.Preview("video"))
+            player = ExoPlayer.Builder(context).build().apply {
+                volume = 0f
+                setMediaItem(MediaItem.fromUri(address))
+                prepare()
+                playWhenReady = true
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            isFailed = true
         }
     }
     DisposableEffect(media.mediaKey) { onDispose { player?.release() } }
-    Box(modifier.background(Color.Black)) {
+    Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
         val current = player
-        if (current != null) {
-            AndroidView(
-                factory = { viewContext -> PlayerView(viewContext).apply { useController = false; this.player = current } },
-                modifier = Modifier.fillMaxSize().clickable(role = Role.Button) {
-                    isPaused = !isPaused
-                    if (isPaused) current.pause() else current.play()
-                },
-            )
-            IconButton(onClick = { isMuted = !isMuted; current.volume = if (isMuted) 0f else 1f }, modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)) {
-                Icon(
-                    if (isMuted) Icons.Outlined.VolumeOff else Icons.Outlined.VolumeUp,
-                    contentDescription = stringResource(if (isMuted) R.string.feed_media_unmute else R.string.feed_media_mute), tint = Color.White,
+        when {
+            current != null -> {
+                AndroidView(
+                    factory = { viewContext -> PlayerView(viewContext).apply { useController = false; this.player = current } },
+                    modifier = Modifier.fillMaxSize().clickable(role = Role.Button) {
+                        isPaused = !isPaused
+                        if (isPaused) current.pause() else current.play()
+                    },
                 )
+                IconButton(onClick = { isMuted = !isMuted; current.volume = if (isMuted) 0f else 1f }, modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)) {
+                    Icon(
+                        if (isMuted) Icons.Outlined.VolumeOff else Icons.Outlined.VolumeUp,
+                        contentDescription = stringResource(if (isMuted) R.string.feed_media_unmute else R.string.feed_media_mute), tint = Color.White,
+                    )
+                }
             }
+            isFailed -> Text(stringResource(R.string.feed_media_cannot_play), color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
+            else -> CircularProgressIndicator(color = Color.White)
         }
     }
 }

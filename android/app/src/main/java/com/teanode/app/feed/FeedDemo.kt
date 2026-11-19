@@ -53,6 +53,7 @@ object FeedDemoIDs {
     const val MEDIA_ROW_SIX = "demo-media-row-six"
     const val MEDIA_VIDEO = "demo-media-video"
     const val MEDIA_PICTURE = "demo-media-picture"
+    const val MEDIA_UNSIZED = "demo-media-unsized"
     const val BRIEF_STACK_KEY = "schedule:brief:run-1"
     const val ROBOTS_STACK_KEY = "goal:robots"
     const val IDEAS_STACK_KEY = "speak_first:ideas"
@@ -197,6 +198,12 @@ private val demoPlainCards: List<AgentFeedItemView> = listOf(
         feedItemId = FeedDemoIDs.MEDIA_VIDEO, feedItemKind = "update", feedSourceKind = "agent", title = "A clip from the recital",
         body = "Thirty seconds, from the second row.", pictureSymbol = "video", feedMedia = listOf(media("clip", "video", 1920, 1080, caption = "The last song")),
         isRead = true, postedAt = minutesAgo(235), updatedAt = minutesAgo(235),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.MEDIA_UNSIZED, feedItemKind = "update", feedSourceKind = "agent", feedSourceTitle = "Your photos", title = "A photo with no size on record",
+        body = "The server did not say how big it is, so it is drawn at 16:9.", pictureSymbol = "photo",
+        feedMedia = listOf(AgentFeedMediaView(mediaKey = "unsized", feedMediaKind = "photo", imageUrl = "/demo/feed/media/unsized/1600/900")),
+        isRead = true, postedAt = minutesAgo(238), updatedAt = minutesAgo(238),
     ),
     AgentFeedItemView(
         feedItemId = FeedDemoIDs.MEDIA_PICTURE, feedItemKind = "news", feedSourceKind = "goal", feedSourceTitle = "News about humanoid robots", title = "A warehouse robot learns to unload trucks",

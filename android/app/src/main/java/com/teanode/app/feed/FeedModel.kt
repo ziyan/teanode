@@ -24,8 +24,6 @@ import kotlinx.coroutines.launch
 /** How long cards are on screen before they are reported read together, so scrolling past a screenful is one call (ios FeedModel.noteAppeared). */
 const val FEED_READ_DELAY_MS = 1_500L
 
-private const val DECK_PAGES_MOST = 5
-
 /**
  * FeedModel is the feed (ios FeedViews.swift, FeedModel): the cards read so far, how many are unread, and the calls
  * that answer, like, close or read a card. The list and every change to it are [AgentFeedList]'s, tested in the kit;
@@ -68,11 +66,13 @@ class FeedModel(
     /** Whether a deck is fanned out. */
     fun isDeckOpen(feedStackKey: String): Boolean = openDeckKeys.containsKey(feedStackKey)
 
-    /** Fans a stack's deck out in place: it opens at once and its cards slide out as they are read. */
+    /** Fans a stack's deck out in place once its cards are read (a deck whose cards cannot be read stays a deck). */
     fun openDeck(feedStackKey: String) {
         val read = readStackPage ?: return
-        openDeckKeys[feedStackKey] = true
-        scope.launch { refreshDeck(feedStackKey, read) }
+        scope.launch {
+            if (deckCards[feedStackKey] == null && !refreshDeck(feedStackKey, read)) return@launch
+            openDeckKeys[feedStackKey] = true
+        }
     }
 
     /** Gathers a deck back into its top card. */
@@ -80,25 +80,15 @@ class FeedModel(
         openDeckKeys.remove(feedStackKey)
     }
 
-    private suspend fun refreshDeck(feedStackKey: String, read: suspend (String, String?) -> AgentFeedPage) {
-        try {
-            val cards = ArrayList<AgentFeedItemView>()
-            var cursor: String? = null
-            var pageCount = 0
-            // A deck is a few cards; the pages are read until it is whole, up to a handful of them.
-            do {
-                val page = read(feedStackKey, cursor)
-                cards.addAll(page.feedItems.filter { card -> cards.none { known -> known.feedItemId == card.feedItemId } })
-                cursor = page.nextCursor
-                pageCount++
-            } while (!cursor.isNullOrEmpty() && pageCount < DECK_PAGES_MOST)
-            deckCards[feedStackKey] = cards
-        } catch (failure: CancellationException) {
-            throw failure
-        } catch (failure: Throwable) {
-            openDeckKeys.remove(feedStackKey)
-            onProblem(failure)
-        }
+    /** Reads the cards of a deck (one page of fifty, as the iPhone does); whether they were read. */
+    private suspend fun refreshDeck(feedStackKey: String, read: suspend (String, String?) -> AgentFeedPage): Boolean = try {
+        deckCards[feedStackKey] = read(feedStackKey, null).feedItems
+        true
+    } catch (failure: CancellationException) {
+        throw failure
+    } catch (failure: Throwable) {
+        onProblem(failure)
+        false
     }
 
     /** The hearts the person just pressed, shown before the server answers. */

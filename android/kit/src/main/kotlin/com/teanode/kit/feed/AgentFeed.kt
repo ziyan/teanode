@@ -80,29 +80,49 @@ data class AgentFeedMediaView(
     val mediaKey: String = "",
     /** photo, video or picture. */
     val feedMediaKind: String = "picture",
+    /** The picture, or a video's poster. */
     val imageUrl: String = "",
-    /** A video's file; empty for the others. */
-    val videoUrl: String = "",
-    /** A picture's page; empty for the others. */
-    val linkUrl: String = "",
-    val siteName: String = "",
-    val mediaCaption: String = "",
-    val widthPixels: Int = 0,
-    val heightPixels: Int = 0,
+    /** A video's file; missing for the others. */
+    val videoUrl: String? = null,
+    /** A picture's page; missing for the others. */
+    val linkUrl: String? = null,
+    val siteName: String? = null,
+    val mediaCaption: String? = null,
+    /** The size in pixels; missing when the server does not know it. */
+    val widthPixels: Int? = null,
+    val heightPixels: Int? = null,
     val listRowIndex: Int? = null,
 ) {
     val kind: AgentFeedMediaKind get() = AgentFeedMediaKind.of(feedMediaKind)
 
-    /** Whether the picture is taller than wide, which a card shows at 4:5 instead of 16:9. */
-    val isPortrait: Boolean get() = heightPixels > widthPixels && widthPixels > 0
+    val caption: String get() = mediaCaption.orEmpty()
+
+    val site: String get() = siteName.orEmpty()
+
+    /** Whether the picture is taller than wide, which a card shows at 4:5 instead of 16:9; false when its size is not known. */
+    val isPortrait: Boolean get() = (widthPixels ?: 0) > 0 && (heightPixels ?: 0) > (widthPixels ?: 0)
+
+    /** The width over the height one picture shown alone is cropped to: 16:9, or 4:5 for a portrait photo. */
+    val singleAspectRatio: Float get() = if (isPortrait) 4f / 5f else 16f / 9f
 
     /** The address the image is read from: a path on this server, never a full address of another site. */
     val imagePath: String? get() = imageUrl.takeIf { path -> path.startsWith("/") }
 
-    val videoPath: String? get() = videoUrl.takeIf { path -> path.startsWith("/") }
+    val videoPath: String? get() = videoUrl?.takeIf { path -> path.startsWith("/") }
+
+    /**
+     * The photo a video is, from its path (`/api/v1/photos/<id>/previews/video`), which the app asks a playable address
+     * for as the Photos viewer does; null for anything else.
+     */
+    val videoPhotoId: String?
+        get() {
+            val segments = videoUrl?.substringBefore('?')?.split('/')?.filter { segment -> segment.isNotEmpty() } ?: return null
+            val index = segments.indexOf("photos")
+            return if (index >= 0 && index + 1 < segments.size) segments[index + 1] else null
+        }
 
     /** The page a picture opens; only http and https are followed. */
-    val pageAddress: String? get() = linkUrl.takeIf { address -> address.lowercase().let { lowered -> lowered.startsWith("http://") || lowered.startsWith("https://") } }
+    val pageAddress: String? get() = linkUrl?.takeIf { address -> address.lowercase().let { lowered -> lowered.startsWith("http://") || lowered.startsWith("https://") } }
 }
 
 /** How a card's pictures are laid out: one full width, two to four in a grid, more in a row that scrolls sideways. */
@@ -199,15 +219,22 @@ data class AgentFeedItemView(
     /** The card's pictures, at most six. */
     val feedMedia: List<AgentFeedMediaView> = emptyList(),
 ) {
-    /** The pictures of the whole card, not the thumbnails of a list's rows. */
-    val cardMedia: List<AgentFeedMediaView> get() = feedMedia.filter { media -> media.listRowIndex == null }
+    /** The pictures of the whole card, not the thumbnails of a list's rows; one with no image to draw is left out. */
+    val cardMedia: List<AgentFeedMediaView> get() = feedMedia.filter { media -> media.listRowIndex == null && media.imageUrl.isNotEmpty() }
 
-    /** The thumbnail of each row of a list card, by the row's index. */
-    val rowThumbnails: Map<Int, AgentFeedMediaView> get() = feedMedia.mapNotNull { media -> media.listRowIndex?.let { index -> index to media } }.toMap()
+    /** The thumbnail of each row of a list card, by the row's index; the first one given for a row wins. */
+    val rowThumbnails: Map<Int, AgentFeedMediaView>
+        get() {
+            val thumbnails = LinkedHashMap<Int, AgentFeedMediaView>()
+            for (media in feedMedia) {
+                val rowIndex = media.listRowIndex ?: continue
+                if (media.imageUrl.isNotEmpty() && rowIndex !in thumbnails) thumbnails[rowIndex] = media
+            }
+            return thumbnails
+        }
 
-    /** The name of the site the card's picture comes from, for the line above the headline; empty when none names one. */
-    val siteName: String get() = cardMedia.firstOrNull { media -> media.siteName.isNotEmpty() }?.siteName.orEmpty()
-
+    /** The small line above the headline, as a news app labels a story: the first picture's site, else the source's name; empty when there is neither. */
+    val headerText: String get() = cardMedia.firstOrNull { media -> media.kind == AgentFeedMediaKind.Picture && media.site.isNotEmpty() }?.site?.takeIf { name -> name.isNotEmpty() } ?: feedSourceTitle
 
     /** How the card is drawn: its layout when the content reads, else the plain text of its body. */
     val layout: FeedLayout get() = FeedLayout.read(feedCardLayout, layoutContent)

@@ -128,17 +128,18 @@ class FeedLayoutTest {
     }
 
     @Test
-    fun theSkyIsChosenByTheConditionsSymbolThenByItsWords() {
-        assertEquals(FeedWeatherSky.Clear, FeedWeatherSky.of("sun.max", ""))
-        assertEquals(FeedWeatherSky.Clear, FeedWeatherSky.of("cloud.sun", "Mostly sunny"))
+    fun theSkyIsChosenAsTheIphoneChoosesIt() {
+        assertEquals(FeedWeatherSky.ClearDay, FeedWeatherSky.of("sun.max", ""))
+        assertEquals(FeedWeatherSky.ClearDay, FeedWeatherSky.of("cloud.sun", "Mostly sunny"))
         assertEquals(FeedWeatherSky.Cloudy, FeedWeatherSky.of("cloud.fill", ""))
         assertEquals(FeedWeatherSky.Rain, FeedWeatherSky.of("cloud.rain", ""))
-        assertEquals(FeedWeatherSky.Rain, FeedWeatherSky.of("cloud.bolt.rain", ""))
+        assertEquals(FeedWeatherSky.Storm, FeedWeatherSky.of("cloud.bolt.rain", ""))
+        assertEquals(FeedWeatherSky.Storm, FeedWeatherSky.of("", "Thunderstorms"))
         assertEquals(FeedWeatherSky.Snow, FeedWeatherSky.of("cloud.snow", ""))
-        assertEquals(FeedWeatherSky.Night, FeedWeatherSky.of("moon.stars", ""))
+        assertEquals(FeedWeatherSky.ClearNight, FeedWeatherSky.of("moon.stars", ""))
         assertEquals(FeedWeatherSky.Rain, FeedWeatherSky.of("", "Light showers"))
         assertEquals(FeedWeatherSky.Cloudy, FeedWeatherSky.of("unknown.symbol", "Overcast"))
-        assertEquals(FeedWeatherSky.Clear, FeedWeatherSky.of("", ""))
+        assertEquals(FeedWeatherSky.Cloudy, FeedWeatherSky.of("", ""))
     }
 
     @Test
@@ -154,8 +155,8 @@ class FeedLayoutTest {
 
     @Test
     fun theDarkGradientIsDarkerThanTheLightOne() {
-        val (lightTop, _) = FeedWeatherSky.Clear.colors(false)
-        val (darkTop, _) = FeedWeatherSky.Clear.colors(true)
+        val (lightTop, _) = FeedWeatherSky.ClearDay.colors(false)
+        val (darkTop, _) = FeedWeatherSky.ClearDay.colors(true)
         assertTrue(FeedWeatherSky.whiteContrast(darkTop) > FeedWeatherSky.whiteContrast(lightTop))
     }
 
