@@ -1217,18 +1217,13 @@ private func previewCards() -> some View {
 /// from its foot so it is narrower than the top card by the deck's inset, with
 /// only its foot showing below the top card; at 0 it is in its place. The
 /// distance is read from where the card is laid out in the column, so no
-/// height needs to be known, and the fraction is animated, so the card moves
-/// on the column's curve.
-struct FeedDeckTuck: ViewModifier, Animatable {
-    var tuckedFraction: Double
+/// height needs to be known. The scale and offset it makes are animated by
+/// SwiftUI between the two, so the card moves on the column's curve.
+struct FeedDeckTuck: ViewModifier {
+    let tuckedFraction: Double
     /// Which foot of the deck the card shows: 0 just under the top card, 1
     /// under that; the cards further down hide behind the second.
     let footLevel: Int
-
-    var animatableData: Double {
-        get { tuckedFraction }
-        set { tuckedFraction = newValue }
-    }
 
     static let coordinateSpaceName = "feedDeckColumn"
     static let openDuration: Double = 0.44
