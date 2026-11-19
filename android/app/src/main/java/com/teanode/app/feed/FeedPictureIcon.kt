@@ -27,6 +27,8 @@ import androidx.compose.material.icons.outlined.MonitorHeart
 import androidx.compose.material.icons.outlined.Newspaper
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.ShoppingCart
@@ -44,6 +46,8 @@ import com.teanode.kit.feed.FeedPictureKind
 
 /** The Material icon for a kind of picture, the counterpart of the SF Symbol the agent named; the newspaper stands for any it does not know. */
 fun FeedPictureKind.icon(): ImageVector = when (this) {
+    FeedPictureKind.Photo -> Icons.Outlined.PhotoLibrary
+    FeedPictureKind.Video -> Icons.Outlined.Videocam
     FeedPictureKind.Weather -> Icons.Outlined.FilterDrama
     FeedPictureKind.Sun -> Icons.Outlined.WbSunny
     FeedPictureKind.Cloud -> Icons.Outlined.Cloud

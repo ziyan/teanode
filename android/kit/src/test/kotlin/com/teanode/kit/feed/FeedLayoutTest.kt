@@ -126,4 +126,43 @@ class FeedLayoutTest {
         val plain = TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), """{"feedItemId":"a","title":"T"}""")
         assertEquals(FeedLayout.Text, plain.layout)
     }
+
+    @Test
+    fun theSkyIsChosenAsTheIphoneChoosesIt() {
+        assertEquals(FeedWeatherSky.ClearDay, FeedWeatherSky.of("sun.max", ""))
+        assertEquals(FeedWeatherSky.ClearDay, FeedWeatherSky.of("cloud.sun", "Mostly sunny"))
+        assertEquals(FeedWeatherSky.Cloudy, FeedWeatherSky.of("cloud.fill", ""))
+        assertEquals(FeedWeatherSky.Rain, FeedWeatherSky.of("cloud.rain", ""))
+        assertEquals(FeedWeatherSky.Storm, FeedWeatherSky.of("cloud.bolt.rain", ""))
+        assertEquals(FeedWeatherSky.Storm, FeedWeatherSky.of("", "Thunderstorms"))
+        assertEquals(FeedWeatherSky.Snow, FeedWeatherSky.of("cloud.snow", ""))
+        assertEquals(FeedWeatherSky.ClearNight, FeedWeatherSky.of("moon.stars", ""))
+        assertEquals(FeedWeatherSky.Rain, FeedWeatherSky.of("", "Light showers"))
+        assertEquals(FeedWeatherSky.Cloudy, FeedWeatherSky.of("unknown.symbol", "Overcast"))
+        assertEquals(FeedWeatherSky.Cloudy, FeedWeatherSky.of("", ""))
+    }
+
+    @Test
+    fun whiteWordsReadOnEveryGradientInLightAndDark() {
+        for (sky in FeedWeatherSky.entries) {
+            for (isDark in listOf(false, true)) {
+                val (top, bottom) = sky.colors(isDark)
+                assertTrue(FeedWeatherSky.whiteContrast(top) >= 4.5, "$sky top dark=$isDark")
+                assertTrue(FeedWeatherSky.whiteContrast(bottom) >= 4.5, "$sky bottom dark=$isDark")
+            }
+        }
+    }
+
+    @Test
+    fun theDarkGradientIsDarkerThanTheLightOne() {
+        val (lightTop, _) = FeedWeatherSky.ClearDay.colors(false)
+        val (darkTop, _) = FeedWeatherSky.ClearDay.colors(true)
+        assertTrue(FeedWeatherSky.whiteContrast(darkTop) > FeedWeatherSky.whiteContrast(lightTop))
+    }
+
+    @Test
+    fun aCardReadsItsWeatherSky() {
+        val weather = (FeedLayout.read("weather", """{"currentTemperature":"5","conditionSymbol":"cloud.snow"}""") as FeedLayout.Weather).weather
+        assertEquals(FeedWeatherSky.Snow, weather.sky)
+    }
 }

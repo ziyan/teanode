@@ -36,4 +36,17 @@
     <string name="feed_weather_low">最低 %1$s</string>
     <string name="feed_rain_chance">降水確率 %1$d%%</string>
     <string name="feed_open_chat">チャットを開く</string>
+    <string name="feed_media_photo">写真</string>
+    <string name="feed_media_video">ビデオ</string>
+    <string name="feed_media_picture">画像</string>
+    <string name="feed_media_play">再生</string>
+    <string name="feed_media_pause">一時停止</string>
+    <string name="feed_media_mute">ミュート</string>
+    <string name="feed_media_unmute">ミュート解除</string>
+    <string name="feed_stack_show_less">一部を隠す</string>
+    <string name="feed_media_plays_video">動画を再生します</string>
+    <string name="feed_media_opens_page">ページを開きます</string>
+    <string name="feed_media_cannot_play">このビデオを再生できません</string>
+    <string name="feed_stack_cards">%1$d 枚のカード</string>
+    <string name="feed_stack_gather_hint">カードをスタックに戻します</string>
 </resources>

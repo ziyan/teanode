@@ -39,6 +39,8 @@ class FeedModel(
     private val onUnreadCount: (Int) -> Unit = {},
     /** Called with how many cards were newly read, for a screen whose own count is not the badge's. */
     private val onNewlyRead: (Int) -> Unit = {},
+    /** Reads a page of one stack's cards, for a deck fanned out in place; null where decks do not open (a stack's own screen). */
+    private val readStackPage: (suspend (feedStackKey: String, after: String?) -> AgentFeedPage)? = null,
 ) {
     var list: AgentFeedList? by mutableStateOf(null)
         private set
@@ -56,6 +58,38 @@ class FeedModel(
     /** What happened that the person is told in a snackbar: a call that failed, or "You will see fewer like it". */
     var onProblem: (Throwable) -> Unit = {}
     var onDone: (String) -> Unit = {}
+
+    /** The decks fanned out in place, by stack key, and the cards each holds (the top card first), read when it opened. */
+    val openDeckKeys = mutableStateMapOf<String, Boolean>()
+    val deckCards = mutableStateMapOf<String, List<AgentFeedItemView>>()
+
+    /** Whether a deck is fanned out. */
+    fun isDeckOpen(feedStackKey: String): Boolean = openDeckKeys.containsKey(feedStackKey)
+
+    /** Fans a stack's deck out in place once its cards are read (a deck whose cards cannot be read stays a deck). */
+    fun openDeck(feedStackKey: String) {
+        val read = readStackPage ?: return
+        scope.launch {
+            if (deckCards[feedStackKey] == null && !refreshDeck(feedStackKey, read)) return@launch
+            openDeckKeys[feedStackKey] = true
+        }
+    }
+
+    /** Gathers a deck back into its top card. */
+    fun closeDeck(feedStackKey: String) {
+        openDeckKeys.remove(feedStackKey)
+    }
+
+    /** Reads the cards of a deck (one page of fifty, as the iPhone does); whether they were read. */
+    private suspend fun refreshDeck(feedStackKey: String, read: suspend (String, String?) -> AgentFeedPage): Boolean = try {
+        deckCards[feedStackKey] = read(feedStackKey, null).feedItems
+        true
+    } catch (failure: CancellationException) {
+        throw failure
+    } catch (failure: Throwable) {
+        onProblem(failure)
+        false
+    }
 
     /** The hearts the person just pressed, shown before the server answers. */
     private val likedOverrides = mutableStateMapOf<String, Boolean>()
@@ -77,6 +111,7 @@ class FeedModel(
         try {
             show(AgentFeedList.first(readPage(null)))
             loadFailure = null
+            readStackPage?.let { read -> for (key in openDeckKeys.keys.toList()) refreshDeck(key, read) }
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: Throwable) {
@@ -210,10 +245,21 @@ class FeedModel(
 
     private fun replace(item: AgentFeedItemView) {
         list?.let { current -> show(current.replacing(item)) }
+        // A card of a fanned-out deck is changed there too.
+        for ((key, cards) in deckCards.toList()) {
+            if (cards.any { card -> card.feedItemId == item.feedItemId }) deckCards[key] = cards.map { card -> if (card.feedItemId == item.feedItemId) item.copy(stackItemCount = card.stackItemCount, stackUnreadCount = card.stackUnreadCount) else card }
+        }
     }
 
     private fun remove(item: AgentFeedItemView) {
         list?.let { current -> show(current.removing(item.feedItemId)) }
+        for ((key, cards) in deckCards.toList()) {
+            if (cards.any { card -> card.feedItemId == item.feedItemId }) {
+                deckCards[key] = cards.filter { card -> card.feedItemId != item.feedItemId }
+                // The top card went: the next one tops the deck, which only the server's list says.
+                if (list?.feedItems?.any { top -> top.feedStackKey == key } != true || item.isStack) scope.launch { load() }
+            }
+        }
     }
 
     private fun show(next: AgentFeedList) {

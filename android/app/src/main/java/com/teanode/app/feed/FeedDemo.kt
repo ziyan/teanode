@@ -1,14 +1,23 @@
 package com.teanode.app.feed
 
 import com.teanode.app.demo.DemoAnswerer
+import com.teanode.app.demo.DemoResponse
 import com.teanode.app.demo.graphQLField
 import com.teanode.kit.TeaNodeJson
 import com.teanode.kit.feed.AgentFeedChoice
 import com.teanode.kit.feed.AgentFeedFactRow
 import com.teanode.kit.feed.AgentFeedItemView
+import com.teanode.kit.feed.AgentFeedMediaView
 import com.teanode.kit.feed.AgentFeedPage
 import com.teanode.kit.feed.AgentFeedSourceLink
 import kotlinx.serialization.json.JsonPrimitive
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
+import java.io.ByteArrayOutputStream
 import java.time.Instant
 
 private fun minutesAgo(minutes: Long): String = Instant.now().minusSeconds(minutes * 60).toString()
@@ -36,10 +45,25 @@ object FeedDemoIDs {
     const val BRIEF_REVIEWS = "demo-brief-reviews"
     const val BRIEF_MAIL = "demo-brief-mail"
     const val BAD_LAYOUT = "demo-bad-layout"
+    const val MEDIA_PORTRAIT = "demo-media-portrait"
+    const val MEDIA_LANDSCAPE = "demo-media-landscape"
+    const val MEDIA_GRID_TWO = "demo-media-grid-two"
+    const val MEDIA_GRID_THREE = "demo-media-grid-three"
+    const val MEDIA_GRID_FOUR = "demo-media-grid-four"
+    const val MEDIA_ROW_SIX = "demo-media-row-six"
+    const val MEDIA_VIDEO = "demo-media-video"
+    const val MEDIA_PICTURE = "demo-media-picture"
+    const val MEDIA_UNSIZED = "demo-media-unsized"
     const val BRIEF_STACK_KEY = "schedule:brief:run-1"
     const val ROBOTS_STACK_KEY = "goal:robots"
     const val IDEAS_STACK_KEY = "speak_first:ideas"
 }
+
+/** A picture of a card, drawn on the spot by [feedDemoPictureBytes] at the size it says. */
+private fun media(key: String, kind: String = "photo", width: Int = 1600, height: Int = 900, caption: String = "", site: String = "", link: String = "", rowIndex: Int? = null) = AgentFeedMediaView(
+    mediaKey = key, feedMediaKind = kind, imageUrl = "/demo/feed/media/$key/$width/$height", videoUrl = if (kind == "video") "/demo/feed/video/$key" else "", linkUrl = link,
+    siteName = site, mediaCaption = caption, widthPixels = width, heightPixels = height, listRowIndex = rowIndex,
+)
 
 private fun todayAt(hour: Int, minute: Int): String = java.time.LocalDate.now().atTime(hour, minute).toString() + ":00"
 
@@ -91,11 +115,14 @@ private fun briefCard(id: String, position: Int, title: String, body: String, sy
 val demoBriefCards: List<AgentFeedItemView> = listOf(
     briefCard(FeedDemoIDs.BRIEF_AGENDA, 0, "Your day", "Five things on today's plan, starting with the planning call at 09:30.", "calendar", "agenda", briefAgendaContent),
     briefCard(FeedDemoIDs.BRIEF_WEATHER, 1, "Weather in Lisbon", "18 C and mostly sunny, with rain likely after four.", "cloud.sun", "weather", briefWeatherContent),
-    briefCard(FeedDemoIDs.BRIEF_TECH, 2, "Tech news", "Three stories on robots, small models and builds.", "sparkles", "list", briefTechContent),
-    briefCard(FeedDemoIDs.BRIEF_HEADLINES, 3, "Headlines", "Rail, bike lanes and a storm warning.", "newspaper", "list", briefHeadlinesContent),
+    briefCard(FeedDemoIDs.BRIEF_TECH, 2, "Tech news", "Three stories on robots, small models and builds.", "sparkles", "list", briefTechContent)
+        .copy(feedMedia = (0..2).map { index -> media("tech-$index", "picture", 800, 800, link = "https://example.com/story-$index", rowIndex = index) }),
+    briefCard(FeedDemoIDs.BRIEF_HEADLINES, 3, "Headlines", "Rail, bike lanes and a storm warning.", "newspaper", "list", briefHeadlinesContent)
+        .copy(feedMedia = listOf(media("headline-0", "picture", 800, 800, rowIndex = 0), media("headline-2", "picture", 800, 800, rowIndex = 2))),
     briefCard(FeedDemoIDs.BRIEF_MENTIONS, 4, "Mentions in chat", "Sam and Alex wrote to you.", "text.bubble", "list", briefMentionsContent),
     briefCard(FeedDemoIDs.BRIEF_REVIEWS, 5, "Open reviews", "One review is waiting for you and one issue is assigned to you.", "chevron.left.forwardslash.chevron.right", "list", briefReviewsContent),
-    briefCard(FeedDemoIDs.BRIEF_MAIL, 6, "Mail worth reading", "Two messages you will want to see.", "envelope", "list", briefMailContent),
+    briefCard(FeedDemoIDs.BRIEF_MAIL, 6, "Mail worth reading", "Two messages you will want to see.", "envelope", "list", briefMailContent)
+        .copy(feedMedia = listOf(media("mail-0", "photo", 800, 800, rowIndex = 0))),
 )
 
 private fun withStack(card: AgentFeedItemView, count: Int, unread: Int, key: String, title: String = "") = card.copy(feedStackKey = key, feedStackTitle = title, stackItemCount = count, stackUnreadCount = unread)
@@ -135,6 +162,54 @@ private val demoPlainCards: List<AgentFeedItemView> = listOf(
         body = "A phone signed in to your account yesterday evening.", pictureSymbol = "lock.shield", choices = signInChoices,
         chosenChoiceKey = "secure", outcomeText = "Signed out the other session and asked for a new password.", isRead = true,
         postedAt = minutesAgo(60 * 20), updatedAt = minutesAgo(60 * 19),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.MEDIA_PORTRAIT, feedItemKind = "update", feedSourceKind = "agent", title = "Sunrise at the lake house",
+        body = "Sam sent this one at six this morning.", pictureSymbol = "photo", feedMedia = listOf(media("portrait", "photo", 1200, 1500, caption = "The dock, just after sunrise")),
+        isRead = true, postedAt = minutesAgo(200), updatedAt = minutesAgo(200),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.MEDIA_LANDSCAPE, feedItemKind = "update", feedSourceKind = "agent", title = "Your photos from yesterday",
+        body = "Twelve photos from the park were added to your library.", pictureSymbol = "photo", feedMedia = listOf(media("landscape", "photo", 1600, 900, caption = "By the pond")),
+        isRead = true, postedAt = minutesAgo(210), updatedAt = minutesAgo(210),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.MEDIA_GRID_TWO, feedItemKind = "update", feedSourceKind = "agent", title = "Two views of the garden",
+        body = "Before and after the weekend's work.", pictureSymbol = "photo", feedMedia = listOf(media("two-a", caption = "Before"), media("two-b", caption = "After")),
+        isRead = true, postedAt = minutesAgo(215), updatedAt = minutesAgo(215),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.MEDIA_GRID_THREE, feedItemKind = "update", feedSourceKind = "agent", title = "Three from the trip",
+        body = "The first three photos of the weekend away.", pictureSymbol = "photo",
+        feedMedia = listOf(media("three-a", caption = "Harbor"), media("three-b", caption = "Market"), media("three-c", caption = "Ferry")),
+        isRead = true, postedAt = minutesAgo(220), updatedAt = minutesAgo(220),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.MEDIA_GRID_FOUR, feedItemKind = "update", feedSourceKind = "agent", title = "Four from the market",
+        body = "Fruit, bread, flowers and cheese.", pictureSymbol = "photo", feedMedia = (0..3).map { index -> media("four-$index") },
+        isRead = true, postedAt = minutesAgo(225), updatedAt = minutesAgo(225),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.MEDIA_ROW_SIX, feedItemKind = "update", feedSourceKind = "agent", title = "Six from the holiday album",
+        body = "Scroll sideways for the rest.", pictureSymbol = "photo", feedMedia = (0..5).map { index -> media("six-$index", caption = "Day ${index + 1}") },
+        isRead = true, postedAt = minutesAgo(230), updatedAt = minutesAgo(230),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.MEDIA_VIDEO, feedItemKind = "update", feedSourceKind = "agent", title = "A clip from the recital",
+        body = "Thirty seconds, from the second row.", pictureSymbol = "video", feedMedia = listOf(media("clip", "video", 1920, 1080, caption = "The last song")),
+        isRead = true, postedAt = minutesAgo(235), updatedAt = minutesAgo(235),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.MEDIA_UNSIZED, feedItemKind = "update", feedSourceKind = "agent", feedSourceTitle = "Your photos", title = "A photo with no size on record",
+        body = "The server did not say how big it is, so it is drawn at 16:9.", pictureSymbol = "photo",
+        feedMedia = listOf(AgentFeedMediaView(mediaKey = "unsized", feedMediaKind = "photo", imageUrl = "/demo/feed/media/unsized/1600/900")),
+        isRead = true, postedAt = minutesAgo(238), updatedAt = minutesAgo(238),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.MEDIA_PICTURE, feedItemKind = "news", feedSourceKind = "goal", feedSourceTitle = "News about humanoid robots", title = "A warehouse robot learns to unload trucks",
+        body = "A maker of humanoid robots showed one unloading boxes from a truck without a ramp.", pictureSymbol = "newspaper",
+        feedMedia = listOf(media("story", "picture", 1200, 675, site = "Example Robotics Weekly", link = "https://example.com/robots")),
+        isRead = true, postedAt = minutesAgo(240), updatedAt = minutesAgo(240),
     ),
     AgentFeedItemView(
         feedItemId = FeedDemoIDs.WEATHER, feedItemKind = "update", feedSourceKind = "goal", feedSourceTitle = "Weather where I travel", title = "Lisbon, today",
@@ -227,6 +302,11 @@ private fun cardOf(feedItemId: String): AgentFeedItemView =
 
 /** What demo mode answers for Feed: every kind and state of card, and answers that change a card the way the server would. */
 val feedDemoAnswerers: List<DemoAnswerer> = listOf(
+    // A picture of a card: /demo/feed/media/<key>/<width>/<height>, drawn on the spot, a scene in a hue of its own.
+    DemoAnswerer { request ->
+        val parts = request.path.split('/')
+        if (request.path.startsWith("/demo/feed/media/") && parts.size >= 7) DemoResponse(feedDemoPictureBytes(parts[4], parts[5].toIntOrNull() ?: 800, parts[6].toIntOrNull() ?: 450)) else null
+    },
     graphQLField("ListAgentFeed") {
         val page = AgentFeedPage(demoFeedCards, null, demoFeedCards.count { card -> !card.isRead })
         TeaNodeJson.encodeToString(AgentFeedPage.serializer(), page)
@@ -246,3 +326,23 @@ val feedDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("MarkAgentFeedRead", "1"),
     graphQLField("DiscussAgentFeedItem", "\"demo-main\""),
 )
+
+/**
+ * A picture for the demo: a sky, a sun and two hills in a hue taken from [key], at the size asked (a tenth of it, so
+ * the demo stays light), so the pictures of a grid are told apart at a glance.
+ */
+fun feedDemoPictureBytes(key: String, width: Int, height: Int): ByteArray {
+    val pixelWidth = maxOf(16, width / 10)
+    val pixelHeight = maxOf(16, height / 10)
+    val hue = (((key.hashCode() and 0xffff) * 47) % 360).toFloat()
+    val bitmap = Bitmap.createBitmap(pixelWidth, pixelHeight, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val sky = Paint().apply { shader = LinearGradient(0f, 0f, 0f, pixelHeight.toFloat(), Color.HSVToColor(floatArrayOf(hue, 0.45f, 0.98f)), Color.HSVToColor(floatArrayOf((hue + 30f) % 360f, 0.2f, 1f)), Shader.TileMode.CLAMP) }
+    canvas.drawRect(0f, 0f, pixelWidth.toFloat(), pixelHeight.toFloat(), sky)
+    canvas.drawCircle(pixelWidth * 0.72f, pixelHeight * 0.28f, pixelHeight * 0.12f, Paint().apply { color = Color.rgb(255, 236, 170) })
+    canvas.drawCircle(pixelWidth * 0.25f, pixelHeight * 1.1f, pixelHeight * 0.55f, Paint().apply { color = Color.HSVToColor(floatArrayOf((hue + 120f) % 360f, 0.5f, 0.55f)) })
+    canvas.drawCircle(pixelWidth * 0.8f, pixelHeight * 1.2f, pixelHeight * 0.6f, Paint().apply { color = Color.HSVToColor(floatArrayOf((hue + 150f) % 360f, 0.55f, 0.4f)) })
+    val output = ByteArrayOutputStream()
+    bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+    return output.toByteArray()
+}

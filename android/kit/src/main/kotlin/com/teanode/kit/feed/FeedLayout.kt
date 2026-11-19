@@ -88,6 +88,52 @@ data class FeedHour(val forecastHour: String, val forecastTemperature: String, v
     }
 }
 
+/** The sky a weather card is drawn on: its gradient is chosen by the condition. */
+enum class FeedWeatherSky(private val topColor: Long, private val bottomColor: Long) {
+    ClearDay(0xFF0B5394, 0xFF1B6FB5),
+    ClearNight(0xFF101B3D, 0xFF28386B),
+    Cloudy(0xFF44546A, 0xFF5B6B80),
+    Rain(0xFF2F4858, 0xFF41647A),
+    Snow(0xFF4A6A8A, 0xFF56779A),
+    Storm(0xFF241F45, 0xFF433A6B),
+    ;
+
+    /** The gradient's two colors as ARGB, top and bottom; the dark theme's are a quarter darker, which only adds contrast to the white words on them. */
+    fun colors(isDark: Boolean): Pair<Long, Long> = if (isDark) darkened(topColor) to darkened(bottomColor) else topColor to bottomColor
+
+    private fun darkened(color: Long): Long {
+        fun part(shift: Int): Long = (((color shr shift) and 0xFF) * 3 / 4) shl shift
+        return 0xFF000000 or part(16) or part(8) or part(0)
+    }
+
+    companion object {
+        /** The sky for a condition, read as the iPhone reads it: by the symbol's and the words' mention of a storm, snow, rain, the moon, the sun, else cloud. */
+        fun of(conditionSymbol: String, conditionText: String): FeedWeatherSky {
+            val symbol = conditionSymbol.lowercase()
+            val words = conditionText.lowercase()
+            fun mentions(names: List<String>): Boolean = names.any { name -> name in symbol || name in words }
+            return when {
+                mentions(listOf("bolt", "storm", "thunder")) -> Storm
+                mentions(listOf("snow", "flurr", "sleet", "hail")) -> Snow
+                mentions(listOf("rain", "drizzle", "shower")) -> Rain
+                mentions(listOf("moon", "night")) -> ClearNight
+                mentions(listOf("sun", "clear")) -> ClearDay
+                else -> Cloudy
+            }
+        }
+
+        /** The contrast of the white words on a color, which the gradient keeps at 4.5 or more (WCAG AA for text). */
+        fun whiteContrast(color: Long): Double {
+            fun channel(shift: Int): Double {
+                val value = ((color shr shift) and 0xFF) / 255.0
+                return if (value <= 0.03928) value / 12.92 else Math.pow((value + 0.055) / 1.055, 2.4)
+            }
+            val luminance = 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+            return 1.05 / (luminance + 0.05)
+        }
+    }
+}
+
 /** The content of a weather card. */
 data class FeedWeather(
     val placeName: String,
@@ -100,6 +146,9 @@ data class FeedWeather(
     val lowTemperature: String,
     val hourlyForecast: List<FeedHour>,
 ) {
+    /** The sky the card is drawn on. */
+    val sky: FeedWeatherSky get() = FeedWeatherSky.of(conditionSymbol, conditionText)
+
     /** A temperature with its degree sign and the unit's letter: `21°C`. */
     fun shown(temperature: String): String {
         if (temperature.isEmpty()) return ""

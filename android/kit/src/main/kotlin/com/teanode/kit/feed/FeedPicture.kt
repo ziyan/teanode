@@ -4,7 +4,7 @@ package com.teanode.kit.feed
  * FeedPictureKind is what a card's picture shows, named by the subject. The agent picks an SF Symbol name for a card
  * (`cloud.sun`, `lock.shield`); the app draws the Material icon for the kind that name stands for.
  */
-enum class FeedPictureKind { Weather, Sun, Cloud, Rain, Snow, Storm, Night, Wind, Security, Chart, News, Tray, Mail, Calendar, Money, Shopping, Travel, Home, Health, Idea, Alert, Person, Place, Key, Code, Memory, Done, Time, Other }
+enum class FeedPictureKind { Photo, Video, Weather, Sun, Cloud, Rain, Snow, Storm, Night, Wind, Security, Chart, News, Tray, Mail, Calendar, Money, Shopping, Travel, Home, Health, Idea, Alert, Person, Place, Key, Code, Memory, Done, Time, Other }
 
 /** FeedPicture is a card's picture: a kind of symbol, or an emoji the agent chose. */
 sealed class FeedPicture {
@@ -47,7 +47,7 @@ sealed class FeedPicture {
             "sun" to FeedPictureKind.Sun, "moon" to FeedPictureKind.Night, "wind" to FeedPictureKind.Wind, "thermometer" to FeedPictureKind.Weather,
             "lock" to FeedPictureKind.Security, "shield" to FeedPictureKind.Security, "hand.raised" to FeedPictureKind.Security, "exclamationmark.shield" to FeedPictureKind.Security,
             "chart" to FeedPictureKind.Chart, "waveform" to FeedPictureKind.Chart, "gauge" to FeedPictureKind.Chart, "percent" to FeedPictureKind.Chart,
-            "newspaper" to FeedPictureKind.News, "doc" to FeedPictureKind.News, "book" to FeedPictureKind.News, "text.bubble" to FeedPictureKind.News,
+            "photo" to FeedPictureKind.Photo, "video" to FeedPictureKind.Video, "camera" to FeedPictureKind.Photo, "play" to FeedPictureKind.Video, "newspaper" to FeedPictureKind.News, "doc" to FeedPictureKind.News, "book" to FeedPictureKind.News, "text.bubble" to FeedPictureKind.News,
             "tray" to FeedPictureKind.Tray, "folder" to FeedPictureKind.Tray, "archivebox" to FeedPictureKind.Tray,
             "envelope" to FeedPictureKind.Mail, "mail" to FeedPictureKind.Mail, "paperplane" to FeedPictureKind.Mail,
             "calendar" to FeedPictureKind.Calendar, "clock" to FeedPictureKind.Time, "alarm" to FeedPictureKind.Time, "timer" to FeedPictureKind.Time, "hourglass" to FeedPictureKind.Time,
