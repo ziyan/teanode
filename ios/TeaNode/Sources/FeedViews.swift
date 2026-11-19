@@ -762,13 +762,9 @@ struct FeedCard: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if isStackShown, item.isStack, !item.feedStackTitle.isEmpty {
-                // A stack with a name of its own says it above its top card.
-                Text(item.feedStackTitle)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            FeedCardHeader(item: item)
+            // A stack with a name of its own says it in its top card's header,
+            // in place of where the card is from.
+            FeedCardHeader(item: item, stackTitle: isStackShown && item.isStack ? item.feedStackTitle : "")
             Text(item.title)
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
@@ -821,9 +817,9 @@ struct FeedCard: View {
             outcome
         } else if !item.choices.isEmpty, !item.isDismissed {
             // Side by side and of equal width when every label fits on one
-            // line, else one under the other.
+            // line at that width, else one under the other.
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { choiceButtons }
+                FeedEqualRow(spacing: 8) { choiceButtons }
                 VStack(spacing: 8) { choiceButtons }
             }
             .padding(.top, 2)
@@ -905,6 +901,34 @@ struct FeedCard: View {
     }
 }
 
+/// FeedEqualRow lays a card's choices side by side, each as wide as the row
+/// allows divided evenly. Its ideal width is that of the widest choice times
+/// their number, so ViewThatFits picks it only when every label fits on one
+/// line at the even width, and stacks the choices otherwise.
+struct FeedEqualRow: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let idealSizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        let widest = idealSizes.map(\.width).max() ?? 0
+        let tallest = idealSizes.map(\.height).max() ?? 0
+        let idealWidth = widest * CGFloat(subviews.count) + spacing * CGFloat(subviews.count - 1)
+        return CGSize(width: proposal.width ?? idealWidth, height: tallest)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard !subviews.isEmpty else { return }
+        let count = CGFloat(subviews.count)
+        let width = max(0, (bounds.width - spacing * (count - 1)) / count)
+        var left = bounds.minX
+        for subview in subviews {
+            subview.place(at: CGPoint(x: left, y: bounds.minY), proposal: ProposedViewSize(width: width, height: bounds.height))
+            left += width + spacing
+        }
+    }
+}
+
 /// FeedChoiceButton is one choice a card offers: the action in the accent,
 /// the others bordered, each as wide as the card.
 struct FeedChoiceButton: View {
@@ -939,6 +963,9 @@ struct FeedChoiceButton: View {
 /// largest text sizes the time goes under it.
 struct FeedCardHeader: View {
     let item: AgentFeedItem
+    /// The name of the stack the card tops, said in place of where the card
+    /// is from; empty for a card shown on its own.
+    var stackTitle = ""
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -959,10 +986,18 @@ struct FeedCardHeader: View {
     @ViewBuilder
     private var badgeAndSource: some View {
         FeedBadge(pictureKind: item.pictureKind, badgeColor: item.badgeColor)
-        Text(item.headerText.isEmpty ? item.kindWord : item.headerText)
+            // The badge grows with the text only so far; at the largest sizes
+            // the words beside it carry the line.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        Text(sourceText)
             .font(.footnote.weight(.semibold))
             .foregroundStyle(.secondary)
             .lineLimit(1)
+    }
+
+    private var sourceText: String {
+        if !stackTitle.isEmpty { return stackTitle }
+        return item.headerText.isEmpty ? item.kindWord : item.headerText
     }
 
     @ViewBuilder
