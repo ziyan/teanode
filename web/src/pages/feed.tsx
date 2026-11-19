@@ -979,8 +979,9 @@ function FeedStack({
   // The cards are dealt out of the deck: the room under the top card grows to
   // their height while every card slides down from under the top card into its
   // place on the same curve, so they fan out like a deck spread on a table.
-  // The cards stay opaque and each is drawn over the one below it, so only the
-  // edge of a card still in the deck shows. Closing is the same the other way,
+  // The cards stay opaque and each lower card is drawn over the one above it,
+  // as the cards of a fanned deck are, so what shows of each card while they
+  // spread is its top: its header and headline. Closing is the same the other way,
   // and the stack takes the cards out of the page once it is over. The room is
   // cut off at its growing bottom edge only, so a card is hidden under the top
   // card until it slides out rather than drawn over the cards below.
@@ -1056,9 +1057,8 @@ function FeedStack({
   return (
     <div ref={restRef} className="feed-stack-rest">
       <ul className="feed-list">
-        {rest.map((item, index) => (
-          // A card is drawn over the one below it while the deck spreads.
-          <li key={item.feedItemId} style={{ zIndex: rest.length - index }}>
+        {rest.map((item) => (
+          <li key={item.feedItemId}>
             <FeedCard
               item={readItemIds.has(item.feedItemId) ? { ...item, isRead: true } : item}
               isFresh={!item.isRead}
