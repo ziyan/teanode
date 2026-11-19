@@ -2,7 +2,6 @@ package com.teanode.kit.feed
 
 import com.teanode.kit.Connection
 import com.teanode.kit.TeaNodeJson
-import com.teanode.kit.chats.AgentReference
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.Serializable
@@ -12,28 +11,26 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
-/** The agent feed's GraphQL, as `internal/api/v1api/apigraph/agent_feed.go` declares it. */
+/** The agent feed's GraphQL: the same text as the iPhone app's (ios/TeaNodeKit AgentFeed.swift), which the server's tests check against the schema. */
 object AgentFeedDocuments {
     private const val FEED_ITEM_FIELDS = """feedItemId feedItemKind feedSourceKind feedSourceId feedSourceTitle runConversationId title body pictureSymbol
-    factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl }
-    recordReferences { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description }
-    choices { choiceKey choiceLabel choiceRole } chosenChoiceKey chosenAt outcomeText isOutcomePending feedUrgency isLiked isRead isDismissed postedAt updatedAt
-    feedStackKey feedStackTitle stackPosition stackItemCount stackUnreadCount feedCardLayout layoutContent"""
+factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl } choices { choiceKey choiceLabel choiceRole }
+chosenChoiceKey chosenAt outcomeText isOutcomePending feedUrgency isLiked isRead isDismissed postedAt updatedAt
+feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent"""
 
-    const val LIST_AGENT_FEED = """query (${'$'}first: Int, ${'$'}after: String, ${'$'}includeDismissed: Boolean) {
-  ListAgentFeed(first: ${'$'}first, after: ${'$'}after, includeDismissed: ${'$'}includeDismissed) {
-    feedItems { $FEED_ITEM_FIELDS }
-    nextCursor unreadCount
-  }
-}"""
     const val LIST_AGENT_FEED_STACK = """query (${'$'}feedStackKey: String!, ${'$'}first: Int, ${'$'}after: String) {
   ListAgentFeedStack(feedStackKey: ${'$'}feedStackKey, first: ${'$'}first, after: ${'$'}after) {
     feedItems { $FEED_ITEM_FIELDS }
-    nextCursor unreadCount
+    nextCursor
+    unreadCount
   }
 }"""
-    const val GET_AGENT_FEED_ITEM = """query (${'$'}feedItemId: String!) {
-  GetAgentFeedItem(feedItemId: ${'$'}feedItemId) { $FEED_ITEM_FIELDS }
+    const val LIST_AGENT_FEED = """query (${'$'}first: Int, ${'$'}after: String, ${'$'}includeDismissed: Boolean) {
+  ListAgentFeed(first: ${'$'}first, after: ${'$'}after, includeDismissed: ${'$'}includeDismissed) {
+    feedItems { $FEED_ITEM_FIELDS }
+    nextCursor
+    unreadCount
+  }
 }"""
     const val CHOOSE_AGENT_FEED_ITEM = """mutation (${'$'}feedItemId: String!, ${'$'}choiceKey: String!) {
   ChooseAgentFeedItem(feedItemId: ${'$'}feedItemId, choiceKey: ${'$'}choiceKey) { $FEED_ITEM_FIELDS }
@@ -47,8 +44,12 @@ object AgentFeedDocuments {
     const val DISMISS_AGENT_FEED_ITEM = """mutation (${'$'}feedItemId: String!) {
   DismissAgentFeedItem(feedItemId: ${'$'}feedItemId) { $FEED_ITEM_FIELDS }
 }"""
-    const val MARK_AGENT_FEED_READ = """mutation (${'$'}feedItemIds: [String!]!) { MarkAgentFeedRead(feedItemIds: ${'$'}feedItemIds) }"""
-    const val DISCUSS_AGENT_FEED_ITEM = """mutation (${'$'}feedItemId: String!) { DiscussAgentFeedItem(feedItemId: ${'$'}feedItemId) }"""
+    const val MARK_AGENT_FEED_READ = """mutation (${'$'}feedItemIds: [String!]!) {
+  MarkAgentFeedRead(feedItemIds: ${'$'}feedItemIds)
+}"""
+    const val DISCUSS_AGENT_FEED_ITEM = """mutation (${'$'}feedItemId: String!) {
+  DiscussAgentFeedItem(feedItemId: ${'$'}feedItemId)
+}"""
 
     /** The name of the subscription's field, also the key its events arrive under. */
     const val FEED_CHANGED_FIELD = "AgentFeedChanged"
@@ -105,7 +106,6 @@ data class AgentFeedItemView(
     val pictureSymbol: String = "",
     val factRows: List<AgentFeedFactRow> = emptyList(),
     val sourceLinks: List<AgentFeedSourceLink> = emptyList(),
-    val recordReferences: List<AgentReference> = emptyList(),
     val choices: List<AgentFeedChoice> = emptyList(),
     val chosenChoiceKey: String? = null,
     val chosenAt: String? = null,
@@ -141,7 +141,7 @@ data class AgentFeedItemView(
     /** How many more cards the stack holds under this one. */
     val moreInStackCount: Int get() = maxOf(0, stackItemCount - 1)
 
-    /** What the stack is called: its own name, else the goal's or schedule's. */
+    /** What the stack is called: its own name, else the goal's or schedule's; empty when it has neither. */
     val stackName: String get() = feedStackTitle.ifEmpty { feedSourceTitle }
 
     /** How many card edges show behind a stack's top card: one for a pair, two for more. */
@@ -153,10 +153,17 @@ data class AgentFeedItemView(
     /** Whether a choice was made, so the buttons give way to what came of it. */
     val isChosen: Boolean get() = !chosenChoiceKey.isNullOrEmpty()
 
-    /** Whether the card still asks for a choice. */
+    /** Whether the card still offers its choices. */
     val isAwaitingChoice: Boolean get() = choices.isNotEmpty() && !isChosen && !isDismissed
 
-    val isUrgent: Boolean get() = feedUrgency == "now"
+    /** Whether the card is a question the person has yet to answer: a card whose only choice is to discuss it asks nothing. */
+    val isWaitingForAnswer: Boolean get() = !isChosen && !isDismissed && choices.any { choice -> choice.role != AgentFeedChoiceRole.Discuss }
+
+    /** The choices in the order they are shown: the actions first, as the prominent button comes first. */
+    val orderedChoices: List<AgentFeedChoice> get() = choices.filter { choice -> choice.role == AgentFeedChoiceRole.Action } + choices.filter { choice -> choice.role != AgentFeedChoiceRole.Action }
+
+    /** When the card was last posted or replaced: a replaced card moves to the top, so this and not the first posting is the date shown. */
+    val shownAtText: String get() = updatedAt.ifEmpty { postedAt }
 
     /** Whether the card is about a coding session, which "open" goes to. */
     val isCodingSession: Boolean get() = feedSourceKind == "coding_session"
@@ -165,8 +172,8 @@ data class AgentFeedItemView(
     val codingSessionPlace: Pair<String, String>?
         get() {
             if (!isCodingSession) return null
-            val computer = feedSourceId.substringBefore('/', "")
-            val paneId = feedSourceId.substringAfter('/', "")
+            val computer = feedSourceId.substringBeforeLast('/', "")
+            val paneId = feedSourceId.substringAfterLast('/', "")
             return if (computer.isEmpty() || paneId.isEmpty()) null else computer to paneId
         }
 
@@ -202,36 +209,29 @@ data class AgentFeedList(
     val hasMore: Boolean get() = !nextCursor.isNullOrEmpty()
 
     companion object {
-        fun first(page: AgentFeedPage): AgentFeedList = AgentFeedList(page.feedItems.filter { item -> !item.isDismissed }, page.nextCursor, page.unreadCount)
+        fun first(page: AgentFeedPage): AgentFeedList = AgentFeedList(page.feedItems, page.nextCursor, page.unreadCount)
     }
 
-    /** The list with the next page below it; a card already shown keeps its place and takes its newer content. */
+    /** The list with the next page below it; a card already shown is left as it is, and the cursor and the unread count are the page's. */
     fun appending(page: AgentFeedPage): AgentFeedList {
         val shownIds = feedItems.map { item -> item.feedItemId }.toSet()
-        val newer = page.feedItems.associateBy { item -> item.feedItemId }
-        val updated = feedItems.map { item -> newer[item.feedItemId] ?: item }
-        val added = page.feedItems.filter { item -> item.feedItemId !in shownIds && !item.isDismissed }
-        return AgentFeedList(updated + added, page.nextCursor, page.unreadCount)
+        return AgentFeedList(feedItems + page.feedItems.filter { item -> item.feedItemId !in shownIds }, page.nextCursor, page.unreadCount)
     }
 
     /**
-     * The list with this card in it: replaced where it is, a dismissed one taken out, and a posted or replaced one at
-     * the top, since the agent moves a card it updates to the top.
+     * The list with this card in place of its old copy, wherever it is (a card answered stays on screen, settled on the
+     * answer, even when the answer closed it). A card read on its own says it is alone, so the stack it tops keeps its counts.
      */
-    fun with(item: AgentFeedItemView, isMovedToTop: Boolean = false): AgentFeedList {
-        if (item.isDismissed) return removing(item.feedItemId)
+    fun replacing(item: AgentFeedItemView): AgentFeedList {
         val position = feedItems.indexOfFirst { shown -> shown.feedItemId == item.feedItemId }
-        // A card read on its own says it is alone; the list knows the stack it tops.
-        val kept = feedItems.getOrNull(position)
-        val shown = if (kept != null && kept.isStack && kept.feedStackKey == item.feedStackKey) item.copy(stackItemCount = kept.stackItemCount, stackUnreadCount = kept.stackUnreadCount) else item
-        val without = if (position >= 0) feedItems.filterIndexed { index, _ -> index != position } else feedItems
-        val inserted = when {
-            isMovedToTop || position < 0 -> listOf(shown) + without
-            else -> without.toMutableList().also { list -> list.add(position, shown) }
-        }
-        val nextUnread = if (position < 0 && !item.isRead) unreadCount + 1 else unreadCount
-        return copy(feedItems = inserted, unreadCount = nextUnread)
+        if (position < 0) return this
+        val kept = feedItems[position]
+        val replacement = if (kept.isStack && kept.feedStackKey == item.feedStackKey) item.copy(stackItemCount = kept.stackItemCount, stackUnreadCount = kept.stackUnreadCount) else item
+        return copy(feedItems = feedItems.toMutableList().also { list -> list[position] = replacement })
     }
+
+    /** Whether any card waits for a turn of the agent to say how its answer went, which is when the feed is read again every few seconds. */
+    val hasPendingOutcome: Boolean get() = feedItems.any { item -> item.isOutcomePending }
 
     fun removing(feedItemId: String): AgentFeedList {
         val removed = feedItems.firstOrNull { item -> item.feedItemId == feedItemId } ?: return this
@@ -245,13 +245,8 @@ data class AgentFeedList(
             unreadCount = maxOf(0, unreadCount - newlyReadCount),
         )
 
-    fun withUnreadCount(count: Int): AgentFeedList = copy(unreadCount = count)
-
     /** The cards shown that nobody has read yet, which the screen asks the server to mark as they are seen. */
     fun isUnread(feedItemId: String): Boolean = feedItems.firstOrNull { item -> item.feedItemId == feedItemId }?.isRead == false
-
-    /** Whether an event is about a card that is shown, so that it is read again (a posted card is new to the list). */
-    fun shows(feedItemId: String): Boolean = feedItems.any { item -> item.feedItemId == feedItemId }
 }
 
 @Serializable
@@ -260,8 +255,6 @@ private class ListAgentFeedAnswer(val ListAgentFeed: AgentFeedPage)
 @Serializable
 private class ListAgentFeedStackAnswer(val ListAgentFeedStack: AgentFeedPage)
 
-@Serializable
-private class GetAgentFeedItemAnswer(val GetAgentFeedItem: AgentFeedItemView)
 
 @Serializable
 private class ChooseAgentFeedItemAnswer(val ChooseAgentFeedItem: AgentFeedItemView)
@@ -282,24 +275,22 @@ private class MarkAgentFeedReadAnswer(val MarkAgentFeedRead: Int)
 private class DiscussAgentFeedItemAnswer(val DiscussAgentFeedItem: String)
 
 /** How many cards a page of the feed holds. */
-const val AGENT_FEED_PAGE_SIZE = 20
+const val AGENT_FEED_PAGE_SIZE = 30
 
 /** A page of the feed, newest first; [after] is the previous page's `nextCursor`. */
 suspend fun Connection.agentFeed(after: String? = null, first: Int = AGENT_FEED_PAGE_SIZE, includeDismissed: Boolean = false): AgentFeedPage {
-    val variables = hashMapOf<String, JsonElement>("first" to JsonPrimitive(first), "includeDismissed" to JsonPrimitive(includeDismissed))
-    if (after != null) variables["after"] = JsonPrimitive(after)
+    val variables = hashMapOf<String, JsonElement>("first" to JsonPrimitive(first))
+    if (!after.isNullOrEmpty()) variables["after"] = JsonPrimitive(after)
+    if (includeDismissed) variables["includeDismissed"] = JsonPrimitive(true)
     return execute<ListAgentFeedAnswer>(AgentFeedDocuments.LIST_AGENT_FEED, variables).ListAgentFeed
 }
 
 /** One stack's cards, newest first (or by their positions), a page at a time; [after] is the previous page's `nextCursor`. */
 suspend fun Connection.agentFeedStack(feedStackKey: String, after: String? = null, first: Int = AGENT_FEED_PAGE_SIZE): AgentFeedPage {
     val variables = hashMapOf<String, JsonElement>("feedStackKey" to JsonPrimitive(feedStackKey), "first" to JsonPrimitive(first))
-    if (after != null) variables["after"] = JsonPrimitive(after)
+    if (!after.isNullOrEmpty()) variables["after"] = JsonPrimitive(after)
     return execute<ListAgentFeedStackAnswer>(AgentFeedDocuments.LIST_AGENT_FEED_STACK, variables).ListAgentFeedStack
 }
-
-suspend fun Connection.agentFeedItem(feedItemId: String): AgentFeedItemView =
-    execute<GetAgentFeedItemAnswer>(AgentFeedDocuments.GET_AGENT_FEED_ITEM, mapOf("feedItemId" to JsonPrimitive(feedItemId))).GetAgentFeedItem
 
 /** Answers a card with one of its choices, without opening any conversation. A card already answered is refused by the server. */
 suspend fun Connection.chooseAgentFeedItem(feedItemId: String, choiceKey: String): AgentFeedItemView =

@@ -44,6 +44,7 @@ class NotificationActionRunner(private val context: Context, private val push: P
                         when {
                             info.notificationKind == "chat" -> context.getString(R.string.notifications_did_not_reach_chat, reason)
                             info.notificationKind == NotificationCategories.JOURNAL_EVENING_QUESTION -> context.getString(R.string.notifications_did_not_reach_journal, reason)
+                            info.notificationKind == NotificationCategories.FEED_ITEM -> context.getString(R.string.notifications_did_not_reach_feed, reason)
                             else -> context.getString(R.string.notifications_did_not_reach_agent, reason)
                         },
                     )

@@ -191,12 +191,12 @@ class NotificationActionsTest {
     }
 
     @Test
-    fun anUrgentCardShowsAtMostThreeChoices() {
+    fun anUrgentCardShowsAtMostFourChoices() {
         val many = content(
             """{"notificationKind":"agent_feed","feedItemId":"c","title":"t","body":"b","buttons":[
-                {"label":"A","buttonAction":"feed:a"},{"label":"B","buttonAction":"feed:b"},{"label":"C","buttonAction":"feed:c"},{"label":"D","buttonAction":"feed:d"}]}""",
+                {"label":"A","buttonAction":"feed:a"},{"label":"B","buttonAction":"feed:b"},{"label":"C","buttonAction":"feed:c"},{"label":"D","buttonAction":"feed:d"},{"label":"E","buttonAction":"feed:e"}]}""",
         )
-        assertEquals(listOf("feed:a", "feed:b", "feed:c", "open"), NotificationCategories.buttons(many).map { button -> button.actionId })
+        assertEquals(listOf("feed:a", "feed:b", "feed:c", "feed:d", "open"), NotificationCategories.buttons(many).map { button -> button.actionId })
     }
 
     @Test
@@ -221,9 +221,8 @@ class NotificationActionsTest {
     }
 
     @Test
-    fun pressingTheNotificationOpensTheCard() {
+    fun pressingTheNotificationOpensTheFeed() {
         val info = NotificationInfo.of(urgentCard, keptAccounts[0])
-        assertEquals(NotificationPress.Open(keptAccounts[0], NotificationDestination.FeedItem("card-1")), press(info, "default"))
-        assertEquals(NotificationDestination.Main, NotificationPress.destinationOf(info.copy(feedItemId = "")))
+        assertEquals(NotificationPress.Open(keptAccounts[0], NotificationDestination.Feed), press(info, "default"))
     }
 }

@@ -3,7 +3,6 @@ package com.teanode.app.feed
 import com.teanode.app.demo.DemoAnswerer
 import com.teanode.app.demo.graphQLField
 import com.teanode.kit.TeaNodeJson
-import com.teanode.kit.chats.AgentReference
 import com.teanode.kit.feed.AgentFeedChoice
 import com.teanode.kit.feed.AgentFeedFactRow
 import com.teanode.kit.feed.AgentFeedItemView
@@ -152,7 +151,7 @@ private val demoPlainCards: List<AgentFeedItemView> = listOf(
     AgentFeedItemView(
         feedItemId = FeedDemoIDs.REPORT, feedItemKind = "report", feedSourceKind = "schedule", feedSourceTitle = "Monday summary", title = "Your week ahead",
         body = "Three meetings, one trip on Thursday, and a receipt that needs filing.", pictureSymbol = "calendar",
-        recordReferences = listOf(AgentReference(itemId = "abc123", subject = "Receipt from the print shop"), AgentReference(recordingId = "rec1", recordingTitle = "Planning call"), AgentReference(photoId = "p1", photoTitle = "Whiteboard photo")),
+        factRows = listOf(AgentFeedFactRow("Meetings", "3"), AgentFeedFactRow("Trips", "1 on Thursday"), AgentFeedFactRow("To file", "1 receipt")),
         isRead = true, postedAt = minutesAgo(60 * 26), updatedAt = minutesAgo(60 * 26),
     ),
     AgentFeedItemView(
@@ -220,6 +219,9 @@ private fun answeredWith(item: AgentFeedItemView, choiceKey: String): AgentFeedI
     return if (chosen.choiceRole == "dismiss") item.copy(chosenChoiceKey = choiceKey, isDismissed = true) else item.copy(chosenChoiceKey = choiceKey, isOutcomePending = true, isRead = true)
 }
 
+/** The demo card with this id, whichever list holds it. */
+fun demoFeedCard(feedItemId: String): AgentFeedItemView = cardOf(feedItemId)
+
 private fun cardOf(feedItemId: String): AgentFeedItemView =
     (demoFeedCards + demoBriefCards + stackCards(FeedDemoIDs.ROBOTS_STACK_KEY)).firstOrNull { card -> card.feedItemId == feedItemId } ?: demoFeedCards.first()
 
@@ -233,7 +235,6 @@ val feedDemoAnswerers: List<DemoAnswerer> = listOf(
         val cards = stackCards((variables["feedStackKey"] as? JsonPrimitive)?.content.orEmpty())
         TeaNodeJson.encodeToString(AgentFeedPage.serializer(), AgentFeedPage(cards, null, cards.count { card -> !card.isRead }))
     },
-    graphQLField("GetAgentFeedItem") { variables -> json(cardOf((variables["feedItemId"] as? JsonPrimitive)?.content.orEmpty())) },
     graphQLField("ChooseAgentFeedItem") { variables ->
         json(answeredWith(cardOf((variables["feedItemId"] as? JsonPrimitive)?.content.orEmpty()), (variables["choiceKey"] as? JsonPrimitive)?.content.orEmpty()))
     },

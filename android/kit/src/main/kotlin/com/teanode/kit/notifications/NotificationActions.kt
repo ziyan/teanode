@@ -94,8 +94,8 @@ object NotificationCategories {
     const val FEED_ITEM = "agent_feed"
     const val CHOOSE_ACTION_PREFIX = "feed:"
 
-    /** The most choices of a card a notification shows; Open is the fourth button. */
-    const val FEED_CHOICE_BUTTONS_MOST = 3
+    /** The most choices of a card a notification shows; Open comes after them. */
+    const val FEED_CHOICE_BUTTONS_MOST = 4
 
     /**
      * The journal's evening question. The server sends it as a notification of this kind carrying the day it asks
@@ -231,8 +231,8 @@ sealed class NotificationDestination {
     /** The evening question: the day it asks about, in the Journal. */
     data class JournalDay(val day: String) : NotificationDestination()
 
-    /** An urgent card of the feed: Feed, with the card open. */
-    data class FeedItem(val feedItemId: String) : NotificationDestination()
+    /** An urgent card of the feed: the Feed, where it is. */
+    data object Feed : NotificationDestination()
 
     /** A conversation of the agent or of people. */
     data class Conversation(val conversationId: String) : NotificationDestination()
@@ -315,7 +315,7 @@ sealed class NotificationPress {
             info.notificationKind == "shopping" ->
                 NotificationDestination.Shopping(info.shoppingStoreName.ifEmpty { null }, if (info.shoppingStoreName.isEmpty()) info.shoppingListId.ifEmpty { null } else null)
             info.notificationKind == NotificationCategories.FEED_ITEM ->
-                if (info.feedItemId.isEmpty()) NotificationDestination.Main else NotificationDestination.FeedItem(info.feedItemId)
+                NotificationDestination.Feed
             info.notificationKind == "herdr_question" -> NotificationDestination.Coding.of(info.computer, info.paneId)
             info.notificationKind == NotificationCategories.JOURNAL_EVENING_QUESTION -> NotificationDestination.JournalDay(info.journalDay)
             info.conversationId.isNotEmpty() -> NotificationDestination.Conversation(info.conversationId)

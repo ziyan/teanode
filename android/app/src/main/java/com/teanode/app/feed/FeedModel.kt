@@ -1,101 +1,104 @@
 package com.teanode.app.feed
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.teanode.kit.Connection
-import com.teanode.kit.feed.AgentFeedChanged
+import com.teanode.kit.feed.AgentFeedChoice
 import com.teanode.kit.feed.AgentFeedItemView
 import com.teanode.kit.feed.AgentFeedList
 import com.teanode.kit.feed.AgentFeedPage
-import com.teanode.kit.feed.agentFeedItem
+import com.teanode.kit.feed.chooseAgentFeedItem
+import com.teanode.kit.feed.discussAgentFeedItem
+import com.teanode.kit.feed.dismissAgentFeedItem
+import com.teanode.kit.feed.likeAgentFeedItem
 import com.teanode.kit.feed.markAgentFeedRead
+import com.teanode.kit.feed.showLessLikeAgentFeedItem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** How long a card is on screen before it is marked read, so a card flicked past is not. */
-const val FEED_SEEN_DELAY_MS = 800L
+/** How long cards are on screen before they are reported read together, so scrolling past a screenful is one call (ios FeedModel.noteAppeared). */
+const val FEED_READ_DELAY_MS = 1_500L
 
 /**
- * FeedModel holds the feed a screen shows: the cards read so far, paging, a pull to refresh, the live changes the
- * server reports, and the cards seen so far, which are marked read in one call. The list itself and every change to it
- * are [AgentFeedList]'s, tested in the kit; this class only calls the server and keeps the screen's loading states.
+ * FeedModel is the feed (ios FeedViews.swift, FeedModel): the cards read so far, how many are unread, and the calls
+ * that answer, like, close or read a card. The list and every change to it are [AgentFeedList]'s, tested in the kit;
+ * this class calls the server and keeps what a screen needs while a call is on its way. A stack's own screen has one of
+ * its own, reading that stack's cards.
  */
 class FeedModel(
     private val connection: Connection,
     private val scope: CoroutineScope,
-    /** Reads a page of the cards this model shows: the whole feed, or one stack's cards; [after] is the previous page's cursor. */
+    /** Reads a page of the cards this model shows: the feed itself, or one stack's cards; [after] is the previous page's cursor. */
     private val readPage: suspend (after: String?) -> AgentFeedPage,
-    /** Whether the cards are one stack's, which is read again whenever any of them changes, since the server keeps their order. */
-    private val isStackScreen: Boolean = false,
     /** Called with the unread count whenever it changes, for the badge of the Feed tab. */
-    private val onUnreadCount: (Int) -> Unit,
-    /** Called with a failure of something the person did not ask for by name (reading a page, marking read), to tell them. */
-    private val onProblem: (Throwable) -> Unit,
+    private val onUnreadCount: (Int) -> Unit = {},
     /** Called with how many cards were newly read, for a screen whose own count is not the badge's. */
     private val onNewlyRead: (Int) -> Unit = {},
 ) {
     var list: AgentFeedList? by mutableStateOf(null)
         private set
 
-    /** Why the first read failed; null otherwise. */
-    var error: Throwable? by mutableStateOf(null)
-        private set
-
-    var isLoading: Boolean by mutableStateOf(false)
+    /** Why the first read failed, when there is nothing to show instead. */
+    var loadFailure: Throwable? by mutableStateOf(null)
         private set
 
     var isLoadingMore: Boolean by mutableStateOf(false)
         private set
 
-    /** Whether reading the next page failed, so that the list offers to try again rather than asking at once and failing in a loop. */
-    var hasMoreFailed: Boolean by mutableStateOf(false)
-        private set
+    /** The cards a call is in flight for, so a second tap does nothing. */
+    val busyFeedItemIds = mutableStateMapOf<String, Boolean>()
 
-    private val unreadSeenIds = LinkedHashSet<String>()
-    private var seenJob: Job? = null
+    /** What happened that the person is told in a snackbar: a call that failed, or "You will see fewer like it". */
+    var onProblem: (Throwable) -> Unit = {}
+    var onDone: (String) -> Unit = {}
 
-    fun load() {
-        if (isLoading || list != null) return
+    /** The hearts the person just pressed, shown before the server answers. */
+    private val likedOverrides = mutableStateMapOf<String, Boolean>()
+    private val readFeedItemIds = HashSet<String>()
+    private val pendingReadFeedItemIds = LinkedHashSet<String>()
+    private var readJob: Job? = null
+    private var isLoading = false
+
+    val hasLoaded: Boolean get() = list != null
+
+    val hasPendingOutcome: Boolean get() = list?.hasPendingOutcome == true
+
+    fun isLiked(item: AgentFeedItemView): Boolean = likedOverrides[item.feedItemId] ?: item.isLiked
+
+    /** Reads the newest page again. What was shown stays when it cannot be read, and the cards past the first page are dropped. */
+    suspend fun load() {
+        if (isLoading) return
         isLoading = true
-        error = null
-        scope.launch {
-            try {
-                show(AgentFeedList.first(readPage(null)))
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: Throwable) {
-                error = failure
-            } finally {
-                isLoading = false
-            }
-        }
-    }
-
-    fun retry() {
-        list = null
-        load()
-    }
-
-    /** Reads the first page again over the cards shown; the old cards stay while it comes. */
-    suspend fun refresh() {
         try {
             show(AgentFeedList.first(readPage(null)))
-            hasMoreFailed = false
+            loadFailure = null
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: Throwable) {
-            if (list == null) error = failure else onProblem(failure)
+            if (hasLoaded) onProblem(failure) else loadFailure = failure
+        } finally {
+            isLoading = false
         }
     }
 
+    suspend fun loadFirstIfNeeded() {
+        if (!hasLoaded) load()
+    }
+
+    fun retry() {
+        scope.launch { load() }
+    }
+
+    /** Reads the page after the last card shown. */
     fun loadMore() {
         val current = list ?: return
         val cursor = current.nextCursor
-        if (cursor.isNullOrEmpty() || isLoadingMore || hasMoreFailed) return
+        if (cursor.isNullOrEmpty() || isLoadingMore || isLoading) return
         isLoadingMore = true
         scope.launch {
             try {
@@ -103,7 +106,6 @@ class FeedModel(
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Throwable) {
-                hasMoreFailed = true
                 onProblem(failure)
             } finally {
                 isLoadingMore = false
@@ -111,75 +113,107 @@ class FeedModel(
         }
     }
 
-    fun retryMore() {
-        hasMoreFailed = false
-        loadMore()
-    }
-
-    /** Puts a card the person changed, or the server answered, where it belongs. */
-    fun change(item: AgentFeedItemView) {
-        list?.let { current -> show(current.with(item)) }
-    }
-
-    fun remove(feedItemId: String) {
-        val current = list ?: return
-        val removed = current.feedItems.firstOrNull { item -> item.feedItemId == feedItemId }
-        show(current.removing(feedItemId))
-        // The card under a stack's top takes its place, which only the server knows.
-        if (removed?.isStack == true) scope.launch { refresh() }
-    }
-
-    /** What the server says happened to a card: a card it changed is read again, one that was closed leaves. */
-    suspend fun apply(changed: AgentFeedChanged) {
-        val current = list ?: return
-        val shown = current.feedItems.firstOrNull { item -> item.feedItemId == changed.feedItemId }
-        if (changed.feedChange == "dismissed") {
-            show(current.removing(changed.feedItemId).withUnreadCount(changed.unreadCount))
-            if (shown?.isStack == true || isStackScreen) refresh()
-            return
-        }
-        if (isStackScreen) {
-            refresh()
-            return
-        }
-        try {
-            val item = connection.agentFeedItem(changed.feedItemId)
-            val movesToTop = changed.feedChange == "posted" || changed.feedChange == "replaced"
-            // A card that joins a stack changes the stack's top and count, which the server's list says.
-            if (item.feedStackKey.isNotEmpty() && movesToTop) {
-                refresh()
-                list?.let { latest -> show(latest.withUnreadCount(changed.unreadCount)) }
-                return
-            }
-            show((list ?: current).with(item, isMovedToTop = movesToTop).withUnreadCount(changed.unreadCount))
-        } catch (failure: CancellationException) {
-            throw failure
-        } catch (_: Throwable) {
-            // A card that cannot be read now is read with the next refresh; the count still says what the server counted.
-            show((list ?: current).withUnreadCount(changed.unreadCount))
-        }
-    }
-
-    /** A card is on screen: it is marked read once it has stayed there a moment. */
-    fun noteSeen(feedItemId: String) {
-        if (list?.isUnread(feedItemId) != true) return
-        unreadSeenIds.add(feedItemId)
-        if (seenJob?.isActive == true) return
-        seenJob = scope.launch {
-            delay(FEED_SEEN_DELAY_MS)
-            val ids = unreadSeenIds.toList()
-            unreadSeenIds.clear()
-            if (ids.isEmpty()) return@launch
+    /** A card came on screen: cards are reported read together after a moment. */
+    fun noteAppeared(item: AgentFeedItemView) {
+        if (item.isRead || item.feedItemId in readFeedItemIds) return
+        pendingReadFeedItemIds.add(item.feedItemId)
+        if (readJob?.isActive == true) return
+        readJob = scope.launch {
+            delay(FEED_READ_DELAY_MS)
+            val feedItemIds = pendingReadFeedItemIds.sorted()
+            pendingReadFeedItemIds.clear()
+            if (feedItemIds.isEmpty()) return@launch
             try {
-                val newlyReadCount = connection.markAgentFeedRead(ids)
-                list?.let { current -> show(current.markedRead(ids.toSet(), newlyReadCount)) }
+                val newlyReadCount = connection.markAgentFeedRead(feedItemIds)
+                readFeedItemIds.addAll(feedItemIds)
+                list?.let { current -> show(current.markedRead(feedItemIds.toSet(), newlyReadCount)) }
                 onNewlyRead(newlyReadCount)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (_: Throwable) {
-                // Marking read is a courtesy: the cards stay unread and are marked when seen again.
+                // Left unread: the card is reported again when it next appears.
             }
         }
+    }
+
+    /** Answers a card with one of its choices. The card comes back settled on the choice and stays on screen, with what the agent made of it. */
+    fun choose(item: AgentFeedItemView, choice: AgentFeedChoice) {
+        if (busyFeedItemIds.containsKey(item.feedItemId)) return
+        busyFeedItemIds[item.feedItemId] = true
+        scope.launch {
+            try {
+                replace(connection.chooseAgentFeedItem(item.feedItemId, choice.choiceKey))
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                onProblem(failure)
+            } finally {
+                busyFeedItemIds.remove(item.feedItemId)
+            }
+        }
+    }
+
+    fun toggleLike(item: AgentFeedItemView) {
+        val isLikedNow = !isLiked(item)
+        likedOverrides[item.feedItemId] = isLikedNow
+        scope.launch {
+            try {
+                replace(connection.likeAgentFeedItem(item.feedItemId, isLikedNow))
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                onProblem(failure)
+            } finally {
+                likedOverrides.remove(item.feedItemId)
+            }
+        }
+    }
+
+    /** Records that the person wants fewer cards like this one; the card goes. */
+    fun showLessLike(item: AgentFeedItemView, doneText: String) {
+        scope.launch {
+            try {
+                connection.showLessLikeAgentFeedItem(item.feedItemId)
+                remove(item)
+                onDone(doneText)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                onProblem(failure)
+            }
+        }
+    }
+
+    fun dismiss(item: AgentFeedItemView) {
+        scope.launch {
+            try {
+                connection.dismissAgentFeedItem(item.feedItemId)
+                remove(item)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                onProblem(failure)
+            }
+        }
+    }
+
+    /** Opens the main conversation about a card: the server attaches the card to the next message there. Whether it did. */
+    suspend fun discuss(item: AgentFeedItemView): Boolean = try {
+        connection.discussAgentFeedItem(item.feedItemId)
+        true
+    } catch (failure: CancellationException) {
+        throw failure
+    } catch (failure: Throwable) {
+        onProblem(failure)
+        false
+    }
+
+    private fun replace(item: AgentFeedItemView) {
+        list?.let { current -> show(current.replacing(item)) }
+    }
+
+    private fun remove(item: AgentFeedItemView) {
+        list?.let { current -> show(current.removing(item.feedItemId)) }
     }
 
     private fun show(next: AgentFeedList) {

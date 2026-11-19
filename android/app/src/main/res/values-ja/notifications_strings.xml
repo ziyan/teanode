@@ -38,4 +38,5 @@
     <string name="notifications_turn_waiting">あなたを待っています</string>
     <string name="notifications_turn_done">完了</string>
     <string name="notifications_turn_failed">問題が起きて止まりました</string>
+    <string name="notifications_did_not_reach_feed">回答がフィードに届きませんでした：%1$s</string>
 </resources>

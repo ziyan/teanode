@@ -1,14 +1,15 @@
 package com.teanode.app.feed
 
 import android.content.Context
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.teanode.app.demo.DemoHost
 import com.teanode.app.demo.DemoSession
-import com.teanode.kit.feed.AgentFeedChanged
 import com.teanode.kit.feed.agentFeed
 import com.teanode.kit.feed.agentFeedStack
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +20,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -44,19 +46,19 @@ class FeedModelTest {
     private fun stackModel(feedStackKey: String): FeedModel {
         val session = DemoSession.create(ApplicationProvider.getApplicationContext<Context>())
         val connection = session.connection.value!!
-        return FeedModel(connection, scope, readPage = { after -> connection.agentFeedStack(feedStackKey, after = after) }, isStackScreen = true, onUnreadCount = { }, onProblem = { })
+        return FeedModel(connection, scope, readPage = { after -> connection.agentFeedStack(feedStackKey, after = after) })
     }
 
     private fun model(): FeedModel {
         val session = DemoSession.create(ApplicationProvider.getApplicationContext<Context>())
         val connection = session.connection.value!!
-        return FeedModel(connection, scope, readPage = { after -> connection.agentFeed(after = after) }, onUnreadCount = { count -> unreadCounts.add(count) }, onProblem = { })
+        return FeedModel(connection, scope, readPage = { after -> connection.agentFeed(after = after) }, onUnreadCount = { count -> unreadCounts.add(count) })
     }
 
     @Test
     fun theFirstPageLoadsAndTheUnreadCountIsReported() {
         val feed = model()
-        feed.load()
+        runBlocking { feed.load() }
         val list = feed.list
         assertNotNull(list)
         assertEquals(demoFeedCards.map { card -> card.feedItemId }, list!!.feedItems.map { card -> card.feedItemId })
@@ -64,59 +66,91 @@ class FeedModelTest {
     }
 
     @Test
-    fun aCardSeenIsMarkedReadAfterAMoment() {
+    fun aCardSeenIsReportedReadAfterAMoment() {
         val feed = model()
-        feed.load()
+        runBlocking { feed.load() }
         val before = feed.list!!.unreadCount
-        feed.noteSeen(FeedDemoIDs.SIGN_IN)
+        feed.noteAppeared(feed.list!!.feedItems.first { card -> card.feedItemId == FeedDemoIDs.SIGN_IN })
         assertTrue(feed.list!!.isUnread(FeedDemoIDs.SIGN_IN))
-        runBlocking { kotlinx.coroutines.delay(FEED_SEEN_DELAY_MS + 400) }
+        runBlocking { kotlinx.coroutines.delay(FEED_READ_DELAY_MS + 500) }
         assertFalse(feed.list!!.isUnread(FeedDemoIDs.SIGN_IN))
         // The demo server says one card was newly read.
         assertEquals(before - 1, feed.list!!.unreadCount)
     }
 
     @Test
-    fun aDismissedChangeTakesTheCardOut() {
+    fun aCardAlreadyReportedIsNotReportedAgain() {
         val feed = model()
-        feed.load()
-        runBlocking { feed.apply(AgentFeedChanged(FeedDemoIDs.WEATHER, "dismissed", 2)) }
-        assertFalse(feed.list!!.shows(FeedDemoIDs.WEATHER))
-        assertEquals(2, feed.list!!.unreadCount)
+        runBlocking { feed.load() }
+        val card = feed.list!!.feedItems.first { each -> each.feedItemId == FeedDemoIDs.SIGN_IN }
+        feed.noteAppeared(card)
+        runBlocking { kotlinx.coroutines.delay(FEED_READ_DELAY_MS + 500) }
+        val countAfterFirst = feed.list!!.unreadCount
+        // A fresh read gives the unread copy again; the model knows the server was told.
+        runBlocking { feed.load() }
+        feed.noteAppeared(feed.list!!.feedItems.first { each -> each.feedItemId == FeedDemoIDs.SIGN_IN })
+        runBlocking { kotlinx.coroutines.delay(FEED_READ_DELAY_MS + 500) }
+        assertEquals(demoFeedCards.count { each -> !each.isRead }, feed.list!!.unreadCount)
+        assertTrue(countAfterFirst < feed.list!!.unreadCount)
     }
 
     @Test
-    fun aReplacedChangeReadsTheCardAgainAndPutsItAtTheTop() {
+    fun anAnsweredCardStaysOnScreenSettledOnItsChoice() {
         val feed = model()
-        feed.load()
-        runBlocking { feed.apply(AgentFeedChanged(FeedDemoIDs.WEATHER, "replaced", 4)) }
-        assertEquals(FeedDemoIDs.WEATHER, feed.list!!.feedItems.first().feedItemId)
-        assertEquals(4, feed.list!!.unreadCount)
+        runBlocking { feed.load() }
+        val card = feed.list!!.feedItems.first { each -> each.feedItemId == FeedDemoIDs.SIGN_IN }
+        feed.choose(card, card.choices.first { choice -> choice.choiceKey == "me" })
+        val after = feed.list!!.feedItems.first { each -> each.feedItemId == FeedDemoIDs.SIGN_IN }
+        assertEquals("me", after.chosenChoiceKey)
+        assertEquals(demoFeedCards.size, feed.list!!.feedItems.size)
+        assertFalse(feed.busyFeedItemIds.containsKey(FeedDemoIDs.SIGN_IN))
     }
 
     @Test
-    fun aSettledChangeKeepsTheCardWhereItIs() {
+    fun aHeartShowsAtOnceAndTheServersAnswerKeepsIt() {
         val feed = model()
-        feed.load()
-        val position = feed.list!!.feedItems.indexOfFirst { card -> card.feedItemId == FeedDemoIDs.PENDING }
-        runBlocking { feed.apply(AgentFeedChanged(FeedDemoIDs.PENDING, "settled", 3)) }
-        assertEquals(position, feed.list!!.feedItems.indexOfFirst { card -> card.feedItemId == FeedDemoIDs.PENDING })
+        runBlocking { feed.load() }
+        val card = feed.list!!.feedItems.first { each -> each.feedItemId == FeedDemoIDs.WEATHER }
+        assertFalse(feed.isLiked(card))
+        feed.toggleLike(card)
+        assertTrue(feed.list!!.feedItems.first { each -> each.feedItemId == FeedDemoIDs.WEATHER }.isLiked)
     }
 
     @Test
-    fun aCardJoiningAStackReadsTheListAgainInsteadOfSplicingIt() {
+    fun showingLessTakesTheCardOutAndSaysSo() {
         val feed = model()
-        feed.load()
-        runBlocking { feed.apply(AgentFeedChanged(FeedDemoIDs.NEWS, "posted", 6)) }
-        val robots = feed.list!!.feedItems.first { card -> card.feedItemId == FeedDemoIDs.NEWS }
-        assertEquals(4, robots.stackItemCount)
-        assertEquals(6, feed.list!!.unreadCount)
+        var said = ""
+        feed.onDone = { text -> said = text }
+        runBlocking { feed.load() }
+        feed.showLessLike(feed.list!!.feedItems.first { each -> each.feedItemId == FeedDemoIDs.WEATHER }, "Fewer like it")
+        assertFalse(feed.list!!.feedItems.any { each -> each.feedItemId == FeedDemoIDs.WEATHER })
+        assertEquals("Fewer like it", said)
+    }
+
+    @Test
+    fun dismissingTakesTheCardOutQuietly() {
+        val feed = model()
+        var said = ""
+        feed.onDone = { text -> said = text }
+        runBlocking { feed.load() }
+        feed.dismiss(feed.list!!.feedItems.first { each -> each.feedItemId == FeedDemoIDs.WEATHER })
+        assertFalse(feed.list!!.feedItems.any { each -> each.feedItemId == FeedDemoIDs.WEATHER })
+        assertEquals("", said)
+    }
+
+    @Test
+    fun aFeedThatCannotBeReadSaysWhyUntilThereIsSomethingToShow() {
+        val session = DemoSession.create(ApplicationProvider.getApplicationContext<Context>())
+        val feed = FeedModel(session.connection.value!!, scope, readPage = { throw IllegalStateException("no server") })
+        runBlocking { feed.load() }
+        assertNull(feed.list)
+        assertNotNull(feed.loadFailure)
     }
 
     @Test
     fun theBriefStackKeepsTheServersOrder() {
         val feed = stackModel(FeedDemoIDs.BRIEF_STACK_KEY)
-        feed.load()
+        runBlocking { feed.load() }
         assertEquals(
             listOf(FeedDemoIDs.BRIEF_AGENDA, FeedDemoIDs.BRIEF_WEATHER, FeedDemoIDs.BRIEF_TECH, FeedDemoIDs.BRIEF_HEADLINES, FeedDemoIDs.BRIEF_MENTIONS, FeedDemoIDs.BRIEF_REVIEWS, FeedDemoIDs.BRIEF_MAIL),
             feed.list!!.feedItems.map { card -> card.feedItemId },
@@ -125,30 +159,21 @@ class FeedModelTest {
     }
 
     @Test
-    fun aChangeInAStackScreenReadsItsPageAgain() {
-        val feed = stackModel(FeedDemoIDs.BRIEF_STACK_KEY)
-        feed.load()
-        runBlocking { feed.apply(AgentFeedChanged(FeedDemoIDs.BRIEF_MAIL, "replaced", 3)) }
-        // Read again from the server, which keeps the order; the card did not jump to the top.
-        assertEquals(FeedDemoIDs.BRIEF_AGENDA, feed.list!!.feedItems.first().feedItemId)
-    }
-
-    @Test
     fun anActionChoiceShowsWorkingOnItWithAnOpenChatButton() {
-        composeRule.setContent { DemoHost { FeedItemScreen(FeedDemoIDs.SIGN_IN, onBack = {}) } }
+        composeRule.setContent { DemoHost { FeedCardHost(FeedDemoIDs.SIGN_IN) } }
         composeRule.onNodeWithText("Secure my account").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("You chose Secure my account").assertIsDisplayed()
-        composeRule.onNodeWithText("Working on it").assertIsDisplayed()
+        composeRule.onNodeWithText("Secure my account").assertIsDisplayed()
+        composeRule.onNodeWithText("Your agent is on it…").assertIsDisplayed()
         composeRule.onNodeWithText("Open chat").assertIsDisplayed()
     }
 
     @Test
-    fun aDismissChoiceClosesTheCard() {
-        var isClosed = false
-        composeRule.setContent { DemoHost { FeedItemScreen(FeedDemoIDs.SIGN_IN, onBack = { isClosed = true }) } }
+    fun aDismissChoiceSettlesTheCardOnItsLabel() {
+        composeRule.setContent { DemoHost { FeedCardHost(FeedDemoIDs.SIGN_IN) } }
         composeRule.onNodeWithText("That's me").performClick()
         composeRule.waitForIdle()
-        assertTrue(isClosed)
+        composeRule.onNodeWithText("That's me").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Secure my account").assertCountEquals(0)
     }
 }

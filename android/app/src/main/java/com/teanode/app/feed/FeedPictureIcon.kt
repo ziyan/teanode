@@ -2,7 +2,6 @@ package com.teanode.app.feed
 
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Cloud
@@ -12,7 +11,7 @@ import androidx.compose.material.icons.outlined.Thunderstorm
 import androidx.compose.material.icons.outlined.AcUnit
 import androidx.compose.material.icons.outlined.Umbrella
 import androidx.compose.material.icons.outlined.WbSunny
-import androidx.compose.material.icons.outlined.WbCloudy
+import androidx.compose.material.icons.outlined.FilterDrama
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Code
@@ -34,7 +33,6 @@ import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -46,7 +44,7 @@ import com.teanode.kit.feed.FeedPictureKind
 
 /** The Material icon for a kind of picture, the counterpart of the SF Symbol the agent named; the newspaper stands for any it does not know. */
 fun FeedPictureKind.icon(): ImageVector = when (this) {
-    FeedPictureKind.Weather -> Icons.Outlined.WbCloudy
+    FeedPictureKind.Weather -> Icons.Outlined.FilterDrama
     FeedPictureKind.Sun -> Icons.Outlined.WbSunny
     FeedPictureKind.Cloud -> Icons.Outlined.Cloud
     FeedPictureKind.Rain -> Icons.Outlined.Umbrella
@@ -76,15 +74,13 @@ fun FeedPictureKind.icon(): ImageVector = when (this) {
     FeedPictureKind.Time -> Icons.Outlined.Schedule
 }
 
-/** A card's small picture at its left: a round tile holding the icon of the symbol the agent chose, or its emoji. */
+/** A card's picture at its left: the icon of the symbol the agent chose, or its emoji, bare as the iPhone draws it; the newspaper for any name it does not know. */
 @Composable
 fun FeedPictureTile(pictureSymbol: String, modifier: Modifier = Modifier) {
-    Surface(modifier.size(44.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-        Box(contentAlignment = Alignment.Center) {
-            when (val picture = FeedPicture.of(pictureSymbol)) {
-                is FeedPicture.Symbol -> Icon(picture.kind.icon(), contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(24.dp))
-                is FeedPicture.Emoji -> Text(picture.text, style = MaterialTheme.typography.titleLarge)
-            }
+    Box(modifier.size(44.dp), contentAlignment = Alignment.Center) {
+        when (val picture = FeedPicture.of(pictureSymbol)) {
+            is FeedPicture.Symbol -> Icon(picture.kind.icon(), contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(32.dp))
+            is FeedPicture.Emoji -> Text(picture.text, style = MaterialTheme.typography.headlineMedium)
         }
     }
 }

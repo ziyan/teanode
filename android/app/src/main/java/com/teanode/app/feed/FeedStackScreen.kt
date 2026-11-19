@@ -1,45 +1,39 @@
 package com.teanode.app.feed
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.foundation.layout.padding
 import com.teanode.app.R
 import com.teanode.app.session.LocalAppSession
 import com.teanode.app.session.LocalConnection
-import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.kit.AppSection
 import com.teanode.kit.feed.agentFeedStack
 
 /**
- * One stack's cards, in the order the server keeps them (the positioned ones first, then newest first), a page at a
- * time. It is titled with the stack's name once the first card is read (ios FeedViews.swift, FeedStackView). The
- * cards are marked read as they are seen, and the badge on the Feed tab goes down by how many were.
+ * One stack opened (ios FeedStackScreen): its cards in the order the server keeps them, each whole, titled with the
+ * stack's name (its own, else its source's, else "More cards"). It reads the stack itself and follows the feed live,
+ * as the feed does, and what was read here comes off the Feed tab's badge.
  */
 @Composable
 fun FeedStackScreen(feedStackKey: String, onBack: () -> Unit) {
     val connection = LocalConnection.current
     val session = LocalAppSession.current
-    val snackbar = LocalSnackbar.current
     val scope = rememberCoroutineScope()
     val model = remember(connection, feedStackKey) {
         FeedModel(
-            connection, scope, readPage = { after -> connection.agentFeedStack(feedStackKey, after = after) }, isStackScreen = true,
-            // The stack's own count is not the badge's: only the cards read here come off it.
-            onUnreadCount = {}, onProblem = { failure -> snackbar.showError(failure) },
+            connection, scope, readPage = { after -> connection.agentFeedStack(feedStackKey, after = after) },
             onNewlyRead = { newlyReadCount ->
                 val kept = session.badgeCounts.value[AppSection.Feed] ?: 0
                 session.setBadgeCount(AppSection.Feed, maxOf(0, kept - newlyReadCount))
             },
         )
     }
-    FeedLiveChanges(model)
-    val firstCard = model.list?.feedItems?.firstOrNull()
-    val title = firstCard?.stackName?.takeIf { name -> name.isNotEmpty() } ?: stringResource(R.string.feed_title)
-    TeaNodeScreen(title = title, onBack = onBack) { contentPadding ->
+    val name = model.list?.feedItems?.firstOrNull()?.stackName?.takeIf { text -> text.isNotEmpty() } ?: stringResource(R.string.feed_more_cards)
+    TeaNodeScreen(title = name, onBack = onBack) { contentPadding ->
         FeedListBody(model, onOpenStack = null, modifier = Modifier.padding(contentPadding))
     }
 }

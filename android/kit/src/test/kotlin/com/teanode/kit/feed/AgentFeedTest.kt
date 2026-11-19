@@ -31,7 +31,7 @@ class AgentFeedTest {
     ): String =
         """{"feedItemId":"$id","feedItemKind":"decision","feedSourceKind":"$sourceKind","feedSourceId":"$sourceId","feedSourceTitle":"","runConversationId":"",
             "title":"Card $id","body":"Body","pictureSymbol":"cloud.sun","factRows":[{"factLabel":"High","factValue":"18 C"}],
-            "sourceLinks":[{"sourceTitle":"Forecast","sourceUrl":"https://example.com/forecast"}],"recordReferences":[{"itemId":"abc123","subject":"Receipt"}],
+            "sourceLinks":[{"sourceTitle":"Forecast","sourceUrl":"https://example.com/forecast"}],
             "choices":$choices,"chosenChoiceKey":${chosen?.let { key -> "\"$key\"" }},"chosenAt":null,"outcomeText":"$outcome","isOutcomePending":$isPending,
             "feedUrgency":"now","isLiked":false,"isRead":$isRead,"isDismissed":$isDismissed,"postedAt":"2026-11-18T08:00:00Z","updatedAt":"2026-11-18T08:30:00Z",
             "feedStackKey":"$stackKey","feedStackTitle":"$stackTitle","stackPosition":null,"stackItemCount":$stackCount,"stackUnreadCount":$stackUnread}"""
@@ -46,8 +46,6 @@ class AgentFeedTest {
         val view = item("a")
         assertEquals("High", view.factRows.single().factLabel)
         assertEquals("https://example.com/forecast", view.sourceLinks.single().sourceUrl)
-        assertEquals("Receipt", view.recordReferences.single().subject)
-        assertTrue(view.isUrgent)
     }
 
     @Test
@@ -94,53 +92,11 @@ class AgentFeedTest {
     fun aCodingSessionCardNamesItsComputerAndPane() {
         val coding = TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card("a", sourceKind = "coding_session", sourceId = "laptop/%3"))
         assertEquals("laptop" to "%3", coding.codingSessionPlace)
+        val withSlash = TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card("a", sourceKind = "coding_session", sourceId = "dev/box/%7"))
+        assertEquals("dev/box" to "%7", withSlash.codingSessionPlace)
         assertNull(item("b").codingSessionPlace)
         val broken = TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card("a", sourceKind = "coding_session", sourceId = "laptop"))
         assertNull(broken.codingSessionPlace)
-    }
-
-    @Test
-    fun theFirstPageLeavesOutDismissedCardsAndKeepsTheCountAndCursor() {
-        val page = AgentFeedPage(listOf(item("a"), item("b", isDismissed = true)), "cursor-1", 5)
-        val list = AgentFeedList.first(page)
-        assertEquals(listOf("a"), list.feedItems.map { shown -> shown.feedItemId })
-        assertTrue(list.hasMore)
-        assertEquals(5, list.unreadCount)
-    }
-
-    @Test
-    fun theNextPageGoesBelowAndANewerCopyOfAShownCardReplacesIt() {
-        val first = AgentFeedList(listOf(item("a"), item("b")), "cursor-1", 3)
-        val newerB = item("b", isRead = true)
-        val next = first.appending(AgentFeedPage(listOf(newerB, item("c")), null, 2))
-        assertEquals(listOf("a", "b", "c"), next.feedItems.map { shown -> shown.feedItemId })
-        assertTrue(next.feedItems[1].isRead)
-        assertFalse(next.hasMore)
-        assertEquals(2, next.unreadCount)
-    }
-
-    @Test
-    fun aReplacedCardMovesToTheTopAndASettledOneStaysWhereItIs() {
-        val list = AgentFeedList(listOf(item("a"), item("b"), item("c")), null, 3)
-        assertEquals(listOf("c", "a", "b"), list.with(item("c"), isMovedToTop = true).feedItems.map { shown -> shown.feedItemId })
-        assertEquals(listOf("a", "b", "c"), list.with(item("b")).feedItems.map { shown -> shown.feedItemId })
-    }
-
-    @Test
-    fun aPostedCardIsNewAtTheTopAndCountsAsUnread() {
-        val list = AgentFeedList(listOf(item("a", isRead = true)), null, 0)
-        val posted = list.with(item("z"))
-        assertEquals(listOf("z", "a"), posted.feedItems.map { shown -> shown.feedItemId })
-        assertEquals(1, posted.unreadCount)
-    }
-
-    @Test
-    fun aDismissedCardLeavesTheListAndAnUnreadOneTakesOneOffTheCount() {
-        val list = AgentFeedList(listOf(item("a"), item("b", isRead = true)), null, 1)
-        assertEquals(listOf("b"), list.with(item("a", isDismissed = true)).feedItems.map { shown -> shown.feedItemId })
-        assertEquals(0, list.removing("a").unreadCount)
-        assertEquals(1, list.removing("b").unreadCount)
-        assertEquals(list, list.removing("nothing"))
     }
 
     @Test
@@ -161,7 +117,7 @@ class AgentFeedTest {
         assertEquals(4, page.unreadCount)
         assertEquals(JsonPrimitive("cursor-9"), sentVariables(fake)["after"])
         assertEquals(JsonPrimitive(AGENT_FEED_PAGE_SIZE), sentVariables(fake)["first"])
-        assertEquals(JsonPrimitive(false), sentVariables(fake)["includeDismissed"])
+        assertNull(sentVariables(fake)["includeDismissed"])
     }
 
     @Test
@@ -213,13 +169,6 @@ class AgentFeedTest {
     }
 
     @Test
-    fun oneCardIsReadByItsId() = runBlocking {
-        val (connection, fake) = fakeConnection { """{"data":{"GetAgentFeedItem":${card("a")}}}""" }
-        assertEquals("a", connection.agentFeedItem("a").feedItemId)
-        assertEquals(JsonPrimitive("a"), sentVariables(fake)["feedItemId"])
-    }
-
-    @Test
     fun aChangeEventIsReadAndAnythingElseIsLeftOut() {
         val change = AgentFeedEvents.read(TeaNodeJson.parseToJsonElement("""{"AgentFeedChanged":{"feedItemId":"a","feedChange":"settled","unreadCount":3}}"""))
         assertEquals(AgentFeedChanged("a", "settled", 3), change)
@@ -229,16 +178,16 @@ class AgentFeedTest {
 
     @Test
     fun theDocumentsAskForTheNamesOfTheContract() {
-        for (name in listOf("feedItemId", "feedItemKind", "feedSourceKind", "feedSourceTitle", "factRows", "sourceLinks", "recordReferences", "choiceRole", "chosenChoiceKey", "outcomeText", "isOutcomePending", "feedUrgency", "isLiked", "isRead", "isDismissed", "postedAt", "updatedAt")) {
+        for (name in listOf("feedItemId", "feedItemKind", "feedSourceKind", "feedSourceTitle", "factRows", "sourceLinks", "choiceRole", "chosenChoiceKey", "outcomeText", "isOutcomePending", "feedUrgency", "isLiked", "isRead", "isDismissed", "postedAt", "updatedAt")) {
             assertTrue(AgentFeedDocuments.LIST_AGENT_FEED.contains(name), name)
         }
-        assertTrue(AgentFeedDocuments.LIST_AGENT_FEED.contains("nextCursor unreadCount"))
+        assertTrue(AgentFeedDocuments.LIST_AGENT_FEED.contains("nextCursor\n    unreadCount"))
     }
 
     @Test
     fun aReferenceOpensThroughTheLinkOpenerWhenTheAppHasAPageForIt() {
         assertEquals("mail:abc123", AgentReference(itemId = "abc123").feedLinkAddress)
-        assertEquals("/recordings/rec1", AgentReference(recordingId = "rec1").feedLinkAddress)
+        assertNull(AgentReference(recordingId = "rec1").feedLinkAddress)
         assertEquals("memory:people/sam", AgentReference(path = "people/sam").feedLinkAddress)
         assertEquals("/finance/transactions", AgentReference(financeTransactionId = "t1").feedLinkAddress)
         assertNull(AgentReference(photoId = "p1").feedLinkAddress)
@@ -282,6 +231,67 @@ class AgentFeedTest {
     }
 
     @Test
+    fun theFirstPageKeepsTheCardsTheCountAndTheCursor() {
+        val page = AgentFeedPage(listOf(item("a"), item("b", isDismissed = true)), "cursor-1", 5)
+        val list = AgentFeedList.first(page)
+        assertEquals(listOf("a", "b"), list.feedItems.map { shown -> shown.feedItemId })
+        assertTrue(list.hasMore)
+        assertEquals(5, list.unreadCount)
+    }
+
+    @Test
+    fun theNextPageGoesBelowAndACardAlreadyShownIsLeftAsItIs() {
+        val first = AgentFeedList(listOf(item("a"), item("b")), "cursor-1", 3)
+        val next = first.appending(AgentFeedPage(listOf(item("b", isRead = true), item("c")), null, 2))
+        assertEquals(listOf("a", "b", "c"), next.feedItems.map { shown -> shown.feedItemId })
+        assertFalse(next.feedItems[1].isRead)
+        assertFalse(next.hasMore)
+        assertEquals(2, next.unreadCount)
+    }
+
+    @Test
+    fun anAnsweredCardIsReplacedWhereItIsAndStaysEvenWhenTheAnswerClosedIt() {
+        val list = AgentFeedList(listOf(item("a"), item("b"), item("c")), null, 3)
+        val answered = item("b", isDismissed = true)
+        val next = list.replacing(answered)
+        assertEquals(listOf("a", "b", "c"), next.feedItems.map { shown -> shown.feedItemId })
+        assertTrue(next.feedItems[1].isDismissed)
+        assertEquals(list, list.replacing(item("elsewhere")))
+    }
+
+    @Test
+    fun aLikeOnAStackTopKeepsTheStackCounts() {
+        val list = AgentFeedList(listOf(stackTop("s1", 4), item("a")), null, 3)
+        val next = list.replacing(stackTop("s1", 1).copy(isLiked = true, stackUnreadCount = 0))
+        assertEquals(4, next.feedItems[0].stackItemCount)
+        assertEquals(2, next.feedItems[0].stackUnreadCount)
+        assertTrue(next.feedItems[0].isLiked)
+    }
+
+    @Test
+    fun aCardWaitingForAnOutcomeIsNoticed() {
+        val pending = TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card("a", choices = twoChoices, chosen = "secure", isPending = true))
+        assertTrue(AgentFeedList(listOf(item("x"), pending)).hasPendingOutcome)
+        assertFalse(AgentFeedList(listOf(item("x"))).hasPendingOutcome)
+    }
+
+    @Test
+    fun aCardWhoseOnlyChoiceIsToDiscussAsksNothing() {
+        val onlyDiscuss = TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card("a", choices = """[{"choiceKey":"d","choiceLabel":"Talk","choiceRole":"discuss"}]"""))
+        assertFalse(onlyDiscuss.isWaitingForAnswer)
+        assertTrue(TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card("a", choices = twoChoices)).isWaitingForAnswer)
+    }
+
+    @Test
+    fun theChoicesShowActionsFirst() {
+        val mixed = TeaNodeJson.decodeFromString(
+            AgentFeedItemView.serializer(),
+            card("a", choices = """[{"choiceKey":"later","choiceLabel":"Not now","choiceRole":"dismiss"},{"choiceKey":"approve","choiceLabel":"Approve","choiceRole":"action"},{"choiceKey":"talk","choiceLabel":"Talk","choiceRole":"discuss"}]"""),
+        )
+        assertEquals(listOf("approve", "later", "talk"), mixed.orderedChoices.map { choice -> choice.choiceKey })
+    }
+
+    @Test
     fun aCardAloneIsNoStackEvenWithAKey() {
         assertFalse(item("a").isStack)
         assertEquals(0, item("a").stackEdgeCount)
@@ -293,16 +303,6 @@ class AgentFeedTest {
         assertEquals(1, stackTop(count = 2).stackEdgeCount)
         assertEquals(2, stackTop(count = 3).stackEdgeCount)
         assertEquals(2, stackTop(count = 30).stackEdgeCount)
-    }
-
-    @Test
-    fun aLikeOnAStackTopKeepsTheStackCounts() {
-        val list = AgentFeedList(listOf(stackTop("s1", 4), item("a")), null, 3)
-        val liked = stackTop("s1", 1).copy(isLiked = true, stackUnreadCount = 0)
-        val next = list.with(liked)
-        assertEquals(4, next.feedItems[0].stackItemCount)
-        assertEquals(2, next.feedItems[0].stackUnreadCount)
-        assertTrue(next.feedItems[0].isLiked)
     }
 
     @Test
@@ -320,7 +320,6 @@ class AgentFeedTest {
     fun theFeedDocumentsAskForTheStackFields() {
         for (name in listOf("feedStackKey", "feedStackTitle", "stackPosition", "stackItemCount", "stackUnreadCount")) {
             assertTrue(AgentFeedDocuments.LIST_AGENT_FEED.contains(name), name)
-            assertTrue(AgentFeedDocuments.GET_AGENT_FEED_ITEM.contains(name), name)
         }
         assertTrue(AgentFeedDocuments.AGENT_FEED_CHANGED.contains("AgentFeedChanged {"))
     }

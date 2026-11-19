@@ -40,7 +40,7 @@ class FeedScreenshotTest {
     }
 
     private fun drawCard(feedItemId: String, look: Look, fontScale: Float = 1f) {
-        composeRule.setContent { DemoHost(appearance = look.appearance) { WithFontScale(fontScale) { FeedItemScreen(feedItemId, onBack = {}) } } }
+        composeRule.setContent { DemoHost(appearance = look.appearance) { WithFontScale(fontScale) { FeedCardHost(feedItemId) } } }
         composeRule.waitForIdle()
     }
 

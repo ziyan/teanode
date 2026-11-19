@@ -20,14 +20,24 @@ sealed class FeedPicture {
         fun of(pictureSymbol: String): FeedPicture {
             val written = pictureSymbol.trim()
             if (written.isEmpty()) return Symbol(FeedPictureKind.News)
-            if (written.any { character -> !character.isLetterOrDigit() && character != '.' && character != '-' && character != '_' && !character.isWhitespace() } ||
-                written.codePoints().anyMatch { codePoint -> codePoint > 0x2000 }
-            ) {
-                return Emoji(written)
+            // As the iPhone reads it: a name of ASCII letters, digits, dots and underscores is a symbol; anything else
+            // short (an emoji is a few characters, a flag or a family several joined) is an emoji; a sentence is no picture.
+            if (!written.all { character -> (character.code < 128 && character.isLetterOrDigit()) || character == '.' || character == '_' }) {
+                return if (characterCount(written) <= EMOJI_CHARACTERS_MOST) Emoji(written) else Symbol(FeedPictureKind.News)
             }
             val name = written.lowercase()
             val known = symbolKinds.entries.filter { entry -> name == entry.key || name.startsWith(entry.key + ".") }.maxByOrNull { entry -> entry.key.length }
             return Symbol(known?.value ?: FeedPictureKind.News)
+        }
+
+        private const val EMOJI_CHARACTERS_MOST = 4
+
+        private fun characterCount(text: String): Int {
+            val iterator = java.text.BreakIterator.getCharacterInstance()
+            iterator.setText(text)
+            var count = 0
+            while (iterator.next() != java.text.BreakIterator.DONE) count++
+            return count
         }
 
         private val symbolKinds: Map<String, FeedPictureKind> = mapOf(

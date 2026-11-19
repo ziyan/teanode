@@ -1,7 +1,6 @@
 package com.teanode.app.notifications
 
 import com.teanode.app.coding.codingSessionRoute
-import com.teanode.app.feed.FeedRoutes
 import com.teanode.app.journal.JournalRoutes
 import com.teanode.app.settings.SettingsRoutes
 import com.teanode.app.shell.Routes
@@ -62,7 +61,7 @@ object NotificationOpening {
         is NotificationDestination.Shopping -> AppSection.Shopping
         is NotificationDestination.Coding, NotificationDestination.CodingHome -> AppSection.Coding
         is NotificationDestination.JournalDay -> AppSection.Journal
-        is NotificationDestination.FeedItem -> AppSection.Feed
+        NotificationDestination.Feed -> AppSection.Feed
         is NotificationDestination.Conversation, NotificationDestination.Main -> AppSection.Agent
     }
 
@@ -74,7 +73,6 @@ object NotificationOpening {
         val partRoute = Routes.home(sectionOf(destination))
         return when (destination) {
             is NotificationDestination.Conversation -> listOf(partRoute, Routes.child(AppSection.Agent, "conversation/${Uri.encode(destination.conversationId)}"))
-            is NotificationDestination.FeedItem -> listOf(partRoute, FeedRoutes.item(destination.feedItemId))
             NotificationDestination.Circles -> listOf(partRoute, SettingsRoutes.CIRCLES)
             is NotificationDestination.Shopping -> when {
                 !destination.storeName.isNullOrEmpty() -> listOf(partRoute, Routes.child(AppSection.Shopping, "store/${Uri.encode(destination.storeName)}"))
@@ -84,7 +82,7 @@ object NotificationOpening {
             is NotificationDestination.Coding -> listOf(partRoute, codingSessionRoute(destination.computer, destination.paneId))
             is NotificationDestination.JournalDay -> if (destination.day.isEmpty()) listOf(partRoute) else listOf(partRoute, JournalRoutes.day(destination.day))
             // Location opens on the map with the person selected: the screen reads [LocationOpening].
-            is NotificationDestination.Location, NotificationDestination.CodingHome, NotificationDestination.Main -> listOf(partRoute)
+            is NotificationDestination.Location, NotificationDestination.CodingHome, NotificationDestination.Main, NotificationDestination.Feed -> listOf(partRoute)
         }
     }
 }
