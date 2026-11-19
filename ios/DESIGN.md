@@ -187,14 +187,14 @@ its pull request is opened.
 ## Navigation
 
 - The app is a `TabView` (`.tabViewStyle(.sidebarAdaptable)`) of icons only:
-  three parts the person chooses (Chats, Mail and Photos at first; More's
+  three parts the person chooses (Feed, Chats and Mail at first; More's
   Edit button changes them, kept on the device), More and Search
   (`Tab(role: .search)`), five in all: a sixth makes iOS add a More of its
   own over ours. On the iPad the sidebar is arranged with the system's own
   customization (`TabViewCustomization`). A tab's name is its accessibility label, so no
   title shows under an icon. The bar shrinks to a pill while a list scrolls
   (`.tabBarMinimizeBehavior(.onScrollDown)`).
-- A tab with something waiting has a badge: unread chats on Chats, coding
+- A tab with something waiting has a badge: unread cards on Feed, unread chats on Chats, coding
   sessions that ask on More (where Coding is).
 - Each part keeps its own navigation inside it, never in a side menu.
   Chats opens on the list of conversations, and a conversation is pushed on it.

@@ -45,6 +45,8 @@
                 answer = journalAnswer
             } else if let shoppingAnswer = Self.shoppingAnswer(query: query, body: request.httpBody) {
                 answer = shoppingAnswer
+            } else if let feedAnswer = Self.feedAnswer(query: query, body: request.httpBody) {
+                answer = feedAnswer
             } else if let linkPreviewAnswer = Self.linkPreviewAnswering(query: query, body: request.httpBody) {
                 answer = linkPreviewAnswer
             } else if let personCardAnswer = Self.personCardAnswering(query: query, body: request.httpBody) {
