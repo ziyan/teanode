@@ -59,6 +59,7 @@ A new migration (the next free number, 0276 at the time of writing; check intern
     chosen_at             timestamptz, nullable
     outcome_text          text, the agent's one line after a choice ("Signed out the other session.")
     feed_urgency          text: now, today, whenever
+    feed_stack_key        text, empty for a card that stands alone (see Stacks)
     is_liked              boolean
     read_at, dismissed_at, created_at, updated_at, expires_at   timestamptz
 
@@ -71,6 +72,7 @@ GraphQL, in internal/api/v1api/apigraph/agent_feed.go, following agent_goal.go's
     query    ListAgentFeed(first: Int, after: String, includeDismissed: Boolean): AgentFeedPage
              AgentFeedPage { feedItems: [AgentFeedItemView], nextCursor: String (nullable), unreadCount: Int }
     query    GetAgentFeedItem(feedItemId: String): AgentFeedItemView
+    query    ListAgentFeedStack(feedStackKey: String!, first: Int, after: String): AgentFeedPage   (one stack's cards, newest first)
     mutation ChooseAgentFeedItem(feedItemId: String, choiceKey: String): AgentFeedItemView
     mutation LikeAgentFeedItem(feedItemId: String, isLiked: Boolean): AgentFeedItemView
     mutation ShowLessLikeAgentFeedItem(feedItemId: String): AgentFeedItemView     (records the preference and dismisses)
@@ -87,7 +89,8 @@ GraphQL, in internal/api/v1api/apigraph/agent_feed.go, following agent_goal.go's
       recordReferences: the same reference objects messages carry,
       choices: [{ choiceKey, choiceLabel, choiceRole }]   (choiceRole: action, dismiss, discuss, open),
       chosenChoiceKey (nullable), chosenAt (nullable), outcomeText, isOutcomePending (a resumed turn still running),
-      feedUrgency, isLiked, isRead, isDismissed, postedAt, updatedAt
+      feedUrgency, isLiked, isRead, isDismissed, postedAt, updatedAt,
+      feedStackKey, stackItemCount, stackUnreadCount   (the last two filled by ListAgentFeed on a stack's top card, 1 and 0 or 1 elsewhere)
     }
 
 pictureSymbol is an SF Symbol name (for example cloud.sun, lock.shield, chart.line.uptrend.xyaxis, newspaper); the dashboard maps the same names to its icon set and falls back to a newspaper. Command line: teanode agent feed list [--all], show ID, choose ID CHOICE, like ID, unlike ID, less ID, dismiss ID, read ID..., discuss ID, post --title ... (--json on every one).
@@ -109,6 +112,10 @@ ChooseAgentFeedItem(feedItemId, choiceKey) records the choice and then, by role:
 ### Coding session questions
 
 A coding session (Claude Code or Codex in a herdr pane on one of the person's computers) that asks a question already notifies the phones (Agent.tellHerdrQuestion in internal/agent/herdr.go) and is answered on the Coding page or screen (Agent.AnswerHerdrQuestion). With the feed, the same asking event also posts a card: kind decision, feedSourceKind coding_session, feedSourceId the computer and pane joined by a slash, coalesce key the computer, pane and question fingerprint, title "<agent> on <computer> asks", body the question, and one choice per option (choiceRole action, choiceKey "option:N" with N the option's number). Choosing one calls AnswerHerdrQuestion with that option number, without any agent turn, and the card settles with the option as its outcome. A question that takes several options or free words gets one choice, "Open session" (choiceRole open), which opens the coding session where it can be answered fully. When the session reports the question answered (computer.HerdrEventKindAnswered), from anywhere, the card settles as "Answered on the computer". The phone notification stays as it is (it is urgent: a session is blocked), and on the iPhone it carries the option buttons as notification actions.
+
+### Stacks
+
+Cards from the same source pile up (every story a news goal finds, every idea), so the feed shows them as stacks: one entry per stack, the newest card on top with "+N more from <source>", and tapping it opens the rest, newest first. Each card has a feed_stack_key (text, empty for a card that stands alone). By default a card posted by a goal or a schedule is stacked by its source (feedSourceKind and feedSourceId joined by a colon), ideas, memory checks and trip notes from speaking first stack as "speak_first:<reason>", and a turn's own post may name a stackKey; a card with action, dismiss or open choices, an alert card and a coding session question never stack, because each needs the person on its own. ListAgentFeed returns one entry per stack (the newest card of the stack, by updatedAt) with stackItemCount, how many cards the stack holds including that one (1 for a card alone), and stackUnreadCount; a new query ListAgentFeedStack(feedStackKey: String!, first: Int, after: String): AgentFeedPage lists one stack's cards newest first. Opening a stack marks its cards read as they are seen, as the main list does; unreadCount still counts cards. A stack is drawn as its top card with one or two card edges showing behind it.
 
 ### Liking and why
 
@@ -176,6 +183,7 @@ None yet.
 - Decision (the person): Feed is its own tab, first, on iPhone and Android, and first in the dashboard sidebar, with an unread count.
 - Decision (the person, 2026-11-18): an action choice is a message sent in the main conversation on the person's behalf with the card referenced, so the approval and what the agent did about it are in the conversation the person reads; dismiss choices and coding session answers send nothing.
 - Decision (the person): a coding session's question is a feed card too, its options as buttons that answer the session directly.
+- Decision (the person, 2026-11-18): cards from one source are coalesced into a stack that opens to show the rest; decisions, alerts and coding questions never stack.
 - Decision: the card layout follows a reference screenshot the person gave (kept out of the repository): picture at the left, bold headline, a few lines with links, an optional table of facts, choices as buttons, and a footer of heart, Discuss, date and info.
 
 
