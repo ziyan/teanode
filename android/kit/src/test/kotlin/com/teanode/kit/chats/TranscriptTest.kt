@@ -342,6 +342,17 @@ class TranscriptTest {
     }
 
     @Test
+    fun aPendingMessageShowsWhatItAsksAboutAndWhatItReplies() {
+        val transcript = Transcript()
+        val mail = AgentReference(itemId = "item-1", threadId = "thread-1", subject = "A notice", from = "sender@example.com")
+        val reply = AgentReference(agentMessageId = "message-1", quotedRole = "assistant", quotedText = "An earlier answer")
+        transcript.addSent("Why is this here?", references = listOf(reply, mail))
+        assertEquals(listOf(mail), transcript.lines.first().references)
+        assertEquals("An earlier answer", transcript.lines.first().quotedText)
+        assertEquals("assistant", transcript.lines.first().quotedRole)
+    }
+
+    @Test
     fun aRefusedRequestRemovesOnlyItsPendingMessage() {
         val transcript = Transcript()
         val firstLineId = transcript.addSent("First request")

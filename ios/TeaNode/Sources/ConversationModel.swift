@@ -507,7 +507,6 @@ final class ConversationModel {
             uploadingFileIds = []
             uploadedFileIds = []
         }
-        let reply = replyingTo
         let referring = references
         // In a chat, which agents the message is for: those chosen from the @
         // whose names are still in it, and the agent of a message it replies
@@ -533,7 +532,7 @@ final class ConversationModel {
             // A chat takes files with no words; a turn with the agent needs
             // something to read.
             let message = text.isEmpty && !isChat ? "(files)" : text
-            sentLineId = transcript.addSent(message, attachments: attachments, replyingTo: reply, author: ownAuthor)
+            sentLineId = transcript.addSent(message, attachments: attachments, references: referring, author: ownAuthor)
             let asked = try await connection.ask(
                 message, in: conversationId, attachmentIds: attachments.map(\.id), references: referring,
                 drawerId: app.drawerId, addressedAgentIds: addressed, mentionedUserIds: mentioned.userIds,
@@ -623,7 +622,6 @@ final class ConversationModel {
         voiceProblemText = nil
         isSending = true
         defer { isSending = false }
-        let reply = replyingTo
         let referring = references
         var sentLineId: String?
         do {
@@ -633,7 +631,7 @@ final class ConversationModel {
                 id: id, name: Self.voiceMessageName, contentType: "audio/mp4", size: data.count,
                 audioDurationMS: Int64(recording.durationSeconds * 1000))
             references = []
-            sentLineId = transcript.addSent("", attachments: [attachment], replyingTo: reply, author: ownAuthor, isVoiceMessage: true)
+            sentLineId = transcript.addSent("", attachments: [attachment], references: referring, author: ownAuthor, isVoiceMessage: true)
             let asked = try await connection.ask(
                 "", in: conversationId, references: referring, drawerId: app.drawerId, voiceMessageAttachmentId: id)
             if let sentLineId { confirmSoon(sentLineId) }

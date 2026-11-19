@@ -508,18 +508,23 @@ public struct Transcript: Sendable {
     }
 
     /// Shows what the person just sent from this app, before the turn it
-    /// begins is under way.
+    /// begins is under way: with the message it replies to and what it asks
+    /// about, as the stored message shows them once it is read back.
     @discardableResult
     public mutating func addSent(
-        _ text: String, attachments: [AgentAttachment] = [], replyingTo reply: AgentReference? = nil, author: ChatAuthor? = nil,
+        _ text: String, attachments: [AgentAttachment] = [], references: [AgentReference] = [], author: ChatAuthor? = nil,
         isVoiceMessage: Bool = false
     ) -> String {
         var line = TranscriptLine(id: Self.sentPrefix + UUID().uuidString, kind: .person, text: text, attachments: attachments)
         line.author = author
         line.isVoiceMessage = isVoiceMessage
-        if let reply {
-            line.quotedText = reply.quotedText ?? ""
-            line.quotedRole = reply.quotedRole ?? ""
+        for reference in references {
+            if reference.isReply {
+                line.quotedText = reference.quotedText ?? ""
+                line.quotedRole = reference.quotedRole ?? ""
+            } else {
+                line.references.append(reference)
+            }
         }
         lines.append(line)
         return line.id
