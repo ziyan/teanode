@@ -80728,6 +80728,28 @@
         }
       }
     },
+    "Card: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Card: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カード：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卡片：%@"
+          }
+        }
+      }
+    },
     "Card brand": {
       "localizations": {
         "ja": {

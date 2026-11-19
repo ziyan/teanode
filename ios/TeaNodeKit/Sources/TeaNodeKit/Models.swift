@@ -79,6 +79,8 @@ public struct AgentReference: Codable, Hashable, Sendable {
     public var recordingTitle: String? = nil
     public var photoId: String? = nil
     public var photoTitle: String? = nil
+    public var feedItemId: String? = nil
+    public var feedItemTitle: String? = nil
     public var financeTransactionId: String? = nil
     public var postedOn: String? = nil
     public var amount: String? = nil
@@ -114,6 +116,12 @@ public struct AgentReference: Codable, Hashable, Sendable {
         self.photoTitle = photoTitle
     }
 
+    /// A card of the agent's feed the message asks about.
+    public init(feedItemId: String, feedItemTitle: String) {
+        self.feedItemId = feedItemId
+        self.feedItemTitle = feedItemTitle
+    }
+
     /// A page of the agent's knowledge the message asks about.
     public init(path: String, name: String) {
         self.path = path
@@ -141,6 +149,7 @@ public struct AgentReference: Codable, Hashable, Sendable {
     public var label: String {
         if let recordingTitle, !recordingTitle.isEmpty { return recordingTitle }
         if let photoTitle, !photoTitle.isEmpty { return photoTitle }
+        if let feedItemTitle, !feedItemTitle.isEmpty { return feedItemTitle }
         if let subject, !subject.isEmpty { return subject }
         if let name, !name.isEmpty { return name }
         if let path, !path.isEmpty { return path }

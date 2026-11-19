@@ -222,20 +222,6 @@ final class FeedModel {
         }
     }
 
-    /// Opens the main conversation about a card: the server attaches the card
-    /// to the next message there. Whether it did.
-    func discuss(_ item: AgentFeedItem) async -> Bool {
-        do {
-            _ = try await connection.discussAgentFeedItem(item.feedItemId)
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            problemText = error.loadProblemText
-            return false
-        }
-    }
-
     // MARK: Keeping the list
 
     private func replace(_ item: AgentFeedItem) {
@@ -424,7 +410,10 @@ struct FeedList: View {
                 .padding(.horizontal)
                 .padding(.vertical, 8)
                 .readableWidth()
+                // A tap on the space between cards gathers an open stack.
+                .background { gatherTapArea }
             }
+            .background { gatherTapArea }
             #if DEBUG
                 // `-TeaNodeScreen feed-stack-open`: the morning brief opened in place, scrolled to;
                 // `feed-media`: the feed scrolled to its first card with a picture.
@@ -477,22 +466,23 @@ struct FeedList: View {
 
     // MARK: Entries, and stacks open in place
 
-    /// One entry of the list: a card, a stack as a deck, or a stack opened
-    /// in place as a column of cards.
+    /// One entry of the list: a card, or a stack as a deck that opens in
+    /// place into a column of cards under its top card.
     @ViewBuilder
     private func entry(for item: AgentFeedItem) -> some View {
-        if isOpenInPlace(item) {
-            openStack(for: item)
+        if model.feedStackKey == nil, item.isStack {
+            stackEntry(for: item)
         } else {
-            card(item, isStackShown: model.feedStackKey == nil, onToggleStack: toggleAction(for: item))
+            card(item, isStackShown: false, isStackOpen: false, onToggleStack: nil)
+                .simultaneousGesture(gatherTap, including: model.openStackKeys.isEmpty ? .subviews : .all)
         }
     }
 
-    private func card(_ item: AgentFeedItem, isStackShown: Bool, onToggleStack: (() -> Void)?) -> some View {
+    private func card(_ item: AgentFeedItem, isStackShown: Bool, isStackOpen: Bool, onToggleStack: (() -> Void)?) -> some View {
         FeedCard(
             item: item, isLiked: model.isLiked(item), isBusy: model.busyFeedItemIds.contains(item.feedItemId),
-            // A stack opened shows its cards whole, one by one.
             isStackShown: isStackShown,
+            isStackOpen: isStackOpen,
             onChoose: { choice in choose(item, choice) },
             onToggleLike: { Task { await model.toggleLike(item) } },
             onDiscuss: { discuss(item) },
@@ -506,23 +496,41 @@ struct FeedList: View {
         model.feedStackKey == nil && item.isStack && model.openStackKeys.contains(item.feedStackKey)
     }
 
-    /// What tapping a deck does: opens it in place. Nothing for a card that
-    /// is no stack, and inside a stack's own screen.
-    private func toggleAction(for item: AgentFeedItem) -> (() -> Void)? {
-        guard model.feedStackKey == nil, item.isStack else { return nil }
-        return { openStackInPlace(item) }
+    /// A stack's top card, which stays where it is whether the stack is open
+    /// or not (its row turns into "Show Less" in place), and under it, when
+    /// open, the other cards, which slide down from under it.
+    @ViewBuilder
+    private func stackEntry(for item: AgentFeedItem) -> some View {
+        let isOpen = isOpenInPlace(item)
+        VStack(spacing: 0) {
+            card(item, isStackShown: true, isStackOpen: isOpen, onToggleStack: { toggleStack(item) })
+                .zIndex(1)
+                // A tap inside the open stack's cards is not a tap outside it.
+                .onTapGesture {}
+            if isOpen {
+                openedCards(of: item)
+                    .zIndex(0)
+            }
+        }
+        .simultaneousGesture(gatherTap, including: isOpen || model.openStackKeys.isEmpty ? .subviews : .all)
     }
 
-    @ViewBuilder
-    private func openStack(for item: AgentFeedItem) -> some View {
-        VStack(spacing: 12) {
-            FeedStackHeader(title: stackTitle(of: item), cardCount: item.stackItemCount) { gatherStack(item) }
-            ForEach(Array(stackCards(of: item).enumerated()), id: \.element.feedItemId) { index, stacked in
-                card(stacked, isStackShown: false, onToggleStack: nil)
-                    .transition(deckTransition(index: index))
+    /// The cards of an open stack but its top card, each sliding down from
+    /// under the top card to its place a little after the one before.
+    private func openedCards(of item: AgentFeedItem) -> some View {
+        let others = stackCards(of: item).filter { $0.feedItemId != item.feedItemId }
+        return VStack(spacing: 12) {
+            ForEach(Array(others.enumerated()), id: \.element.feedItemId) { index, stacked in
+                card(stacked, isStackShown: false, isStackOpen: false, onToggleStack: nil)
+                    .zIndex(Double(-index))
+                    .transition(deckTransition(index: index, count: others.count))
                     .onAppear { model.noteAppeared(stacked) }
             }
         }
+        .padding(.top, 12)
+        .coordinateSpace(.named(FeedDeckSlide.coordinateSpaceName))
+        // Taps inside the open stack's cards do not gather it.
+        .onTapGesture {}
     }
 
     /// The cards of an open stack; the top card alone until they are read.
@@ -530,31 +538,38 @@ struct FeedList: View {
         model.stackItems(item.feedStackKey) ?? [item]
     }
 
-    private func stackTitle(of item: AgentFeedItem) -> String {
-        item.stackDisplayTitle.isEmpty ? String(localized: "More cards") : item.stackDisplayTitle
-    }
-
-    /// The spring that moves cards out of the deck and back, about a third of
-    /// a second; none when the person asks for reduced motion.
+    /// The spring that moves cards out of the deck and back, about 0.38
+    /// seconds; none when the person asks for reduced motion.
     private var deckAnimation: Animation? {
         if reduceMotion { return nil }
-        return .spring(duration: 0.35, bounce: 0.12)
+        return .spring(duration: FeedDeckSlide.duration, bounce: 0.12)
     }
 
-    /// A card slides out of the deck from where the deck is, each a little
-    /// after the one before; with reduced motion it only fades.
-    private func deckTransition(index: Int) -> AnyTransition {
-        if reduceMotion { return .opacity }
-        let slide = AnyTransition.offset(y: -CGFloat(index) * 28).combined(with: .opacity)
-        return slide.animation(.spring(duration: 0.35, bounce: 0.12).delay(Double(index) * 0.05))
+    /// A card slides down from under the top card, each 45 ms after the one
+    /// before; closing is the reverse, the last card going first. With
+    /// reduced motion there is no motion.
+    private func deckTransition(index: Int, count: Int) -> AnyTransition {
+        if reduceMotion { return .identity }
+        let slide = AnyTransition.modifier(active: FeedDeckSlide(progress: 0), identity: FeedDeckSlide(progress: 1))
+        let opening = Animation.spring(duration: FeedDeckSlide.duration, bounce: 0.12).delay(Double(index) * FeedDeckSlide.stagger)
+        let closing = Animation.spring(duration: FeedDeckSlide.duration, bounce: 0.12).delay(Double(count - 1 - index) * FeedDeckSlide.stagger)
+        return .asymmetric(insertion: slide.animation(opening), removal: slide.animation(closing))
     }
 
-    /// Reads the stack's cards when they are not known yet, then fans it out.
+    /// Opens or gathers a stack: the cards are read when they are not known
+    /// yet, and a stack that cannot be read stays a deck.
+    private func toggleStack(_ item: AgentFeedItem) {
+        if isOpenInPlace(item) {
+            gatherStack(item)
+        } else {
+            openStackInPlace(item)
+        }
+    }
+
     private func openStackInPlace(_ item: AgentFeedItem) {
         let feedStackKey = item.feedStackKey
         Task {
             if model.stackItems(feedStackKey) == nil { await model.loadStack(feedStackKey) }
-            // The cards could not be read: the stack stays a deck.
             guard model.stackItems(feedStackKey) != nil else { return }
             withAnimation(deckAnimation) { model.setStackOpen(feedStackKey, isOpen: true) }
         }
@@ -562,6 +577,27 @@ struct FeedList: View {
 
     private func gatherStack(_ item: AgentFeedItem) {
         withAnimation(deckAnimation) { model.setStackOpen(item.feedStackKey, isOpen: false) }
+    }
+
+    /// Gathers every stack that is open back into its deck.
+    private func gatherAllStacks() {
+        guard !model.openStackKeys.isEmpty else { return }
+        withAnimation(deckAnimation) {
+            for feedStackKey in Array(model.openStackKeys) { model.setStackOpen(feedStackKey, isOpen: false) }
+        }
+    }
+
+    private var gatherTap: some Gesture {
+        TapGesture().onEnded { gatherAllStacks() }
+    }
+
+    /// Empty space that gathers an open stack when tapped; it takes no taps
+    /// while no stack is open.
+    private var gatherTapArea: some View {
+        Color.clear
+            .contentShape(.rect)
+            .onTapGesture { gatherAllStacks() }
+            .allowsHitTesting(!model.openStackKeys.isEmpty)
     }
 
     /// What shows instead of cards: a spinner for the first read, why it
@@ -590,13 +626,12 @@ struct FeedList: View {
         }
     }
 
-    /// Opens the main conversation, where the server has attached the card to
-    /// the next message.
+    /// Opens the main conversation with the card attached to the next message
+    /// as a chip above the box, as a mail or a photo is when asked about.
     private func discuss(_ item: AgentFeedItem) {
-        Task {
-            // An empty id is the main conversation.
-            if await model.discuss(item) { app.openedConversationId = "" }
-        }
+        app.askingAbout = AgentReference(feedItemId: item.feedItemId, feedItemTitle: item.title)
+        // An empty id is the main conversation.
+        app.openedConversationId = ""
     }
 
     /// Opens the coding session a card is about; any other card opens the
@@ -622,6 +657,9 @@ struct FeedCard: View {
     /// Whether a stack's top card shows its edges and the row that opens the
     /// rest; false inside the open stack.
     var isStackShown = true
+    /// Whether the stack this card tops is open: its edges are gone and its
+    /// row says "Show Less", in the same place and at the same height.
+    var isStackOpen = false
     let onChoose: (AgentFeedChoice) -> Void
     let onToggleLike: () -> Void
     let onDiscuss: () -> Void
@@ -675,8 +713,9 @@ struct FeedCard: View {
 
     /// One edge behind a stack of two, two behind a stack of more.
     private var stackEdgeCount: CGFloat {
-        guard isStackShown, item.isStack else { return 0 }
-        return item.stackItemCount > 2 ? 2 : 1
+        guard isStackShown, !isStackOpen, item.isStack else { return 0 }
+        // One edge for each card hidden, at most two.
+        return CGFloat(min(2, item.stackMoreCount))
     }
 
     /// The edges of the cards under the top one: the same card shape, each
@@ -711,10 +750,10 @@ struct FeedCard: View {
                 Button {
                     onToggleStack()
                 } label: {
-                    stackRowLabel(symbol: "chevron.down")
+                    stackRowLabel(symbol: isStackOpen ? "chevron.up" : "chevron.down")
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint(Text("Shows the cards of this stack"))
+                .accessibilityHint(isStackOpen ? Text("Gathers the cards back into a stack") : Text("Shows the cards of this stack"))
             } else {
                 NavigationLink(value: FeedStackTarget(feedStackKey: item.feedStackKey, title: stackTitle)) {
                     stackRowLabel(symbol: "chevron.forward")
@@ -745,7 +784,8 @@ struct FeedCard: View {
     }
 
     private var stackRowText: String {
-        item.stackDisplayTitle.isEmpty
+        if isStackOpen { return String(localized: "Show Less") }
+        return item.stackDisplayTitle.isEmpty
             ? String(localized: "+\(item.stackMoreCount) more")
             : String(localized: "+\(item.stackMoreCount) more from \(item.stackDisplayTitle)")
     }
@@ -1135,3 +1175,29 @@ private func previewCards() -> some View {
 
 #Preview("Cards, light") { previewCards().environment(AppModel.shared).preferredColorScheme(.light) }
 #Preview("Cards, dark") { previewCards().environment(AppModel.shared).preferredColorScheme(.dark) }
+
+// MARK: The deck opening
+
+/// FeedDeckSlide is how a card comes out of its deck: at progress 0 it sits
+/// behind the stack's top card, at the top of the column of cards, and at 1
+/// in its place. The distance is read from where the card is laid out in the
+/// column, so no height needs to be known.
+struct FeedDeckSlide: ViewModifier {
+    let progress: Double
+
+    static let coordinateSpaceName = "feedDeckColumn"
+    static let duration: Double = 0.38
+    static let stagger: Double = 0.045
+    /// How far under the top card the cards start, past the column's top.
+    private static let tuckedUnder: CGFloat = 40
+
+    func body(content: Content) -> some View {
+        let remaining = 1 - progress
+        return content.visualEffect { effect, proxy in
+            let columnTop = proxy.frame(in: .named(Self.coordinateSpaceName)).minY
+            return effect
+                .offset(y: -remaining * (columnTop + Self.tuckedUnder))
+                .opacity(min(1, progress * 4))
+        }
+    }
+}
