@@ -32,6 +32,14 @@ import {
   WeatherIcon,
 } from '../components/icons'
 import { FeedLayoutContent, parseFeedLayout, webAddressOf } from '../components/feedLayouts'
+import { FeedMediaGallery } from '../components/feedMedia'
+import {
+  feedHeaderLabelOf,
+  isMotionReduced,
+  splitFeedMedia,
+  weatherGradientOf,
+  type FeedMedia,
+} from '../components/feedMediaLayout'
 import { Markdown } from '../components/markdown'
 import { ReferenceChips } from '../components/agentReferenceChips'
 import { RelativeTime } from '../components/relativeTime'
@@ -63,6 +71,13 @@ const READ_BATCH_DELAY_MS = 1200
 // How often a card whose follow-up turn is still running is read again, in case
 // the event that says it finished was missed.
 const PENDING_RECHECK_MS = 8000
+
+// How long a stack takes to open or close, in step with the transitions of
+// .feed-stack-rest in the style sheet, and the most a card's start is delayed
+// behind the one above it.
+const STACK_MOTION_MS = 350
+const STACK_STAGGER_MS = 45
+const STACK_STAGGER_LIMIT = 5
 
 type FeedChoiceRole = 'action' | 'dismiss' | 'discuss' | 'open'
 
@@ -103,6 +118,7 @@ export interface FeedItem {
   stackPosition: number | null
   feedCardLayout: string
   layoutContent: string
+  feedMedia: FeedMedia[]
 }
 
 interface FeedPageAnswer {
@@ -115,7 +131,8 @@ const ITEM_FIELDS = `feedItemId feedItemKind feedSourceKind feedSourceId feedSou
   pictureSymbol factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl }
   recordReferences { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description }
   choices { choiceKey choiceLabel choiceRole } chosenChoiceKey chosenAt outcomeText isOutcomePending
-  feedUrgency isLiked isRead isDismissed postedAt updatedAt feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent`
+  feedUrgency isLiked isRead isDismissed postedAt updatedAt feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent
+  feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }`
 
 const LIST_FEED = `query ($first: Int, $after: String) {
   ListAgentFeed(first: $first, after: $after) { feedItems { ${ITEM_FIELDS} } nextCursor unreadCount }
@@ -238,7 +255,12 @@ export function FeedPage() {
   const [freshItemIds, setFreshItemIds] = useState<Set<string>>(() => new Set())
   // The stacks opened in place, by their key, and which cards have been
   // marked read since, so an open stack shows them read without being read again.
+  // openStackKeys are the stacks that are meant to be open; mountedStackKeys
+  // are those still drawn, which includes a stack for the moment it takes to
+  // close.
   const [openStackKeys, setOpenStackKeys] = useState<Set<string>>(() => new Set())
+  const [mountedStackKeys, setMountedStackKeys] = useState<Set<string>>(() => new Set())
+  const closeTimersRef = useRef(new Map<string, number>())
   const [readItemIds, setReadItemIds] = useState<Set<string>>(() => new Set())
   // Counted at every read of the list, so an open stack reads itself again too.
   const [loadCount, setLoadCount] = useState(0)
@@ -386,6 +408,44 @@ export function FeedPage() {
   )
   useEffect(() => () => void flushRead(), [flushRead])
 
+  useEffect(() => {
+    const timers = closeTimersRef.current
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [])
+
+  // toggleStack opens a stack in place, or closes it: the cards go back into
+  // the deck and are taken out of the page when that has been seen.
+  const toggleStack = (feedStackKey: string) => {
+    const timers = closeTimersRef.current
+    window.clearTimeout(timers.get(feedStackKey))
+    timers.delete(feedStackKey)
+    const without = (keys: Set<string>) => {
+      const next = new Set(keys)
+      next.delete(feedStackKey)
+      return next
+    }
+    if (openStackKeys.has(feedStackKey)) {
+      setOpenStackKeys(without)
+      if (isMotionReduced()) {
+        setMountedStackKeys(without)
+      } else {
+        timers.set(
+          feedStackKey,
+          window.setTimeout(
+            () => {
+              timers.delete(feedStackKey)
+              setMountedStackKeys(without)
+            },
+            STACK_MOTION_MS + STACK_STAGGER_MS * STACK_STAGGER_LIMIT,
+          ),
+        )
+      }
+      return
+    }
+    setOpenStackKeys((keys) => new Set([...keys, feedStackKey]))
+    setMountedStackKeys((keys) => new Set([...keys, feedStackKey]))
+  }
+
   const replaceItem = useCallback((updated: FeedItem) => {
     setFeedItems((previous) =>
       previous ? previous.map((item) => (item.feedItemId === updated.feedItemId ? updated : item)) : previous,
@@ -413,47 +473,71 @@ export function FeedPage() {
         <SettingsEmpty>{t('feed.empty')}</SettingsEmpty>
       ) : (
         <ul className="feed-list">
-          {feedItems.map((item) => (
-            <li
-              key={item.feedItemId}
-              className={
-                item.stackItemCount > 1 && !openStackKeys.has(item.feedStackKey) ? 'feed-stack is-closed' : 'feed-stack'
-              }
-            >
-              {item.stackItemCount > 1 && item.feedStackTitle && (
-                <p className="feed-stack-title muted">{item.feedStackTitle}</p>
-              )}
-              <FeedCard
-                item={item}
-                isFresh={freshItemIds.has(item.feedItemId) || !item.isRead}
-                onSeen={markSeen}
-                onChanged={replaceItem}
-                onRemoved={removeItem}
-                stack={
-                  item.stackItemCount > 1 && item.feedStackKey
-                    ? {
-                        isOpen: openStackKeys.has(item.feedStackKey),
-                        onToggle: () =>
-                          setOpenStackKeys((previous) => {
-                            const next = new Set(previous)
-                            if (!next.delete(item.feedStackKey)) next.add(item.feedStackKey)
-                            return next
-                          }),
+          {feedItems.map((item) => {
+            const isStack = item.stackItemCount > 1 && item.feedStackKey !== ''
+            const isOpen = isStack && openStackKeys.has(item.feedStackKey)
+            const stackName = item.feedStackTitle || item.feedSourceTitle
+            return (
+              <li
+                key={item.feedItemId}
+                className={
+                  item.stackItemCount > 1
+                    ? isOpen
+                      ? 'feed-stack is-deck'
+                      : 'feed-stack is-deck is-closed'
+                    : 'feed-stack'
+                }
+                onClick={
+                  isStack && !isOpen
+                    ? (event) => {
+                        // A tap on the deck itself opens it; a tap on something
+                        // in the card does what that thing does.
+                        if ((event.target as HTMLElement).closest('a, button, video, input, summary')) return
+                        toggleStack(item.feedStackKey)
                       }
                     : undefined
                 }
-              />
-              {item.stackItemCount > 1 && openStackKeys.has(item.feedStackKey) && (
-                <FeedStack
-                  feedStackKey={item.feedStackKey}
-                  topFeedItemId={item.feedItemId}
-                  loadCount={loadCount}
-                  readItemIds={readItemIds}
+              >
+                {isOpen ? (
+                  <div className="feed-stack-header">
+                    {stackName && (
+                      <button
+                        type="button"
+                        className="feed-stack-title is-button"
+                        onClick={() => toggleStack(item.feedStackKey)}
+                      >
+                        {stackName}
+                      </button>
+                    )}
+                    <button type="button" className="feed-stack-less" onClick={() => toggleStack(item.feedStackKey)}>
+                      {t('feed.stackCollapse')}
+                    </button>
+                  </div>
+                ) : (
+                  item.stackItemCount > 1 &&
+                  item.feedStackTitle && <p className="feed-stack-title muted">{item.feedStackTitle}</p>
+                )}
+                <FeedCard
+                  item={item}
+                  isFresh={freshItemIds.has(item.feedItemId) || !item.isRead}
                   onSeen={markSeen}
+                  onChanged={replaceItem}
+                  onRemoved={removeItem}
+                  stack={isStack ? { isOpen, onToggle: () => toggleStack(item.feedStackKey) } : undefined}
                 />
-              )}
-            </li>
-          ))}
+                {isStack && mountedStackKeys.has(item.feedStackKey) && (
+                  <FeedStack
+                    feedStackKey={item.feedStackKey}
+                    topFeedItemId={item.feedItemId}
+                    isOpen={isOpen}
+                    loadCount={loadCount}
+                    readItemIds={readItemIds}
+                    onSeen={markSeen}
+                  />
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
       {nextCursor && (
@@ -580,18 +664,45 @@ function FeedCard({
 
   const chosen = item.choices.find((choice) => choice.choiceKey === item.chosenChoiceKey)
   const layout = parseFeedLayout(item.feedCardLayout, item.layoutContent)
+  const { cardMedia, rowMediaByIndex } = splitFeedMedia(item.feedMedia)
+  const hasCardMedia = cardMedia.length > 0
+  const headerLabel = feedHeaderLabelOf(cardMedia, item.feedSourceTitle)
+  const weatherGradient =
+    layout?.kind === 'weather' ? weatherGradientOf(layout.weather.conditionSymbol, layout.weather.conditionText) : null
+  const cardClassName = [
+    'card',
+    'feed-card',
+    isFresh ? 'is-fresh' : '',
+    weatherGradient ? `is-weather is-${weatherGradient}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
   const isChosen = item.chosenChoiceKey !== null && item.chosenChoiceKey !== ''
 
   return (
-    <article ref={cardRef} className={isFresh ? 'card feed-card is-fresh' : 'card feed-card'}>
+    <article ref={cardRef} className={cardClassName}>
       {isFresh && <span className="feed-fresh-dot" role="img" aria-label={t('feed.unread')} />}
-      <div className="feed-picture">
-        <FeedPicture pictureSymbol={item.pictureSymbol} />
-      </div>
+      {hasCardMedia && <FeedMediaGallery cardMedia={cardMedia} />}
+      {/* With pictures on top the symbol moves into the header line. */}
+      {!hasCardMedia && (
+        <div className="feed-picture">
+          <FeedPicture pictureSymbol={item.pictureSymbol} />
+        </div>
+      )}
       <div className="feed-content">
+        {(headerLabel || hasCardMedia) && (
+          <p className="feed-kicker muted">
+            {hasCardMedia && (
+              <span className="feed-kicker-symbol" aria-hidden="true">
+                <FeedPicture pictureSymbol={item.pictureSymbol} />
+              </span>
+            )}
+            {headerLabel}
+          </p>
+        )}
         <h3 className="feed-title">{item.title}</h3>
         {layout ? (
-          <FeedLayoutContent layout={layout} />
+          <FeedLayoutContent layout={layout} rowMediaByIndex={rowMediaByIndex} />
         ) : (
           item.body && (
             <div className="feed-body">
@@ -673,19 +784,17 @@ function FeedCard({
           </span>
         </div>
       </div>
-      {stack && item.stackItemCount > 1 && (
-        <button type="button" className="feed-stack-row" aria-expanded={stack.isOpen} onClick={stack.onToggle}>
+      {stack && !stack.isOpen && item.stackItemCount > 1 && (
+        <button type="button" className="feed-stack-row" aria-expanded="false" onClick={stack.onToggle}>
           <span>
-            {stack.isOpen
-              ? t('feed.stackCollapse')
-              : item.feedStackTitle || item.feedSourceTitle
-                ? t('feed.stackMore', {
-                    count: item.stackItemCount - 1,
-                    source: item.feedStackTitle || item.feedSourceTitle,
-                  })
-                : t('feed.stackMoreUnnamed', { count: item.stackItemCount - 1 })}
+            {item.feedStackTitle || item.feedSourceTitle
+              ? t('feed.stackMore', {
+                  count: item.stackItemCount - 1,
+                  source: item.feedStackTitle || item.feedSourceTitle,
+                })
+              : t('feed.stackMoreUnnamed', { count: item.stackItemCount - 1 })}
           </span>
-          {!stack.isOpen && item.stackUnreadCount > 0 && (
+          {item.stackUnreadCount > 0 && (
             <span className="muted feed-stack-unread">{t('feed.unreadCount', { count: item.stackUnreadCount })}</span>
           )}
         </button>
@@ -817,12 +926,15 @@ function FeedInfoDialog({
 function FeedStack({
   feedStackKey,
   topFeedItemId,
+  isOpen,
   loadCount,
   readItemIds,
   onSeen,
 }: {
   feedStackKey: string
   topFeedItemId: string
+  // False while the cards are going back into the deck.
+  isOpen: boolean
   loadCount: number
   readItemIds: Set<string>
   onSeen: (feedItemId: string) => void
@@ -832,9 +944,24 @@ function FeedStack({
   const [feedItems, setFeedItems] = useState<FeedItem[] | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [isDealt, setIsDealt] = useState(false)
+  const restRef = useRef<HTMLDivElement>(null)
   const countRef = useRef(0)
   const toastRef = useRef(toast)
   toastRef.current = toast
+
+  // The cards are drawn first inside the deck, and a moment later dealt out into
+  // the column; closing is the same the other way. Reading the layout in between
+  // makes the browser see the first state, so the change is a transition.
+  const hasCards = feedItems !== null
+  useEffect(() => {
+    if (!isOpen || !hasCards) {
+      setIsDealt(false)
+      return
+    }
+    if (!isMotionReduced()) restRef.current?.getBoundingClientRect()
+    setIsDealt(true)
+  }, [isOpen, hasCards])
 
   useEffect(() => {
     let isStale = false
@@ -884,37 +1011,46 @@ function FeedStack({
 
   const rest = (feedItems ?? []).filter((item) => item.feedItemId !== topFeedItemId)
   return (
-    <div className="feed-stack-rest">
-      <ul className="feed-list">
-        {rest.map((item) => (
-          <li key={item.feedItemId}>
-            <FeedCard
-              item={readItemIds.has(item.feedItemId) ? { ...item, isRead: true } : item}
-              isFresh={!item.isRead}
-              onSeen={onSeen}
-              onChanged={(updated) =>
-                setFeedItems((previous) =>
-                  previous
-                    ? previous.map((entry) => (entry.feedItemId === updated.feedItemId ? updated : entry))
-                    : previous,
-                )
+    <div ref={restRef} className={isDealt ? 'feed-stack-rest is-dealt' : 'feed-stack-rest'}>
+      <div className="feed-stack-rest-inner">
+        <ul className="feed-list">
+          {rest.map((item, index) => (
+            <li
+              key={item.feedItemId}
+              style={
+                {
+                  '--deal-delay': `${Math.min(index, STACK_STAGGER_LIMIT) * STACK_STAGGER_MS}ms`,
+                } as React.CSSProperties
               }
-              onRemoved={(feedItemId) =>
-                setFeedItems((previous) =>
-                  previous ? previous.filter((entry) => entry.feedItemId !== feedItemId) : previous,
-                )
-              }
-            />
-          </li>
-        ))}
-      </ul>
-      {nextCursor && (
-        <div className="list-foot feed-foot">
-          <button type="button" disabled={isLoadingMore} onClick={() => void loadMore()}>
-            {t('feed.more')}
-          </button>
-        </div>
-      )}
+            >
+              <FeedCard
+                item={readItemIds.has(item.feedItemId) ? { ...item, isRead: true } : item}
+                isFresh={!item.isRead}
+                onSeen={onSeen}
+                onChanged={(updated) =>
+                  setFeedItems((previous) =>
+                    previous
+                      ? previous.map((entry) => (entry.feedItemId === updated.feedItemId ? updated : entry))
+                      : previous,
+                  )
+                }
+                onRemoved={(feedItemId) =>
+                  setFeedItems((previous) =>
+                    previous ? previous.filter((entry) => entry.feedItemId !== feedItemId) : previous,
+                  )
+                }
+              />
+            </li>
+          ))}
+        </ul>
+        {nextCursor && (
+          <div className="list-foot feed-foot">
+            <button type="button" disabled={isLoadingMore} onClick={() => void loadMore()}>
+              {t('feed.more')}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

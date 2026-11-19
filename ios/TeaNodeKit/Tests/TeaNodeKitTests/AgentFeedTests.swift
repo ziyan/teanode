@@ -253,6 +253,86 @@ final class AgentFeedTests: XCTestCase {
         XCTAssertEqual(plain.layout, .text)
     }
 
+    // MARK: Media
+
+    private func mediaCard(_ mediaJSON: String) throws -> AgentFeedItem {
+        let json = #"{"feedItemId":"card-13","title":"Pictures","feedMedia":\#(mediaJSON)}"#
+        return try JSONDecoder().decode(AgentFeedItem.self, from: Data(json.utf8))
+    }
+
+    func testMediaDecodesItsFieldsAndAKnownKind() throws {
+        let card = try mediaCard(
+            #"[{"mediaKey":"m1","feedMediaKind":"video","imageUrl":"/api/v1/photos/photo-7/previews/large","videoUrl":"/api/v1/photos/photo-7/previews/video","mediaCaption":"A clip","widthPixels":1080,"heightPixels":1920},{"mediaKey":"m2","feedMediaKind":"picture","imageUrl":"/api/v1/feed/items/card-13/media/m2","linkUrl":"https://news.example.com/a","siteName":"Example News","widthPixels":1200,"heightPixels":630,"listRowIndex":null},null]"#)
+        XCTAssertEqual(card.feedMedia.map(\.mediaKey), ["m1", "m2"])
+        let video = card.feedMedia[0]
+        XCTAssertEqual(video.mediaKind, .video)
+        XCTAssertEqual(video.videoPhotoId, "photo-7")
+        XCTAssertTrue(video.isPortrait)
+        XCTAssertEqual(video.singleAspectRatio, 4.0 / 5.0)
+        XCTAssertEqual(video.mediaCaption, "A clip")
+        let picture = card.feedMedia[1]
+        XCTAssertEqual(picture.mediaKind, .picture)
+        XCTAssertEqual(picture.linkAddress?.absoluteString, "https://news.example.com/a")
+        XCTAssertNil(picture.listRowIndex)
+        XCTAssertFalse(picture.isPortrait)
+        XCTAssertEqual(picture.singleAspectRatio, 16.0 / 9.0)
+        XCTAssertNil(picture.videoPhotoId)
+    }
+
+    func testACardWithoutMediaOrWithOddMediaStillDecodes() throws {
+        let plain = try JSONDecoder().decode(AgentFeedItem.self, from: Data(#"{"feedItemId":"card-14","title":"Plain"}"#.utf8))
+        XCTAssertTrue(plain.feedMedia.isEmpty)
+        XCTAssertTrue(plain.cardMedia.isEmpty)
+        XCTAssertTrue(plain.rowThumbnails.isEmpty)
+        let odd = try mediaCard(#"[{"mediaKey":"m1","feedMediaKind":"hologram","imageUrl":"/p","linkUrl":"javascript:alert(1)","widthPixels":"wide"}]"#)
+        XCTAssertEqual(odd.feedMedia[0].mediaKind, .picture)
+        XCTAssertNil(odd.feedMedia[0].linkAddress)
+        XCTAssertEqual(odd.feedMedia[0].widthPixels, 0)
+        let notAList = try mediaCard(#""none""#)
+        XCTAssertTrue(notAList.feedMedia.isEmpty)
+    }
+
+    func testTheCardsMediaIsToldApartFromItsRowThumbnails() throws {
+        let card = try mediaCard(
+            #"[{"mediaKey":"a","imageUrl":"/a"},{"mediaKey":"r1","imageUrl":"/r1","listRowIndex":1},{"mediaKey":"b","imageUrl":"/b"},{"mediaKey":"r0","imageUrl":"/r0","listRowIndex":0},{"mediaKey":"r1b","imageUrl":"/r1b","listRowIndex":1},{"mediaKey":"empty","imageUrl":""}]"#)
+        XCTAssertEqual(card.cardMedia.map(\.mediaKey), ["a", "b"])
+        XCTAssertEqual(card.rowThumbnails.keys.sorted(), [0, 1])
+        XCTAssertEqual(card.rowThumbnails[0]?.mediaKey, "r0")
+        // The first thumbnail given for a row wins.
+        XCTAssertEqual(card.rowThumbnails[1]?.mediaKey, "r1")
+        XCTAssertNil(card.rowThumbnails[2])
+    }
+
+    func testTheHeaderIsTheFirstPicturesSiteElseTheSource() throws {
+        let withSite = try mediaCard(#"[{"mediaKey":"p","feedMediaKind":"picture","imageUrl":"/p","siteName":"Example News"}]"#)
+        XCTAssertEqual(withSite.headerText, "Example News")
+        let json = #"{"feedItemId":"card-15","title":"T","feedSourceTitle":"Morning brief","feedMedia":[{"mediaKey":"p","feedMediaKind":"photo","imageUrl":"/p","siteName":"Ignored"}]}"#
+        let ofPhoto = try JSONDecoder().decode(AgentFeedItem.self, from: Data(json.utf8))
+        XCTAssertEqual(ofPhoto.headerText, "Morning brief")
+        XCTAssertEqual(AgentFeedItem(feedItemId: "x", title: "T").headerText, "")
+    }
+
+    func testTheDocumentAsksForTheMedia() {
+        XCTAssertTrue(Documents.agentFeed.contains("feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }"))
+        XCTAssertTrue(Documents.agentFeedStack.contains("feedMedia {"))
+        XCTAssertTrue(Documents.chooseAgentFeedItem.contains("feedMedia {"))
+    }
+
+    func testAWeatherCardIsDrawnForItsSky() {
+        func condition(_ symbol: String, _ words: String) -> AgentFeedWeatherCondition {
+            AgentFeedWeather(currentTemperature: "10", conditionText: words, conditionSymbol: symbol).condition
+        }
+        XCTAssertEqual(condition("sun.max", "Clear"), .clearDay)
+        XCTAssertEqual(condition("cloud.sun", "Mostly sunny"), .clearDay)
+        XCTAssertEqual(condition("moon.stars", "Clear"), .clearNight)
+        XCTAssertEqual(condition("cloud", "Overcast"), .cloudy)
+        XCTAssertEqual(condition("cloud.drizzle", "Light drizzle"), .rain)
+        XCTAssertEqual(condition("", "Heavy rain"), .rain)
+        XCTAssertEqual(condition("cloud.snow", "Snow"), .snow)
+        XCTAssertEqual(condition("cloud.bolt.rain", "Thunderstorms"), .storm)
+        XCTAssertEqual(condition("", ""), .cloudy)
+    }
+
     // MARK: Calls
 
     func testReadingTheNextPageSendsTheCursor() async throws {

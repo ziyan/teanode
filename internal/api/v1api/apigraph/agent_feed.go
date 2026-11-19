@@ -186,6 +186,50 @@ type PostAgentFeedItemArguments struct {
 
 	// Choices are at most four buttons.
 	Choices []models.FeedChoice `json:"choices" graphapi:"nullable"`
+
+	// Media are the card's pictures and videos, at most six of its own and
+	// one for each row of a list. Left out of a post, a text card shows the
+	// picture of its first source link and a list card's linked rows theirs;
+	// left out of a change, the card keeps the ones it has.
+	Media []*AgentFeedMedia `json:"media" graphapi:"nullable"`
+}
+
+// AgentFeedMedia is a picture or video to show on a card: one of the
+// person's photos or videos, or the picture of a web page, which the server
+// fetches and keeps. A page is fetched only when a tool answered with its
+// address in the conversation posting the card, or the person posts it.
+type AgentFeedMedia struct {
+	PhotoID      string `json:"photoId" graphapi:"nullable"`
+	PageURL      string `json:"pageUrl" graphapi:"nullable"`
+	MediaCaption string `json:"mediaCaption" graphapi:"nullable"`
+
+	// ListRowIndex makes it the thumbnail of that row of a list card,
+	// counted from 0.
+	ListRowIndex *int `json:"listRowIndex" graphapi:"nullable"`
+}
+
+// AgentFeedMediaView is a picture or video on a card, ready to draw.
+type AgentFeedMediaView struct {
+	MediaKey string `json:"mediaKey"`
+
+	// FeedMediaKind is photo, video or picture, a web page's picture.
+	FeedMediaKind string `json:"feedMediaKind"`
+
+	// ImageURL is the picture, or a video's poster, and VideoURL the video
+	// to play; server paths that work for the signed-in person only.
+	ImageURL string `json:"imageUrl"`
+	VideoURL string `json:"videoUrl" graphapi:"nullable"`
+
+	// LinkURL is the page a picture is from, which a tap opens.
+	LinkURL      string `json:"linkUrl" graphapi:"nullable"`
+	SiteName     string `json:"siteName" graphapi:"nullable"`
+	MediaCaption string `json:"mediaCaption" graphapi:"nullable"`
+	WidthPixels  *int   `json:"widthPixels" graphapi:"nullable"`
+	HeightPixels *int   `json:"heightPixels" graphapi:"nullable"`
+
+	// ListRowIndex is the row of a list card this is the thumbnail of, null
+	// for a picture of the whole card.
+	ListRowIndex *int `json:"listRowIndex" graphapi:"nullable"`
 }
 
 // AgentFeedPageView is a page of the feed.
@@ -231,6 +275,10 @@ type AgentFeedItemView struct {
 
 	// RecordReferences are the references a message carries.
 	RecordReferences []models.AgentReference `json:"recordReferences"`
+
+	// FeedMedia are the card's pictures and videos and its list rows'
+	// thumbnails; a page's picture appears once the server has fetched it.
+	FeedMedia []*AgentFeedMediaView `json:"feedMedia"`
 
 	Choices []models.FeedChoice `json:"choices"`
 
@@ -305,7 +353,7 @@ func feedItemView(tx db.Transaction, item *models.AgentFeedItem) (*AgentFeedItem
 		FeedItemID: item.ID, FeedItemKind: string(item.FeedItemKind), FeedSourceKind: string(item.FeedSourceKind), FeedSourceID: item.FeedSourceID,
 		FeedSourceTitle: sourceTitle, RunConversationID: item.RunConversationID,
 		Title: item.Title, Body: item.Body, PictureSymbol: item.PictureSymbol,
-		FactRows: item.FactRows, SourceLinks: item.SourceLinks, RecordReferences: item.RecordReferences, Choices: item.Choices,
+		FactRows: item.FactRows, SourceLinks: item.SourceLinks, RecordReferences: item.RecordReferences, FeedMedia: feedMediaViews(item), Choices: item.Choices,
 		ChosenChoiceKey: chosenChoiceKey, ChosenAt: item.ChosenAt,
 		OutcomeText: item.OutcomeText, IsOutcomePending: agent.IsFeedOutcomePending(item, time.Now()),
 		FeedUrgency: string(item.FeedUrgency), IsLiked: item.IsLiked, IsRead: item.ReadAt != nil, IsDismissed: item.DismissedAt != nil,
@@ -313,6 +361,36 @@ func feedItemView(tx db.Transaction, item *models.AgentFeedItem) (*AgentFeedItem
 		FeedStackTitle: item.FeedStackTitle, StackPosition: item.StackPosition, FeedCardLayout: layoutName(item), LayoutContent: item.LayoutContent,
 		PostedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
 	}, nil
+}
+
+// feedMediaViews are the card's pictures and videos that have something to
+// show, with the addresses they are served from.
+func feedMediaViews(item *models.AgentFeedItem) []*AgentFeedMediaView {
+	views := []*AgentFeedMediaView{}
+	for _, entry := range item.FeedMedia {
+		if !entry.IsShown() {
+			continue
+		}
+		view := &AgentFeedMediaView{
+			MediaKey: entry.MediaKey, FeedMediaKind: string(entry.FeedMediaKind), SiteName: entry.SiteName, MediaCaption: entry.MediaCaption,
+			ListRowIndex: entry.ListRowIndex,
+		}
+		if entry.WidthPixels > 0 && entry.HeightPixels > 0 {
+			widthPixels, heightPixels := entry.WidthPixels, entry.HeightPixels
+			view.WidthPixels, view.HeightPixels = &widthPixels, &heightPixels
+		}
+		switch entry.FeedMediaKind {
+		case models.FeedMediaPicture:
+			view.ImageURL, view.LinkURL = api.FeedMediaPath(item.ID, entry.MediaKey), entry.PageURL
+		case models.FeedMediaVideo:
+			view.ImageURL = api.PhotoPreviewPath(entry.PhotoID, string(models.PhotoPreviewLarge))
+			view.VideoURL = api.PhotoPreviewPath(entry.PhotoID, string(models.PhotoPreviewVideo))
+		default:
+			view.ImageURL = api.PhotoPreviewPath(entry.PhotoID, string(models.PhotoPreviewLarge))
+		}
+		views = append(views, view)
+	}
+	return views
 }
 
 // layoutName is the card's layout, text for a card from before layouts.
@@ -620,7 +698,7 @@ func (self *graph) PostAgentFeedItem(ctx context.Context, arguments PostAgentFee
 	}
 	var stored *models.AgentFeedItem
 	if arguments.FeedItemID != "" {
-		stored, err = worker.UpdateFeedItem(ctx, found.ID, arguments.FeedItemID, func(item *models.AgentFeedItem) error {
+		stored, err = worker.UpdateFeedItem(ctx, found.ID, arguments.FeedItemID, arguments.RunConversationID, func(item *models.AgentFeedItem) error {
 			applyFeedPost(item, &arguments)
 			return nil
 		})
@@ -690,6 +768,17 @@ func applyFeedPost(item *models.AgentFeedItem, arguments *PostAgentFeedItemArgum
 	}
 	if arguments.LayoutContent != "" {
 		item.LayoutContent = arguments.LayoutContent
+	}
+	if arguments.Media != nil {
+		item.FeedMedia = make([]models.FeedMedia, 0, len(arguments.Media))
+		for _, entry := range arguments.Media {
+			if entry == nil {
+				continue
+			}
+			item.FeedMedia = append(item.FeedMedia, models.FeedMedia{
+				PhotoID: entry.PhotoID, PageURL: entry.PageURL, MediaCaption: entry.MediaCaption, ListRowIndex: entry.ListRowIndex,
+			})
+		}
 	}
 }
 

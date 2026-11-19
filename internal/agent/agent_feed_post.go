@@ -135,6 +135,9 @@ func NormalizeFeedItem(item *models.AgentFeedItem) error {
 	if err := normalizeFeedLayout(item); err != nil {
 		return err
 	}
+	if err := normalizeFeedMedia(item); err != nil {
+		return err
+	}
 	item.FeedStackTitle = cutMarked(strings.TrimSpace(item.FeedStackTitle), feedTitleCharacters)
 	item.FeedStackKey = strings.TrimSpace(item.FeedStackKey)
 	switch {
@@ -165,6 +168,9 @@ func NormalizeFeedItem(item *models.AgentFeedItem) error {
 // on, and an urgent card notifies the person's phones.
 func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.AgentFeedItem, models.FeedChange, error) {
 	item := post.Item
+	// The pages a card may show the pictures of are those a tool answered
+	// with in the turn that posts, before the card is credited elsewhere.
+	postingConversationId := item.RunConversationID
 	// Credited before normalizing, which picks the default stack from the source.
 	if (item.FeedSourceKind == "" || item.FeedSourceKind == models.FeedSourceAgent) && item.RunConversationID != "" {
 		if err := self.creditFeedSource(ctx, item); err != nil {
@@ -178,6 +184,7 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 	var change models.FeedChange
 	var found *models.Agent
 	var readySchedule *models.AgentSchedule
+	var removedPictures []string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		var err error
 		if found, err = tx.GetAgent(post.AgentID); err != nil {
@@ -240,6 +247,12 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 			}
 			item.InteractionID = interaction.ID
 		}
+		if err := resolveFeedPhotos(tx, found.UserID, item); err != nil {
+			return err
+		}
+		if previous != nil {
+			removedPictures = carryFeedPictures(previous.FeedMedia, item)
+		}
 		if stored, change, err = tx.UpsertAgentFeedItem(item, now); err != nil {
 			return err
 		}
@@ -253,6 +266,8 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 	}); err != nil {
 		return nil, "", err
 	}
+	self.deleteFeedPictures(removedPictures)
+	self.startFeedPictures(stored, postingConversationId)
 	self.notifyFeedPhones(found, stored)
 	if readySchedule != nil {
 		self.notifyScheduleReady(found, readySchedule)
@@ -323,8 +338,9 @@ func wantsFeed(found *models.Agent) bool {
 
 // UpdateFeedItem changes what a card says in place, as the posting agent's
 // own change: it keeps the choice made on it, and tells the open feeds.
-func (self *Agent) UpdateFeedItem(ctx context.Context, agentId, feedItemId string, modify func(*models.AgentFeedItem) error) (*models.AgentFeedItem, error) {
+func (self *Agent) UpdateFeedItem(ctx context.Context, agentId, feedItemId, postingConversationId string, modify func(*models.AgentFeedItem) error) (*models.AgentFeedItem, error) {
 	var updated *models.AgentFeedItem
+	var removedPictures []string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		existing, err := tx.GetAgentFeedItem(feedItemId)
 		if err != nil {
@@ -337,7 +353,14 @@ func (self *Agent) UpdateFeedItem(ctx context.Context, agentId, feedItemId strin
 			if err := modify(item); err != nil {
 				return err
 			}
-			return NormalizeFeedItem(item)
+			if err := NormalizeFeedItem(item); err != nil {
+				return err
+			}
+			if err := resolveFeedPhotos(tx, existing.UserID, item); err != nil {
+				return err
+			}
+			removedPictures = carryFeedPictures(existing.FeedMedia, item)
+			return nil
 		}, time.Now()); err != nil {
 			return err
 		}
@@ -345,6 +368,8 @@ func (self *Agent) UpdateFeedItem(ctx context.Context, agentId, feedItemId strin
 	}); err != nil {
 		return nil, err
 	}
+	self.deleteFeedPictures(removedPictures)
+	self.startFeedPictures(updated, postingConversationId)
 	return updated, nil
 }
 

@@ -3,7 +3,11 @@ import { Link } from 'react-router-dom'
 import type { AgentReference } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { mailPath, memoryPath } from './dashboardPath'
+import { FeedRowThumbnail } from './feedMedia'
+import { webAddressOf, type FeedMedia } from './feedMediaLayout'
 import { WeatherIcon } from './icons'
+
+export { webAddressOf }
 
 // The structured layouts a feed card can be drawn in besides text: a list of
 // rows, the weather, a day's agenda. The server sends the content as a JSON
@@ -132,16 +136,6 @@ export function parseFeedLayout(feedCardLayout: string, layoutContent: string): 
   return { kind: 'agenda', agendaEntries: entries }
 }
 
-// webAddressOf is a link as it may be followed: http or https only.
-export function webAddressOf(written: string): string {
-  try {
-    const parsed = new URL(written)
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : ''
-  } catch {
-    return ''
-  }
-}
-
 // recordPathOf is the dashboard page a record reference opens: a mail by its
 // item or thread, a page of memory by its path, a calendar record by the
 // calendar the caller names. Null for a reference this cannot place.
@@ -171,23 +165,33 @@ function degrees(value: number, unit?: string): string {
   return `${Math.round(value)}°${suffix}`
 }
 
-export function FeedLayoutContent({ layout }: { layout: FeedLayout }) {
-  if (layout.kind === 'list') return <FeedListRows rows={layout.listRows} />
+export function FeedLayoutContent({
+  layout,
+  rowMediaByIndex,
+}: {
+  layout: FeedLayout
+  rowMediaByIndex?: Map<number, FeedMedia>
+}) {
+  if (layout.kind === 'list') return <FeedListRows rows={layout.listRows} rowMediaByIndex={rowMediaByIndex} />
   if (layout.kind === 'weather') return <FeedWeather weather={layout.weather} />
   return <FeedAgenda entries={layout.agendaEntries} />
 }
 
-function FeedListRows({ rows }: { rows: ListRow[] }) {
+function FeedListRows({ rows, rowMediaByIndex }: { rows: ListRow[]; rowMediaByIndex?: Map<number, FeedMedia> }) {
   return (
     <ul className="feed-rows">
       {rows.map((row, index) => {
         const address = webAddressOf(row.rowUrl)
         const recordPath = recordPathOf(row.rowRecordReference)
+        const thumbnail = rowMediaByIndex?.get(index)
         const inside = (
           <>
-            <span className="feed-row-title">{row.rowTitle}</span>
-            {row.rowDetail && <span className="feed-row-detail">{row.rowDetail}</span>}
-            {row.rowMeta && <span className="feed-row-meta muted">{row.rowMeta}</span>}
+            {thumbnail && <FeedRowThumbnail media={thumbnail} />}
+            <span className="feed-row-text">
+              <span className="feed-row-title">{row.rowTitle}</span>
+              {row.rowDetail && <span className="feed-row-detail">{row.rowDetail}</span>}
+              {row.rowMeta && <span className="feed-row-meta muted">{row.rowMeta}</span>}
+            </span>
           </>
         )
         return (

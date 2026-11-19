@@ -25531,6 +25531,7 @@ button.voice-bubble-transcribe {
 .feed-card {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
   align-items: flex-start;
 }
@@ -25674,38 +25675,76 @@ button.voice-bubble-transcribe {
   }
 }
 
-/* A stack of cards from one source: the top card with two edges showing
-   behind it. The edges live in the room under the card, so opening the stack
-   does not move the card itself. */
+/* A stack of cards from one source is a deck: the top card with two edges
+   showing behind it, each narrower and lower. The edges live in the room under
+   the card, so opening the stack does not move the card itself; they fade and
+   sink when it opens. */
 .feed-stack {
   position: relative;
 }
-.feed-stack.is-closed {
-  padding-bottom: 12px;
+.feed-stack.is-deck {
+  transition: padding-bottom 350ms cubic-bezier(0.34, 1.3, 0.64, 1);
 }
-.feed-stack.is-closed::before,
-.feed-stack.is-closed::after {
+.feed-stack.is-deck.is-closed {
+  padding-bottom: 14px;
+  cursor: pointer;
+}
+.feed-stack.is-deck::before,
+.feed-stack.is-deck::after {
   content: '';
   position: absolute;
-  bottom: 0;
-  height: 12px;
+  height: 14px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-top: 0;
   border-radius: 0 0 var(--radius-3) var(--radius-3);
+  opacity: 0;
+  transform: translateY(-16px) scale(0.96);
+  transition:
+    opacity 250ms ease,
+    transform 350ms cubic-bezier(0.34, 1.3, 0.64, 1);
+  pointer-events: none;
 }
-.feed-stack.is-closed::before {
+.feed-stack.is-deck::before {
   left: 8px;
   right: 8px;
-  bottom: 4px;
+  bottom: 5px;
 }
-.feed-stack.is-closed::after {
+.feed-stack.is-deck::after {
   left: 16px;
   right: 16px;
   bottom: 0;
 }
+.feed-stack.is-deck.is-closed::before,
+.feed-stack.is-deck.is-closed::after {
+  opacity: 1;
+  transform: none;
+}
 .feed-stack.is-closed > .feed-card {
   margin-bottom: 0;
+}
+.feed-stack-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2) var(--space-1);
+}
+.feed-stack-header .feed-stack-title {
+  margin: 0;
+}
+.feed-stack-title.is-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.feed-stack-less {
+  flex: none;
+  font-size: 13px;
+  padding: 4px 10px;
 }
 .feed-stack-row {
   display: flex;
@@ -25721,14 +25760,49 @@ button.voice-bubble-transcribe {
 }
 .feed-stack-rest {
   margin-left: var(--space-4);
+  /* The room the cards take grows from nothing, so the rest of the feed is
+     pushed down smoothly rather than at once. */
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 350ms cubic-bezier(0.34, 1.1, 0.64, 1);
+}
+.feed-stack-rest.is-dealt {
+  grid-template-rows: 1fr;
+}
+.feed-stack-rest-inner {
+  min-height: 0;
+  /* Clipped to the room the cards have so far, a little wider than that so a
+     focus ring at the edge still shows. */
+  overflow: clip;
+  overflow-clip-margin: 6px;
+}
+/* Each card slides down out of the deck, one after the other, and goes back
+   up into it the same way. */
+.feed-stack-rest .feed-list > li {
+  opacity: 0;
+  transform: translateY(-70%) scale(0.96);
+  transition:
+    opacity 250ms ease,
+    transform 350ms cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+.feed-stack-rest.is-dealt .feed-list > li {
+  opacity: 1;
+  transform: none;
+  transition-delay: var(--deal-delay, 0ms);
 }
 @media (max-width: 600px) {
   .feed-stack-rest {
     margin-left: var(--space-2);
   }
 }
-.feed-card:has(> .feed-stack-row) {
-  flex-wrap: wrap;
+@media (prefers-reduced-motion: reduce) {
+  .feed-stack.is-deck,
+  .feed-stack.is-deck::before,
+  .feed-stack.is-deck::after,
+  .feed-stack-rest,
+  .feed-stack-rest .feed-list > li {
+    transition: none;
+  }
 }
 .feed-card > .feed-stack-row {
   flex: 1 0 100%;
@@ -25759,6 +25833,26 @@ button.voice-bubble-transcribe {
 }
 .feed-rows li:last-child .feed-row {
   border-bottom: 0;
+}
+.feed-row {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.feed-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.feed-row-thumbnail {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-2);
+  background: var(--field);
 }
 a.feed-row:hover .feed-row-title,
 a.feed-agenda-body:hover .feed-agenda-title {
@@ -25850,4 +25944,192 @@ a.feed-agenda-body:hover .feed-agenda-title {
   color: inherit;
   text-decoration: none;
   overflow-wrap: anywhere;
+}
+
+/* Pictures and videos of a card. They run edge to edge across the top of the
+   card, under its rounded corners. */
+.feed-kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 var(--space-4) 2px 0;
+  font-size: 12px;
+  font-weight: 650;
+}
+.feed-kicker-symbol {
+  display: inline-flex;
+}
+.feed-kicker-symbol svg {
+  width: 14px;
+  height: 14px;
+}
+.feed-media {
+  flex: 1 0 100%;
+  min-width: 0;
+  margin: calc(-1 * var(--space-4)) calc(-1 * var(--card-padding-inline)) 0;
+  overflow: hidden;
+  border-radius: var(--radius-3) var(--radius-3) 0 0;
+}
+.feed-media-tile {
+  position: relative;
+  margin: 0;
+}
+.feed-media-frame {
+  position: relative;
+  overflow: hidden;
+  background: var(--field);
+}
+.feed-media-tile.is-wide .feed-media-frame {
+  aspect-ratio: 16 / 9;
+}
+.feed-media-tile.is-portrait .feed-media-frame {
+  aspect-ratio: 4 / 5;
+}
+.feed-media-image,
+.feed-media-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.feed-media-video {
+  background: #000;
+}
+.feed-media-link,
+.feed-media-play-button {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 0;
+  cursor: pointer;
+}
+.feed-media-play {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  transform: translate(-50%, -50%);
+  border-radius: var(--radius-round);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  transition: transform 150ms ease;
+}
+.feed-media-play svg {
+  fill: currentColor;
+  margin-left: 2px;
+}
+.feed-media-play-button:hover .feed-media-play {
+  transform: translate(-50%, -50%) scale(1.08);
+}
+.feed-media-caption {
+  margin: 0;
+  padding: var(--space-1) var(--space-3) 0;
+  font-size: 12px;
+}
+.feed-media.is-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+}
+.feed-media.is-scroll {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+.feed-media.is-scroll .feed-media-tile {
+  flex: none;
+  width: min(260px, 70%);
+  scroll-snap-align: start;
+}
+
+/* The weather card is drawn on a gradient of its condition. The gradients are
+   dark enough in the lighter half for white text in either color scheme. */
+.feed-card.is-weather {
+  --muted: rgba(255, 255, 255, 0.82);
+  --text: #fff;
+  --border: rgba(255, 255, 255, 0.28);
+  --field: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border-color: transparent;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+.feed-card.is-weather.is-clearDay {
+  background: linear-gradient(160deg, #14509e 0%, #2b78c8 100%);
+}
+.feed-card.is-weather.is-clearNight {
+  background: linear-gradient(160deg, #0f1b3d 0%, #2a2f6b 100%);
+}
+.feed-card.is-weather.is-cloudy {
+  background: linear-gradient(160deg, #4a5566 0%, #627080 100%);
+}
+.feed-card.is-weather.is-rain {
+  background: linear-gradient(160deg, #263a52 0%, #4a6580 100%);
+}
+.feed-card.is-weather.is-snow {
+  background: linear-gradient(160deg, #3d5878 0%, #62799a 100%);
+}
+.feed-card.is-weather.is-storm {
+  background: linear-gradient(160deg, #241f3a 0%, #4a3b66 100%);
+}
+.feed-card.is-weather .feed-fresh-dot {
+  background: #fff;
+}
+.feed-card.is-weather .feed-picture {
+  color: #fff;
+}
+.feed-card.is-weather button,
+.feed-card.is-weather .icon-action {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.35);
+  text-shadow: none;
+}
+.feed-card.is-weather .feed-like.is-liked {
+  color: #fff;
+}
+.feed-card.is-weather .feed-weather-rain {
+  color: #fff;
+}
+
+/* The agenda hangs off a time rail: a line down the left of the dots, and a
+   dot of a color per kind of entry. */
+.feed-agenda-entry {
+  --agenda-color: var(--muted);
+}
+.feed-agenda-entry.is-meeting {
+  --agenda-color: #2f6fd0;
+}
+.feed-agenda-entry.is-focus {
+  --agenda-color: #7a52c7;
+}
+.feed-agenda-entry.is-task {
+  --agenda-color: var(--good);
+}
+.feed-agenda-entry.is-break {
+  --agenda-color: var(--warn);
+}
+.feed-agenda-marker {
+  position: relative;
+  width: 10px;
+  height: 10px;
+}
+.feed-agenda-marker::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: -14px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--border-strong, var(--border));
+}
+.feed-agenda-entry:last-child .feed-agenda-marker::after {
+  display: none;
 }

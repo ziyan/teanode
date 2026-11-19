@@ -32,12 +32,14 @@ private func feedSymbolName(_ name: String, fallback: String) -> String {
 /// and meta, told apart by a rule. A row with an address or a record opens it.
 struct FeedListLayout: View {
     let listRows: [AgentFeedListRow]
+    /// The thumbnails of the rows that have one, by row index.
+    var thumbnails: [Int: AgentFeedMedia] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(listRows.enumerated()), id: \.offset) { index, listRow in
                 if index > 0 { Divider() }
-                FeedListLine(listRow: listRow)
+                FeedListLine(listRow: listRow, thumbnail: thumbnails[index])
             }
         }
     }
@@ -46,7 +48,10 @@ struct FeedListLayout: View {
 /// FeedListLine is one row of a list card.
 struct FeedListLine: View {
     let listRow: AgentFeedListRow
+    /// A small picture for the row's leading edge, in place of its symbol.
+    var thumbnail: AgentFeedMedia?
     @Environment(AppModel.self) private var app
+    @ScaledMetric(relativeTo: .body) private var thumbnailSize: CGFloat = 56
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -65,13 +70,7 @@ struct FeedListLine: View {
 
     private var content: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: feedSymbolName(listRow.rowSymbol, fallback: "doc.text"))
-                .symbolRenderingMode(.hierarchical)
-                .font(.subheadline)
-                .foregroundStyle(Color.secondary)
-                .frame(minWidth: 24)
-                .padding(.top, 2)
-                .accessibilityHidden(true)
+            leadingPicture
             VStack(alignment: .leading, spacing: 2) {
                 Text(listRow.rowTitle)
                     .font(.subheadline.weight(.semibold))
@@ -103,6 +102,25 @@ struct FeedListLine: View {
         .contentShape(.rect)
     }
 
+    /// The row's thumbnail, square and rounded, or its symbol.
+    @ViewBuilder
+    private var leadingPicture: some View {
+        if let thumbnail {
+            FeedMediaImage(path: thumbnail.imageUrl)
+                .frame(width: thumbnailSize, height: thumbnailSize)
+                .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: feedSymbolName(listRow.rowSymbol, fallback: "doc.text"))
+                .symbolRenderingMode(.hierarchical)
+                .font(.subheadline)
+                .foregroundStyle(Color.secondary)
+                .frame(minWidth: 24)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
+        }
+    }
+
     /// An address opens in the app's own browser through the environment's
     /// openURL; a record opens in its part of the app.
     private func open() {
@@ -127,7 +145,7 @@ struct FeedWeatherLayout: View {
             if !weather.placeName.isEmpty {
                 Text(weather.placeName)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .opacity(0.85)
             }
             HStack(spacing: 12) {
                 Image(systemName: feedSymbolName(weather.conditionSymbol, fallback: "cloud.sun"))
@@ -145,7 +163,7 @@ struct FeedWeatherLayout: View {
                     if !highLowText.isEmpty {
                         Text(highLowText)
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .opacity(0.85)
                     }
                 }
             }
@@ -161,7 +179,16 @@ struct FeedWeatherLayout: View {
                 }
             }
         }
+        // White on a sky: the gradient is dark enough at every condition for
+        // white text to read, in light and dark mode alike.
+        .foregroundStyle(Color.white)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(skyGradient, in: .rect(cornerRadius: 14, style: .continuous))
+    }
+
+    private var skyGradient: LinearGradient {
+        LinearGradient(colors: FeedWeatherSky.colors(for: weather.condition), startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     private var highLowText: String {
@@ -171,6 +198,21 @@ struct FeedWeatherLayout: View {
         if !high.isEmpty { return String(localized: "High \(high)") }
         if !low.isEmpty { return String(localized: "Low \(low)") }
         return ""
+    }
+}
+
+/// FeedWeatherSky is the colors a weather card is drawn on, by condition:
+/// each is dark enough for white text.
+enum FeedWeatherSky {
+    static func colors(for condition: AgentFeedWeatherCondition) -> [Color] {
+        switch condition {
+        case .clearDay: [Color(red: 0.10, green: 0.38, blue: 0.80), Color(red: 0.30, green: 0.58, blue: 0.90)]
+        case .clearNight: [Color(red: 0.06, green: 0.08, blue: 0.25), Color(red: 0.20, green: 0.17, blue: 0.45)]
+        case .cloudy: [Color(red: 0.31, green: 0.38, blue: 0.47), Color(red: 0.47, green: 0.53, blue: 0.61)]
+        case .rain: [Color(red: 0.17, green: 0.26, blue: 0.40), Color(red: 0.30, green: 0.42, blue: 0.56)]
+        case .snow: [Color(red: 0.32, green: 0.45, blue: 0.60), Color(red: 0.50, green: 0.62, blue: 0.74)]
+        case .storm: [Color(red: 0.14, green: 0.12, blue: 0.27), Color(red: 0.31, green: 0.25, blue: 0.45)]
+        }
     }
 }
 
@@ -184,7 +226,7 @@ struct FeedHourColumn: View {
         VStack(spacing: 4) {
             Text(hourText)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .opacity(0.85)
             Image(systemName: feedSymbolName(hour.forecastSymbol, fallback: "cloud"))
                 .symbolRenderingMode(.multicolor)
                 .font(.title3)
@@ -195,7 +237,7 @@ struct FeedHourColumn: View {
             if hour.precipitationChancePercent > 0 {
                 Text(verbatim: "\(hour.precipitationChancePercent)%")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .opacity(0.85)
                     .accessibilityLabel(Text("\(hour.precipitationChancePercent) percent chance of rain"))
             }
         }
@@ -211,15 +253,15 @@ struct FeedHourColumn: View {
 
 // MARK: Agenda
 
-/// FeedAgendaLayout is a day plan: a vertical timeline of entries, each with
-/// its start and end, a marker colored by its kind, its title and detail.
+/// FeedAgendaLayout is a day plan: entries hang off a time rail, each with
+/// its start and end, a dot colored by its kind, its title and detail.
 struct FeedAgendaLayout: View {
     let agendaEntries: [AgentFeedAgendaEntry]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(agendaEntries.enumerated()), id: \.offset) { _, entry in
-                FeedAgendaLine(entry: entry)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(agendaEntries.enumerated()), id: \.offset) { index, entry in
+                FeedAgendaLine(entry: entry, isFirst: index == 0, isLast: index == agendaEntries.count - 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -229,6 +271,9 @@ struct FeedAgendaLayout: View {
 /// FeedAgendaLine is one entry of a day plan.
 struct FeedAgendaLine: View {
     let entry: AgentFeedAgendaEntry
+    /// The rail starts at the first entry's dot and ends at the last one's.
+    let isFirst: Bool
+    let isLast: Bool
     @Environment(AppModel.self) private var app
 
     var body: some View {
@@ -259,11 +304,9 @@ struct FeedAgendaLine: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .padding(.vertical, 6)
             .frame(minWidth: 62, alignment: .trailing)
-            Capsule()
-                .fill(markerColor)
-                .frame(width: 4)
-                .accessibilityHidden(true)
+            rail
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.agendaTitle)
                     .font(.subheadline.weight(.semibold))
@@ -274,6 +317,7 @@ struct FeedAgendaLine: View {
                     .foregroundStyle(Color.secondary)
                     .multilineTextAlignment(.leading)
             }
+            .padding(.vertical, 6)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -281,14 +325,33 @@ struct FeedAgendaLine: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// A meeting is the accent; the rest are told apart by their words too,
-    /// and a break is the quietest.
+    /// The time rail: a thin line through the entries, and this entry's dot
+    /// on it, level with its first line.
+    private var rail: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(isFirst ? Color.clear : Color(uiColor: .separator))
+                .frame(width: 2, height: 10)
+            Circle()
+                .fill(markerColor)
+                .frame(width: 10, height: 10)
+            Rectangle()
+                .fill(isLast ? Color.clear : Color(uiColor: .separator))
+                .frame(width: 2)
+                .frame(maxHeight: .infinity)
+        }
+        .frame(width: 10)
+        .accessibilityHidden(true)
+    }
+
+    /// A dot a color per kind; the kind is also in the words under the title,
+    /// so the color is never the only sign.
     private var markerColor: Color {
         switch entry.agendaEntryKind {
-        case .meeting: Color.accentColor
-        case .focus: Color.primary
-        case .task: Color(uiColor: .tertiaryLabel)
-        case .`break`: Color.secondary.opacity(0.5)
+        case .meeting: Color.blue
+        case .focus: Color.indigo
+        case .task: Color.orange
+        case .`break`: Color.gray
         }
     }
 

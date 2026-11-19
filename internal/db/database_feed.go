@@ -107,6 +107,7 @@ type agentFeedItemModel struct {
 	FactRows         []byte `gorm:"column:fact_rows;type:jsonb"`
 	SourceLinks      []byte `gorm:"column:source_links;type:jsonb"`
 	RecordReferences []byte `gorm:"column:record_references;type:jsonb"`
+	FeedMedia        []byte `gorm:"column:feed_media;type:jsonb"`
 
 	CoalesceKey *string `gorm:"column:coalesce_key"`
 	Choices     []byte  `gorm:"column:choices;type:jsonb"`
@@ -179,6 +180,9 @@ func feedItemToModel(item *models.AgentFeedItem) (*agentFeedItemModel, error) {
 	if model.Choices, err = jsonArray(item.Choices); err != nil {
 		return nil, err
 	}
+	if model.FeedMedia, err = jsonArray(item.FeedMedia); err != nil {
+		return nil, err
+	}
 	return model, nil
 }
 
@@ -188,7 +192,7 @@ func (self *agentFeedItemModel) toModel() (*models.AgentFeedItem, error) {
 		FeedItemKind: models.FeedItemKind(self.FeedItemKind), FeedSourceKind: models.FeedSourceKind(self.FeedSourceKind), FeedSourceID: self.FeedSourceID,
 		RunConversationID: self.RunConversationID,
 		Title:             self.Title, Body: self.Body, PictureSymbol: self.PictureSymbol,
-		FactRows: []models.FeedFactRow{}, SourceLinks: []models.FeedSourceLink{}, RecordReferences: []models.AgentReference{}, Choices: []models.FeedChoice{},
+		FactRows: []models.FeedFactRow{}, SourceLinks: []models.FeedSourceLink{}, RecordReferences: []models.AgentReference{}, Choices: []models.FeedChoice{}, FeedMedia: []models.FeedMedia{},
 		ChosenAt: localTime(self.ChosenAt), ChosenConversationID: self.ChosenConversationID,
 		OutcomeText: self.OutcomeText, IsOutcomePending: self.IsOutcomePending,
 		FeedUrgency: models.FeedUrgency(self.FeedUrgency), FeedStackKey: self.FeedStackKey, FeedCardLayout: models.FeedCardLayout(self.FeedCardLayout), LayoutContent: string(self.LayoutContent), StackPosition: self.StackPosition, FeedStackTitle: self.FeedStackTitle, IsLiked: self.IsLiked,
@@ -199,7 +203,7 @@ func (self *agentFeedItemModel) toModel() (*models.AgentFeedItem, error) {
 	for _, column := range []struct {
 		data   []byte
 		target any
-	}{{self.FactRows, &item.FactRows}, {self.SourceLinks, &item.SourceLinks}, {self.RecordReferences, &item.RecordReferences}, {self.Choices, &item.Choices}} {
+	}{{self.FactRows, &item.FactRows}, {self.SourceLinks, &item.SourceLinks}, {self.RecordReferences, &item.RecordReferences}, {self.Choices, &item.Choices}, {self.FeedMedia, &item.FeedMedia}} {
 		if err := decodeJSON(column.data, column.target); err != nil {
 			return nil, err
 		}
@@ -249,7 +253,7 @@ func (self *transaction) UpsertAgentFeedItem(item *models.AgentFeedItem, now tim
 				"chosen_choice_key": nil, "chosen_at": nil, "chosen_conversation_id": "", "outcome_text": "", "is_outcome_pending": false,
 				"feed_item_kind": model.FeedItemKind, "feed_source_kind": model.FeedSourceKind, "feed_source_id": model.FeedSourceID,
 				"run_conversation_id": model.RunConversationID, "title": model.Title, "body": model.Body, "picture_symbol": model.PictureSymbol,
-				"fact_rows": model.FactRows, "source_links": model.SourceLinks, "record_references": model.RecordReferences,
+				"fact_rows": model.FactRows, "source_links": model.SourceLinks, "record_references": model.RecordReferences, "feed_media": model.FeedMedia,
 				"choices": model.Choices, "interaction_id": model.InteractionID, "feed_urgency": model.FeedUrgency, "feed_stack_key": model.FeedStackKey, "feed_card_layout": model.FeedCardLayout, "layout_content": model.LayoutContent, "stack_position": model.StackPosition, "feed_stack_title": model.FeedStackTitle,
 			}
 			if err := self.tx.Model(&agentFeedItemModel{}).Where(`"id" = ?`, existing.ID).Updates(updates).Error; err != nil {
@@ -451,7 +455,7 @@ func (self *transaction) UpdateAgentFeedItem(feedItemId string, modify func(*mod
 	updates := map[string]any{
 		"updated_at": now, "coalesce_key": model.CoalesceKey, "feed_item_kind": model.FeedItemKind, "title": model.Title, "body": model.Body,
 		"picture_symbol": model.PictureSymbol, "fact_rows": model.FactRows, "source_links": model.SourceLinks,
-		"record_references": model.RecordReferences, "choices": model.Choices, "interaction_id": model.InteractionID, "feed_urgency": model.FeedUrgency,
+		"record_references": model.RecordReferences, "feed_media": model.FeedMedia, "choices": model.Choices, "interaction_id": model.InteractionID, "feed_urgency": model.FeedUrgency,
 		"feed_stack_key": model.FeedStackKey, "stack_position": model.StackPosition, "feed_stack_title": model.FeedStackTitle,
 		"feed_card_layout": model.FeedCardLayout, "layout_content": model.LayoutContent,
 	}

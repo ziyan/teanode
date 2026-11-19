@@ -64,6 +64,30 @@ every app draws natively: `list` (at most 10 rows, `rowUrl` http or https),
 strictly as it is posted, and a malformed one is refused with the field named.
 The body stays plain Markdown for every layout.
 
+## Pictures and videos
+
+A card carries `feed_media`: at most six pictures and videos of its own and a
+thumbnail for each row of a list card (`listRowIndex`). An entry is one of the
+person's photos or videos by `photoId`, checked with the photo's access rules
+as the card is posted and served from the photo preview routes, or the
+picture of a web page by `pageUrl`. A post that gives none shows the picture of
+a text card's first source link and of a list card's linked rows.
+
+A page's picture is fetched after the post, in the background, by the same
+fetcher as link previews: the page is read, its picture fetched, scaled to at
+most 1200 pixels on its long side, kept in the file store and served from
+`/api/v1/feed/items/{feedItemId}/media/{mediaKey}` to the card's person only.
+Until then the entry is not shown; once it is kept (or found missing), the card
+is announced as replaced and open feeds draw it. A page is fetched only when
+its address appears word for word in a tool's answer in the conversation that
+posted the card, or the person posted it: an address the model composed could
+carry what it read in its query, so it is never asked for. A card replaced or
+changed keeps the pictures of the pages it still shows and deletes the rest.
+
+The apps draw one picture full width at the top of the card, two to four as a
+grid and more as a row that scrolls sideways; a video plays in place. A stack
+is drawn as a deck that fans out in place when tapped and gathers back.
+
 ## Where unasked words go
 
 - **Alerts.** The alert job decides as it did, within its bounds, and says each

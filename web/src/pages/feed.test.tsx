@@ -52,6 +52,7 @@ function feedItem(feedItemId: string, overrides: Partial<FeedItem> = {}): FeedIt
     stackPosition: null,
     feedCardLayout: 'text',
     layoutContent: '',
+    feedMedia: [],
     ...overrides,
   }
 }
@@ -379,7 +380,7 @@ it('opens a stack in place with its other cards, pages it and collapses it', asy
     first: 20,
     after: 'stack-cursor',
   })
-  fireEvent.click(screen.getByRole('button', { name: 'Show fewer' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
   expect(screen.queryByText('Second story')).toBeNull()
 })
 
@@ -573,4 +574,98 @@ it('falls back to the body when the layout content is broken or of the wrong sha
   expect(await screen.findByText('Broken fallback')).toBeTruthy()
   expect(screen.getByText('Shape fallback')).toBeTruthy()
   expect(screen.getByText('Unknown fallback')).toBeTruthy()
+})
+
+it('draws one picture at the top of the card with its site name above the headline, and opens its page', async () => {
+  execute.mockResolvedValue(
+    listing([
+      feedItem('with-picture', {
+        feedMedia: [
+          {
+            mediaKey: 'picture-one',
+            feedMediaKind: 'picture',
+            imageUrl: '/api/v1/feed/items/with-picture/media/picture-one',
+            videoUrl: '',
+            linkUrl: 'https://example.com/story',
+            siteName: 'Example Daily',
+            mediaCaption: 'A robot in a warehouse',
+            widthPixels: 1200,
+            heightPixels: 630,
+            listRowIndex: null,
+          },
+        ],
+      }),
+    ]),
+  )
+  const { container } = drawFeed()
+  await screen.findByText('Frost tonight with-picture')
+  const image = container.querySelector('.feed-media-image') as HTMLImageElement
+  expect(image.getAttribute('src')).toBe('/api/v1/feed/items/with-picture/media/picture-one')
+  expect(container.querySelector('.feed-media-tile.is-wide')).toBeTruthy()
+  expect(container.querySelector('.feed-media-link')?.getAttribute('target')).toBe('_blank')
+  expect(screen.getByText('A robot in a warehouse')).toBeTruthy()
+  expect(container.querySelector('.feed-kicker')?.textContent).toBe('Example Daily')
+})
+
+it('plays a video in place and puts a list row thumbnail at the row start', async () => {
+  execute.mockResolvedValue(
+    listing([
+      feedItem('with-video', {
+        feedCardLayout: 'list',
+        layoutContent: JSON.stringify({ listRows: [{ rowTitle: 'First row' }, { rowTitle: 'Second row' }] }),
+        feedMedia: [
+          {
+            mediaKey: 'video-one',
+            feedMediaKind: 'video',
+            imageUrl: '/poster',
+            videoUrl: '/video',
+            linkUrl: '',
+            siteName: '',
+            mediaCaption: '',
+            widthPixels: null,
+            heightPixels: null,
+            listRowIndex: null,
+          },
+          {
+            mediaKey: 'thumbnail-one',
+            feedMediaKind: 'picture',
+            imageUrl: '/thumbnail',
+            videoUrl: '',
+            linkUrl: '',
+            siteName: '',
+            mediaCaption: '',
+            widthPixels: null,
+            heightPixels: null,
+            listRowIndex: 1,
+          },
+        ],
+      }),
+    ]),
+  )
+  const { container } = drawFeed()
+  fireEvent.click(await screen.findByRole('button', { name: 'Play video' }))
+  expect(container.querySelector('video')?.getAttribute('src')).toBe('/video')
+  const thumbnails = container.querySelectorAll('.feed-row-thumbnail')
+  expect(thumbnails).toHaveLength(1)
+  expect(thumbnails[0].closest('li')?.textContent).toContain('Second row')
+})
+
+it('draws a weather card on the gradient of its condition', async () => {
+  execute.mockResolvedValue(
+    listing([
+      feedItem('sky', {
+        feedCardLayout: 'weather',
+        layoutContent: JSON.stringify({
+          placeName: 'Somewhere',
+          currentTemperature: 3,
+          temperatureUnit: 'C',
+          conditionText: 'Light snow',
+          conditionSymbol: 'cloud.snow',
+        }),
+      }),
+    ]),
+  )
+  const { container } = drawFeed()
+  await screen.findByText('Frost tonight sky')
+  expect(container.querySelector('.feed-card.is-weather.is-snow')).toBeTruthy()
 })

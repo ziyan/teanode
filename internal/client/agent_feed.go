@@ -72,8 +72,23 @@ type AgentFeedItem struct {
 	StackPosition     *int                  `json:"stackPosition"`
 	FeedCardLayout    string                `json:"feedCardLayout"`
 	LayoutContent     string                `json:"layoutContent"`
+	FeedMedia         []AgentFeedMedia      `json:"feedMedia"`
 	PostedAt          time.Time             `json:"postedAt"`
 	UpdatedAt         time.Time             `json:"updatedAt"`
+}
+
+// AgentFeedMedia is a picture or video on a card.
+type AgentFeedMedia struct {
+	MediaKey      string `json:"mediaKey"`
+	FeedMediaKind string `json:"feedMediaKind"`
+	ImageURL      string `json:"imageUrl"`
+	VideoURL      string `json:"videoUrl"`
+	LinkURL       string `json:"linkUrl"`
+	SiteName      string `json:"siteName"`
+	MediaCaption  string `json:"mediaCaption"`
+	WidthPixels   *int   `json:"widthPixels"`
+	HeightPixels  *int   `json:"heightPixels"`
+	ListRowIndex  *int   `json:"listRowIndex"`
 }
 
 // AgentFeedPage is a page of the feed.
@@ -88,15 +103,16 @@ const (
 		factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl }
 		recordReferences { itemId threadId subject from path name financeTransactionId recordingId recordingTitle photoId photoTitle }
 		choices { choiceKey choiceLabel choiceRole } chosenChoiceKey chosenAt outcomeText isOutcomePending
-		feedUrgency isLiked isRead isDismissed feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent postedAt updatedAt`
+		feedUrgency isLiked isRead isDismissed feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent postedAt updatedAt
+		feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }`
 
 	// DocumentPostAgentFeedItem is also what the feed tool sends.
 	postFields = `$feedItemId: String, $feedItemKind: String, $feedSourceKind: String, $feedSourceId: String, $runConversationId: String,
 		$title: String, $body: String, $pictureSymbol: String, $factRows: [FeedFactRowInput!], $sourceLinks: [FeedSourceLinkInput!],
-		$coalesceKey: String, $feedUrgency: String, $stackKey: String, $stackPosition: Int, $stackTitle: String, $cardLayout: String, $layoutContent: String, $choices: [FeedChoiceInput!]`
+		$coalesceKey: String, $feedUrgency: String, $stackKey: String, $stackPosition: Int, $stackTitle: String, $cardLayout: String, $layoutContent: String, $choices: [FeedChoiceInput!], $media: [AgentFeedMediaInput!]`
 	postArguments = `feedItemId: $feedItemId, feedItemKind: $feedItemKind, feedSourceKind: $feedSourceKind, feedSourceId: $feedSourceId,
 			runConversationId: $runConversationId, title: $title, body: $body, pictureSymbol: $pictureSymbol, factRows: $factRows,
-			sourceLinks: $sourceLinks, coalesceKey: $coalesceKey, feedUrgency: $feedUrgency, stackKey: $stackKey, stackPosition: $stackPosition, stackTitle: $stackTitle, cardLayout: $cardLayout, layoutContent: $layoutContent, choices: $choices`
+			sourceLinks: $sourceLinks, coalesceKey: $coalesceKey, feedUrgency: $feedUrgency, stackKey: $stackKey, stackPosition: $stackPosition, stackTitle: $stackTitle, cardLayout: $cardLayout, layoutContent: $layoutContent, choices: $choices, media: $media`
 )
 
 // The documents the command line and the feed tool send, exported so a test

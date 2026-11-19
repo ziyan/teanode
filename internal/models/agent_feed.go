@@ -162,6 +162,73 @@ type FeedFactRow struct {
 	FactValue string `json:"factValue"`
 }
 
+// FeedMediaKind is what a picture or video on a card is.
+type FeedMediaKind string
+
+const (
+	// FeedMediaPhoto is one of the person's own photos.
+	FeedMediaPhoto FeedMediaKind = "photo"
+
+	// FeedMediaVideo is one of the person's own videos.
+	FeedMediaVideo FeedMediaKind = "video"
+
+	// FeedMediaPicture is the picture of a web page, which the server
+	// fetches and keeps so that the person's device never asks the page's
+	// site for it.
+	FeedMediaPicture FeedMediaKind = "picture"
+)
+
+const (
+	// FeedMediaMost is how many pictures and videos a card may show as its
+	// own, and FeedRowMediaMost how many thumbnails the rows of a list card
+	// may have.
+	FeedMediaMost    = 6
+	FeedRowMediaMost = 10
+)
+
+// FeedMedia is a picture or video on a card.
+type FeedMedia struct {
+	// MediaKey names the entry on its card, for the address its picture is
+	// served from.
+	MediaKey      string        `json:"mediaKey"`
+	FeedMediaKind FeedMediaKind `json:"feedMediaKind"`
+
+	// PhotoID is the person's photo or video, for those kinds.
+	PhotoID string `json:"photoId,omitempty"`
+
+	// PageURL is the page whose picture this is, for a picture. ImageFileID
+	// is the picture as the server keeps it, empty until it is fetched, and
+	// IsPictureMissing says the page had none or could not be read, so it
+	// is not shown or tried again.
+	PageURL          string `json:"pageUrl,omitempty"`
+	ImageFileID      string `json:"imageFileId,omitempty"`
+	IsPictureMissing bool   `json:"isPictureMissing,omitempty"`
+
+	// SiteName is what the page calls its site.
+	SiteName     string `json:"siteName,omitempty"`
+	MediaCaption string `json:"mediaCaption,omitempty"`
+	WidthPixels  int    `json:"widthPixels,omitempty"`
+	HeightPixels int    `json:"heightPixels,omitempty"`
+
+	// ListRowIndex makes the entry the thumbnail of that row of a list card;
+	// nil for a picture of the whole card.
+	ListRowIndex *int `json:"listRowIndex,omitempty"`
+}
+
+// IsShown says the entry has something to show: a photo or video, or a page's
+// picture that was fetched.
+func (self *FeedMedia) IsShown() bool {
+	if self.FeedMediaKind == FeedMediaPicture {
+		return self.ImageFileID != ""
+	}
+	return self.PhotoID != ""
+}
+
+// IsPictureWaiting says the entry is a page's picture not fetched yet.
+func (self *FeedMedia) IsPictureWaiting() bool {
+	return self.FeedMediaKind == FeedMediaPicture && self.ImageFileID == "" && !self.IsPictureMissing
+}
+
 // FeedSourceLink is a page a card is built from, listed on its info sheet.
 type FeedSourceLink struct {
 	SourceTitle string `json:"sourceTitle"`
@@ -202,6 +269,10 @@ type AgentFeedItem struct {
 	FactRows         []FeedFactRow    `json:"factRows"`
 	SourceLinks      []FeedSourceLink `json:"sourceLinks"`
 	RecordReferences []AgentReference `json:"recordReferences"`
+
+	// FeedMedia are the card's pictures and videos, and the thumbnails of a
+	// list card's rows.
+	FeedMedia []FeedMedia `json:"feedMedia"`
 
 	// CoalesceKey makes a later post with the same key from the same agent
 	// replace this card. Empty for a card that is never replaced.
