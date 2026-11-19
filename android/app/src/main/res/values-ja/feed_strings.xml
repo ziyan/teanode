@@ -11,7 +11,7 @@
     <string name="feed_info_why">表示されている理由</string>
     <string name="feed_open_goals">目標を開く</string>
     <string name="feed_info_when">日時</string>
-    <string name="feed_info_posted">計上日</string>
+    <string name="feed_info_posted">投稿日時</string>
     <string name="feed_info_updated">更新</string>
     <string name="feed_info_sources">ソース</string>
     <string name="feed_info_show_less">これに似たカードを減らす</string>

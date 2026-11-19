@@ -182,6 +182,14 @@ class NotificationActionsTest {
     )
 
     @Test
+    fun aBriefThatIsReadyIsQuietAndAnUrgentCardIsNot() {
+        val ready = content("""{"notificationKind":"agent_feed","title":"Morning brief is ready","isQuiet":true}""")
+        assertTrue(ready.isQuiet)
+        assertFalse(urgentCard.isQuiet)
+        assertEquals(listOf("open"), NotificationCategories.buttons(ready).map { button -> button.actionId })
+    }
+
+    @Test
     fun anUrgentCardsChoicesAreButtonsThatNeedNoUnlockAndOpenIsLast() {
         val buttons = NotificationCategories.buttons(urgentCard)
         assertEquals(listOf("feed:me", "feed:secure", "open"), buttons.map { button -> button.actionId })

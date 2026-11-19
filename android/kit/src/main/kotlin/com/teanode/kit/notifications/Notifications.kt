@@ -59,6 +59,8 @@ data class NotificationContent(
     val journalDay: String? = null,
     /** For an urgent card of the agent's feed (`agent_feed`), the card, so that its choices answer it and tapping it opens it. */
     val feedItemId: String? = null,
+    /** Shown without sound or a banner: a feed brief that is ready, rather than something that cannot wait. */
+    val isQuiet: Boolean = false,
     val title: String = "",
     val body: String = "",
     val buttons: List<NotificationButton>? = null,

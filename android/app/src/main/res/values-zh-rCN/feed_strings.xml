@@ -11,7 +11,7 @@
     <string name="feed_info_why">为什么会看到这个</string>
     <string name="feed_open_goals">打开目标</string>
     <string name="feed_info_when">时间</string>
-    <string name="feed_info_posted">入账日期</string>
+    <string name="feed_info_posted">发布时间</string>
     <string name="feed_info_updated">更新于</string>
     <string name="feed_info_sources">来源</string>
     <string name="feed_info_show_less">减少类似内容</string>
