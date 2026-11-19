@@ -841,7 +841,7 @@ struct FeedInformationSheet: View {
                 }
                 Section("When") {
                     if let postedAt = ServerTime.date(item.postedAt) {
-                        LabeledContent("Posted", value: postedAt.formatted(date: .abbreviated, time: .shortened))
+                        LabeledContent("Posted to the feed", value: postedAt.formatted(date: .abbreviated, time: .shortened))
                     }
                     if let updatedAt = ServerTime.date(item.updatedAt), updatedAt != ServerTime.date(item.postedAt) {
                         LabeledContent("Updated", value: updatedAt.formatted(date: .abbreviated, time: .shortened))

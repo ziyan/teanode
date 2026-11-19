@@ -109,7 +109,11 @@ type graph struct {
 	// to the tabs and phones of the people on them; chatCallSignals holds
 	// the media server's offers until each device reads them
 	// (chat_call_events.go).
-	chatCallEvents  chatCallEventHub
+	chatCallEvents chatCallEventHub
+	// agentFeedEvents is the one listener for changes to the agent's feed,
+	// fanned out to the tabs and phones of the person each is for
+	// (agent_feed_events.go).
+	agentFeedEvents agentFeedEventHub
 	chatCallSignals chatCallSignals
 	mapLimitsOnce   sync.Once
 	mapLimitsValue  *ratelimit.Registry

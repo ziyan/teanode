@@ -533,6 +533,14 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 		}
 	}
 	for _, planned := range plan.sends {
+		// In the feed, as a card, unless the person sent alerts back to the
+		// main conversation. Nothing then waits on a turn there.
+		if wantsFeed(run.Agent) {
+			if err := self.deliverAlertToFeed(ctx, run, planned, now); err != nil {
+				return err
+			}
+			continue
+		}
 		err := self.deliverAlert(ctx, run, main.ID, planned, now)
 		// A turn began while the decision ran. What was not said stays
 		// waiting, and is decided again once the turn has ended.
@@ -1073,5 +1081,71 @@ func (self *Agent) deliverAlert(ctx context.Context, run *Run, conversationId st
 		event.RunID, event.ConversationID, event.Sequence, event.At = alert.ID, alert.ConversationID, sequence, at
 		self.publish(event, true)
 	}
+	return nil
+}
+
+// alertCardTitleCharacters is how much of an alert's first words are the
+// headline of its card.
+const alertCardTitleCharacters = 90
+
+// deliverAlertToFeed says one alert as a card in the feed and records it, so
+// that the bounds on how often a subject is told, and the mutes, work as they
+// do for an alert said in the conversation. The candidates are taken first, in
+// one transaction, and an alert whose candidates another run already told is
+// not said again. The card's coalesce key is the alert's subject, so a later
+// alert about the same thing replaces it instead of piling up. An urgent alert
+// is a card of urgency now, which notifies the phones; the rest only raise the
+// unread count. An alert is never part of a stack: each needs the person on
+// its own.
+func (self *Agent) deliverAlertToFeed(ctx context.Context, run *Run, planned *plannedAlert, now time.Time) error {
+	var alert *models.AgentAlert
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		candidateIds := make([]string, 0, len(planned.candidates))
+		for _, candidate := range planned.candidates {
+			candidateIds = append(candidateIds, candidate.ID)
+		}
+		taken, err := tx.LockWaitingAgentAlertCandidates(run.Agent.ID, candidateIds)
+		if err != nil || len(taken) == 0 {
+			return err
+		}
+		candidateIds = candidateIds[:0]
+		for _, candidate := range taken {
+			candidateIds = append(candidateIds, candidate.ID)
+		}
+		covered := planned.covered
+		if covered == nil {
+			covered = &coveredTerms{}
+		}
+		if alert, err = tx.CreateAgentAlert(&models.AgentAlert{
+			AgentID: run.Agent.ID, SubjectKey: planned.subjectKey, AlertText: planned.alertText, IsUrgent: planned.isUrgent,
+			CandidateIDs: candidateIds, SentAt: now,
+			CoveredBurstKeys: covered.burstKeys, CoveredSenderAddresses: covered.senderAddresses,
+			CoveredSenderDomains: covered.senderDomains, CoveredMailCategories: covered.mailCategories,
+		}); err != nil {
+			return err
+		}
+		return tx.MarkAgentAlertCandidatesAlerted(candidateIds, alert.ID)
+	}); err != nil {
+		return err
+	}
+	if alert == nil {
+		return nil
+	}
+	urgency := models.FeedUrgencyToday
+	if planned.isUrgent {
+		urgency = models.FeedUrgencyNow
+	}
+	title := firstFeedLine(planned.alertText)
+	if title == "" {
+		title = "Something to know"
+	}
+	if _, _, err := self.PostFeedItem(ctx, &FeedPost{AgentID: run.Agent.ID, Item: &models.AgentFeedItem{
+		FeedItemKind: models.FeedItemAlert, FeedSourceKind: models.FeedSourceAlert, FeedSourceID: alert.ID,
+		Title: cutRunes(title, alertCardTitleCharacters), Body: planned.alertText, PictureSymbol: "exclamationmark.triangle",
+		CoalesceKey: "alert:" + planned.subjectKey, FeedUrgency: urgency,
+	}}); err != nil {
+		return err
+	}
+	log.Noticef("agent %q told its person about %q unasked, in the feed", run.Agent.ID, alert.SubjectKey)
 	return nil
 }

@@ -123,20 +123,20 @@ const LIST_FEED = `query ($first: Int, $after: String) {
 const LIST_STACK = `query ($feedStackKey: String!, $first: Int, $after: String) {
   ListAgentFeedStack(feedStackKey: $feedStackKey, first: $first, after: $after) { feedItems { ${ITEM_FIELDS} } nextCursor unreadCount }
 }`
-const CHOOSE_ITEM = `mutation ($feedItemId: String, $choiceKey: String) {
+const CHOOSE_ITEM = `mutation ($feedItemId: String!, $choiceKey: String!) {
   ChooseAgentFeedItem(feedItemId: $feedItemId, choiceKey: $choiceKey) { ${ITEM_FIELDS} }
 }`
-const LIKE_ITEM = `mutation ($feedItemId: String, $isLiked: Boolean) {
+const LIKE_ITEM = `mutation ($feedItemId: String!, $isLiked: Boolean!) {
   LikeAgentFeedItem(feedItemId: $feedItemId, isLiked: $isLiked) { ${ITEM_FIELDS} }
 }`
-const SHOW_LESS_ITEM = `mutation ($feedItemId: String) {
+const SHOW_LESS_ITEM = `mutation ($feedItemId: String!) {
   ShowLessLikeAgentFeedItem(feedItemId: $feedItemId) { ${ITEM_FIELDS} }
 }`
-const DISMISS_ITEM = `mutation ($feedItemId: String) {
+const DISMISS_ITEM = `mutation ($feedItemId: String!) {
   DismissAgentFeedItem(feedItemId: $feedItemId) { ${ITEM_FIELDS} }
 }`
-const MARK_READ = `mutation ($feedItemIds: [String]) { MarkAgentFeedRead(feedItemIds: $feedItemIds) }`
-const DISCUSS_ITEM = `mutation ($feedItemId: String) { DiscussAgentFeedItem(feedItemId: $feedItemId) }`
+const MARK_READ = `mutation ($feedItemIds: [String!]!) { MarkAgentFeedRead(feedItemIds: $feedItemIds) }`
+const DISCUSS_ITEM = `mutation ($feedItemId: String!) { DiscussAgentFeedItem(feedItemId: $feedItemId) }`
 
 // pictureIcon draws a card's picture from the symbol name the agent chose
 // (an SF Symbol, as the iPhone draws it). A name the dashboard does not know

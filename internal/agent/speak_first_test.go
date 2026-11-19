@@ -60,7 +60,7 @@ func newSpeakFirstWorld(t *testing.T) *speakFirstWorld {
 		if world.owner, err = tx.CreateUser(&models.User{Username: "robin", Timezone: "UTC", TimezoneMode: "fixed"}); err != nil {
 			t.Fatalf("CreateUser: %s", err)
 		}
-		if world.agent, err = tx.CreateAgent(&models.Agent{UserID: world.owner.ID, Enabled: true}); err != nil {
+		if world.agent, err = tx.CreateAgent(&models.Agent{UserID: world.owner.ID, Enabled: true, FeedDestination: models.FeedDestinationMain}); err != nil {
 			t.Fatalf("CreateAgent: %s", err)
 		}
 	})

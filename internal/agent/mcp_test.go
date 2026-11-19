@@ -91,8 +91,8 @@ func TestConnectedServerToolsAreOfferedWithTheirRisk(t *testing.T) {
 	// A person with only mail:read is offered exactly as many tools as are
 	// sent whole (tools.DeferralThreshold); one more and the connected
 	// server's wait behind tool_search, which this test is not about. The
-	// search tool is the one this test does not need.
-	configuration.Agent.Tools.Disabled = []string{"search"}
+	// search and feed tools are the ones this test does not need.
+	configuration.Agent.Tools.Disabled = []string{"search", "feed"}
 	registry, err := llm.Open(&configuration.Agent)
 	if err != nil {
 		t.Fatalf("llm.Open: %s", err)

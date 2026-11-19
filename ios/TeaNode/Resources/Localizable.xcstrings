@@ -32511,6 +32511,22 @@
         }
       }
     },
+    "Posted to the feed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投稿日時"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布时间"
+          }
+        }
+      }
+    },
     "Posted to %@": {
       "localizations": {
         "ja": {
