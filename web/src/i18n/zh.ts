@@ -7906,7 +7906,7 @@ export const zh: Catalog = {
   'feed.like': '喜欢',
   'feed.unlike': '取消喜欢',
   'feed.discuss': '讨论',
-  'feed.info': '为什么显示这条',
+  'feed.aboutCard': '为什么显示这条',
   'feed.chose': '你选择了{choice}',
   'feed.working': '正在处理',
   'feed.dismiss': '忽略',

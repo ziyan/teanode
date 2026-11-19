@@ -8274,7 +8274,7 @@ export const en = {
   'feed.like': 'Like',
   'feed.unlike': 'Remove like',
   'feed.discuss': 'Discuss',
-  'feed.info': 'Why this is here',
+  'feed.aboutCard': 'Why this is here',
   'feed.chose': 'You chose {choice}',
   'feed.working': 'Working on it',
   'feed.dismiss': 'Dismiss',

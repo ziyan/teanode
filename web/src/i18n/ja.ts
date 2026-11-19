@@ -8216,7 +8216,7 @@ export const ja: Catalog = {
   'feed.like': 'いいね',
   'feed.unlike': 'いいねを取り消す',
   'feed.discuss': '相談する',
-  'feed.info': 'これが表示されている理由',
+  'feed.aboutCard': 'これが表示されている理由',
   'feed.chose': '{choice}を選びました',
   'feed.working': '処理中',
   'feed.dismiss': '閉じる',

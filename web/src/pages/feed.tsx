@@ -660,11 +660,11 @@ function FeedCard({
             <span className="muted feed-date">
               <RelativeTime value={item.updatedAt} />
             </span>
-            <Tooltip label={t('feed.info')}>
+            <Tooltip label={t('feed.aboutCard')}>
               <button
                 type="button"
                 className="icon-action"
-                aria-label={`${item.title}: ${t('feed.info')}`}
+                aria-label={`${item.title}: ${t('feed.aboutCard')}`}
                 onClick={() => setIsInfoOpen(true)}
               >
                 <InfoIcon size={16} />
