@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="section_feed">动态</string>
     <string name="section_agent">对话</string>
     <string name="section_goals">目标</string>
     <string name="section_ideas">想法</string>

@@ -38,4 +38,5 @@
     <string name="notifications_turn_waiting">Waiting for you</string>
     <string name="notifications_turn_done">Done</string>
     <string name="notifications_turn_failed">Stopped with a problem</string>
+    <string name="notifications_did_not_reach_feed">That answer did not reach your feed: %1$s</string>
 </resources>

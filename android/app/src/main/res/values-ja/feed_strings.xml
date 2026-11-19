@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="feed_title">フィード</string>
+    <string name="feed_empty_title">フィードにはまだ何もありません</string>
+    <string name="feed_empty_description">目標、スケジュール、アラートがここに投稿されます。気になることのフィードをエージェントに頼んでみましょう。</string>
+    <string name="feed_working">エージェントが対応中です…</string>
+    <string name="feed_like">いいね</string>
+    <string name="feed_unlike">いいねを取り消す</string>
+    <string name="feed_discuss">相談する</string>
+    <string name="feed_info">このカードについて</string>
+    <string name="feed_info_why">表示されている理由</string>
+    <string name="feed_open_goals">目標を開く</string>
+    <string name="feed_info_when">日時</string>
+    <string name="feed_info_posted">計上日</string>
+    <string name="feed_info_updated">更新</string>
+    <string name="feed_info_sources">ソース</string>
+    <string name="feed_info_show_less">これに似たカードを減らす</string>
+    <string name="feed_info_dismiss">閉じる</string>
+    <string name="feed_info_footer">どちらもこのカードをフィードから外します。「減らす」を選ぶと、似たカードの投稿を減らすようエージェントにも伝わります。</string>
+    <string name="feed_info_done">完了</string>
+    <string name="feed_source_goal">あなたの目標が投稿しました。</string>
+    <string name="feed_source_schedule">あなたのスケジュールが投稿しました。</string>
+    <string name="feed_source_alert">エージェントがお知らせすべきだと判断しました。</string>
+    <string name="feed_source_coding_session">コーディングセッションから質問があります。</string>
+    <string name="feed_source_agent">エージェントが投稿しました。</string>
+    <string name="feed_more_cards">ほかのカード</string>
+    <string name="feed_agenda_meeting">会議</string>
+    <string name="feed_agenda_focus">集中</string>
+    <string name="feed_agenda_task">タスク</string>
+    <string name="feed_agenda_break">休憩</string>
+    <string name="feed_said_fewer">同じようなカードは表示を減らします。</string>
+    <string name="feed_more_in_stack">%2$s からほか %1$d 件</string>
+    <string name="feed_more_in_stack_unnamed">他 %1$d 件</string>
+    <string name="feed_weather_high_low">最高 %1$s、最低 %2$s</string>
+    <string name="feed_weather_high">最高 %1$s</string>
+    <string name="feed_weather_low">最低 %1$s</string>
+    <string name="feed_rain_chance">降水確率 %1$d%%</string>
+    <string name="feed_open_chat">チャットを開く</string>
+</resources>

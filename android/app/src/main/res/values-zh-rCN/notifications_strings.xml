@@ -38,4 +38,5 @@
     <string name="notifications_turn_waiting">等待你处理</string>
     <string name="notifications_turn_done">完成</string>
     <string name="notifications_turn_failed">出了问题，已停止</string>
+    <string name="notifications_did_not_reach_feed">你的回答未能送达动态：%1$s</string>
 </resources>

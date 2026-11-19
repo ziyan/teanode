@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="section_feed">フィード</string>
     <string name="section_agent">チャット</string>
     <string name="section_goals">目標</string>
     <string name="section_ideas">アイデア</string>

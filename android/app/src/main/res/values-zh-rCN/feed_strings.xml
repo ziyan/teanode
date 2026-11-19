@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="feed_title">动态</string>
+    <string name="feed_empty_title">动态里还没有内容</string>
+    <string name="feed_empty_description">目标、日程和提醒会发布到这里。你可以让助手为你关注的内容保持一份动态。</string>
+    <string name="feed_working">你的助手正在处理…</string>
+    <string name="feed_like">喜欢</string>
+    <string name="feed_unlike">取消喜欢</string>
+    <string name="feed_discuss">讨论</string>
+    <string name="feed_info">关于这张卡片</string>
+    <string name="feed_info_why">为什么会看到这个</string>
+    <string name="feed_open_goals">打开目标</string>
+    <string name="feed_info_when">时间</string>
+    <string name="feed_info_posted">入账日期</string>
+    <string name="feed_info_updated">更新于</string>
+    <string name="feed_info_sources">来源</string>
+    <string name="feed_info_show_less">减少类似内容</string>
+    <string name="feed_info_dismiss">忽略</string>
+    <string name="feed_info_footer">两者都会把这张卡片从动态中移除。选择减少类似内容还会告诉你的助手少发布这类卡片。</string>
+    <string name="feed_info_done">完成</string>
+    <string name="feed_source_goal">这是你的某个目标发布的。</string>
+    <string name="feed_source_schedule">这是你的某个日程发布的。</string>
+    <string name="feed_source_alert">你的助手认为你应该知道。</string>
+    <string name="feed_source_coding_session">有一个编程会话在向你提问。</string>
+    <string name="feed_source_agent">这是你的助手发布的。</string>
+    <string name="feed_more_cards">更多卡片</string>
+    <string name="feed_agenda_meeting">会议</string>
+    <string name="feed_agenda_focus">专注</string>
+    <string name="feed_agenda_task">任务</string>
+    <string name="feed_agenda_break">休息</string>
+    <string name="feed_said_fewer">你会看到更少类似的内容。</string>
+    <string name="feed_more_in_stack">来自 %2$s 的另外 %1$d 条</string>
+    <string name="feed_more_in_stack_unnamed">还有 %1$d 条</string>
+    <string name="feed_weather_high_low">最高 %1$s，最低 %2$s</string>
+    <string name="feed_weather_high">最高 %1$s</string>
+    <string name="feed_weather_low">最低 %1$s</string>
+    <string name="feed_rain_chance">降雨概率 %1$d%%</string>
+    <string name="feed_open_chat">打开对话</string>
+</resources>
