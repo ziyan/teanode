@@ -59,7 +59,10 @@ class FeedModel(
     var onProblem: (Throwable) -> Unit = {}
     var onDone: (String) -> Unit = {}
 
-    /** The decks fanned out in place, by stack key, and the cards each holds (the top card first), read when it opened. */
+    /**
+     * The decks fanned out in place, by stack key, and the cards each holds (the top card first). A stack's cards are read
+     * with the feed, since its deck under the top card is its own next cards.
+     */
     val openDeckKeys = mutableStateMapOf<String, Boolean>()
     val deckCards = mutableStateMapOf<String, List<AgentFeedItemView>>()
 
@@ -80,14 +83,20 @@ class FeedModel(
         openDeckKeys.remove(feedStackKey)
     }
 
+    /** Reads a shown stack's cards for its deck when they are not read yet; a failure is told only when the deck is opened. */
+    suspend fun loadDeckIfNeeded(feedStackKey: String) {
+        val read = readStackPage ?: return
+        if (deckCards[feedStackKey] == null) refreshDeck(feedStackKey, read, isQuiet = true)
+    }
+
     /** Reads the cards of a deck (one page of fifty, as the iPhone does); whether they were read. */
-    private suspend fun refreshDeck(feedStackKey: String, read: suspend (String, String?) -> AgentFeedPage): Boolean = try {
+    private suspend fun refreshDeck(feedStackKey: String, read: suspend (String, String?) -> AgentFeedPage, isQuiet: Boolean = false): Boolean = try {
         deckCards[feedStackKey] = read(feedStackKey, null).feedItems
         true
     } catch (failure: CancellationException) {
         throw failure
     } catch (failure: Throwable) {
-        onProblem(failure)
+        if (!isQuiet) onProblem(failure)
         false
     }
 
@@ -111,7 +120,10 @@ class FeedModel(
         try {
             show(AgentFeedList.first(readPage(null)))
             loadFailure = null
-            readStackPage?.let { read -> for (key in openDeckKeys.keys.toList()) refreshDeck(key, read) }
+            // The stacks shown, open or tucked as decks, are read again with the feed, and those no longer in it are forgotten.
+            val shownStackKeys = list?.feedItems.orEmpty().filter { item -> item.isStack }.map { item -> item.feedStackKey }.toSet()
+            for (key in deckCards.keys.toList()) if (key !in shownStackKeys) deckCards.remove(key)
+            readStackPage?.let { read -> for (key in deckCards.keys.toList()) refreshDeck(key, read, isQuiet = key !in openDeckKeys) }
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: Throwable) {
