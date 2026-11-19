@@ -41,7 +41,7 @@ enum class NotificationChannelKind(val channelId: String) {
             "herdr_question" -> Coding
             "journalEveningQuestion" -> Journal
             "photo" -> Photos
-            "alert", "message", "approval", "question", "answer", "goal_needs_you", "speak_first" -> Agent
+            "alert", "message", "approval", "question", "answer", "goal_needs_you", "speak_first", "feed_item" -> Agent
             else -> Other
         }
     }
@@ -86,6 +86,16 @@ object NotificationCategories {
     const val SHOPPING = "shopping"
     const val CODING_QUESTION = "herdr_question"
     const val QUESTION = "question"
+
+    /**
+     * An urgent card of the agent's feed. Its choices are the buttons (`choose:<choice key>`), pressed without opening
+     * the app and without unlocking: a card that asks "was this sign-in you?" is answered from the lock screen.
+     */
+    const val FEED_ITEM = "feed_item"
+    const val CHOOSE_ACTION_PREFIX = "choose:"
+
+    /** The most choices of a card a notification shows; Open is the fourth button. */
+    const val FEED_CHOICE_BUTTONS_MOST = 3
 
     /**
      * The journal's evening question. The server sends it as a notification of this kind carrying the day it asks
@@ -133,6 +143,8 @@ object NotificationCategories {
         // A coding session asks: it is answered on the Coding screen, where its options are.
         CODING_QUESTION -> listOf(open)
         JOURNAL_EVENING_QUESTION -> moodButtons
+        FEED_ITEM -> (content.buttons ?: emptyList()).filter { button -> button.buttonAction.startsWith(CHOOSE_ACTION_PREFIX) }.take(FEED_CHOICE_BUTTONS_MOST)
+            .map { button -> NotificationButtonSpec(button.buttonAction, literalLabel = button.label) } + open
         QUESTION -> (content.buttons ?: emptyList()).take(QUESTION_BUTTONS_MOST).map { button ->
             when (button.buttonAction) {
                 "reply" -> reply
@@ -171,6 +183,8 @@ data class NotificationInfo(
     val paneId: String = "",
     /** For the journal's evening question, the day it asks about, YYYY-MM-DD. */
     val journalDay: String = "",
+    /** For an urgent card of the feed, the card. */
+    val feedItemId: String = "",
     /** A question's choices, by the button that gives them. */
     val answers: Map<String, String> = emptyMap(),
 ) {
@@ -187,6 +201,7 @@ data class NotificationInfo(
             computer = content.computer ?: "",
             paneId = content.paneId ?: "",
             journalDay = content.journalDay ?: "",
+            feedItemId = content.feedItemId ?: "",
             answers = (content.buttons ?: emptyList()).filter { button -> button.buttonAction.startsWith("answer:") }.associate { button -> button.buttonAction to button.label },
         )
     }
@@ -216,6 +231,9 @@ sealed class NotificationDestination {
     /** The evening question: the day it asks about, in the Journal. */
     data class JournalDay(val day: String) : NotificationDestination()
 
+    /** An urgent card of the feed: Feed, with the card open. */
+    data class FeedItem(val feedItemId: String) : NotificationDestination()
+
     /** A conversation of the agent or of people. */
     data class Conversation(val conversationId: String) : NotificationDestination()
 
@@ -240,6 +258,9 @@ sealed class NotificationPress {
     data class Say(val conversationId: String?, val text: String, val isChat: Boolean) : NotificationPress()
 
     data class SetMood(val day: String, val moodLevel: Int) : NotificationPress()
+
+    /** Answer an urgent card of the feed with one of its choices, without opening the app. */
+    data class ChooseFeedItem(val feedItemId: String, val choiceKey: String) : NotificationPress()
 
     /** Nothing to do. */
     data object None : NotificationPress()
@@ -266,6 +287,11 @@ sealed class NotificationPress {
                     return Say(info.conversationId.ifEmpty { null }, text, isChat = info.notificationKind == "chat")
                 }
             }
+            if (info.notificationKind == NotificationCategories.FEED_ITEM) {
+                val choiceKey = actionId.removePrefix(NotificationCategories.CHOOSE_ACTION_PREFIX)
+                if (info.feedItemId.isEmpty() || choiceKey.isEmpty() || choiceKey == actionId) return None
+                return ChooseFeedItem(info.feedItemId, choiceKey)
+            }
             if (info.notificationKind == NotificationCategories.JOURNAL_EVENING_QUESTION) {
                 // One of the five faces of the evening question.
                 val moodLevel = NotificationCategories.journalMoodLevel(actionId) ?: return None
@@ -288,6 +314,8 @@ sealed class NotificationPress {
             info.notificationKind == "location" -> NotificationDestination.Location(info.locationUserId.ifEmpty { null })
             info.notificationKind == "shopping" ->
                 NotificationDestination.Shopping(info.shoppingStoreName.ifEmpty { null }, if (info.shoppingStoreName.isEmpty()) info.shoppingListId.ifEmpty { null } else null)
+            info.notificationKind == NotificationCategories.FEED_ITEM ->
+                if (info.feedItemId.isEmpty()) NotificationDestination.Main else NotificationDestination.FeedItem(info.feedItemId)
             info.notificationKind == "herdr_question" -> NotificationDestination.Coding.of(info.computer, info.paneId)
             info.notificationKind == NotificationCategories.JOURNAL_EVENING_QUESTION -> NotificationDestination.JournalDay(info.journalDay)
             info.conversationId.isNotEmpty() -> NotificationDestination.Conversation(info.conversationId)
