@@ -323,4 +323,69 @@ class AgentFeedTest {
         }
         assertTrue(AgentFeedDocuments.AGENT_FEED_CHANGED.contains("AgentFeedChanged {"))
     }
+
+    private fun media(key: String, kind: String = "photo", width: Int = 1600, height: Int = 900, rowIndex: Int? = null, site: String = "", link: String = "", image: String = "/api/v1/feed/items/a/media/$key") =
+        AgentFeedMediaView(key, kind, image, if (kind == "video") "/photo/video/$key" else "", link, site, "", width, height, rowIndex)
+
+    @Test
+    fun aCardReadsItsMediaWithEveryField() {
+        val view = TeaNodeJson.decodeFromString(
+            AgentFeedItemView.serializer(),
+            """{"feedItemId":"a","title":"T","feedMedia":[{"mediaKey":"m1","feedMediaKind":"video","imageUrl":"/p/1","videoUrl":"/v/1","linkUrl":"","siteName":"","mediaCaption":"A clip","widthPixels":1080,"heightPixels":1920,"listRowIndex":null},
+                {"mediaKey":"m2","feedMediaKind":"picture","imageUrl":"/p/2","linkUrl":"https://example.com/story","siteName":"Example News","widthPixels":800,"heightPixels":450,"listRowIndex":2}]}""",
+        )
+        assertEquals(AgentFeedMediaKind.Video, view.feedMedia[0].kind)
+        assertTrue(view.feedMedia[0].isPortrait)
+        assertEquals("A clip", view.feedMedia[0].mediaCaption)
+        assertEquals(listOf("m1"), view.cardMedia.map { each -> each.mediaKey })
+        assertEquals(mapOf(2 to "m2"), view.rowThumbnails.mapValues { entry -> entry.value.mediaKey })
+        assertEquals("", view.siteName)
+    }
+
+    @Test
+    fun theSiteNameIsTheFirstCardPicturesNotARowsThumbnails() {
+        val view = AgentFeedItemView(feedItemId = "a", title = "T", feedMedia = listOf(media("t", rowIndex = 0, site = "Row Site"), media("m", kind = "picture", site = "Example News")))
+        assertEquals("Example News", view.siteName)
+    }
+
+    @Test
+    fun aKindFromANewerServerIsAPicture() {
+        assertEquals(AgentFeedMediaKind.Picture, AgentFeedMediaKind.of("hologram"))
+        assertEquals(AgentFeedMediaKind.Photo, AgentFeedMediaKind.of("photo"))
+    }
+
+    @Test
+    fun theArrangementIsByHowManyPicturesThereAre() {
+        assertEquals(AgentFeedMediaArrangement.None, AgentFeedMediaArrangement.of(emptyList()))
+        assertEquals(AgentFeedMediaArrangement.Single, AgentFeedMediaArrangement.of(listOf(media("a"))))
+        assertEquals(AgentFeedMediaArrangement.SinglePortrait, AgentFeedMediaArrangement.of(listOf(media("a", width = 900, height = 1600))))
+        assertEquals(AgentFeedMediaArrangement.Grid, AgentFeedMediaArrangement.of(listOf(media("a"), media("b"))))
+        assertEquals(AgentFeedMediaArrangement.Grid, AgentFeedMediaArrangement.of((1..4).map { number -> media("m$number") }))
+        assertEquals(AgentFeedMediaArrangement.Row, AgentFeedMediaArrangement.of((1..5).map { number -> media("m$number") }))
+        assertEquals(AgentFeedMediaArrangement.Row, AgentFeedMediaArrangement.of((1..6).map { number -> media("m$number") }))
+    }
+
+    @Test
+    fun aPictureWithNoSizeIsNotPortrait() {
+        assertFalse(media("a", width = 0, height = 0).isPortrait)
+    }
+
+    @Test
+    fun onlyPathsOnThisServerAreReadAndOnlyWebPagesAreOpened() {
+        assertEquals("/api/v1/feed/items/a/media/m", media("m").imagePath)
+        assertNull(media("m", image = "https://other.example.com/p.jpg").imagePath)
+        assertNull(media("m", image = "").imagePath)
+        assertEquals("/photo/video/m", media("m", kind = "video").videoPath)
+        assertEquals("https://example.com/s", media("m", kind = "picture", link = "https://example.com/s").pageAddress)
+        assertNull(media("m", kind = "picture", link = "javascript:alert(1)").pageAddress)
+    }
+
+    @Test
+    fun theDocumentsAskForTheMediaFields() {
+        for (name in listOf("feedMedia", "mediaKey", "feedMediaKind", "imageUrl", "videoUrl", "linkUrl", "siteName", "mediaCaption", "widthPixels", "heightPixels", "listRowIndex")) {
+            assertTrue(AgentFeedDocuments.LIST_AGENT_FEED.contains(name), name)
+            assertTrue(AgentFeedDocuments.LIST_AGENT_FEED_STACK.contains(name), name)
+            assertTrue(AgentFeedDocuments.CHOOSE_AGENT_FEED_ITEM.contains(name), name)
+        }
+    }
 }
