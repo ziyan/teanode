@@ -141,6 +141,35 @@ A brief's sections read best each in its own shape, so a card has a feed_card_la
 
 The tool's post takes cardLayout and layoutContent and checks layoutContent against the layout's shape, refusing a malformed one with a message that says which field is wrong. Links in rowUrl must be http or https.
 
+### Pictures and videos
+
+A card is easier to take in with a picture, so a card carries media (feed_media, jsonb, migration 0277): at most six entries, each one of
+
+    photo     one of the person's own photos (photoId), shown from its large preview
+    video     one of the person's own videos (photoId), its poster from the large preview, played from the video preview
+    picture   the picture of a web page (pageUrl): the server reads the page, fetches its picture, scales it down and keeps
+              it in the file store, the way link previews in a conversation are made, so the person's device never loads
+              anything from the linked site
+
+with an optional mediaCaption and an optional listRowIndex, which makes it the thumbnail of that row of a list card instead of a picture of the whole card.
+
+The post takes media: [{ photoId | pageUrl, mediaCaption, listRowIndex }]. When a post gives none, a text card with a source link gets the picture of its first link, and a list card's rows with a rowUrl get theirs, so news cards and a brief's top stories have pictures without the model doing anything. A page that has no picture, or cannot be read in time (15 seconds for all of a card's pages, five at once), leaves the card without one; it is never an error.
+
+A page is fetched only when its address appears word for word in what a tool answered in the conversation posting the card (or the card is posted by the person, from the CLI or the dashboard). An address the model composed, which could carry what it read in its query, is never fetched; such a page simply has no picture. A photo must be one the person may see.
+
+Each entry is answered as AgentFeedMediaView { mediaKey, feedMediaKind (photo, video, picture), imageUrl, videoUrl (video only), linkUrl (picture only: the page), siteName, mediaCaption, widthPixels, heightPixels, listRowIndex }. imageUrl and videoUrl are server paths that work for the signed-in person only: a picture is served from /api/v1/feed/items/{feedItemId}/media/{mediaKey}, a photo or video from the photo preview paths. A picture's file goes when its card is replaced without it.
+
+How the apps draw it:
+
+- One picture or video: full width at the top of the card, 16:9 cropped to fill (a portrait photo 4:5), rounded with the card; a video has a play button and plays in place (the person's own) or opens its page (a page's picture). Two to four: a grid; more: a row that scrolls sideways. The caption under it in secondary text.
+- A list row with a thumbnail shows it at the row's leading edge, square, rounded.
+- The site name and the source's symbol sit in a small header line above the headline, the way a news app labels a story.
+- The weather card is drawn on a gradient chosen by its condition (clear, cloudy, rain, snow, night), with white text; the agenda card's entries hang off a time rail with a colored dot per kind.
+
+### A stack is a deck
+
+A stack is shown as its top card with the next two peeking out below it, each a little narrower and lower, so it reads as a deck with a count. Tapping it fans the deck out in place: the cards slide down out of the deck into a column, one after another, with the rest of the feed moving down to make room. A "Show less" control at the top of the open stack (and tapping the stack's title) gathers them back: the cards slide up into the deck and the peeking edges return. The opened stack's own screen stays for a notification that opens a stack. The motion is a spring of about 0.35 seconds and is skipped when the person asks for reduced motion.
+
 ### Liking and why
 
 LikeAgentFeedItem toggles is_liked; a like or unlike is written to the agent's memory as a preference about the card's subject ("likes news about humanoid robots in logistics"), which the goals that post news read before choosing what to post. The info button shows the card's source (the goal, schedule or alert, linking to it), when it was posted and updated, its source links, and "Show less like this", which records the opposite preference and dismisses the card.
@@ -190,6 +219,7 @@ The migration is additive with a reverse migration; back up production before ap
 - [ ] iPhone tab, notification actions.
 - [ ] Android (Android session).
 - [ ] Docs, review rounds, deploy, use it for real.
+- [ ] Pictures and videos on cards (0277), richer layouts, a stack drawn as a deck that fans out and gathers back (the person, 2026-11-19), on the server, dashboard, iPhone and Android.
 
 
 ## Surprises & Discoveries
@@ -212,6 +242,8 @@ None yet.
 - Decision (the person, 2026-11-18): a brief needs cards of different designs; four layouts (text, list, weather, agenda) with structured content, each also carrying a plain body.
 - Decision: the card layout follows a reference screenshot the person gave (kept out of the repository): picture at the left, bold headline, a few lines with links, an optional table of facts, choices as buttons, and a footer of heart, Discuss, date and info.
 
+- Decision (the person, 2026-11-19): cards should not be mostly text: photos and videos, more visual designs, and a stack that fans out of its deck and gathers back into it.
+- Decision: a page's picture is fetched by the server and kept, as link previews are, and only for an address a tool answered with, so a card cannot be used to send what the agent read to a site of its choosing.
 
 ## Outcomes & Retrospective
 
