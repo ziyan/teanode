@@ -121,6 +121,8 @@ func newAgentFeedCommand() *cli.Command {
 					&cli.StringFlag{Name: "card", Usage: "change this card where it stands instead of posting one"},
 					&cli.StringSliceFlag{Name: "fact", Usage: "a row of the table, label=value; at most eight"},
 					&cli.StringSliceFlag{Name: "link", Usage: "a source page, url or url=title"},
+					&cli.StringSliceFlag{Name: "photo", Usage: "one of your photos or videos to show on the card, by id, optionally id=caption"},
+					&cli.StringSliceFlag{Name: "picture", Usage: "a page whose picture to show on the card, url or url=caption; the server fetches it"},
 					&cli.StringSliceFlag{Name: "choice", Usage: "a button, key=Label or key=Label:role; at most four"},
 					JSONFlag(),
 				},
@@ -239,6 +241,17 @@ func printFeedItem(command *cli.Command, item *client.AgentFeedItem) error {
 	}
 	for _, link := range item.SourceLinks {
 		_, _ = fmt.Fprintf(writer, "  source: %s %s\n", forTerminal(link.SourceTitle), link.SourceURL)
+	}
+	for _, entry := range item.FeedMedia {
+		where := ""
+		if entry.ListRowIndex != nil {
+			where = fmt.Sprintf(" of row %d", *entry.ListRowIndex+1)
+		}
+		_, _ = fmt.Fprintf(writer, "  %s%s: %s", entry.FeedMediaKind, where, entry.ImageURL)
+		if entry.MediaCaption != "" {
+			_, _ = fmt.Fprintf(writer, " %q", forTerminal(entry.MediaCaption))
+		}
+		_, _ = fmt.Fprintln(writer)
 	}
 	if len(item.Choices) > 0 {
 		_, _ = fmt.Fprintln(writer, "\nChoices:")
@@ -405,6 +418,18 @@ func runAgentFeedPost(ctx context.Context, command *cli.Command) error {
 			sourceLinks = append(sourceLinks, map[string]string{"sourceUrl": strings.TrimSpace(address), "sourceTitle": strings.TrimSpace(title)})
 		}
 		variables["sourceLinks"] = sourceLinks
+	}
+	var media []map[string]any
+	for _, photo := range command.StringSlice("photo") {
+		photoId, caption, _ := strings.Cut(photo, "=")
+		media = append(media, map[string]any{"photoId": strings.TrimSpace(photoId), "mediaCaption": strings.TrimSpace(caption)})
+	}
+	for _, picture := range command.StringSlice("picture") {
+		address, caption, _ := strings.Cut(picture, "=")
+		media = append(media, map[string]any{"pageUrl": strings.TrimSpace(address), "mediaCaption": strings.TrimSpace(caption)})
+	}
+	if len(media) > 0 {
+		variables["media"] = media
 	}
 	if choices := command.StringSlice("choice"); len(choices) > 0 {
 		buttons := make([]map[string]string, 0, len(choices))

@@ -8243,4 +8243,7 @@ export const ja: Catalog = {
   'feed.stackMoreUnnamed': 'ほかに {count} 件',
   'feed.stackCollapse': '折りたたむ',
   'feed.weatherHighLow': '最高 {high}、最低 {low}',
+  'feed.playVideo': '動画を再生',
+  'feed.openPage': '{title} を開く',
+  'feed.mediaGroup': '写真と動画',
 }

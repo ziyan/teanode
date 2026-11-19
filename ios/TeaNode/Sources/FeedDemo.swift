@@ -1,6 +1,7 @@
 #if DEBUG
     import Foundation
     import TeaNodeKit
+    import UIKit
 
     // The invented cards that the screenshots of the Feed tab photograph
     // (`-TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed`). Every card is made
@@ -13,7 +14,8 @@
             body: String, pictureSymbol: String, facts: [(String, String)] = [], links: [(String, String)] = [],
             choices: [(String, String, String)] = [], urgency: String = "whenever", isLiked: Bool = false, isRead: Bool = false,
             daysAgo: Int = 0, hour: Int, minute: Int, stackKey: String = "", stackCount: Int = 1, stackUnread: Int = 0,
-            stackTitle: String = "", stackPosition: Int? = nil, layout: String = "text", layoutContent: Any? = nil
+            stackTitle: String = "", stackPosition: Int? = nil, layout: String = "text", layoutContent: Any? = nil,
+            media: [[String: Any]] = []
         ) -> [String: Any] {
             let postedAt = DemoServer.demoTime(daysAgo: daysAgo, hour: hour, minute: minute)
             return [
@@ -27,7 +29,68 @@
                 "feedUrgency": urgency, "isLiked": isLiked, "isRead": isRead, "isDismissed": false, "postedAt": postedAt,
                 "updatedAt": postedAt, "feedStackKey": stackKey, "stackItemCount": stackCount, "stackUnreadCount": stackUnread,
                 "feedStackTitle": stackTitle, "stackPosition": stackPosition.map { $0 as Any } ?? NSNull(),
-                "feedCardLayout": layout, "layoutContent": layoutContent.map { feedJSON($0) } ?? "",
+                "feedCardLayout": layout, "layoutContent": layoutContent.map { feedJSON($0) } ?? "", "feedMedia": media,
+            ]
+        }
+
+        /// One picture or video of a card. A picture of a page is served by this
+        /// demo (`feedMediaPicture`), a photo or video by the demo photo library.
+        private static func feedMedia(
+            _ feedItemId: String, _ mediaKey: String, kind: String = "picture", photoId: String = "", linkUrl: String = "", siteName: String = "",
+            caption: String = "", widthPixels: Int = 1200, heightPixels: Int = 630, row: Int? = nil
+        ) -> [String: Any] {
+            let imageUrl = photoId.isEmpty ? "/api/v1/feed/items/\(feedItemId)/media/\(mediaKey)" : "/api/v1/photos/\(photoId)/previews/large"
+            return [
+                "mediaKey": mediaKey, "feedMediaKind": kind, "imageUrl": imageUrl,
+                "videoUrl": kind == "video" ? "/api/v1/photos/\(photoId)/previews/video" : "", "linkUrl": linkUrl, "siteName": siteName,
+                "mediaCaption": caption, "widthPixels": widthPixels, "heightPixels": heightPixels, "listRowIndex": row.map { $0 as Any } ?? NSNull(),
+            ]
+        }
+
+        /// The card the media screenshots scroll to, and the top card of the
+        /// brief the open-stack screenshot scrolls to.
+        static let demoMediaTopId = "feed-picture"
+        static let demoBriefTopId = "brief-0"
+
+        /// A picture for `/api/v1/feed/items/<card>/media/<key>`: a sky, hills and a
+        /// building, its colors from the key so each picture differs.
+        static func feedMediaPicture(for request: URLRequest) -> Data? {
+            guard let path = request.url?.path, path.hasPrefix("/api/v1/feed/items/") else { return nil }
+            let hue = CGFloat(path.utf8.reduce(0) { ($0 &* 31 &+ Int($1)) % 360 }) / 360
+            let size = CGSize(width: 800, height: 450)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            return UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+                let drawing = context.cgContext
+                drawing.setFillColor(UIColor(hue: hue, saturation: 0.3, brightness: 0.95, alpha: 1).cgColor)
+                drawing.fill(CGRect(origin: .zero, size: size))
+                drawing.setFillColor(UIColor(hue: hue, saturation: 0.5, brightness: 0.75, alpha: 1).cgColor)
+                drawing.fillEllipse(in: CGRect(x: -100, y: 300, width: 600, height: 400))
+                drawing.setFillColor(UIColor(hue: (hue + 0.1).truncatingRemainder(dividingBy: 1), saturation: 0.55, brightness: 0.6, alpha: 1).cgColor)
+                drawing.fillEllipse(in: CGRect(x: 350, y: 330, width: 650, height: 400))
+                drawing.setFillColor(UIColor(white: 1, alpha: 0.85).cgColor)
+                drawing.fillEllipse(in: CGRect(x: 580, y: 50, width: 90, height: 90))
+                drawing.setFillColor(UIColor(hue: hue, saturation: 0.6, brightness: 0.4, alpha: 1).cgColor)
+                drawing.fill(CGRect(x: 200, y: 150, width: 120, height: 190))
+                drawing.fill(CGRect(x: 330, y: 200, width: 90, height: 140))
+            }
+        }
+
+        /// The weather card of the feed itself: a rainy evening, on its own sky.
+        private static var rainWeather: [String: Any] {
+            func hour(_ hour: Int, _ temperature: Int, _ symbol: String, _ rain: Int) -> [String: Any] {
+                [
+                    "forecastHour": DemoServer.demoTime(daysAgo: 0, hour: hour, minute: 0), "forecastTemperature": temperature, "forecastSymbol": symbol,
+                    "precipitationChancePercent": rain,
+                ]
+            }
+            return [
+                "placeName": "Riverside", "currentTemperature": 14, "temperatureUnit": "C", "conditionText": "Light rain", "conditionSymbol": "cloud.rain",
+                "highTemperature": 16, "lowTemperature": 9,
+                "hourlyForecast": [
+                    hour(17, 14, "cloud", 30), hour(18, 13, "cloud.drizzle", 50), hour(19, 12, "cloud.rain", 70), hour(20, 12, "cloud.rain", 80),
+                    hour(21, 11, "cloud.rain", 60), hour(22, 10, "cloud", 20),
+                ],
             ]
         }
 
@@ -51,9 +114,42 @@
                     hour: 6, minute: 0),
                 feedCard(
                     "feed-weather", kind: "update", sourceKind: "schedule", sourceId: "schedule-weather", sourceTitle: "Morning weather",
-                    title: "Sunny and mild today", body: "Highs near **21 degrees** with a light breeze. [Hourly forecast](https://weather.example.com/town)",
-                    pictureSymbol: "cloud.sun", facts: [("High", "21 degrees"), ("Low", "11 degrees"), ("Rain", "10 percent")],
-                    links: [("Town forecast", "https://weather.example.com/town")], isLiked: true, hour: 7, minute: 0),
+                    title: "Rain moves in this evening", body: "Light rain from about 18:00, clearing after 22:00. [Hourly forecast](https://weather.example.com/town)",
+                    pictureSymbol: "cloud.rain", facts: [("High", "16 degrees"), ("Low", "9 degrees"), ("Rain", "80 percent")],
+                    links: [("Town forecast", "https://weather.example.com/town")], isLiked: true, hour: 7, minute: 0, layout: "weather",
+                    layoutContent: rainWeather),
+                feedCard(
+                    "feed-picture", kind: "news", sourceKind: "goal", sourceId: "goal-maps", sourceTitle: "Maps and navigation",
+                    title: "Open-source maps add indoor floors",
+                    body: "Stations and malls can now publish floor plans that any map app can show. [Read the report](https://news.example.com/maps)",
+                    pictureSymbol: "map", links: [("Maps Daily", "https://news.example.com/maps")], hour: 6, minute: 50,
+                    media: [
+                        feedMedia(
+                            "feed-picture", "m1", linkUrl: "https://news.example.com/maps", siteName: "Maps Daily",
+                            caption: "A station's floors, drawn from the new data")
+                    ]),
+                feedCard(
+                    "feed-video", kind: "update", sourceKind: "schedule", sourceId: "schedule-memories", sourceTitle: "Weekly memories",
+                    title: "A short clip from the harbor trip", body: "From last Thursday: the boats coming in at the market.",
+                    pictureSymbol: "video", hour: 6, minute: 40,
+                    media: [
+                        feedMedia("feed-video", "m1", kind: "video", photoId: "demo-03", caption: "23 seconds", widthPixels: 4032, heightPixels: 3024)
+                    ]),
+                feedCard(
+                    "feed-list", kind: "news", sourceKind: "goal", sourceId: "goal-chips", sourceTitle: "Chips and hardware",
+                    title: "Three hardware stories", body: "- Chip doubles speech speed\n- Battery swaps\n- Smaller sensors", pictureSymbol: "cpu",
+                    hour: 6, minute: 30, layout: "list",
+                    layoutContent: [
+                        "listRows": [
+                            ["rowTitle": "A new chip doubles on-device speech speed", "rowMeta": "Chip Weekly", "rowSymbol": "newspaper", "rowUrl": "https://news.example.com/chip"],
+                            ["rowTitle": "Battery swaps replace charging breaks", "rowMeta": "Example News", "rowSymbol": "newspaper", "rowUrl": "https://news.example.com/batteries"],
+                            ["rowTitle": "Smaller sensors see in the dark", "rowMeta": "Sensor Notes", "rowSymbol": "newspaper", "rowUrl": "https://news.example.com/sensors"],
+                        ]
+                    ],
+                    media: [
+                        feedMedia("feed-list", "r0", siteName: "Chip Weekly", row: 0), feedMedia("feed-list", "r1", siteName: "Example News", row: 1),
+                        feedMedia("feed-list", "r2", siteName: "Sensor Notes", row: 2),
+                    ]),
                 // The morning brief: its first card tops the stack of five.
                 briefCards[0].merging(["stackItemCount": briefCards.count, "stackUnreadCount": 4] as [String: Any]) { _, stacked in stacked },
                 // The newest of three news cards from one goal: the list holds the stack by its top card.
@@ -99,12 +195,12 @@
         private static var briefCards: [[String: Any]] {
             func brief(
                 _ feedItemId: String, position: Int, title: String, body: String, symbol: String, facts: [(String, String)] = [],
-                isRead: Bool = false, layout: String = "text", layoutContent: Any? = nil
+                isRead: Bool = false, layout: String = "text", layoutContent: Any? = nil, media: [[String: Any]] = []
             ) -> [String: Any] {
                 feedCard(
                     feedItemId, kind: "report", sourceKind: "schedule", sourceId: "schedule-brief", sourceTitle: "Morning brief", title: title,
                     body: body, pictureSymbol: symbol, facts: facts, isRead: isRead, hour: 7, minute: 30, stackKey: demoBriefStackKey,
-                    stackTitle: demoBriefTitle, stackPosition: position, layout: layout, layoutContent: layoutContent)
+                    stackTitle: demoBriefTitle, stackPosition: position, layout: layout, layoutContent: layoutContent, media: media)
             }
             func today(_ hour: Int, _ minute: Int) -> String { DemoServer.demoTime(daysAgo: 0, hour: hour, minute: minute) }
             func entry(_ startHour: Int, _ startMinute: Int, _ endHour: Int, _ endMinute: Int, _ title: String, _ kind: String, _ detail: String) -> [String: Any] {
@@ -165,7 +261,11 @@
                 brief(
                     "brief-2", position: 2, title: "Five tech stories",
                     body: "- [A small robot maker opens a second factory](https://news.example.com/robots)\n- [Battery swaps replace charging breaks](https://news.example.com/batteries)\n- [A new chip doubles on-device speech speed](https://news.example.com/chip)\n- [Open-source maps add indoor floors](https://news.example.com/maps)\n- [A browser syncs tab groups across phones](https://news.example.com/tabs)",
-                    symbol: "newspaper", layout: "list", layoutContent: ["listRows": tech]),
+                    symbol: "newspaper", layout: "list", layoutContent: ["listRows": tech],
+                    media: [
+                        feedMedia("brief-2", "r0", siteName: "Example News", row: 0), feedMedia("brief-2", "r1", siteName: "Example News", row: 1),
+                        feedMedia("brief-2", "r2", siteName: "Chip Weekly", row: 2), feedMedia("brief-2", "r3", siteName: "Maps Daily", row: 3),
+                    ]),
                 brief(
                     "brief-3", position: 3, title: "3 mentions since yesterday", body: "Sam asked about Friday, Priya shared a header, Lee asked about lunch.",
                     symbol: "at", layout: "list", layoutContent: ["listRows": mentions]),

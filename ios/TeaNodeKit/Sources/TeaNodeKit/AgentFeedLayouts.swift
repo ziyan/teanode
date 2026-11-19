@@ -102,6 +102,11 @@ public struct AgentFeedHour: Decodable, Hashable, Sendable {
     public var date: Date? { ServerTime.date(forecastHour) }
 }
 
+/// AgentFeedWeatherCondition is the sky a weather card is drawn for.
+public enum AgentFeedWeatherCondition: String, Sendable {
+    case clearDay, clearNight, cloudy, rain, snow, storm
+}
+
 /// AgentFeedWeather is the content of a weather card.
 public struct AgentFeedWeather: Decodable, Hashable, Sendable {
     public let placeName: String
@@ -142,6 +147,19 @@ public struct AgentFeedWeather: Decodable, Hashable, Sendable {
         self.highTemperature = highTemperature
         self.lowTemperature = lowTemperature
         self.hourlyForecast = hourlyForecast
+    }
+
+    /// What the sky is like, which picks the card's colors; see `AgentFeedWeatherCondition`.
+    public var condition: AgentFeedWeatherCondition {
+        let symbol = conditionSymbol.lowercased()
+        let words = conditionText.lowercased()
+        func mentions(_ names: [String]) -> Bool { names.contains { symbol.contains($0) || words.contains($0) } }
+        if mentions(["bolt", "storm", "thunder"]) { return .storm }
+        if mentions(["snow", "flurr", "sleet", "hail"]) { return .snow }
+        if mentions(["rain", "drizzle", "shower"]) { return .rain }
+        if mentions(["moon", "night"]) { return .clearNight }
+        if mentions(["sun", "clear"]) { return .clearDay }
+        return .cloudy
     }
 
     /// A temperature with its degree sign and the unit's letter: "21°C".

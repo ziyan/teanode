@@ -31,6 +31,10 @@
             if let picture = Self.avatarPicture(for: request) {
                 return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
             }
+            // So is the picture of a feed card.
+            if let picture = Self.feedMediaPicture(for: request) {
+                return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
             // So is the picture of a link's page.
             if let picture = Self.linkPreviewPicture(for: request) {
                 return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)

@@ -27,7 +27,11 @@ type speakFirstWorld struct {
 	owner      *models.User
 	agent      *models.Agent
 	requests   *[]map[string]any
+	fileStore  storage.Storage
 }
+
+// store is the file store the worker keeps files in.
+func (self *speakFirstWorld) store() storage.Storage { return self.fileStore }
 
 func newSpeakFirstWorld(t *testing.T) *speakFirstWorld {
 	t.Helper()
@@ -54,7 +58,7 @@ func newSpeakFirstWorld(t *testing.T) *speakFirstWorld {
 	worker := agent.New(&agent.Settings{Database: database, Storage: store, Registry: registry, Configuration: func() *config.Configuration { return configuration }, Instance: "test", Tick: time.Hour})
 	operations := &fakeOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}})}
 	worker.SetOperationsFactory(func(ctx context.Context, owner *models.User) (agent.Operations, error) { return operations, nil })
-	world := &speakFirstWorld{database: database, worker: worker, operations: operations, requests: requests}
+	world := &speakFirstWorld{database: database, worker: worker, operations: operations, requests: requests, fileStore: store}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		var err error
 		if world.owner, err = tx.CreateUser(&models.User{Username: "robin", Timezone: "UTC", TimezoneMode: "fixed"}); err != nil {

@@ -94,6 +94,99 @@ public enum AgentFeedPictureKind: Equatable, Sendable {
     }
 }
 
+/// AgentFeedMediaKind is what a card's picture or video is of.
+public enum AgentFeedMediaKind: String, Sendable {
+    /// One of the person's own photos.
+    case photo
+    /// One of the person's own videos; imageUrl is its poster.
+    case video
+    /// The picture of a web page, kept by the server.
+    case picture
+}
+
+/// AgentFeedMedia is one picture or video of a card, or, when `listRowIndex`
+/// is set, the thumbnail of that row of a list card. The addresses are server
+/// paths that work for the signed-in person only.
+public struct AgentFeedMedia: Codable, Hashable, Sendable, Identifiable {
+    public let mediaKey: String
+    /// photo, video or picture; see `mediaKind`.
+    public let feedMediaKind: String
+    public let imageUrl: String
+    /// The video's preview path; for a video only.
+    public let videoUrl: String
+    /// The page a picture came from; for a picture only.
+    public let linkUrl: String
+    public let siteName: String
+    public let mediaCaption: String
+    public let widthPixels: Int
+    public let heightPixels: Int
+    /// nil is the card's own media; a number is the thumbnail of that row of a list.
+    public let listRowIndex: Int?
+
+    public var id: String { mediaKey }
+
+    public init(
+        mediaKey: String, feedMediaKind: String = "picture", imageUrl: String = "", videoUrl: String = "", linkUrl: String = "",
+        siteName: String = "", mediaCaption: String = "", widthPixels: Int = 0, heightPixels: Int = 0, listRowIndex: Int? = nil
+    ) {
+        self.mediaKey = mediaKey
+        self.feedMediaKind = feedMediaKind
+        self.imageUrl = imageUrl
+        self.videoUrl = videoUrl
+        self.linkUrl = linkUrl
+        self.siteName = siteName
+        self.mediaCaption = mediaCaption
+        self.widthPixels = widthPixels
+        self.heightPixels = heightPixels
+        self.listRowIndex = listRowIndex
+    }
+
+    /// Every field but the key may be missing or null.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mediaKey = try container.decode(String.self, forKey: .mediaKey)
+        feedMediaKind = (try? container.decodeIfPresent(String.self, forKey: .feedMediaKind)) ?? "picture"
+        imageUrl = (try? container.decodeIfPresent(String.self, forKey: .imageUrl)) ?? ""
+        videoUrl = (try? container.decodeIfPresent(String.self, forKey: .videoUrl)) ?? ""
+        linkUrl = (try? container.decodeIfPresent(String.self, forKey: .linkUrl)) ?? ""
+        siteName = (try? container.decodeIfPresent(String.self, forKey: .siteName)) ?? ""
+        mediaCaption = (try? container.decodeIfPresent(String.self, forKey: .mediaCaption)) ?? ""
+        widthPixels = (try? container.decodeIfPresent(Int.self, forKey: .widthPixels)) ?? 0
+        heightPixels = (try? container.decodeIfPresent(Int.self, forKey: .heightPixels)) ?? 0
+        listRowIndex = (try? container.decodeIfPresent(Int.self, forKey: .listRowIndex)) ?? nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mediaKey, feedMediaKind, imageUrl, videoUrl, linkUrl, siteName, mediaCaption, widthPixels, heightPixels, listRowIndex
+    }
+
+    /// A kind this app does not know is drawn as a picture.
+    public var mediaKind: AgentFeedMediaKind { AgentFeedMediaKind(rawValue: feedMediaKind) ?? .picture }
+
+    /// Whether the picture is taller than wide, which the sizes say.
+    public var isPortrait: Bool { widthPixels > 0 && heightPixels > widthPixels }
+
+    /// The width over the height one item shown alone is cropped to: 16:9, or
+    /// 4:5 for a portrait photo.
+    public var singleAspectRatio: Double { isPortrait ? 4.0 / 5.0 : 16.0 / 9.0 }
+
+    /// The page a picture opens; only http and https are followed.
+    public var linkAddress: URL? {
+        guard !linkUrl.isEmpty, let url = URL(string: linkUrl), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            return nil
+        }
+        return url
+    }
+
+    /// The photo a video is, from its path (`/api/v1/photos/<id>/previews/video`),
+    /// which the app asks a playable address for.
+    public var videoPhotoId: String? {
+        let parts = videoUrl.split(separator: "?").first.map { $0.split(separator: "/").map(String.init) } ?? []
+        guard let index = parts.firstIndex(of: "photos"), index + 1 < parts.count else { return nil }
+        return parts[index + 1]
+    }
+}
+
 /// AgentFeedItem is one card of the feed.
 public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
     public let feedItemId: String
@@ -145,6 +238,9 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
     public let feedCardLayout: String
     /// The layout's content, a JSON object in a string; empty for text.
     public let layoutContent: String
+    /// The card's pictures and videos, and the thumbnails of a list's rows;
+    /// see `cardMedia` and `rowThumbnails`.
+    public let feedMedia: [AgentFeedMedia]
 
     public var id: String { feedItemId }
 
@@ -156,7 +252,7 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
         feedUrgency: String = "whenever", isLiked: Bool = false, isRead: Bool = false, isDismissed: Bool = false, postedAt: String = "",
         updatedAt: String = "", feedStackKey: String = "", stackItemCount: Int = 1, stackUnreadCount: Int = 0,
         feedStackTitle: String = "", stackPosition: Int? = nil,
-        feedCardLayout: String = "text", layoutContent: String = ""
+        feedCardLayout: String = "text", layoutContent: String = "", feedMedia: [AgentFeedMedia] = []
     ) {
         self.feedItemId = feedItemId
         self.feedItemKind = feedItemKind
@@ -187,6 +283,7 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
         self.stackPosition = stackPosition
         self.feedCardLayout = feedCardLayout
         self.layoutContent = layoutContent
+        self.feedMedia = feedMedia
     }
 
     /// Every field but the id and the title may be missing or null, so a
@@ -222,12 +319,14 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
         stackPosition = try container.decodeIfPresent(Int.self, forKey: .stackPosition)
         feedCardLayout = try container.decodeIfPresent(String.self, forKey: .feedCardLayout) ?? "text"
         layoutContent = try container.decodeIfPresent(String.self, forKey: .layoutContent) ?? ""
+        feedMedia = (try? container.decodeIfPresent([AgentFeedMedia?].self, forKey: .feedMedia))?.compactMap { $0 } ?? []
     }
 
     private enum CodingKeys: String, CodingKey {
         case feedItemId, feedItemKind, feedSourceKind, feedSourceId, feedSourceTitle, runConversationId, title, body, pictureSymbol
         case factRows, sourceLinks, choices, chosenChoiceKey, chosenAt, outcomeText, isOutcomePending, feedUrgency
         case isLiked, isRead, isDismissed, postedAt, updatedAt, feedStackKey, stackItemCount, stackUnreadCount, feedStackTitle, stackPosition, feedCardLayout, layoutContent
+        case feedMedia
     }
 
     /// Whether the card tops a stack of more cards from its source.
@@ -265,6 +364,28 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
         let paneId = String(feedSourceId[feedSourceId.index(after: slash)...])
         guard !computer.isEmpty, !paneId.isEmpty else { return nil }
         return (computer, paneId)
+    }
+
+    /// The card's own pictures and videos, in order; what has no picture to
+    /// draw is left out.
+    public var cardMedia: [AgentFeedMedia] { feedMedia.filter { $0.listRowIndex == nil && !$0.imageUrl.isEmpty } }
+
+    /// The thumbnails of a list card's rows, by the row's index; the first
+    /// one given for a row wins.
+    public var rowThumbnails: [Int: AgentFeedMedia] {
+        var thumbnails: [Int: AgentFeedMedia] = [:]
+        for media in feedMedia where !media.imageUrl.isEmpty {
+            guard let rowIndex = media.listRowIndex, thumbnails[rowIndex] == nil else { continue }
+            thumbnails[rowIndex] = media
+        }
+        return thumbnails
+    }
+
+    /// The small line above the headline, as a news app labels a story: the
+    /// first picture's site, else the source's name; empty when there is neither.
+    public var headerText: String {
+        let siteName = cardMedia.first { $0.mediaKind == .picture && !$0.siteName.isEmpty }?.siteName ?? ""
+        return siteName.isEmpty ? feedSourceTitle : siteName
     }
 
     /// The picture's name or text.
@@ -311,6 +432,7 @@ extension Documents {
         factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl } choices { choiceKey choiceLabel choiceRole }
         chosenChoiceKey chosenAt outcomeText isOutcomePending feedUrgency isLiked isRead isDismissed postedAt updatedAt
         feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent
+        feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }
         """
     public static let agentFeedStack = """
         query ($feedStackKey: String!, $first: Int, $after: String) {

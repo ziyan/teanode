@@ -228,6 +228,7 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	// The picture of a link preview, fetched from the linked page once and
 	// served from here (link_preview.go).
 	router.Path(api.PathLinkPreviewImage).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.linkPreviewImageView)
+	router.Path(api.PathFeedMedia).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.feedMediaView)
 	router.Path(api.PathShoppingPicture).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.shoppingPictureView)
 	// The map style host's files, fetched here for the signed-in browser
 	// (location_map.go).

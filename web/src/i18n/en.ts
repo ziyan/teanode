@@ -8299,6 +8299,9 @@ export const en = {
   'feed.agentUnavailable': 'Turn the agent on to discuss this.',
   'feed.stackMore': '+{count} more from {source}',
   'feed.stackMoreUnnamed': '+{count} more',
-  'feed.stackCollapse': 'Show fewer',
+  'feed.stackCollapse': 'Show less',
   'feed.weatherHighLow': 'High {high}, low {low}',
+  'feed.playVideo': 'Play video',
+  'feed.openPage': 'Open {title}',
+  'feed.mediaGroup': 'Pictures and videos',
 }

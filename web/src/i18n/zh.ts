@@ -7933,4 +7933,7 @@ export const zh: Catalog = {
   'feed.stackMoreUnnamed': '另外 {count} 条',
   'feed.stackCollapse': '收起',
   'feed.weatherHighLow': '最高 {high}，最低 {low}',
+  'feed.playVideo': '播放视频',
+  'feed.openPage': '打开 {title}',
+  'feed.mediaGroup': '图片和视频',
 }

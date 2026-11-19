@@ -30,6 +30,11 @@ final class FeedModel {
     var doneText: String?
     var problemText: String?
 
+    /// The stacks of the feed that are open in place, by stack key, and the
+    /// cards each holds, newest first (or in the order the agent gave).
+    private(set) var openStackKeys: Set<String> = []
+    private(set) var stackItemsByKey: [String: [AgentFeedItem]] = [:]
+
     private var nextCursor: String?
     private var isLoading = false
     /// The hearts the person just pressed, shown before the server answers.
@@ -76,6 +81,8 @@ final class FeedModel {
             unreadCount = page.unreadCount
             hasLoaded = true
             loadFailedText = nil
+            // A stack open in place is read again with the feed.
+            for openStackKey in openStackKeys { await loadStack(openStackKey) }
         } catch is CancellationError {
         } catch {
             guard (error as? URLError)?.code != .cancelled else { return }
@@ -105,6 +112,34 @@ final class FeedModel {
         } catch is CancellationError {
         } catch {
             if (error as? URLError)?.code != .cancelled { problemText = error.loadProblemText }
+        }
+    }
+
+    // MARK: Stacks open in place
+
+    /// The cards of a stack, once they have been read.
+    func stackItems(_ feedStackKey: String) -> [AgentFeedItem]? {
+        stackItemsByKey[feedStackKey]
+    }
+
+    /// Reads the cards of one stack, to show them under the feed's entry for it.
+    func loadStack(_ feedStackKey: String) async {
+        do {
+            let page = try await connection.agentFeedStack(feedStackKey, pageSize: 50)
+            stackItemsByKey[feedStackKey] = page.feedItems
+        } catch is CancellationError {
+        } catch {
+            if (error as? URLError)?.code != .cancelled { problemText = error.loadProblemText }
+        }
+    }
+
+    /// Opens a stack in place, or gathers it back into its deck. Called
+    /// inside `withAnimation`, so the cards slide out or in.
+    func setStackOpen(_ feedStackKey: String, isOpen: Bool) {
+        if isOpen {
+            openStackKeys.insert(feedStackKey)
+        } else {
+            openStackKeys.remove(feedStackKey)
         }
     }
 
@@ -204,6 +239,10 @@ final class FeedModel {
     // MARK: Keeping the list
 
     private func replace(_ item: AgentFeedItem) {
+        for (feedStackKey, stacked) in stackItemsByKey {
+            guard let stackIndex = stacked.firstIndex(where: { $0.feedItemId == item.feedItemId }) else { continue }
+            stackItemsByKey[feedStackKey]?[stackIndex] = item
+        }
         guard let index = items.firstIndex(where: { $0.feedItemId == item.feedItemId }) else { return }
         items[index] = item
     }
@@ -211,6 +250,9 @@ final class FeedModel {
     private func remove(_ item: AgentFeedItem) {
         let wasUnread = !item.isRead && !readFeedItemIds.contains(item.feedItemId)
         items.removeAll { $0.feedItemId == item.feedItemId }
+        for feedStackKey in Array(stackItemsByKey.keys) {
+            stackItemsByKey[feedStackKey]?.removeAll { $0.feedItemId == item.feedItemId }
+        }
         if wasUnread { unreadCount = max(0, unreadCount - 1) }
     }
 }
@@ -356,37 +398,54 @@ struct FeedStackScreen: View {
 struct FeedList: View {
     @Bindable var model: FeedModel
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The card whose information sheet is open. The sheet is presented from
     /// the screen, not from a card: the cards are rebuilt as the feed changes.
     @State private var informedItem: AgentFeedItem?
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(model.items) { item in
-                    FeedCard(
-                        item: item, isLiked: model.isLiked(item), isBusy: model.busyFeedItemIds.contains(item.feedItemId),
-                        // A stack opened shows its cards whole, one by one.
-                        isStackShown: model.feedStackKey == nil,
-                        onChoose: { choice in choose(item, choice) },
-                        onToggleLike: { Task { await model.toggleLike(item) } },
-                        onDiscuss: { discuss(item) },
-                        onShowInformation: { informedItem = item }
-                    )
-                    .onAppear {
-                        model.noteAppeared(item)
-                        if item.feedItemId == model.items.last?.feedItemId {
-                            Task { await model.loadMore() }
-                        }
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(model.items) { item in
+                        entry(for: item)
+                            .id(item.feedItemId)
+                            .onAppear {
+                                model.noteAppeared(item)
+                                if item.feedItemId == model.items.last?.feedItemId {
+                                    Task { await model.loadMore() }
+                                }
+                            }
+                    }
+                    if model.isLoadingMore {
+                        ProgressView().padding()
                     }
                 }
-                if model.isLoadingMore {
-                    ProgressView().padding()
-                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .readableWidth()
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-            .readableWidth()
+            #if DEBUG
+                // `-TeaNodeScreen feed-stack-open`: the morning brief opened in place, scrolled to;
+                // `feed-media`: the feed scrolled to its first card with a picture.
+                .task {
+                    guard DemoServer.isRequested, model.feedStackKey == nil else { return }
+                    let target: String
+                    if DemoServer.screen == "feed-stack-open" {
+                        await model.loadFirstIfNeeded()
+                        await model.loadStack(DemoServer.demoBriefStackKey)
+                        model.setStackOpen(DemoServer.demoBriefStackKey, isOpen: true)
+                        target = DemoServer.demoBriefTopId
+                    } else if DemoServer.screen == "feed-media" {
+                        await model.loadFirstIfNeeded()
+                        target = DemoServer.demoMediaTopId
+                    } else {
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(400))
+                    proxy.scrollTo(target, anchor: .top)
+                }
+            #endif
         }
         .scrollBounceBehavior(.always)
         .overlay { placeholder }
@@ -414,6 +473,95 @@ struct FeedList: View {
             }
         }
         .toast(done: $model.doneText, problem: $model.problemText)
+    }
+
+    // MARK: Entries, and stacks open in place
+
+    /// One entry of the list: a card, a stack as a deck, or a stack opened
+    /// in place as a column of cards.
+    @ViewBuilder
+    private func entry(for item: AgentFeedItem) -> some View {
+        if isOpenInPlace(item) {
+            openStack(for: item)
+        } else {
+            card(item, isStackShown: model.feedStackKey == nil, onToggleStack: toggleAction(for: item))
+        }
+    }
+
+    private func card(_ item: AgentFeedItem, isStackShown: Bool, onToggleStack: (() -> Void)?) -> some View {
+        FeedCard(
+            item: item, isLiked: model.isLiked(item), isBusy: model.busyFeedItemIds.contains(item.feedItemId),
+            // A stack opened shows its cards whole, one by one.
+            isStackShown: isStackShown,
+            onChoose: { choice in choose(item, choice) },
+            onToggleLike: { Task { await model.toggleLike(item) } },
+            onDiscuss: { discuss(item) },
+            onShowInformation: { informedItem = item },
+            onToggleStack: onToggleStack
+        )
+    }
+
+    /// Whether the entry is a stack of the feed that is open in place.
+    private func isOpenInPlace(_ item: AgentFeedItem) -> Bool {
+        model.feedStackKey == nil && item.isStack && model.openStackKeys.contains(item.feedStackKey)
+    }
+
+    /// What tapping a deck does: opens it in place. Nothing for a card that
+    /// is no stack, and inside a stack's own screen.
+    private func toggleAction(for item: AgentFeedItem) -> (() -> Void)? {
+        guard model.feedStackKey == nil, item.isStack else { return nil }
+        return { openStackInPlace(item) }
+    }
+
+    @ViewBuilder
+    private func openStack(for item: AgentFeedItem) -> some View {
+        VStack(spacing: 12) {
+            FeedStackHeader(title: stackTitle(of: item), cardCount: item.stackItemCount) { gatherStack(item) }
+            ForEach(Array(stackCards(of: item).enumerated()), id: \.element.feedItemId) { index, stacked in
+                card(stacked, isStackShown: false, onToggleStack: nil)
+                    .transition(deckTransition(index: index))
+                    .onAppear { model.noteAppeared(stacked) }
+            }
+        }
+    }
+
+    /// The cards of an open stack; the top card alone until they are read.
+    private func stackCards(of item: AgentFeedItem) -> [AgentFeedItem] {
+        model.stackItems(item.feedStackKey) ?? [item]
+    }
+
+    private func stackTitle(of item: AgentFeedItem) -> String {
+        item.stackDisplayTitle.isEmpty ? String(localized: "More cards") : item.stackDisplayTitle
+    }
+
+    /// The spring that moves cards out of the deck and back, about a third of
+    /// a second; none when the person asks for reduced motion.
+    private var deckAnimation: Animation? {
+        if reduceMotion { return nil }
+        return .spring(duration: 0.35, bounce: 0.12)
+    }
+
+    /// A card slides out of the deck from where the deck is, each a little
+    /// after the one before; with reduced motion it only fades.
+    private func deckTransition(index: Int) -> AnyTransition {
+        if reduceMotion { return .opacity }
+        let slide = AnyTransition.offset(y: -CGFloat(index) * 28).combined(with: .opacity)
+        return slide.animation(.spring(duration: 0.35, bounce: 0.12).delay(Double(index) * 0.05))
+    }
+
+    /// Reads the stack's cards when they are not known yet, then fans it out.
+    private func openStackInPlace(_ item: AgentFeedItem) {
+        let feedStackKey = item.feedStackKey
+        Task {
+            if model.stackItems(feedStackKey) == nil { await model.loadStack(feedStackKey) }
+            // The cards could not be read: the stack stays a deck.
+            guard model.stackItems(feedStackKey) != nil else { return }
+            withAnimation(deckAnimation) { model.setStackOpen(feedStackKey, isOpen: true) }
+        }
+    }
+
+    private func gatherStack(_ item: AgentFeedItem) {
+        withAnimation(deckAnimation) { model.setStackOpen(item.feedStackKey, isOpen: false) }
     }
 
     /// What shows instead of cards: a spinner for the first read, why it
@@ -478,30 +626,48 @@ struct FeedCard: View {
     let onToggleLike: () -> Void
     let onDiscuss: () -> Void
     let onShowInformation: () -> Void
+    /// Opens the stack this card tops in place; nil where a stack is not
+    /// opened that way (a stack's own screen, the previews).
+    var onToggleStack: (() -> Void)?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                // No room beside the picture for words this large.
-                VStack(alignment: .leading, spacing: 10) {
-                    FeedPicture(pictureKind: item.pictureKind)
-                    content
-                }
-            } else {
-                HStack(alignment: .top, spacing: 12) {
-                    FeedPicture(pictureKind: item.pictureKind)
-                    content
-                }
-            }
+        VStack(spacing: 0) {
+            FeedCardMedia(mediaItems: item.cardMedia)
+            wordsArea
+                .padding(14)
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5) }
+        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
+        // The picture at the top of the card is cut to the card's corners.
+        .clipShape(.rect(cornerRadius: Self.cornerRadius, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5) }
         .background(alignment: .bottom) { stackEdges }
         .padding(.bottom, stackEdgeCount * Self.stackEdgeStep)
         .sensoryFeedback(.success, trigger: item.chosenChoiceKey)
+    }
+
+    private static let cornerRadius: CGFloat = 18
+
+    /// What is under the card's picture: the symbol and the words, which sit
+    /// side by side unless the text is too large or the card has a picture
+    /// of its own in place of the symbol.
+    @ViewBuilder
+    private var wordsArea: some View {
+        if !item.cardMedia.isEmpty {
+            content
+        } else if dynamicTypeSize.isAccessibilitySize {
+            // No room beside the picture for words this large.
+            VStack(alignment: .leading, spacing: 10) {
+                FeedPicture(pictureKind: item.pictureKind)
+                content
+            }
+        } else {
+            HStack(alignment: .top, spacing: 12) {
+                FeedPicture(pictureKind: item.pictureKind)
+                content
+            }
+        }
     }
 
     /// How far each card edge behind the top one shows below it, in points.
@@ -529,33 +695,48 @@ struct FeedCard: View {
     }
 
     private func stackEdge(inset: CGFloat, drop: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
+        RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
             .fill(Color(.secondarySystemBackground))
-            .overlay { RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5) }
+            .overlay { RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5) }
             .padding(.horizontal, inset)
             .offset(y: drop)
     }
 
-    /// The row under a stack's top card that opens the rest of it.
+    /// The row under a stack's top card that opens the rest of it: in place
+    /// when the feed says how, else on the stack's own screen.
     @ViewBuilder
     private var stackRow: some View {
         if isStackShown, item.isStack {
-            NavigationLink(value: FeedStackTarget(feedStackKey: item.feedStackKey, title: stackTitle)) {
-                HStack {
-                    Text(stackRowText)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.accentColor)
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.forward")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Color(uiColor: .tertiaryLabel))
-                        .accessibilityHidden(true)
+            if let onToggleStack {
+                Button {
+                    onToggleStack()
+                } label: {
+                    stackRowLabel(symbol: "chevron.down")
                 }
-                .frame(minHeight: 44)
-                .contentShape(.rect)
+                .buttonStyle(.plain)
+                .accessibilityHint(Text("Shows the cards of this stack"))
+            } else {
+                NavigationLink(value: FeedStackTarget(feedStackKey: item.feedStackKey, title: stackTitle)) {
+                    stackRowLabel(symbol: "chevron.forward")
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
+    }
+
+    private func stackRowLabel(symbol: String) -> some View {
+        HStack {
+            Text(stackRowText)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+            Spacer(minLength: 8)
+            Image(systemName: symbol)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                .accessibilityHidden(true)
+        }
+        .frame(minHeight: 44)
+        .contentShape(.rect)
     }
 
     /// The source's name, or a plain word when the card has none.
@@ -577,6 +758,7 @@ struct FeedCard: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            headerLine
             Text(item.title)
                 .font(.headline)
                 .bold()
@@ -587,6 +769,17 @@ struct FeedCard: View {
             footer
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The small line above the headline, as a news app labels a story: the
+    /// card's symbol and the first picture's site, else the source's name.
+    /// A card with no picture of its own has its symbol large beside the
+    /// words instead.
+    @ViewBuilder
+    private var headerLine: some View {
+        if !item.cardMedia.isEmpty, !item.headerText.isEmpty {
+            FeedHeaderLine(pictureKind: item.pictureKind, headerText: item.headerText)
+        }
     }
 
     /// The card's words and facts, or its structured layout, which the body
@@ -603,7 +796,7 @@ struct FeedCard: View {
                 FeedFacts(factRows: item.factRows)
             }
         case .list(let listRows):
-            FeedListLayout(listRows: listRows)
+            FeedListLayout(listRows: listRows, thumbnails: item.rowThumbnails)
         case .weather(let weather):
             FeedWeatherLayout(weather: weather)
         case .agenda(let agendaEntries):

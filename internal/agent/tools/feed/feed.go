@@ -51,6 +51,12 @@ func init() {
 						"source_title": tools.StringProperty("what the page is called"),
 						"source_url":   tools.StringProperty("its address"),
 					}, "source_url")),
+					"media": tools.ArrayProperty("pictures and videos for the card, at most six of its own: one of their photos or videos by photo_id (from the photo tool), or a page whose picture to show by page_url (an address a tool gave you; one you composed is not shown). Left out, a text card shows its first source link's picture and a list card its linked rows' pictures, so news needs nothing here", tools.Object(map[string]any{
+						"photo_id":       tools.StringProperty("one of their photos or videos"),
+						"page_url":       tools.StringProperty("a page, or a picture's own address, as a tool answered it"),
+						"media_caption":  tools.StringProperty("a short line under it"),
+						"list_row_index": tools.IntegerProperty("for a list card: the row, from 0, this is the thumbnail of; leave out for a picture of the whole card"),
+					})),
 					"record_references": tools.ArrayProperty("records of theirs the card is about: a mail by item_id or thread_id", tools.Object(map[string]any{
 						"item_id":   tools.StringProperty("a mail's item id"),
 						"thread_id": tools.StringProperty("a mail thread's id"),
@@ -86,6 +92,13 @@ type recordReference struct {
 	Subject  string `json:"subject"`
 }
 
+type media struct {
+	PhotoID      string `json:"photo_id"`
+	PageURL      string `json:"page_url"`
+	MediaCaption string `json:"media_caption"`
+	ListRowIndex *int   `json:"list_row_index"`
+}
+
 type choice struct {
 	ChoiceKey   string `json:"choice_key"`
 	ChoiceLabel string `json:"choice_label"`
@@ -109,6 +122,7 @@ type arguments struct {
 	FactRows         []factRow         `json:"fact_rows"`
 	SourceLinks      []sourceLink      `json:"source_links"`
 	RecordReferences []recordReference `json:"record_references"`
+	Media            []media           `json:"media"`
 	Choices          []choice          `json:"choices"`
 	IsDismissedShown bool              `json:"include_dismissed"`
 }
@@ -196,6 +210,17 @@ func postVariables(asked *arguments) map[string]any {
 			links = append(links, map[string]string{"sourceTitle": link.SourceTitle, "sourceUrl": link.SourceURL})
 		}
 		variables["sourceLinks"] = links
+	}
+	if len(asked.Media) > 0 {
+		entries := make([]map[string]any, 0, len(asked.Media))
+		for _, entry := range asked.Media {
+			fields := map[string]any{"photoId": entry.PhotoID, "pageUrl": entry.PageURL, "mediaCaption": entry.MediaCaption}
+			if entry.ListRowIndex != nil {
+				fields["listRowIndex"] = *entry.ListRowIndex
+			}
+			entries = append(entries, fields)
+		}
+		variables["media"] = entries
 	}
 	if len(asked.Choices) > 0 {
 		choices := make([]map[string]string, 0, len(asked.Choices))
