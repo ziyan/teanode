@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
-import { AgentReference, graphql, openAgentConversation, subscribe } from '../api'
+import { AgentReference, askAgentAbout, graphql, openAgentConversation, subscribe } from '../api'
 import { ErrorMessage, Loading } from '../components/common'
 import { FormDialog } from '../components/dialog'
 import { AGENT_FEED_CHANGED, announceFeedUnread } from '../components/feedUnread'
@@ -516,13 +516,14 @@ export function FeedPage() {
               <li
                 key={item.feedItemId}
                 data-feed-stack-key={isStack ? item.feedStackKey : undefined}
-                className={
-                  item.stackItemCount > 1
-                    ? isOpen
-                      ? 'feed-stack is-deck'
-                      : 'feed-stack is-deck is-closed'
-                    : 'feed-stack'
-                }
+                className={[
+                  'feed-stack',
+                  item.stackItemCount > 1 ? 'is-deck' : '',
+                  item.stackItemCount === 2 ? 'is-pair' : '',
+                  item.stackItemCount > 1 && !isOpen ? 'is-closed' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
                 onClick={
                   isStack && !isOpen
                     ? (event) => {
@@ -626,7 +627,13 @@ function FeedCard({
   const discuss = () =>
     run(async () => {
       const answer = await graphql<{ DiscussAgentFeedItem: string }>(DISCUSS_ITEM, { feedItemId: item.feedItemId })
-      if (!openAgentConversation(answer.DiscussAgentFeedItem)) toast.failed(t('feed.agentUnavailable'))
+      // The main conversation opens with the card on a chip in its box, so
+      // what the person says next is about the card and the agent reads it.
+      if (!openAgentConversation(answer.DiscussAgentFeedItem)) {
+        toast.failed(t('feed.agentUnavailable'))
+        return
+      }
+      askAgentAbout({ feedItemId: item.feedItemId, feedItemTitle: item.title })
     })
 
   const open = () => {

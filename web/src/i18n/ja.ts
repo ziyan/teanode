@@ -1342,6 +1342,7 @@ export const ja: Catalog = {
   'agentDrawer.recordingReference': '録音：{title}',
   'agentDrawer.photoReference': '写真：{title}',
   'agentDrawer.photoReferenceUntitled': '写真',
+  'agentDrawer.feedItemReference': 'カード：{title}',
   'agentDrawer.reply': '返信',
   'agentDrawer.react': 'リアクション',
   'agentDrawer.reactWith': '{emoji} でリアクション',
@@ -8209,7 +8210,8 @@ export const ja: Catalog = {
   'calls.transcriptionFailed': '文字起こしの設定を変更できませんでした。',
 
   'feed.title': 'フィード',
-  'feed.empty': 'フィードにはまだ何もありません。エージェントが見つけたことや、あなたに確認したいことを、頼まれなくてもここに投稿します。目標、スケジュール、通知がここに投稿されます。',
+  'feed.empty':
+    'フィードにはまだ何もありません。エージェントが見つけたことや、あなたに確認したいことを、頼まれなくてもここに投稿します。目標、スケジュール、通知がここに投稿されます。',
   'feed.more': 'さらに表示',
   'feed.unreadCount': '未読 {count} 件',
   'feed.unread': '未読',

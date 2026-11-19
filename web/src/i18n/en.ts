@@ -1346,6 +1346,7 @@ export const en = {
   'agentDrawer.recordingReference': 'Recording: {title}',
   'agentDrawer.photoReference': 'Photo: {title}',
   'agentDrawer.photoReferenceUntitled': 'Photo',
+  'agentDrawer.feedItemReference': 'Card: {title}',
   'agentDrawer.reply': 'Reply',
   'agentDrawer.react': 'React',
   'agentDrawer.reactWith': 'React with {emoji}',
@@ -8267,7 +8268,8 @@ export const en = {
   'calls.transcriptionFailed': 'Could not change the transcription.',
 
   'feed.title': 'Feed',
-  'feed.empty': 'Nothing in your feed yet. This is where the agent posts what it found or needs from you without being asked. Goals, schedules and alerts post here.',
+  'feed.empty':
+    'Nothing in your feed yet. This is where the agent posts what it found or needs from you without being asked. Goals, schedules and alerts post here.',
   'feed.more': 'More',
   'feed.unreadCount': '{count} unread',
   'feed.unread': 'Unread',

@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { graphql, openAgentConversation, subscribe } from '../api'
+import { askAgentAbout, graphql, openAgentConversation, subscribe } from '../api'
 import { TranslationProvider } from '../i18n/i18n'
 import { FeedItem, FeedPage } from './feed'
 
@@ -12,10 +12,12 @@ vi.mock('../api', async (importOriginal) => ({
   graphql: vi.fn(),
   subscribe: vi.fn(),
   openAgentConversation: vi.fn(() => true),
+  askAgentAbout: vi.fn(() => true),
 }))
 vi.mock('../components/toast', () => ({ useToast: () => notices }))
 const execute = vi.mocked(graphql)
 const openDrawer = vi.mocked(openAgentConversation)
+const askAbout = vi.mocked(askAgentAbout)
 
 // What the page gave the subscription: the function it calls on each event.
 let announce: (() => void) | null = null
@@ -195,7 +197,7 @@ it('puts the heart back and says so when the server refuses it', async () => {
   expect(screen.getByRole('button', { name: 'Like' }).getAttribute('aria-pressed')).toBe('false')
 })
 
-it('opens the drawer on the conversation Discuss returns', async () => {
+it('opens the drawer on the conversation Discuss returns with the card on a chip', async () => {
   execute.mockImplementation(async (document: string) => {
     if (document.includes('DiscussAgentFeedItem')) return { DiscussAgentFeedItem: 'main-conversation' }
     return listing([feedItem('card-frost')])
@@ -204,6 +206,9 @@ it('opens the drawer on the conversation Discuss returns', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Discuss' }))
   await waitFor(() => expect(openDrawer).toHaveBeenCalledWith('main-conversation'))
   expect(execute).toHaveBeenCalledWith(expect.stringContaining('DiscussAgentFeedItem'), { feedItemId: 'card-frost' })
+  await waitFor(() =>
+    expect(askAbout).toHaveBeenCalledWith({ feedItemId: 'card-frost', feedItemTitle: expect.any(String) as string }),
+  )
 })
 
 it('opens the coding session page for an open choice', async () => {

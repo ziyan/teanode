@@ -1292,6 +1292,7 @@ export const zh: Catalog = {
   'agentDrawer.recordingReference': '录音：{title}',
   'agentDrawer.photoReference': '照片：{title}',
   'agentDrawer.photoReferenceUntitled': '照片',
+  'agentDrawer.feedItemReference': '卡片：{title}',
   'agentDrawer.reply': '回复',
   'agentDrawer.react': '回应',
   'agentDrawer.reactWith': '用 {emoji} 回应',
@@ -7899,7 +7900,8 @@ export const zh: Catalog = {
   'calls.transcriptionFailed': '无法更改转写设置。',
 
   'feed.title': '动态',
-  'feed.empty': '动态里还没有内容。智能体会把它发现的、或需要你回答的事主动发到这里。目标、定时任务和提醒都会发到这里。',
+  'feed.empty':
+    '动态里还没有内容。智能体会把它发现的、或需要你回答的事主动发到这里。目标、定时任务和提醒都会发到这里。',
   'feed.more': '更多',
   'feed.unreadCount': '{count} 条未读',
   'feed.unread': '未读',

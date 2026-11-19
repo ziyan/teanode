@@ -25727,6 +25727,13 @@ button.voice-bubble-transcribe {
   opacity: 1;
   transform: none;
 }
+/* A stack that hides one card shows one card behind its top card, not two. */
+.feed-stack.is-deck.is-pair.is-closed {
+  padding-bottom: 8px;
+}
+.feed-stack.is-deck.is-pair::after {
+  display: none;
+}
 .feed-stack.is-closed > .feed-card {
   margin-bottom: 0;
   box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
@@ -25924,7 +25931,9 @@ a.feed-agenda-body:hover .feed-agenda-title {
   height: 14px;
 }
 .feed-media {
-  flex: 1 0 100%;
+  /* A row of its own, running out to the card's edges: as wide as the card's
+     content and both side paddings, which the negative margins take back. */
+  flex: 0 0 calc(100% + 2 * var(--card-padding-inline));
   min-width: 0;
   margin: calc(-1 * var(--space-4)) calc(-1 * var(--card-padding-inline)) 0;
   overflow: hidden;
