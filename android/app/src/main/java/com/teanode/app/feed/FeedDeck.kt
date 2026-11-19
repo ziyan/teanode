@@ -43,7 +43,7 @@ private val CARD_GAP = 12.dp
 private val FOOT_STEP = 6.dp
 
 /** How much narrower than the top card each foot of the deck is at either side; the deck shows this many feet. */
-private val FOOT_INSETS = listOf(14.dp, 28.dp)
+private val FOOT_INSETS = listOf(22.dp, 34.dp)
 
 /** How far below the column a tucked card's shadow may still be drawn. */
 private val SHADOW_ROOM = 8.dp
