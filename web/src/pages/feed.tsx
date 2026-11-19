@@ -72,18 +72,18 @@ const READ_BATCH_DELAY_MS = 1200
 // the event that says it finished was missed.
 const PENDING_RECHECK_MS = 8000
 
-// How long a stack takes to open or close, in step with the transitions of
-// .feed-stack-rest in the style sheet, and the most a card's start is delayed
-// behind the one above it.
-const STACK_MOTION_MS = 380
-const STACK_STAGGER_MS = 45
-const STACK_STAGGER_LIMIT = 5
-// A card waiting in the deck sits this far up under the top card. The curve
-// that deals the cards overshoots a little and settles; the one that gathers
-// them speeds up as they go.
+// How long a stack takes to open and to close. Every card of the stack and the
+// room under the top card move on the same curve, so the cards spread out of
+// the deck evenly, each still partly under the one above, and never cross.
+const STACK_OPEN_MS = 440
+const STACK_CLOSE_MS = 340
+// A card waiting in the deck sits this far up under the top card, a little
+// smaller. Neither curve overshoots: a room that grew past its cards and came
+// back would push the card below it down and up again.
 const STACK_TUCK_PX = 24
-const STACK_EASING = 'cubic-bezier(0.34, 1.2, 0.64, 1)'
-const STACK_CLOSE_EASING = 'cubic-bezier(0.4, 0, 0.9, 0.6)'
+const STACK_TUCK_SCALE = 0.96
+const STACK_OPEN_EASING = 'cubic-bezier(0.45, 0, 0.2, 1)'
+const STACK_CLOSE_EASING = 'cubic-bezier(0.5, 0, 0.3, 1)'
 
 type FeedChoiceRole = 'action' | 'dismiss' | 'discuss' | 'open'
 
@@ -436,13 +436,10 @@ export function FeedPage() {
     } else {
       timers.set(
         feedStackKey,
-        window.setTimeout(
-          () => {
-            timers.delete(feedStackKey)
-            setMountedStackKeys(without)
-          },
-          STACK_MOTION_MS + STACK_STAGGER_MS * STACK_STAGGER_LIMIT,
-        ),
+        window.setTimeout(() => {
+          timers.delete(feedStackKey)
+          setMountedStackKeys(without)
+        }, STACK_CLOSE_MS),
       )
     }
   }, [])
@@ -980,8 +977,10 @@ function FeedStack({
   toastRef.current = toast
 
   // The cards are dealt out of the deck: the room under the top card grows to
-  // their height while each card slides down from under the top card into its
-  // place, one a moment after the other. Closing is the same the other way,
+  // their height while every card slides down from under the top card into its
+  // place on the same curve, so they fan out like a deck spread on a table.
+  // The cards stay opaque and each is drawn over the one below it, so only the
+  // edge of a card still in the deck shows. Closing is the same the other way,
   // and the stack takes the cards out of the page once it is over. The room is
   // cut off at its growing bottom edge only, so a card is hidden under the top
   // card until it slides out rather than drawn over the cards below.
@@ -994,36 +993,17 @@ function FeedStack({
     for (const element of [room, ...cards]) element.getAnimations?.().forEach((animation) => animation.cancel())
     if (isMotionReduced() || typeof room.animate !== 'function') return
     const height = room.offsetHeight
-    const hidden = (card: HTMLElement) => ({
-      transform: `translateY(${-card.offsetTop - STACK_TUCK_PX}px) scale(0.96)`,
-      opacity: 0,
+    const tucked = (card: HTMLElement) => ({
+      transform: `translateY(${-card.offsetTop - STACK_TUCK_PX}px) scale(${STACK_TUCK_SCALE})`,
     })
-    const shown = { transform: 'none', opacity: 1 }
-    if (isOpen) {
-      room.animate([{ height: '0px' }, { height: `${height}px` }], { duration: STACK_MOTION_MS, easing: STACK_EASING })
-      cards.forEach((card, index) =>
-        card.animate([hidden(card), shown], {
-          duration: STACK_MOTION_MS,
-          delay: Math.min(index, STACK_STAGGER_LIMIT) * STACK_STAGGER_MS,
-          easing: STACK_EASING,
-          fill: 'backwards',
-        }),
-      )
-      return
-    }
-    room.animate([{ height: `${height}px` }, { height: '0px' }], {
-      duration: STACK_MOTION_MS,
-      easing: STACK_CLOSE_EASING,
-      fill: 'forwards',
-    })
-    cards.forEach((card, index) =>
-      card.animate([shown, hidden(card)], {
-        duration: STACK_MOTION_MS,
-        delay: Math.min(cards.length - 1 - index, STACK_STAGGER_LIMIT) * STACK_STAGGER_MS,
-        easing: STACK_CLOSE_EASING,
-        fill: 'forwards',
-      }),
-    )
+    const placed = { transform: 'none' }
+    const closed = { height: '0px' }
+    const opened = { height: `${height}px` }
+    const timing: KeyframeAnimationOptions = isOpen
+      ? { duration: STACK_OPEN_MS, easing: STACK_OPEN_EASING }
+      : { duration: STACK_CLOSE_MS, easing: STACK_CLOSE_EASING, fill: 'forwards' }
+    room.animate(isOpen ? [closed, opened] : [opened, closed], timing)
+    for (const card of cards) card.animate(isOpen ? [tucked(card), placed] : [placed, tucked(card)], timing)
   }, [isOpen, hasCards])
 
   useEffect(() => {
@@ -1076,8 +1056,9 @@ function FeedStack({
   return (
     <div ref={restRef} className="feed-stack-rest">
       <ul className="feed-list">
-        {rest.map((item) => (
-          <li key={item.feedItemId}>
+        {rest.map((item, index) => (
+          // A card is drawn over the one below it while the deck spreads.
+          <li key={item.feedItemId} style={{ zIndex: rest.length - index }}>
             <FeedCard
               item={readItemIds.has(item.feedItemId) ? { ...item, isRead: true } : item}
               isFresh={!item.isRead}

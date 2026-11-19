@@ -25800,6 +25800,12 @@ button.voice-bubble-transcribe {
     margin-left: var(--space-2);
   }
 }
+/* Each card of an open stack is drawn over the one below it (its z-index is
+   set by the page), so while the deck spreads only the edge of the next card
+   shows under it. */
+.feed-stack-rest > .feed-list > li {
+  position: relative;
+}
 @media (prefers-reduced-motion: reduce) {
   .feed-stack.is-deck,
   .feed-stack.is-deck::before,
