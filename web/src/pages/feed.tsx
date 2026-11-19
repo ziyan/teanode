@@ -74,16 +74,23 @@ const PENDING_RECHECK_MS = 8000
 
 // How long a stack takes to open and to close. Every card of the stack and the
 // room under the top card move on the same curve, so the cards spread out of
-// the deck evenly, each still partly under the one above, and never cross.
+// the deck evenly and never cross. Neither curve overshoots: a room that grew
+// past its cards and came back would push the card below it down and up again.
 const STACK_OPEN_MS = 440
 const STACK_CLOSE_MS = 340
-// A card waiting in the deck sits this far up under the top card, a little
-// smaller. Neither curve overshoots: a room that grew past its cards and came
-// back would push the card below it down and up again.
-const STACK_TUCK_PX = 24
-const STACK_TUCK_SCALE = 0.96
 const STACK_OPEN_EASING = 'cubic-bezier(0.45, 0, 0.2, 1)'
 const STACK_CLOSE_EASING = 'cubic-bezier(0.5, 0, 0.3, 1)'
+// A closed stack is its top card with the next cards tucked under it: the
+// first shows this much of its foot below the top card and the second as much
+// again below that, each narrower by these insets at either side. The cards
+// further down hide behind the second.
+const DECK_PEEK_PX = 8
+const DECK_INSET_PX = [10, 20]
+const DECK_PEEK_MOST = DECK_INSET_PX.length
+
+// ignoreSeen stands in for marking a card read while it is tucked in its deck,
+// where only its foot shows.
+function ignoreSeen() {}
 
 type FeedChoiceRole = 'action' | 'dismiss' | 'discuss' | 'open'
 
@@ -261,12 +268,7 @@ export function FeedPage() {
   const [freshItemIds, setFreshItemIds] = useState<Set<string>>(() => new Set())
   // The stacks opened in place, by their key, and which cards have been
   // marked read since, so an open stack shows them read without being read again.
-  // openStackKeys are the stacks that are meant to be open; mountedStackKeys
-  // are those still drawn, which includes a stack for the moment it takes to
-  // close.
   const [openStackKeys, setOpenStackKeys] = useState<Set<string>>(() => new Set())
-  const [mountedStackKeys, setMountedStackKeys] = useState<Set<string>>(() => new Set())
-  const closeTimersRef = useRef(new Map<string, number>())
   const [readItemIds, setReadItemIds] = useState<Set<string>>(() => new Set())
   // Counted at every read of the list, so an open stack reads itself again too.
   const [loadCount, setLoadCount] = useState(0)
@@ -414,34 +416,13 @@ export function FeedPage() {
   )
   useEffect(() => () => void flushRead(), [flushRead])
 
-  useEffect(() => {
-    const timers = closeTimersRef.current
-    return () => timers.forEach((timer) => window.clearTimeout(timer))
-  }, [])
-
-  // closeStack puts a stack's cards back into the deck, and takes them out of
-  // the page once that has been seen.
+  // closeStack puts a stack's cards back into its deck.
   const closeStack = useCallback((feedStackKey: string) => {
-    const timers = closeTimersRef.current
-    window.clearTimeout(timers.get(feedStackKey))
-    timers.delete(feedStackKey)
-    const without = (keys: Set<string>) => {
+    setOpenStackKeys((keys) => {
       const next = new Set(keys)
       next.delete(feedStackKey)
       return next
-    }
-    setOpenStackKeys(without)
-    if (isMotionReduced()) {
-      setMountedStackKeys(without)
-    } else {
-      timers.set(
-        feedStackKey,
-        window.setTimeout(() => {
-          timers.delete(feedStackKey)
-          setMountedStackKeys(without)
-        }, STACK_CLOSE_MS),
-      )
-    }
+    })
   }, [])
 
   // toggleStack opens a stack in place, or closes it.
@@ -450,11 +431,7 @@ export function FeedPage() {
       closeStack(feedStackKey)
       return
     }
-    const timers = closeTimersRef.current
-    window.clearTimeout(timers.get(feedStackKey))
-    timers.delete(feedStackKey)
     setOpenStackKeys((keys) => new Set([...keys, feedStackKey]))
-    setMountedStackKeys((keys) => new Set([...keys, feedStackKey]))
   }
 
   // A press anywhere outside an open stack gathers it back into its deck. A
@@ -516,7 +493,6 @@ export function FeedPage() {
                 className={[
                   'feed-stack',
                   item.stackItemCount > 1 ? 'is-deck' : '',
-                  item.stackItemCount === 2 ? 'is-pair' : '',
                   item.stackItemCount > 1 && !isOpen ? 'is-closed' : '',
                 ]
                   .filter(Boolean)
@@ -543,10 +519,11 @@ export function FeedPage() {
                   onRemoved={removeItem}
                   stack={isStack ? { isOpen, onToggle: () => toggleStack(item.feedStackKey) } : undefined}
                 />
-                {isStack && mountedStackKeys.has(item.feedStackKey) && (
+                {isStack && (
                   <FeedStack
                     feedStackKey={item.feedStackKey}
                     topFeedItemId={item.feedItemId}
+                    stackItemCount={item.stackItemCount}
                     isOpen={isOpen}
                     loadCount={loadCount}
                     readItemIds={readItemIds}
@@ -952,6 +929,7 @@ function FeedInfoDialog({
 function FeedStack({
   feedStackKey,
   topFeedItemId,
+  stackItemCount,
   isOpen,
   loadCount,
   readItemIds,
@@ -959,7 +937,10 @@ function FeedStack({
 }: {
   feedStackKey: string
   topFeedItemId: string
-  // False while the cards are going back into the deck.
+  // How many cards the stack has, the top one too, which says how many feet
+  // the deck shows before its cards are read.
+  stackItemCount: number
+  // False while the cards are tucked under the top card as its deck.
   isOpen: boolean
   loadCount: number
   readItemIds: Set<string>
@@ -976,36 +957,56 @@ function FeedStack({
   const toastRef = useRef(toast)
   toastRef.current = toast
 
-  // The cards are dealt out of the deck: the room under the top card grows to
-  // their height while every card slides down from under the top card into its
-  // place on the same curve, so they fan out like a deck spread on a table.
-  // The cards stay opaque and each lower card is drawn over the one above it,
-  // as the cards of a fanned deck are, so what shows of each card while they
-  // spread is its top: its header and headline. Closing is the same the other way,
-  // and the stack takes the cards out of the page once it is over. The room is
-  // cut off at its growing bottom edge only, so a card is hidden under the top
-  // card until it slides out rather than drawn over the cards below.
-  const hasCards = feedItems !== null
+  // The deck under a closed stack's top card is the stack's own cards, tucked
+  // under it with only the feet of the first two showing, so opening the stack
+  // moves those very cards out and closing moves them back. The room under the
+  // top card grows from the feet's height to the cards' height while every card
+  // slides from its tucked place into its own on the same curve, so they fan
+  // out evenly. The cards stay opaque and each is drawn over the one under it,
+  // as in a real deck. A stack turned back midway starts from where its cards
+  // are. Each card's place is read from the layout, which a transform does not
+  // change, so no height has to be known in advance.
   useLayoutEffect(() => {
     const room = restRef.current
-    if (!room || !hasCards || isOpen === isDealtRef.current) return
-    isDealtRef.current = isOpen
+    const topCard = room?.previousElementSibling
+    if (!room || !(topCard instanceof HTMLElement)) return
+    room.inert = !isOpen
     const cards = Array.from(room.querySelectorAll<HTMLElement>(':scope > ul > li'))
+    const peekCount = Math.min(DECK_PEEK_MOST, cards.length > 0 ? cards.length : stackItemCount - 1)
+    const isMoving = isOpen !== isDealtRef.current
+    isDealtRef.current = isOpen
+    const isAnimated = isMoving && !isMotionReduced() && typeof room.animate === 'function'
+    // Where everything is drawn now, before the animations are stopped.
+    const fromHeight = room.getBoundingClientRect().height
+    const fromTransforms = cards.map((card) => getComputedStyle(card).transform)
     for (const element of [room, ...cards]) element.getAnimations?.().forEach((animation) => animation.cancel())
-    if (isMotionReduced() || typeof room.animate !== 'function') return
-    const height = room.offsetHeight
-    const tucked = (card: HTMLElement) => ({
-      transform: `translateY(${-card.offsetTop - STACK_TUCK_PX}px) scale(${STACK_TUCK_SCALE})`,
+
+    // The deck: each card's foot just under the top card, centered under it.
+    room.style.height = ''
+    const gap = room.offsetTop - (topCard.offsetTop + topCard.offsetHeight)
+    const topCenter = topCard.offsetLeft + topCard.offsetWidth / 2
+    const tucked = (card: HTMLElement, index: number) => {
+      const level = Math.min(index, peekCount - 1)
+      const scale = (topCard.offsetWidth - 2 * DECK_INSET_PX[level]) / card.offsetWidth
+      const left = topCenter - (room.offsetLeft + card.offsetLeft + card.offsetWidth / 2)
+      const down = -gap + DECK_PEEK_PX * (level + 1) - (card.offsetTop + card.offsetHeight)
+      return `translate(${left}px, ${down}px) scale(${scale})`
+    }
+    const toHeight = isOpen ? room.offsetHeight : DECK_PEEK_PX * peekCount
+    const toTransforms = cards.map((card, index) => (isOpen ? 'none' : tucked(card, index)))
+    room.style.height = isOpen ? '' : `${toHeight}px`
+    cards.forEach((card, index) => {
+      card.style.transform = isOpen ? '' : toTransforms[index]
     })
-    const placed = { transform: 'none' }
-    const closed = { height: '0px' }
-    const opened = { height: `${height}px` }
+    if (!isAnimated) return
     const timing: KeyframeAnimationOptions = isOpen
       ? { duration: STACK_OPEN_MS, easing: STACK_OPEN_EASING }
-      : { duration: STACK_CLOSE_MS, easing: STACK_CLOSE_EASING, fill: 'forwards' }
-    room.animate(isOpen ? [closed, opened] : [opened, closed], timing)
-    for (const card of cards) card.animate(isOpen ? [tucked(card), placed] : [placed, tucked(card)], timing)
-  }, [isOpen, hasCards])
+      : { duration: STACK_CLOSE_MS, easing: STACK_CLOSE_EASING }
+    room.animate([{ height: `${fromHeight}px` }, { height: `${toHeight}px` }], timing)
+    cards.forEach((card, index) =>
+      card.animate([{ transform: fromTransforms[index] }, { transform: toTransforms[index] }], timing),
+    )
+  }, [isOpen, feedItems, stackItemCount])
 
   useEffect(() => {
     let isStale = false
@@ -1055,14 +1056,15 @@ function FeedStack({
 
   const rest = (feedItems ?? []).filter((item) => item.feedItemId !== topFeedItemId)
   return (
-    <div ref={restRef} className="feed-stack-rest">
+    <div ref={restRef} className={isOpen ? 'feed-stack-rest' : 'feed-stack-rest is-tucked'} aria-hidden={!isOpen}>
       <ul className="feed-list">
-        {rest.map((item) => (
-          <li key={item.feedItemId}>
+        {rest.map((item, index) => (
+          // A card is drawn over the cards under it, as in a deck.
+          <li key={item.feedItemId} style={{ zIndex: rest.length - index }}>
             <FeedCard
               item={readItemIds.has(item.feedItemId) ? { ...item, isRead: true } : item}
               isFresh={!item.isRead}
-              onSeen={onSeen}
+              onSeen={isOpen ? onSeen : ignoreSeen}
               onChanged={(updated) =>
                 setFeedItems((previous) =>
                   previous
