@@ -992,6 +992,10 @@ function FeedStack({
       const down = -gap + DECK_PEEK_PX * (level + 1) - (card.offsetTop + card.offsetHeight)
       return `translate(${left}px, ${down}px) scale(${scale})`
     }
+    // The cards are cut off at the top card's top edge, so a tucked card taller
+    // than the top card stays behind it rather than over the card above, and
+    // at the room's bottom edge, so a card shows only as it slides out.
+    room.style.clipPath = `inset(${-(gap + topCard.offsetHeight)}px -24px 0 -24px)`
     const toHeight = isOpen ? room.offsetHeight : DECK_PEEK_PX * peekCount
     const toTransforms = cards.map((card, index) => (isOpen ? 'none' : tucked(card, index)))
     room.style.height = isOpen ? '' : `${toHeight}px`

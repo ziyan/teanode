@@ -25743,9 +25743,10 @@ button.voice-bubble-transcribe {
   font-size: 12px;
 }
 /* The cards of a stack. They sit under the top card, so a card in the deck is
-   hidden by it but for its foot, and the room is cut off at its bottom edge
-   only, which grows as the cards are dealt. Each card is placed and scaled from
-   its foot, so a tucked card's foot stays where the page put it. */
+   hidden by it but for its foot, and the room is cut off at its bottom edge,
+   which grows as the cards are dealt; the page also cuts them off at the
+   top card's top edge. Each card is placed and scaled from its foot, so a
+   tucked card's foot stays where the page put it. */
 .feed-stack-rest {
   position: relative;
   z-index: 1;
