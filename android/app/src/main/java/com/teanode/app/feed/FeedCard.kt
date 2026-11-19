@@ -54,6 +54,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import com.teanode.app.R
 import com.teanode.app.chats.LocalLinkOpener
 import com.teanode.app.chats.MarkdownView
@@ -70,16 +79,34 @@ private const val LARGE_TEXT_SCALE = 1.5f
 private const val EDGE_STEP_DP = 6
 private val EDGE_INSET_DP = listOf(14, 28)
 
-private val CARD_SHAPE = RoundedCornerShape(18.dp)
+private const val CARD_CORNER_DP = 20
+private val CARD_SHAPE = RoundedCornerShape(CARD_CORNER_DP.dp)
+
+/** Whether the app is drawn dark, read from the theme rather than the system, since the person can choose either. */
+@Composable
+fun isFeedDark(): Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+/** The page the cards sit on (ios systemGroupedBackground): light grey in light mode, near black in dark mode. */
+@Composable
+fun feedPageColor(): Color = if (isFeedDark()) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.surfaceContainer
+
+/** A card on that page (ios secondarySystemGroupedBackground): white in light mode, dark grey in dark mode. */
+@Composable
+fun feedCardColor(): Color = if (isFeedDark()) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLowest
+
+/** The hairline at a card's edge. */
+@Composable
+private fun feedCardEdgeColor(): Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
 
 /** When a time written by the server happened, in milliseconds; null for text that is not a time. */
 fun feedEpochMS(text: String): Long? = runCatching { Instant.parse(text).toEpochMilli() }.getOrNull()
 
 /**
- * One card of the feed (ios FeedViews.swift, FeedCard): its picture at the left, the headline, the words (or the
- * structured layout), a short table of facts, the choices the agent offers or what was chosen and came of it, the row
- * that opens a stack, and a footer of heart, Discuss, date and information. At the largest text sizes the picture sits
- * above the words.
+ * One card of the feed (ios FeedViews.swift, FeedCard): its pictures, a header line of the card's badge, where it is from
+ * and when, the headline, the words (or the structured layout), a short table of facts, the choices the agent offers or
+ * what was chosen and came of it, the row that opens a stack, and a footer of heart, Discuss and information. The words
+ * use the card's whole width. Cards are white on the grey page with a soft shadow in light mode; in dark mode the
+ * lighter surface lifts them.
  */
 @Composable
 fun FeedCard(
@@ -101,8 +128,10 @@ fun FeedCard(
     // A spring overshoots, and neither a padding nor an alpha may go below nothing.
     val edgeAlpha = edgeAlphaRaw.coerceIn(0f, 1f)
     val edgePadding = edgePaddingRaw.coerceAtLeast(0.dp)
-    val edgeColor = MaterialTheme.colorScheme.surfaceContainerLow
-    val edgeBorder = MaterialTheme.colorScheme.outlineVariant
+    val cardColor = feedCardColor()
+    val edgeColor = cardColor
+    val edgeBorder = feedCardEdgeColor()
+    val shadowColor = if (isFeedDark()) Color.Transparent else Color.Black.copy(alpha = 0.10f)
     val isLargeText = LocalDensity.current.fontScale >= LARGE_TEXT_SCALE
     val uriHandler = remember(actions) { object : UriHandler { override fun openUri(uri: String) = actions.followLink(uri) } }
     CompositionLocalProvider(LocalUriHandler provides uriHandler, LocalLinkOpener provides { address -> actions.followLink(address) }) {
@@ -115,27 +144,24 @@ fun FeedCard(
                     val inset = EDGE_INSET_DP[edge - 1].dp.toPx()
                     val top = cardBottom - 24.dp.toPx()
                     val edgeSize = Size(size.width - 2 * inset, cardBottom + step * edge - top)
-                    drawRoundRect(edgeColor, Offset(inset, top), edgeSize, CornerRadius(18.dp.toPx()), alpha = edgeAlpha)
-                    drawRoundRect(edgeBorder, Offset(inset, top), edgeSize, CornerRadius(18.dp.toPx()), style = Stroke(1.dp.toPx()), alpha = edgeAlpha)
+                    drawRoundRect(edgeColor, Offset(inset, top), edgeSize, CornerRadius(CARD_CORNER_DP.dp.toPx()), alpha = edgeAlpha)
+                    drawRoundRect(edgeBorder, Offset(inset, top), edgeSize, CornerRadius(CARD_CORNER_DP.dp.toPx()), style = Stroke(0.5.dp.toPx()), alpha = edgeAlpha)
                 }
             }.padding(bottom = edgePadding),
         ) {
-            Surface(Modifier.fillMaxWidth(), shape = CARD_SHAPE, color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Surface(
+                // A soft shadow lifts the card off the page in light mode.
+                Modifier.fillMaxWidth().shadow(8.dp, CARD_SHAPE, ambientColor = shadowColor, spotColor = shadowColor),
+                shape = CARD_SHAPE,
+                color = cardColor,
+                border = BorderStroke(0.5.dp, edgeBorder),
+            ) {
                 Column {
                     // The pictures sit at the card's top edge, edge to edge; the card's own shape rounds their corners.
                     if (item.cardMedia.isNotEmpty()) FeedMediaBlock(item.cardMedia, actions)
-                    if (isLargeText) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            FeedPictureTile(item.pictureSymbol)
-                            FeedCardContent(item, actions, isStackShown, isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
-                        }
-                    } else {
-                        Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                            FeedPictureTile(item.pictureSymbol)
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                FeedCardContent(item, actions, isStackShown, isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
-                            }
-                        }
+                    // The footer's buttons are 48 tall, room enough under the last line.
+                    Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        FeedCardContent(item, actions, isStackShown, isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
                     }
                 }
             }
@@ -149,21 +175,12 @@ private fun FeedCardContent(item: AgentFeedItemView, actions: FeedActions, isSta
     if (isStackShown && item.feedStackTitle.isNotEmpty()) {
         Text(item.feedStackTitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    // A small line above the headline names the site the picture comes from, as a news app labels a story.
-    if (item.cardMedia.isNotEmpty() && item.headerText.isNotEmpty()) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            when (val picture = com.teanode.kit.feed.FeedPicture.of(item.pictureSymbol)) {
-                is com.teanode.kit.feed.FeedPicture.Symbol -> Icon(picture.kind.icon(), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
-                is com.teanode.kit.feed.FeedPicture.Emoji -> Text(picture.text, style = MaterialTheme.typography.labelSmall)
-            }
-            Text(item.headerText, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-        }
-    }
-    Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    FeedCardHeader(item, isLargeText)
+    Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     FeedLayoutBody(item, actions)
     FeedAnswerArea(item, actions)
     if (isStackShown) StackRow(item, isDeckOpen, onOpenStack)
-    FeedFooter(item, actions, isLargeText, onShowInfo)
+    FeedFooter(item, actions, onShowInfo)
 }
 
 /** The card's words and facts, or its structured layout, which the body stands in for wherever the layout cannot be read. */
@@ -208,7 +225,7 @@ private fun FeedAnswerArea(item: AgentFeedItemView, actions: FeedActions) {
         }
         // The choice is no longer listed, but the answer is still given.
         item.isChosen -> FeedOutcome(item, actions)
-        item.choices.isNotEmpty() && !item.isDismissed -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item.choices.isNotEmpty() && !item.isDismissed -> FeedChoiceRow(Modifier.padding(top = 2.dp)) {
             for (choice in item.orderedChoices) FeedChoiceButton(choice, isDisabled = actions.isBusy(item)) { actions.choose(item, choice) }
         }
     }
@@ -228,14 +245,49 @@ private fun FeedOutcome(item: AgentFeedItemView, actions: FeedActions) {
     }
 }
 
-/** A choice as a button as wide as the card: the action filled, the others bordered, both in a capsule. */
+/** The gap between two choices, side by side or one under the other. */
+private val CHOICE_GAP = 8.dp
+
+/**
+ * The choices side by side and of equal width when every label fits on one line at that width, else one under the other
+ * as wide as the card (ios ViewThatFits).
+ */
+@Composable
+private fun FeedChoiceRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Layout(content, modifier.fillMaxWidth()) { measurables, constraints ->
+        val gap = CHOICE_GAP.roundToPx()
+        val width = constraints.maxWidth
+        val count = measurables.size.coerceAtLeast(1)
+        val sharedWidth = ((width - gap * (count - 1)) / count).coerceAtLeast(0)
+        val isSideBySide = measurables.all { measurable -> measurable.maxIntrinsicWidth(Constraints.Infinity) <= sharedWidth }
+        if (isSideBySide) {
+            val placeables = measurables.map { measurable -> measurable.measure(Constraints.fixedWidth(sharedWidth)) }
+            val height = placeables.maxOf { placeable -> placeable.height }
+            layout(width, height) {
+                for ((index, placeable) in placeables.withIndex()) placeable.place(index * (sharedWidth + gap), (height - placeable.height) / 2)
+            }
+        } else {
+            val placeables = measurables.map { measurable -> measurable.measure(Constraints.fixedWidth(width)) }
+            val height = placeables.sumOf { placeable -> placeable.height } + gap * (placeables.size - 1).coerceAtLeast(0)
+            layout(width, height) {
+                var top = 0
+                for (placeable in placeables) {
+                    placeable.place(0, top)
+                    top += placeable.height + gap
+                }
+            }
+        }
+    }
+}
+
+/** A choice as a capsule button: the action filled, the others bordered. */
 @Composable
 private fun FeedChoiceButton(choice: AgentFeedChoice, isDisabled: Boolean, onPress: () -> Unit) {
-    val modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+    val modifier = Modifier.heightIn(min = 48.dp)
     if (choice.role == AgentFeedChoiceRole.Action) {
-        Button(onClick = onPress, enabled = !isDisabled, modifier = modifier) { Text(choice.choiceLabel) }
+        Button(onClick = onPress, enabled = !isDisabled, modifier = modifier) { Text(choice.choiceLabel, textAlign = TextAlign.Center) }
     } else {
-        OutlinedButton(onClick = onPress, enabled = !isDisabled, modifier = modifier) { Text(choice.choiceLabel) }
+        OutlinedButton(onClick = onPress, enabled = !isDisabled, modifier = modifier) { Text(choice.choiceLabel, textAlign = TextAlign.Center) }
     }
 }
 
@@ -261,30 +313,70 @@ private fun StackRow(item: AgentFeedItemView, isDeckOpen: Boolean, onClick: () -
     }
 }
 
-/** The heart, Discuss, the date and the info button; at the largest text sizes the date goes under the row. */
+/**
+ * Heart and Discuss at the left and information at the right. Each button reaches past the words' edges by the room
+ * around its glyph, so the glyphs line up with the words above.
+ */
 @Composable
-private fun FeedFooter(item: AgentFeedItemView, actions: FeedActions, isLargeText: Boolean, onShowInfo: () -> Unit) {
+private fun FeedFooter(item: AgentFeedItemView, actions: FeedActions, onShowInfo: () -> Unit) {
     val isLiked = actions.model.isLiked(item)
-    val dateText = (feedEpochMS(item.shownAtText))?.let { epochMS -> relativeTimeText(epochMS) }.orEmpty()
-    Column {
-        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { actions.model.toggleLike(item) }) {
-                Icon(
-                    if (isLiked) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
-                    contentDescription = stringResource(if (isLiked) R.string.feed_unlike else R.string.feed_like),
-                    tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            TextButton(onClick = { actions.discuss(item) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)) {
-                Icon(Icons.Outlined.Forum, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.size(6.dp))
-                Text(stringResource(R.string.feed_discuss))
-            }
-            Spacer(Modifier.weight(1f))
-            if (!isLargeText) Text(dateText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            IconButton(onClick = onShowInfo) { Icon(Icons.Outlined.Info, contentDescription = stringResource(R.string.feed_info), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+    Row(Modifier.fillMaxWidth().outset(FOOTER_GLYPH_INSET).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { actions.model.toggleLike(item) }) {
+            Icon(
+                if (isLiked) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
+                contentDescription = stringResource(if (isLiked) R.string.feed_unlike else R.string.feed_like),
+                tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        if (isLargeText) Text(dateText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
+        TextButton(onClick = { actions.discuss(item) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)) {
+            Icon(Icons.Outlined.Forum, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.size(6.dp))
+            Text(stringResource(R.string.feed_discuss))
+        }
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onShowInfo) { Icon(Icons.Outlined.Info, contentDescription = stringResource(R.string.feed_info), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
+}
+
+/** The room between an icon button's edge and its glyph: a 48 wide button around a 24 wide icon. */
+private val FOOTER_GLYPH_INSET = 12.dp
+
+/** Lays the content out [inset] wider than its place on each side, so its edges reach past its neighbours'. */
+private fun Modifier.outset(inset: Dp): Modifier = layout { measurable, constraints ->
+    val extra = inset.roundToPx()
+    val wider = if (constraints.hasBoundedWidth) constraints.copy(minWidth = constraints.minWidth + extra * 2, maxWidth = constraints.maxWidth + extra * 2) else constraints
+    val placeable = measurable.measure(wider)
+    layout(placeable.width - extra * 2, placeable.height) { placeable.place(-extra, 0) }
+}
+
+/**
+ * The line above a card's headline, as a news app labels a story: the card's badge, where it is from (the first
+ * picture's site, the source's name, else what kind of card it is) and when it was posted. At the largest text sizes the
+ * time goes under it.
+ */
+@Composable
+private fun FeedCardHeader(item: AgentFeedItemView, isLargeText: Boolean) {
+    val dateText = feedEpochMS(item.shownAtText)?.let { epochMS -> relativeTimeText(epochMS) }.orEmpty()
+    val source = item.headerText.ifEmpty { stringResource(feedKindWord(item.feedItemKind)) }
+    val sourceLine: @Composable () -> Unit = {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FeedKindBadge(item)
+            Text(source, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+        }
+    }
+    val date: @Composable () -> Unit = {
+        if (dateText.isNotEmpty()) Text(dateText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+    }
+    if (isLargeText) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            sourceLine()
+            date()
+        }
+    } else {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) { sourceLine() }
+            date()
+        }
     }
 }
 
