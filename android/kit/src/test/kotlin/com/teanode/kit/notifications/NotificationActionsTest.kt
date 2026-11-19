@@ -177,47 +177,47 @@ class NotificationActionsTest {
     }
 
     private val urgentCard = content(
-        """{"notificationKind":"feed_item","feedItemId":"card-1","title":"New sign-in","body":"Was this you?",
-            "buttons":[{"label":"That is me","buttonAction":"choose:me"},{"label":"Secure my account","buttonAction":"choose:secure"}]}""",
+        """{"notificationKind":"agent_feed","feedItemId":"card-1","title":"New sign-in","body":"Was this you?",
+            "buttons":[{"label":"That is me","buttonAction":"feed:me"},{"label":"Secure my account","buttonAction":"feed:secure"}]}""",
     )
 
     @Test
     fun anUrgentCardsChoicesAreButtonsThatNeedNoUnlockAndOpenIsLast() {
         val buttons = NotificationCategories.buttons(urgentCard)
-        assertEquals(listOf("choose:me", "choose:secure", "open"), buttons.map { button -> button.actionId })
+        assertEquals(listOf("feed:me", "feed:secure", "open"), buttons.map { button -> button.actionId })
         assertEquals(listOf("That is me", "Secure my account", null), buttons.map { button -> button.literalLabel })
         assertFalse(buttons.any { button -> button.requiresUnlock })
-        assertEquals(NotificationChannelKind.Agent, NotificationChannelKind.of("feed_item"))
+        assertEquals(NotificationChannelKind.Agent, NotificationChannelKind.of("agent_feed"))
     }
 
     @Test
     fun anUrgentCardShowsAtMostThreeChoices() {
         val many = content(
-            """{"notificationKind":"feed_item","feedItemId":"c","title":"t","body":"b","buttons":[
-                {"label":"A","buttonAction":"choose:a"},{"label":"B","buttonAction":"choose:b"},{"label":"C","buttonAction":"choose:c"},{"label":"D","buttonAction":"choose:d"}]}""",
+            """{"notificationKind":"agent_feed","feedItemId":"c","title":"t","body":"b","buttons":[
+                {"label":"A","buttonAction":"feed:a"},{"label":"B","buttonAction":"feed:b"},{"label":"C","buttonAction":"feed:c"},{"label":"D","buttonAction":"feed:d"}]}""",
         )
-        assertEquals(listOf("choose:a", "choose:b", "choose:c", "open"), NotificationCategories.buttons(many).map { button -> button.actionId })
+        assertEquals(listOf("feed:a", "feed:b", "feed:c", "open"), NotificationCategories.buttons(many).map { button -> button.actionId })
     }
 
     @Test
     fun pressingAChoiceAnswersTheCardWithoutOpeningTheApp() {
         val info = NotificationInfo.of(urgentCard, keptAccounts[0])
         assertEquals("card-1", info.feedItemId)
-        assertEquals(NotificationPress.ChooseFeedItem("card-1", "secure"), press(info, "choose:secure"))
+        assertEquals(NotificationPress.ChooseFeedItem("card-1", "secure"), press(info, "feed:secure"))
     }
 
     @Test
     fun aChoiceWithNoCardOrNoKeyDoesNothing() {
         val info = NotificationInfo.of(urgentCard, keptAccounts[0])
-        assertEquals(NotificationPress.None, press(info.copy(feedItemId = ""), "choose:me"))
-        assertEquals(NotificationPress.None, press(info, "choose:"))
+        assertEquals(NotificationPress.None, press(info.copy(feedItemId = ""), "feed:me"))
+        assertEquals(NotificationPress.None, press(info, "feed:"))
         assertEquals(NotificationPress.None, press(info, "approve-ish"))
     }
 
     @Test
     fun aChoiceFromAnAccountThatIsGoneIsNotAnswered() {
         val info = NotificationInfo.of(urgentCard, "https://other.example.com|sam")
-        assertTrue(press(info, "choose:me") is NotificationPress.UnknownAccount)
+        assertTrue(press(info, "feed:me") is NotificationPress.UnknownAccount)
     }
 
     @Test

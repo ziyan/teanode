@@ -41,7 +41,7 @@ enum class NotificationChannelKind(val channelId: String) {
             "herdr_question" -> Coding
             "journalEveningQuestion" -> Journal
             "photo" -> Photos
-            "alert", "message", "approval", "question", "answer", "goal_needs_you", "speak_first", "feed_item" -> Agent
+            "alert", "message", "approval", "question", "answer", "goal_needs_you", "speak_first", "agent_feed" -> Agent
             else -> Other
         }
     }
@@ -88,11 +88,11 @@ object NotificationCategories {
     const val QUESTION = "question"
 
     /**
-     * An urgent card of the agent's feed. Its choices are the buttons (`choose:<choice key>`), pressed without opening
+     * An urgent card of the agent's feed. Its choices are the buttons (`feed:<choice key>`), pressed without opening
      * the app and without unlocking: a card that asks "was this sign-in you?" is answered from the lock screen.
      */
-    const val FEED_ITEM = "feed_item"
-    const val CHOOSE_ACTION_PREFIX = "choose:"
+    const val FEED_ITEM = "agent_feed"
+    const val CHOOSE_ACTION_PREFIX = "feed:"
 
     /** The most choices of a card a notification shows; Open is the fourth button. */
     const val FEED_CHOICE_BUTTONS_MOST = 3

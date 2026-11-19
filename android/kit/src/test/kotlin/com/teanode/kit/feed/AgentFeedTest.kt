@@ -24,12 +24,17 @@ class AgentFeedTest {
         outcome: String = "",
         sourceKind: String = "agent",
         sourceId: String = "",
+        stackKey: String = "",
+        stackCount: Int = 1,
+        stackUnread: Int = 0,
+        stackTitle: String = "",
     ): String =
         """{"feedItemId":"$id","feedItemKind":"decision","feedSourceKind":"$sourceKind","feedSourceId":"$sourceId","feedSourceTitle":"","runConversationId":"",
             "title":"Card $id","body":"Body","pictureSymbol":"cloud.sun","factRows":[{"factLabel":"High","factValue":"18 C"}],
             "sourceLinks":[{"sourceTitle":"Forecast","sourceUrl":"https://example.com/forecast"}],"recordReferences":[{"itemId":"abc123","subject":"Receipt"}],
             "choices":$choices,"chosenChoiceKey":${chosen?.let { key -> "\"$key\"" }},"chosenAt":null,"outcomeText":"$outcome","isOutcomePending":$isPending,
-            "feedUrgency":"now","isLiked":false,"isRead":$isRead,"isDismissed":$isDismissed,"postedAt":"2026-11-18T08:00:00Z","updatedAt":"2026-11-18T08:30:00Z"}"""
+            "feedUrgency":"now","isLiked":false,"isRead":$isRead,"isDismissed":$isDismissed,"postedAt":"2026-11-18T08:00:00Z","updatedAt":"2026-11-18T08:30:00Z",
+            "feedStackKey":"$stackKey","feedStackTitle":"$stackTitle","stackPosition":null,"stackItemCount":$stackCount,"stackUnreadCount":$stackUnread}"""
 
     private fun item(id: String, isRead: Boolean = false, isDismissed: Boolean = false): AgentFeedItemView =
         TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card(id, isRead, isDismissed))
@@ -216,10 +221,10 @@ class AgentFeedTest {
 
     @Test
     fun aChangeEventIsReadAndAnythingElseIsLeftOut() {
-        val change = AgentFeedEvents.read(TeaNodeJson.parseToJsonElement("""{"agentFeedChanged":{"feedItemId":"a","feedChange":"settled","unreadCount":3}}"""))
+        val change = AgentFeedEvents.read(TeaNodeJson.parseToJsonElement("""{"AgentFeedChanged":{"feedItemId":"a","feedChange":"settled","unreadCount":3}}"""))
         assertEquals(AgentFeedChanged("a", "settled", 3), change)
         assertNull(AgentFeedEvents.read(TeaNodeJson.parseToJsonElement("""{"somethingElse":{}}""")))
-        assertNull(AgentFeedEvents.read(TeaNodeJson.parseToJsonElement("""{"agentFeedChanged":null}""")))
+        assertNull(AgentFeedEvents.read(TeaNodeJson.parseToJsonElement("""{"AgentFeedChanged":null}""")))
     }
 
     @Test
@@ -257,5 +262,62 @@ class AgentFeedTest {
     fun anEmojiIsDrawnAsItIs() {
         assertEquals(FeedPicture.Emoji("✈️"), FeedPicture.of("✈️"))
         assertEquals(FeedPicture.Emoji("🌤️"), FeedPicture.of("🌤️"))
+    }
+
+    private fun stackTop(id: String = "s1", count: Int = 4, title: String = "") =
+        TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card(id, sourceKind = "goal", stackKey = "goal:robots", stackCount = count, stackUnread = 2, stackTitle = title))
+            .copy(feedSourceTitle = "News about humanoid robots")
+
+    @Test
+    fun aStackTopSaysHowManyMoreItHoldsAndWhatItIsCalled() {
+        val top = stackTop()
+        assertTrue(top.isStack)
+        assertEquals(3, top.moreInStackCount)
+        assertEquals("News about humanoid robots", top.stackName)
+        assertEquals("Morning brief", stackTop(title = "Morning brief").stackName)
+    }
+
+    @Test
+    fun aCardAloneIsNoStackEvenWithAKey() {
+        assertFalse(item("a").isStack)
+        assertEquals(0, item("a").stackEdgeCount)
+        assertFalse(stackTop(count = 1).isStack)
+    }
+
+    @Test
+    fun aPairShowsOneEdgeAndMoreShowTwo() {
+        assertEquals(1, stackTop(count = 2).stackEdgeCount)
+        assertEquals(2, stackTop(count = 3).stackEdgeCount)
+        assertEquals(2, stackTop(count = 30).stackEdgeCount)
+    }
+
+    @Test
+    fun aLikeOnAStackTopKeepsTheStackCounts() {
+        val list = AgentFeedList(listOf(stackTop("s1", 4), item("a")), null, 3)
+        val liked = stackTop("s1", 1).copy(isLiked = true, stackUnreadCount = 0)
+        val next = list.with(liked)
+        assertEquals(4, next.feedItems[0].stackItemCount)
+        assertEquals(2, next.feedItems[0].stackUnreadCount)
+        assertTrue(next.feedItems[0].isLiked)
+    }
+
+    @Test
+    fun aStackIsReadByItsKeyAndPagedWithTheCursor() = runBlocking {
+        val (connection, fake) = fakeConnection { """{"data":{"ListAgentFeedStack":{"feedItems":[${card("s1", stackKey = "goal:robots", stackCount = 1)}],"nextCursor":"more","unreadCount":2}}}""" }
+        val page = connection.agentFeedStack("goal:robots", after = "cursor-2")
+        assertEquals("more", page.nextCursor)
+        assertEquals(JsonPrimitive("goal:robots"), sentVariables(fake)["feedStackKey"])
+        assertEquals(JsonPrimitive("cursor-2"), sentVariables(fake)["after"])
+        assertEquals(JsonPrimitive(AGENT_FEED_PAGE_SIZE), sentVariables(fake)["first"])
+        assertTrue(AgentFeedDocuments.LIST_AGENT_FEED_STACK.contains("ListAgentFeedStack(feedStackKey: \$feedStackKey"))
+    }
+
+    @Test
+    fun theFeedDocumentsAskForTheStackFields() {
+        for (name in listOf("feedStackKey", "feedStackTitle", "stackPosition", "stackItemCount", "stackUnreadCount")) {
+            assertTrue(AgentFeedDocuments.LIST_AGENT_FEED.contains(name), name)
+            assertTrue(AgentFeedDocuments.GET_AGENT_FEED_ITEM.contains(name), name)
+        }
+        assertTrue(AgentFeedDocuments.AGENT_FEED_CHANGED.contains("AgentFeedChanged {"))
     }
 }
