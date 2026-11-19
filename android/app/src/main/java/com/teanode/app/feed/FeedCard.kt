@@ -76,9 +76,6 @@ import java.time.Instant
 /** The font scale from which a card lays its words under the picture instead of beside it (ios: an accessibility text size). */
 private const val LARGE_TEXT_SCALE = 1.5f
 
-private const val EDGE_STEP_DP = 6
-private val EDGE_INSET_DP = listOf(14, 28)
-
 private const val CARD_CORNER_DP = 20
 private val CARD_SHAPE = RoundedCornerShape(CARD_CORNER_DP.dp)
 
@@ -116,39 +113,17 @@ fun FeedCard(
     modifier: Modifier = Modifier,
     /** Fans out the deck a top card stands for; null inside an open stack's own screen, which shows its cards whole. */
     onOpenStack: ((AgentFeedItemView) -> Unit)? = null,
-    /** Whether the deck this card tops is fanned out: its edges are gone and its row says "Show Less", which gathers the deck back. */
+    /** Whether the deck this card tops is fanned out: its row then says "Show Less", which gathers the deck back. */
     isDeckOpen: Boolean = false,
 ) {
     val isStackShown = onOpenStack != null && item.isStack
-    val edgeCount = if (isStackShown) item.stackEdgeCount else 0
-    val areAnimationsOff = rememberAreAnimationsOff()
-    // The edges peek out below the card and slip behind it as the deck fans out; with animations off they just go.
-    val edgeAlphaRaw by animateFloatAsState(if (isDeckOpen) 0f else 1f, deckSpec(areAnimationsOff), label = "deck edges")
-    val edgePaddingRaw by animateDpAsState(if (isDeckOpen) 0.dp else (EDGE_STEP_DP * edgeCount).dp, deckSpec(areAnimationsOff), label = "deck edge room")
-    // A spring overshoots, and neither a padding nor an alpha may go below nothing.
-    val edgeAlpha = edgeAlphaRaw.coerceIn(0f, 1f)
-    val edgePadding = edgePaddingRaw.coerceAtLeast(0.dp)
     val cardColor = feedCardColor()
-    val edgeColor = cardColor
     val edgeBorder = feedCardEdgeColor()
     val shadowColor = if (isFeedDark()) Color.Transparent else Color.Black.copy(alpha = 0.10f)
     val isLargeText = LocalDensity.current.fontScale >= LARGE_TEXT_SCALE
     val uriHandler = remember(actions) { object : UriHandler { override fun openUri(uri: String) = actions.followLink(uri) } }
     CompositionLocalProvider(LocalUriHandler provides uriHandler, LocalLinkOpener provides { address -> actions.followLink(address) }) {
-        // The edges of the cards under a stack's top one: the same card shape, each narrower and lower than the one before.
-        Box(
-            modifier.fillMaxWidth().drawBehind {
-                val step = EDGE_STEP_DP.dp.toPx()
-                val cardBottom = size.height - edgePadding.toPx()
-                for (edge in edgeCount downTo 1) {
-                    val inset = EDGE_INSET_DP[edge - 1].dp.toPx()
-                    val top = cardBottom - 24.dp.toPx()
-                    val edgeSize = Size(size.width - 2 * inset, cardBottom + step * edge - top)
-                    drawRoundRect(edgeColor, Offset(inset, top), edgeSize, CornerRadius(CARD_CORNER_DP.dp.toPx()), alpha = edgeAlpha)
-                    drawRoundRect(edgeBorder, Offset(inset, top), edgeSize, CornerRadius(CARD_CORNER_DP.dp.toPx()), style = Stroke(0.5.dp.toPx()), alpha = edgeAlpha)
-                }
-            }.padding(bottom = edgePadding),
-        ) {
+        Box(modifier.fillMaxWidth()) {
             Surface(
                 // A soft shadow lifts the card off the page in light mode.
                 Modifier.fillMaxWidth().shadow(8.dp, CARD_SHAPE, ambientColor = shadowColor, spotColor = shadowColor),
@@ -379,10 +354,3 @@ private fun FeedCardHeader(item: AgentFeedItemView, isLargeText: Boolean) {
         }
     }
 }
-
-/**
- * The motion of a deck fanning out or gathering back: a spring of about 0.35 seconds, and none at all when the person
- * turned animations off in the system settings.
- */
-fun <Value> deckSpec(areAnimationsOff: Boolean): FiniteAnimationSpec<Value> =
-    if (areAnimationsOff) snap() else spring(dampingRatio = 0.85f, stiffness = 420f)

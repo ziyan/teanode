@@ -248,7 +248,7 @@ data class AgentFeedItemView(
     /** What the stack is called: its own name, else the goal's or schedule's; empty when it has neither. */
     val stackName: String get() = feedStackTitle.ifEmpty { feedSourceTitle }
 
-    /** How many card edges show behind a stack's top card: one for a pair, two for more. */
+    /** How many feet of a stack's deck show below its top card: one for a pair, two for more. */
     val stackEdgeCount: Int get() = if (!isStack) 0 else if (stackItemCount == 2) 1 else 2
 
     /** The choice that was made, when one was. */
