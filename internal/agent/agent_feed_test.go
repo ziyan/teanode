@@ -278,6 +278,35 @@ func TestARunOfAScheduleStacksPerRunWithTheSummaryOnTop(t *testing.T) {
 	})
 }
 
+// A schedule's run that hands its work to a subagent still owns what the
+// subagent posts: the card is credited to the schedule and stacks with the run.
+func TestACardPostedByASubagentIsCreditedToTheScheduleBehindIt(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	var scheduleRun, subagentRun *models.AgentConversation
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		scheduleRun, err = tx.CreateAgentConversation(&models.AgentConversation{
+			AgentID: world.agent.ID, Kind: models.AgentConversationRun, JobKind: string(models.AgentJobSchedule), SubjectID: "schedule-1", LastAt: time.Now(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		subagentRun, err = tx.CreateAgentConversation(&models.AgentConversation{
+			AgentID: world.agent.ID, Kind: models.AgentConversationRun, JobKind: string(models.AgentJobSubagent), SubjectID: scheduleRun.ID, LastAt: time.Now(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	posted := world.post(t, &models.AgentFeedItem{Title: "Weather", FeedItemKind: models.FeedItemReport, RunConversationID: subagentRun.ID})
+	if posted.FeedSourceKind != models.FeedSourceSchedule || posted.FeedSourceID != "schedule-1" {
+		t.Fatalf("credited to the schedule: %s %s", posted.FeedSourceKind, posted.FeedSourceID)
+	}
+	if posted.RunConversationID != scheduleRun.ID || posted.FeedStackKey != "schedule:schedule-1:"+scheduleRun.ID {
+		t.Fatalf("stacked with the schedule's run: %s %s", posted.RunConversationID, posted.FeedStackKey)
+	}
+}
+
 func contains(list []string, wanted string) bool {
 	for _, each := range list {
 		if each == wanted {

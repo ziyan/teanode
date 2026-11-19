@@ -165,6 +165,12 @@ func NormalizeFeedItem(item *models.AgentFeedItem) error {
 // on, and an urgent card notifies the person's phones.
 func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.AgentFeedItem, models.FeedChange, error) {
 	item := post.Item
+	// Credited before normalizing, which picks the default stack from the source.
+	if (item.FeedSourceKind == "" || item.FeedSourceKind == models.FeedSourceAgent) && item.RunConversationID != "" {
+		if err := self.creditFeedSource(ctx, item); err != nil {
+			return nil, "", err
+		}
+	}
 	if err := NormalizeFeedItem(item); err != nil {
 		return nil, "", err
 	}
@@ -356,5 +362,45 @@ func (self *Agent) notifyScheduleReady(found *models.Agent, schedule *models.Age
 		ThreadID:         "feed:schedule:" + schedule.ID,
 		IsQuiet:          true,
 		Wording:          func(content *push.Content, language string) { content.Title = phraseScheduleReady.In(language, name) },
+	})
+}
+
+// feedSourceHopsMost bounds the walk from a subagent's run up to the turn that
+// started it: a subagent cannot start another, so one hop is the most there is,
+// and the bound only guards against a loop.
+const feedSourceHopsMost = 3
+
+// creditFeedSource credits a card posted from a subagent's run to what started
+// that subagent: a goal, a schedule's run or a run of speaking first. The tool
+// credits a card posted in such a run directly; one posted by a subagent the
+// run handed its work to would otherwise be the agent's own, with no link to
+// the schedule, no stack of its run and no "is ready" notification.
+func (self *Agent) creditFeedSource(ctx context.Context, item *models.AgentFeedItem) error {
+	return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		conversation, err := tx.GetAgentConversation(item.RunConversationID)
+		if err != nil || conversation == nil {
+			return err
+		}
+		for hop := 0; hop < feedSourceHopsMost && conversation.Kind == models.AgentConversationRun &&
+			conversation.JobKind == string(models.AgentJobSubagent) && conversation.SubjectID != ""; hop++ {
+			parent, err := tx.GetAgentConversation(conversation.SubjectID)
+			if err != nil {
+				return err
+			}
+			if parent == nil || parent.AgentID != conversation.AgentID {
+				return nil
+			}
+			conversation = parent
+		}
+		switch {
+		case conversation.IsGoal():
+			item.FeedSourceKind, item.FeedSourceID = models.FeedSourceGoal, conversation.ID
+		case conversation.Kind == models.AgentConversationRun && conversation.JobKind == string(models.AgentJobSchedule) && conversation.SubjectID != "":
+			item.FeedSourceKind, item.FeedSourceID = models.FeedSourceSchedule, conversation.SubjectID
+			item.RunConversationID = conversation.ID
+		case conversation.Kind == models.AgentConversationRun && conversation.JobKind == string(models.AgentJobSpeakFirst) && conversation.SubjectID != "":
+			item.FeedSourceKind, item.FeedSourceID = models.FeedSourceSpeakFirst, conversation.SubjectID
+		}
+		return nil
 	})
 }
