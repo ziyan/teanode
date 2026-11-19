@@ -25330,8 +25330,13 @@ button.voice-bubble-transcribe {
   order: -1;
 }
 
+/* The buttons go under the words, the add menu on the left and the rest on
+   the right. Each round button sits inside its tooltip's anchor, so the
+   anchor is what takes the order; without it the buttons kept the words'
+   place and wrapped ahead of the add menu. */
 .agent-composer.is-card > .menu-button,
-.agent-composer.is-card > .icon-button {
+.agent-composer.is-card > .icon-button,
+.agent-composer.is-card > .tooltip-anchor {
   order: 1;
 }
 
