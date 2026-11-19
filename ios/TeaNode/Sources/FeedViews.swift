@@ -1277,8 +1277,10 @@ struct FeedDeckTuck: ViewModifier {
     static let footStep: CGFloat = 6
     /// How many feet the deck shows.
     static let footMost = 2
-    /// How much narrower each foot is than the top card at either side.
-    private static let footInsets: [CGFloat] = [14, 28]
+    /// How much narrower each foot is than the top card at either side: more
+    /// than the card's corner radius, so a tucked card's edge never shows
+    /// beside the top card's rounded top corners.
+    private static let footInsets: [CGFloat] = [22, 34]
 
     func body(content: Content) -> some View {
         let fraction = CGFloat(tuckedFraction)

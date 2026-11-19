@@ -83,9 +83,11 @@ const STACK_CLOSE_EASING = 'cubic-bezier(0.5, 0, 0.3, 1)'
 // A closed stack is its top card with the next cards tucked under it: the
 // first shows this much of its foot below the top card and the second as much
 // again below that, each narrower by these insets at either side. The cards
-// further down hide behind the second.
+// further down hide behind the second. Each inset is more than a card's corner
+// radius (12 px), so a tucked card's edge never shows beside the top card's
+// rounded top corners.
 const DECK_PEEK_PX = 8
-const DECK_INSET_PX = [10, 20]
+const DECK_INSET_PX = [14, 24]
 const DECK_PEEK_MOST = DECK_INSET_PX.length
 
 // ignoreSeen stands in for marking a card read while it is tucked in its deck,
