@@ -180,6 +180,7 @@
     <string name="chats_people">人员</string>
     <string name="chats_people_and_agents_to_mention">可以\@的人和助手</string>
     <string name="chats_photo">照片</string>
+    <string name="chats_feed_item_reference">卡片：%1$s</string>
     <string name="chats_photo_library">照片图库</string>
     <string name="chats_play_voice_message">播放语音消息</string>
     <string name="chats_react_with">用 %1$s 回应</string>

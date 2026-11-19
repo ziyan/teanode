@@ -1,10 +1,12 @@
 package com.teanode.app.feed
 
+import com.teanode.app.chats.ChatsHooks
 import com.teanode.app.coding.codingSessionRoute
 import com.teanode.app.shell.AppLinkOpener
 import com.teanode.app.shell.AppNavigator
 import com.teanode.app.shell.Routes
 import com.teanode.kit.AppSection
+import com.teanode.kit.chats.AgentReference
 import com.teanode.kit.feed.AgentFeedChoice
 import com.teanode.kit.feed.AgentFeedChoiceRole
 import com.teanode.kit.feed.AgentFeedItemView
@@ -13,8 +15,9 @@ import kotlinx.coroutines.launch
 
 /**
  * FeedActions is what a person does with a card, wired to where it goes (ios FeedList): an action or dismiss choice is
- * sent to the server by the [model]; Discuss and a discuss choice open the main conversation, where the server has
- * attached the card to the next message; an open choice opens the coding session the card is about, or the Coding part.
+ * sent to the server by the [model]; Discuss and a discuss choice open the main conversation with the card on a chip in
+ * its box, so what the person says next is about the card and the agent reads it; an open choice opens the coding
+ * session the card is about, or the Coding part.
  */
 class FeedActions(
     val model: FeedModel,
@@ -33,7 +36,7 @@ class FeedActions(
     }
 
     fun discuss(item: AgentFeedItemView) {
-        scope.launch { if (model.discuss(item)) openMainChat() }
+        scope.launch { if (model.discuss(item)) ChatsHooks.askAbout(navigator, AgentReference.feedItem(item.feedItemId, item.title)) }
     }
 
     /** The main conversation, where an action choice is carried out; it needs no server call. */

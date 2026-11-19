@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performClick
@@ -168,6 +169,23 @@ class FeedScreenshotTest {
     }
 
     @Test fun `deck of news fanned out at the largest text`() { drawFeed(Look.Light, 2f); scrollFeedTo(FeedDemoIDs.NEWS); openDeck("+3 more from News about humanoid robots"); composeRule.photograph("feed-deck-fanned-largest-text-light") }
+
+    @Test fun `deck of two light`() { drawFeed(Look.Light); scrollFeedTo(FeedDemoIDs.IDEA); composeRule.photograph("feed-deck-pair-light") }
+
+    @Test fun `deck fanning out halfway`() {
+        drawFeed(Look.Light)
+        scrollFeedTo(FeedDemoIDs.BRIEF_AGENDA)
+        composeRule.mainClock.autoAdvance = false
+        composeRule.onNodeWithText("+6 more from Morning brief, Wed Nov 19").performClick()
+        var frameCount = 0
+        while (composeRule.onAllNodesWithText("Show Less", useUnmergedTree = true).fetchSemanticsNodes().isEmpty() && frameCount < 200) {
+            composeRule.mainClock.advanceTimeByFrame()
+            frameCount += 1
+        }
+        composeRule.mainClock.advanceTimeBy(160)
+        composeRule.photograph("feed-deck-fanning-light")
+        composeRule.mainClock.autoAdvance = true
+    }
 
     private fun openDeck(rowText: String) {
         composeRule.onNodeWithText(rowText).performClick()
