@@ -510,6 +510,8 @@ jobs:
           shoot feed-stack-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-stack
           shoot feed-stack-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-stack
           shoot feed-stack-open-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-stack-open
+          shoot feed-deck-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-deck
+          shoot feed-deck-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-deck
           shoot feed-stack-open-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-stack-open
           shoot feed-media-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-media
           shoot feed-media-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-media
