@@ -44,6 +44,7 @@ import com.teanode.kit.AppSection
 import com.teanode.kit.feed.AgentFeedEvents
 import com.teanode.kit.feed.AgentFeedItemView
 import com.teanode.kit.feed.agentFeed
+import com.teanode.kit.feed.agentFeedStack
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -69,10 +70,13 @@ fun FeedSection() {
     val navigator = LocalAppNavigator.current
     val scope = rememberCoroutineScope()
     val model = remember(connection) {
-        FeedModel(connection, scope, readPage = { after -> connection.agentFeed(after = after) }, onUnreadCount = { count -> session.setBadgeCount(AppSection.Feed, count) })
+        FeedModel(
+            connection, scope, readPage = { after -> connection.agentFeed(after = after) }, onUnreadCount = { count -> session.setBadgeCount(AppSection.Feed, count) },
+            readStackPage = { feedStackKey, after -> connection.agentFeedStack(feedStackKey, after = after) },
+        )
     }
     TeaNodeScreen(title = stringResource(R.string.feed_title)) { contentPadding ->
-        FeedListBody(model, onOpenStack = { top -> navigator.navigate(FeedRoutes.stack(top.feedStackKey)) }, modifier = Modifier.padding(contentPadding))
+        FeedListBody(model, areDecksShown = true, modifier = Modifier.padding(contentPadding))
     }
 }
 
@@ -116,7 +120,7 @@ internal fun FeedFollowing(model: FeedModel) {
 
 /** The cards of a [FeedModel] with its loading, failed and empty states, paging and pull to refresh; the feed and a stack's own screen both draw it. */
 @Composable
-internal fun FeedListBody(model: FeedModel, onOpenStack: ((AgentFeedItemView) -> Unit)?, modifier: Modifier = Modifier) {
+internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Modifier = Modifier) {
     val session = LocalAppSession.current
     val snackbar = LocalSnackbar.current
     val navigator = LocalAppNavigator.current
@@ -155,7 +159,11 @@ internal fun FeedListBody(model: FeedModel, onOpenStack: ((AgentFeedItemView) ->
                             model.noteAppeared(item)
                             if (item.feedItemId == list.feedItems.last().feedItemId) model.loadMore()
                         }
-                        FeedCard(item, actions, onShowInfo = { infoItem = item }, onOpenStack = onOpenStack)
+                        if (areDecksShown && item.isStack) {
+                            FeedDeck(item, model, actions, onShowInfo = { shown -> infoItem = shown })
+                        } else {
+                            FeedCard(item, actions, onShowInfo = { infoItem = item })
+                        }
                     }
                     if (model.isLoadingMore) {
                         item(key = "more") {
@@ -173,7 +181,7 @@ internal fun FeedListBody(model: FeedModel, onOpenStack: ((AgentFeedItemView) ->
     }
     infoItem?.let { shown ->
         // The card as it is now, so a like pressed under the open sheet shows.
-        val current = model.list?.feedItems?.firstOrNull { item -> item.feedItemId == shown.feedItemId } ?: shown
+        val current = (model.list?.feedItems.orEmpty() + model.deckCards.values.flatten()).firstOrNull { item -> item.feedItemId == shown.feedItemId } ?: shown
         FeedInfoSheet(current, actions, onDismiss = { infoItem = null })
     }
 }

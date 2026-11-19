@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
@@ -152,6 +153,66 @@ class FeedScreenshotTest {
     @Test fun `mail list dark`() { drawCard(FeedDemoIDs.BRIEF_MAIL, Look.Dark); composeRule.photograph("feed-layout-list-mail-dark") }
 
     @Test fun `unknown layout shows the body`() { drawCard(FeedDemoIDs.BAD_LAYOUT, Look.Light); composeRule.photograph("feed-layout-unknown-light") }
+
+    @Test fun `deck fanned out light`() { drawFeed(Look.Light); scrollFeedTo(FeedDemoIDs.BRIEF_AGENDA); openDeck("+6 more from Morning brief, Wed Nov 19"); composeRule.photograph("feed-deck-fanned-light") }
+
+    @Test fun `deck fanned out dark`() { drawFeed(Look.Dark); scrollFeedTo(FeedDemoIDs.BRIEF_AGENDA); openDeck("+6 more from Morning brief, Wed Nov 19"); composeRule.photograph("feed-deck-fanned-dark") }
+
+    @Test fun `deck fanned out then gathered`() {
+        drawFeed(Look.Light)
+        scrollFeedTo(FeedDemoIDs.BRIEF_AGENDA)
+        openDeck("+6 more from Morning brief, Wed Nov 19")
+        composeRule.onNodeWithText("Show less", useUnmergedTree = true).performClick()
+        composeRule.waitForIdle()
+        composeRule.photograph("feed-deck-gathered-light")
+    }
+
+    @Test fun `deck of news fanned out at the largest text`() { drawFeed(Look.Light, 2f); scrollFeedTo(FeedDemoIDs.NEWS); openDeck("+3 more from News about humanoid robots"); composeRule.photograph("feed-deck-fanned-largest-text-light") }
+
+    private fun openDeck(rowText: String) {
+        composeRule.onNodeWithText(rowText).performClick()
+        composeRule.waitForIdle()
+        composeRule.mainClock.advanceTimeBy(1_000)
+        composeRule.waitForIdle()
+    }
+
+    @Test fun `portrait photo light`() { drawCard(FeedDemoIDs.MEDIA_PORTRAIT, Look.Light); composeRule.photograph("feed-media-portrait-light") }
+
+    @Test fun `portrait photo dark`() { drawCard(FeedDemoIDs.MEDIA_PORTRAIT, Look.Dark); composeRule.photograph("feed-media-portrait-dark") }
+
+    @Test fun `landscape photo light`() { drawCard(FeedDemoIDs.MEDIA_LANDSCAPE, Look.Light); composeRule.photograph("feed-media-landscape-light") }
+
+    @Test fun `landscape photo at the largest text`() { drawCard(FeedDemoIDs.MEDIA_LANDSCAPE, Look.Light, 2f); composeRule.photograph("feed-media-landscape-largest-text-light") }
+
+    @Test fun `grid of two`() { drawCard(FeedDemoIDs.MEDIA_GRID_TWO, Look.Light); composeRule.photograph("feed-media-grid-two-light") }
+
+    @Test fun `grid of three light`() { drawCard(FeedDemoIDs.MEDIA_GRID_THREE, Look.Light); composeRule.photograph("feed-media-grid-three-light") }
+
+    @Test fun `grid of three dark`() { drawCard(FeedDemoIDs.MEDIA_GRID_THREE, Look.Dark); composeRule.photograph("feed-media-grid-three-dark") }
+
+    @Test fun `grid of four`() { drawCard(FeedDemoIDs.MEDIA_GRID_FOUR, Look.Light); composeRule.photograph("feed-media-grid-four-light") }
+
+    @Test fun `row of six light`() { drawCard(FeedDemoIDs.MEDIA_ROW_SIX, Look.Light); composeRule.photograph("feed-media-row-six-light") }
+
+    @Test fun `row of six dark`() { drawCard(FeedDemoIDs.MEDIA_ROW_SIX, Look.Dark); composeRule.photograph("feed-media-row-six-dark") }
+
+    @Test fun `video light`() { drawCard(FeedDemoIDs.MEDIA_VIDEO, Look.Light); composeRule.photograph("feed-media-video-light") }
+
+    @Test fun `video at the largest text`() { drawCard(FeedDemoIDs.MEDIA_VIDEO, Look.Light, 2f); composeRule.photograph("feed-media-video-largest-text-light") }
+
+    @Test fun `picture with a site name light`() { drawCard(FeedDemoIDs.MEDIA_PICTURE, Look.Light); composeRule.photograph("feed-media-picture-light") }
+
+    @Test fun `picture with a site name dark`() { drawCard(FeedDemoIDs.MEDIA_PICTURE, Look.Dark); composeRule.photograph("feed-media-picture-dark") }
+
+    @Test fun `picture with a site name at the largest text`() { drawCard(FeedDemoIDs.MEDIA_PICTURE, Look.Light, 2f); composeRule.photograph("feed-media-picture-largest-text-light") }
+
+    @Test fun `list rows with thumbnails light`() { drawCard(FeedDemoIDs.BRIEF_TECH, Look.Light); composeRule.photograph("feed-media-thumbnails-light") }
+
+    @Test fun `list rows with thumbnails dark`() { drawCard(FeedDemoIDs.BRIEF_TECH, Look.Dark); composeRule.photograph("feed-media-thumbnails-dark") }
+
+    @Test fun `list rows with thumbnails at the largest text`() { drawCard(FeedDemoIDs.BRIEF_TECH, Look.Light, 2f); composeRule.photograph("feed-media-thumbnails-largest-text-light") }
+
+    @Test fun `headlines with some thumbnails`() { drawCard(FeedDemoIDs.BRIEF_HEADLINES, Look.Light); composeRule.photograph("feed-media-thumbnails-some-light") }
 
     @Test fun `info sheet`() {
         drawFeed(Look.Light)

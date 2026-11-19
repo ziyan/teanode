@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -175,5 +177,14 @@ class FeedModelTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("That's me").assertIsDisplayed()
         composeRule.onAllNodesWithText("Secure my account").assertCountEquals(0)
+    }
+
+    @Test
+    fun animationsTurnedOffInTheSystemSettingsAreNoticed() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        assertFalse(areAnimationsOff(context))
+        android.provider.Settings.Global.putFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+        assertTrue(areAnimationsOff(context))
+        android.provider.Settings.Global.putFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
     }
 }

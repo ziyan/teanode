@@ -204,6 +204,8 @@ class AgentFeedTest {
         assertEquals(FeedPicture.Symbol(FeedPictureKind.Security), FeedPicture.of("lock.shield"))
         assertEquals(FeedPicture.Symbol(FeedPictureKind.Chart), FeedPicture.of("chart.line.uptrend.xyaxis"))
         assertEquals(FeedPicture.Symbol(FeedPictureKind.Tray), FeedPicture.of("tray.full"))
+        assertEquals(FeedPicture.Symbol(FeedPictureKind.Photo), FeedPicture.of("photo.on.rectangle"))
+        assertEquals(FeedPicture.Symbol(FeedPictureKind.Video), FeedPicture.of("video"))
         assertEquals(FeedPicture.Symbol(FeedPictureKind.News), FeedPicture.of("newspaper"))
         assertEquals(FeedPicture.Symbol(FeedPictureKind.News), FeedPicture.of("some.unknown.symbol"))
         assertEquals(FeedPicture.Symbol(FeedPictureKind.News), FeedPicture.of(""))

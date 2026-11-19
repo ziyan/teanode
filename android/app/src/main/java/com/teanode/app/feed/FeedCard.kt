@@ -3,6 +3,11 @@ package com.teanode.app.feed
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,11 +86,20 @@ fun FeedCard(
     actions: FeedActions,
     onShowInfo: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Opens the stack a top card stands for; null inside an open stack, which shows its cards whole. */
+    /** Fans out the deck a top card stands for; null inside an open stack's own screen, which shows its cards whole. */
     onOpenStack: ((AgentFeedItemView) -> Unit)? = null,
+    /** Whether the deck this card tops is fanned out: its edges are gone and its row is not shown (the open stack has its own "Show less"). */
+    isDeckOpen: Boolean = false,
 ) {
     val isStackShown = onOpenStack != null && item.isStack
     val edgeCount = if (isStackShown) item.stackEdgeCount else 0
+    val areAnimationsOff = rememberAreAnimationsOff()
+    // The edges peek out below the card and slip behind it as the deck fans out; with animations off they just go.
+    val edgeAlphaRaw by animateFloatAsState(if (isDeckOpen) 0f else 1f, deckSpec(areAnimationsOff), label = "deck edges")
+    val edgePaddingRaw by animateDpAsState(if (isDeckOpen) 0.dp else (EDGE_STEP_DP * edgeCount).dp, deckSpec(areAnimationsOff), label = "deck edge room")
+    // A spring overshoots, and neither a padding nor an alpha may go below nothing.
+    val edgeAlpha = edgeAlphaRaw.coerceIn(0f, 1f)
+    val edgePadding = edgePaddingRaw.coerceAtLeast(0.dp)
     val edgeColor = MaterialTheme.colorScheme.surfaceContainerLow
     val edgeBorder = MaterialTheme.colorScheme.outlineVariant
     val isLargeText = LocalDensity.current.fontScale >= LARGE_TEXT_SCALE
@@ -94,27 +109,31 @@ fun FeedCard(
         Box(
             modifier.fillMaxWidth().drawBehind {
                 val step = EDGE_STEP_DP.dp.toPx()
-                val cardBottom = size.height - step * edgeCount
+                val cardBottom = size.height - edgePadding.toPx()
                 for (edge in edgeCount downTo 1) {
                     val inset = EDGE_INSET_DP[edge - 1].dp.toPx()
                     val top = cardBottom - 24.dp.toPx()
                     val edgeSize = Size(size.width - 2 * inset, cardBottom + step * edge - top)
-                    drawRoundRect(edgeColor, Offset(inset, top), edgeSize, CornerRadius(18.dp.toPx()))
-                    drawRoundRect(edgeBorder, Offset(inset, top), edgeSize, CornerRadius(18.dp.toPx()), style = Stroke(1.dp.toPx()))
+                    drawRoundRect(edgeColor, Offset(inset, top), edgeSize, CornerRadius(18.dp.toPx()), alpha = edgeAlpha)
+                    drawRoundRect(edgeBorder, Offset(inset, top), edgeSize, CornerRadius(18.dp.toPx()), style = Stroke(1.dp.toPx()), alpha = edgeAlpha)
                 }
-            }.padding(bottom = (EDGE_STEP_DP * edgeCount).dp),
+            }.padding(bottom = edgePadding),
         ) {
             Surface(Modifier.fillMaxWidth(), shape = CARD_SHAPE, color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                if (isLargeText) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        FeedPictureTile(item.pictureSymbol)
-                        FeedCardContent(item, actions, isStackShown, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
-                    }
-                } else {
-                    Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                        FeedPictureTile(item.pictureSymbol)
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            FeedCardContent(item, actions, isStackShown, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
+                Column {
+                    // The pictures sit at the card's top edge, edge to edge; the card's own shape rounds their corners.
+                    if (item.cardMedia.isNotEmpty()) FeedMediaBlock(item.cardMedia, actions)
+                    if (isLargeText) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            FeedPictureTile(item.pictureSymbol)
+                            FeedCardContent(item, actions, isStackShown && !isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
+                        }
+                    } else {
+                        Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                            FeedPictureTile(item.pictureSymbol)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                FeedCardContent(item, actions, isStackShown && !isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
+                            }
                         }
                     }
                 }
@@ -128,6 +147,16 @@ private fun FeedCardContent(item: AgentFeedItemView, actions: FeedActions, isSta
     // A stack with a name of its own says it above its top card.
     if (isStackShown && item.feedStackTitle.isNotEmpty()) {
         Text(item.feedStackTitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    // A small line above the headline names the site the picture comes from, as a news app labels a story.
+    if (item.siteName.isNotEmpty()) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            when (val picture = com.teanode.kit.feed.FeedPicture.of(item.pictureSymbol)) {
+                is com.teanode.kit.feed.FeedPicture.Symbol -> Icon(picture.kind.icon(), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+                is com.teanode.kit.feed.FeedPicture.Emoji -> Text(picture.text, style = MaterialTheme.typography.labelSmall)
+            }
+            Text(item.siteName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
     }
     Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     FeedLayoutBody(item, actions)
@@ -144,7 +173,7 @@ private fun FeedLayoutBody(item: AgentFeedItemView, actions: FeedActions) {
             if (item.body.isNotEmpty()) MarkdownView(item.body)
             if (item.factRows.isNotEmpty()) FeedFacts(item.factRows)
         }
-        is com.teanode.kit.feed.FeedLayout.Rows -> FeedListRows(layout.rows, actions)
+        is com.teanode.kit.feed.FeedLayout.Rows -> FeedListRows(layout.rows, actions, thumbnails = item.rowThumbnails)
         is com.teanode.kit.feed.FeedLayout.Weather -> FeedWeather(layout.weather)
         is com.teanode.kit.feed.FeedLayout.Agenda -> FeedAgenda(layout.entries, actions)
     }
@@ -249,3 +278,10 @@ private fun FeedFooter(item: AgentFeedItemView, actions: FeedActions, isLargeTex
         if (isLargeText) Text(dateText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
     }
 }
+
+/**
+ * The motion of a deck fanning out or gathering back: a spring of about 0.35 seconds, and none at all when the person
+ * turned animations off in the system settings.
+ */
+fun <Value> deckSpec(areAnimationsOff: Boolean): FiniteAnimationSpec<Value> =
+    if (areAnimationsOff) snap() else spring(dampingRatio = 0.85f, stiffness = 420f)

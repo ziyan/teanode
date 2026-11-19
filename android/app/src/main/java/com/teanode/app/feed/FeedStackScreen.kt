@@ -34,6 +34,6 @@ fun FeedStackScreen(feedStackKey: String, onBack: () -> Unit) {
     }
     val name = model.list?.feedItems?.firstOrNull()?.stackName?.takeIf { text -> text.isNotEmpty() } ?: stringResource(R.string.feed_more_cards)
     TeaNodeScreen(title = name, onBack = onBack) { contentPadding ->
-        FeedListBody(model, onOpenStack = null, modifier = Modifier.padding(contentPadding))
+        FeedListBody(model, areDecksShown = false, modifier = Modifier.padding(contentPadding))
     }
 }

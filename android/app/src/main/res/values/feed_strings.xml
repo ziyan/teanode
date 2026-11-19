@@ -36,4 +36,12 @@
     <string name="feed_weather_low">Low %1$s</string>
     <string name="feed_rain_chance">%1$d percent chance of rain</string>
     <string name="feed_open_chat">Open chat</string>
+    <string name="feed_media_photo">Photo</string>
+    <string name="feed_media_video">Video</string>
+    <string name="feed_media_picture">Picture</string>
+    <string name="feed_media_play">Play</string>
+    <string name="feed_media_pause">Pause</string>
+    <string name="feed_media_mute">Mute</string>
+    <string name="feed_media_unmute">Unmute</string>
+    <string name="feed_stack_show_less">Show less</string>
 </resources>
