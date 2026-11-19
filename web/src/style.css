@@ -25711,67 +25711,23 @@ button.voice-bubble-transcribe {
   }
 }
 
-/* A stack of cards from one source is a deck: the top card with two whole
-   cards tucked behind it, each a little narrower, whose bottoms show below it.
-   They live in the room under the top card, so opening the stack does not move
-   the card itself; they fade and slide up behind it when it opens. */
+/* A stack of cards from one source is a deck: the top card with the stack's
+   next cards tucked under it, the feet of the first two showing below it. The
+   tucked cards are the real ones, in the room under the top card, placed by the
+   page; opening the stack moves them out and closing moves them back. */
 .feed-stack {
   position: relative;
 }
 .feed-stack.is-deck {
   isolation: isolate;
-  transition: padding-bottom 350ms cubic-bezier(0.34, 1.3, 0.64, 1);
 }
 .feed-stack.is-deck > .feed-card {
   z-index: 2;
 }
 .feed-stack.is-deck.is-closed {
-  padding-bottom: 16px;
-  margin-bottom: var(--space-4);
   cursor: pointer;
 }
-.feed-stack.is-deck::before,
-.feed-stack.is-deck::after {
-  content: '';
-  position: absolute;
-  top: var(--space-6);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-3);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
-  opacity: 0;
-  transform: translateY(-16px);
-  transition:
-    opacity 250ms ease,
-    transform 350ms cubic-bezier(0.34, 1.3, 0.64, 1);
-  pointer-events: none;
-}
-.feed-stack.is-deck::before {
-  z-index: 1;
-  left: 10px;
-  right: 10px;
-  bottom: 8px;
-}
-.feed-stack.is-deck::after {
-  z-index: 0;
-  left: 20px;
-  right: 20px;
-  bottom: 0;
-}
-.feed-stack.is-deck.is-closed::before,
-.feed-stack.is-deck.is-closed::after {
-  opacity: 1;
-  transform: none;
-}
-/* A stack that hides one card shows one card behind its top card, not two. */
-.feed-stack.is-deck.is-pair.is-closed {
-  padding-bottom: 8px;
-}
-.feed-stack.is-deck.is-pair::after {
-  display: none;
-}
 .feed-stack.is-closed > .feed-card {
-  margin-bottom: 0;
   box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
 }
 .feed-stack-row {
@@ -25786,25 +25742,28 @@ button.voice-bubble-transcribe {
 .feed-stack-unread {
   font-size: 12px;
 }
-/* The cards of an open stack. They sit under the top card, so a card sliding
-   out of the deck is hidden by it, and the room is cut off at its bottom edge
-   only, which grows as the cards are dealt. */
+/* The cards of a stack. They sit under the top card, so a card in the deck is
+   hidden by it but for its foot, and the room is cut off at its bottom edge,
+   which grows as the cards are dealt; the page also cuts them off at the
+   top card's top edge. Each card is placed and scaled from its foot, so a
+   tucked card's foot stays where the page put it. */
 .feed-stack-rest {
   position: relative;
   z-index: 1;
   margin-left: var(--space-4);
   clip-path: inset(-100vh -24px 0 -24px);
 }
+.feed-stack-rest > .feed-list > li {
+  position: relative;
+  transform-origin: 50% 100%;
+}
+/* A tucked card is not pressed; a press on its foot opens the stack. */
+.feed-stack-rest.is-tucked {
+  pointer-events: none;
+}
 @media (max-width: 600px) {
   .feed-stack-rest {
     margin-left: var(--space-2);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .feed-stack.is-deck,
-  .feed-stack.is-deck::before,
-  .feed-stack.is-deck::after {
-    transition: none;
   }
 }
 .feed-card > .feed-stack-row {

@@ -352,13 +352,23 @@ const stackTop = feedItem('news-top', {
 })
 
 it('draws a stack as its top card with a row saying how many more', async () => {
-  execute.mockResolvedValue(listing([stackTop, feedItem('alone')]))
+  execute.mockImplementation(async (document: string) =>
+    document.includes('ListAgentFeedStack')
+      ? stackListing([stackTop, feedItem('news-second', { title: 'Second story' })])
+      : listing([stackTop, feedItem('alone')]),
+  )
   const { container } = drawFeed()
   const row = await screen.findByRole('button', { name: /\+2 more from News watch/ })
   expect(row.textContent).toContain('2 unread')
   expect(row.getAttribute('aria-expanded')).toBe('false')
   expect(container.querySelectorAll('.feed-stack.is-closed')).toHaveLength(1)
   expect(screen.getAllByRole('button', { name: /more from/ })).toHaveLength(1)
+  // The deck under the top card is the stack's own next card, tucked away:
+  // drawn, but neither read out nor pressed.
+  const tucked = await screen.findByText('Second story')
+  const room = tucked.closest('.feed-stack-rest') as HTMLElement
+  expect(room.getAttribute('aria-hidden')).toBe('true')
+  expect(room.inert).toBe(true)
 })
 
 it('opens a stack in place with its other cards, pages it and collapses it', async () => {
@@ -386,7 +396,7 @@ it('opens a stack in place with its other cards, pages it and collapses it', asy
     after: 'stack-cursor',
   })
   fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
-  expect(screen.queryByText('Second story')).toBeNull()
+  expect(screen.getByText('Second story').closest('.feed-stack-rest')?.getAttribute('aria-hidden')).toBe('true')
 })
 
 it('gathers an open stack back into its deck at a press outside it, and not at one inside it', async () => {
@@ -402,7 +412,9 @@ it('gathers an open stack back into its deck at a press outside it, and not at o
   fireEvent.pointerDown(second)
   expect(screen.getByText('Second story')).toBeTruthy()
   fireEvent.pointerDown(screen.getByText('A card alone'))
-  await waitFor(() => expect(screen.queryByText('Second story')).toBeNull())
+  await waitFor(() =>
+    expect(screen.getByText('Second story').closest('.feed-stack-rest')?.getAttribute('aria-hidden')).toBe('true'),
+  )
 })
 
 it('marks the cards of an open stack read as they are seen and reads the stack on an event', async () => {
