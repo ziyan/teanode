@@ -1531,3 +1531,34 @@ export function WeatherIcon({ kind, ...props }: IconProps & { kind: string }) {
       )
   }
 }
+
+// NewspaperIcon is a folded paper with columns: the feed's own mark, and the
+// picture of a card that has none the dashboard knows.
+export function NewspaperIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 5a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v14H6a2 2 0 0 1-2-2Z" />
+      <path d="M18 9h2a1 1 0 0 1 1 1v7a2 2 0 0 1-2 2h-1M8 8h6M8 12h6M8 16h4" />
+    </Icon>
+  )
+}
+
+// LightbulbIcon is an idea.
+export function LightbulbIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 18h6M10 21h4" />
+      <path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3Z" />
+    </Icon>
+  )
+}
+
+// TrendingUpIcon is a line that climbs: markets and anything else that rises.
+export function TrendingUpIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m3 17 6-6 4 4 8-8" />
+      <path d="M15 7h6v6" />
+    </Icon>
+  )
+}

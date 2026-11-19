@@ -25513,3 +25513,341 @@ button.voice-bubble-transcribe {
   padding: 0;
   justify-content: center;
 }
+
+/* --- feed ---------------------------------------------------------------- */
+
+/* The agent's feed: a column of cards, narrower than the page because a card
+   is read like a post, and a line of text stretched across a wide window is
+   hard to follow. */
+.feed-page {
+  max-width: 720px;
+  margin-inline: auto;
+}
+.feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.feed-card {
+  position: relative;
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+/* A card nobody has looked at yet: a small dot in the corner. The dot is drawn
+   over the padding, so nothing in the card moves when it is seen. */
+.feed-fresh-dot {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-round);
+  background: var(--accent);
+}
+.feed-picture {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-round);
+  background: var(--field);
+  color: var(--text);
+}
+.feed-picture-emoji {
+  font-size: 22px;
+  line-height: 1;
+}
+.feed-content {
+  flex: 1;
+  min-width: 0;
+}
+.feed-title {
+  margin: 0 var(--space-4) var(--space-1) 0;
+  font-size: 16px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.feed-body {
+  overflow-wrap: anywhere;
+}
+.feed-facts {
+  width: 100%;
+  margin: var(--space-2) 0;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.feed-facts th,
+.feed-facts td {
+  padding: 4px 0;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+.feed-facts tr:last-child th,
+.feed-facts tr:last-child td {
+  border-bottom: 0;
+}
+.feed-facts th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+  padding-right: var(--space-3);
+}
+.feed-facts td {
+  text-align: right;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.feed-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-1);
+}
+.feed-outcome {
+  margin: var(--space-3) 0 var(--space-1);
+}
+.feed-outcome p {
+  margin: 0 0 4px;
+}
+.feed-chosen {
+  font-weight: 650;
+}
+.feed-working {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.feed-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.feed-discuss {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  padding: 4px 10px;
+}
+.feed-footer-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  min-width: 0;
+}
+.feed-date {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.feed-like.is-liked {
+  color: var(--bad);
+}
+.feed-like.is-liked svg {
+  fill: currentColor;
+}
+.feed-source-links {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
+  overflow-wrap: anywhere;
+}
+.feed-foot {
+  justify-content: center;
+  border-top: 0;
+}
+
+@media (max-width: 600px) {
+  .feed-card {
+    gap: var(--space-2);
+  }
+  .feed-picture {
+    width: 34px;
+    height: 34px;
+  }
+  /* The choices fill the width, so each is easy to hit with a thumb. */
+  .feed-choices button {
+    flex: 1 1 auto;
+  }
+}
+
+/* A stack of cards from one source: the top card with two edges showing
+   behind it. The edges live in the room under the card, so opening the stack
+   does not move the card itself. */
+.feed-stack {
+  position: relative;
+}
+.feed-stack.is-closed {
+  padding-bottom: 12px;
+}
+.feed-stack.is-closed::before,
+.feed-stack.is-closed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  height: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 var(--radius-3) var(--radius-3);
+}
+.feed-stack.is-closed::before {
+  left: 8px;
+  right: 8px;
+  bottom: 4px;
+}
+.feed-stack.is-closed::after {
+  left: 16px;
+  right: 16px;
+  bottom: 0;
+}
+.feed-stack.is-closed > .feed-card {
+  margin-bottom: 0;
+}
+.feed-stack-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  margin-top: var(--space-3);
+  font-size: 13px;
+}
+.feed-stack-unread {
+  font-size: 12px;
+}
+.feed-stack-rest {
+  margin-left: var(--space-4);
+}
+@media (max-width: 600px) {
+  .feed-stack-rest {
+    margin-left: var(--space-2);
+  }
+}
+.feed-card:has(> .feed-stack-row) {
+  flex-wrap: wrap;
+}
+.feed-card > .feed-stack-row {
+  flex: 1 0 100%;
+}
+
+.feed-stack-title {
+  margin: 0 0 var(--space-1) var(--space-1);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+/* Card layouts: rows, the weather and a day's agenda. */
+.feed-rows,
+.feed-agenda {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+.feed-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.feed-rows li:last-child .feed-row {
+  border-bottom: 0;
+}
+a.feed-row:hover .feed-row-title,
+a.feed-agenda-body:hover .feed-agenda-title {
+  text-decoration: underline;
+}
+.feed-row-title,
+.feed-agenda-title {
+  font-weight: 650;
+}
+.feed-row-detail,
+.feed-row-meta {
+  font-size: 13px;
+}
+.feed-weather-place {
+  margin: 0 0 var(--space-1);
+  font-size: 13px;
+}
+.feed-weather-now {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.feed-weather-temperature {
+  font-size: 40px;
+  font-weight: 650;
+  line-height: 1;
+}
+.feed-weather-condition {
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+}
+.feed-weather-hours {
+  display: flex;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0 0 var(--space-1);
+  overflow-x: auto;
+}
+.feed-weather-hours li {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 44px;
+  font-size: 13px;
+}
+.feed-weather-rain {
+  font-size: 12px;
+  color: var(--muted);
+}
+.feed-agenda-entry {
+  display: grid;
+  grid-template-columns: 64px 12px 1fr;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  --agenda-color: var(--muted);
+}
+.feed-agenda-entry.is-meeting {
+  --agenda-color: var(--accent);
+}
+.feed-agenda-time {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  text-align: right;
+}
+.feed-agenda-end {
+  opacity: 0.7;
+}
+.feed-agenda-marker {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  justify-self: center;
+  border-radius: var(--radius-round);
+  background: var(--agenda-color);
+}
+.feed-agenda-entry.is-break .feed-agenda-marker {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--agenda-color);
+}
+.feed-agenda-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}

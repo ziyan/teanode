@@ -21,7 +21,7 @@ enum AppSectionGroup: String, CaseIterable, Identifiable, Hashable {
     /// The parts under the heading, in the order they are listed.
     var sections: [AppSection] {
         switch self {
-        case .everyDay: [.agent, .journal, .mail, .photos, .calendar, .contacts, .location, .health, .passwords, .shopping]
+        case .everyDay: [.feed, .agent, .journal, .mail, .photos, .calendar, .contacts, .location, .health, .passwords, .shopping]
         case .work: [.coding, .knowledge, .recordings]
         case .plans: [.goals, .ideas]
         case .money: [.finance]
@@ -36,7 +36,7 @@ enum AppSectionGroup: String, CaseIterable, Identifiable, Hashable {
 /// ones under a More of its own.
 enum TabBarChoice {
     static let storageKey = "tabBarSections"
-    static let defaultSections: [AppSection] = [.agent, .mail, .photos]
+    static let defaultSections: [AppSection] = [.feed, .agent, .mail]
     static var defaultText: String { text(of: defaultSections) }
     static let mostCount = 3
 
@@ -165,10 +165,11 @@ struct MoreList: View {
         #endif
     }
 
-    /// What waits in a part: unread chats, when Chats is under More, and the
-    /// coding sessions that ask something.
+    /// What waits in a part: unread cards of the feed and unread chats, when
+    /// they are under More, and the coding sessions that ask something.
     private func waitingCount(of section: AppSection) -> Int {
         switch section {
+        case .feed: app.unreadFeedCount
         case .agent: app.unreadChatCount
         case .coding: app.codingAskingCount
         default: 0

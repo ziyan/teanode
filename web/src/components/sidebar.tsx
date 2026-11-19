@@ -17,6 +17,7 @@ import {
   LinkIcon,
   ListIcon,
   LocationIcon,
+  NewspaperIcon,
   CartIcon,
   LockIcon,
   LogoutIcon,
@@ -42,6 +43,7 @@ import {
 import { Logo } from './logo'
 import { useAgentFinancePresence } from '../pages/finance/financePresence'
 import { useHerdrPresence } from './herdrPresence'
+import { useFeedUnread } from './feedUnread'
 import { useAgentIdentity } from '../agentPreferences'
 import { PAGE_TABS, shownTabs, tabAddress } from '../pageTabs'
 import { matchSettingsSurface, SETTINGS_LANDING, surfacesByCategory } from '../pages/settings/nav'
@@ -220,6 +222,7 @@ export function navigablePages(
   const hasJournal = hasPermission(permissions, 'journal:use')
   const hasAgentUse = hasPermission(permissions, 'agent:use')
   if (hasMailboxRail) {
+    add(context.isAgentAvailable, 'feed.title', '/feed', <NewspaperIcon />)
     add(context.isAgentAvailable, 'nav.chats', '/chat', <ChatIcon />)
     add(hasJournal, 'journal.title', '/journal', <JournalIcon />)
     add(true, 'nav.mailbox', '/mailbox', <MailIcon />)
@@ -245,6 +248,7 @@ export function navigablePages(
     add(hasPermission(permissions, 'shopping:use'), 'shopping.title', '/shopping', <CartIcon />)
   } else {
     const hasAssistant = services?.isAssistantEnabled === true && hasAgentUse
+    add(hasAssistant, 'feed.title', '/feed', <NewspaperIcon />)
     add(hasAssistant, 'nav.chats', '/chat', <ChatIcon />)
     add(hasJournal, 'journal.title', '/journal', <JournalIcon />)
     add(hasAssistant, 'knowledge.title', '/knowledge', <GridIcon />)
@@ -416,6 +420,7 @@ export function Sidebar({
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
     [
+      '/feed',
       '/chat',
       '/journal',
       '/knowledge',
@@ -459,6 +464,15 @@ export function Sidebar({
     to === '/coding' && coding.askingCount > 0 ? (
       <span className="sidebar-count" aria-label={t('herdr.askingCount', { count: coding.askingCount })}>
         {coding.askingCount}
+      </span>
+    ) : null
+  // The Feed row counts the cards nobody has looked at, as the mail rows
+  // count what is unread.
+  const feedUnreadCount = useFeedUnread(Boolean(session.userId) && agent.isAvailable)
+  const feedCount =
+    feedUnreadCount > 0 ? (
+      <span className="sidebar-count" aria-label={t('feed.unreadCount', { count: feedUnreadCount })}>
+        {feedUnreadCount}
       </span>
     ) : null
   const railContext: RailContext = {
@@ -564,6 +578,19 @@ export function Sidebar({
               {/* The agent, first and by its name: its conversations, as a
                   page of their own. Above the mailbox's folders because it
                   reads every mailbox, not one. */}
+              {agent.isAvailable && (
+                <NavLink
+                  to="/feed"
+                  className={feedUnreadCount > 0 ? 'unread' : undefined}
+                  title={collapsed ? t('feed.title') : undefined}
+                >
+                  <span className="sidebar-icon">
+                    <NewspaperIcon />
+                  </span>
+                  <span className="sidebar-label">{t('feed.title')}</span>
+                  {feedCount}
+                </NavLink>
+              )}
               {agent.isAvailable && (
                 <NavLink to="/chat" end title={collapsed ? agentLabel : undefined}>
                   <span className="sidebar-icon">
@@ -793,6 +820,13 @@ export function Sidebar({
 
           {!current && !inManagement && (
             <div className="sidebar-group">
+              {session.services?.isAssistantEnabled && hasPermission(session.permissions, 'agent:use') && (
+                <NavLink to="/feed" className={feedUnreadCount > 0 ? 'unread' : undefined}>
+                  <NewspaperIcon />
+                  <span className="sidebar-label">{t('feed.title')}</span>
+                  {feedCount}
+                </NavLink>
+              )}
               {session.services?.isAssistantEnabled && hasPermission(session.permissions, 'agent:use') && (
                 <NavLink to="/chat">
                   <ChatIcon />
