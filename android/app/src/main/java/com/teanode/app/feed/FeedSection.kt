@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -156,7 +157,8 @@ internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Mo
     // Where each deck is on screen, so a tap outside an open one gathers it.
     val deckBounds = remember(model) { HashMap<String, Rect>() }
     var listCoordinates: LayoutCoordinates? by remember { mutableStateOf(null) }
-    Box(modifier.fillMaxSize().onGloballyPositioned { coordinates -> listCoordinates = coordinates }.gatherDecksOnTapOutside(model, deckBounds) { listCoordinates }) {
+    // The cards sit on the grouped page, so in light mode they are white on grey.
+    Box(modifier.fillMaxSize().background(feedPageColor()).onGloballyPositioned { coordinates -> listCoordinates = coordinates }.gatherDecksOnTapOutside(model, deckBounds) { listCoordinates }) {
         when {
             list != null && list.feedItems.isEmpty() -> PullToRefresh(onRefresh = { model.load() }, Modifier.fillMaxSize()) {
                 // Scrollable, or the pull could not be made on an empty feed.

@@ -48,4 +48,10 @@
     <string name="feed_media_opens_page">ページを開きます</string>
     <string name="feed_media_cannot_play">このビデオを再生できません</string>
     <string name="feed_stack_gather_hint">カードをスタックに戻します</string>
+    <string name="feed_kind_alert">アラート</string>
+    <string name="feed_kind_decision">要判断</string>
+    <string name="feed_kind_news">ニュース</string>
+    <string name="feed_kind_report">レポート</string>
+    <string name="feed_kind_idea">アイデア</string>
+    <string name="feed_kind_update">お知らせ</string>
 </resources>

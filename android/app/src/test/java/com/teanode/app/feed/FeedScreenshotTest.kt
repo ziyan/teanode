@@ -182,7 +182,7 @@ class FeedScreenshotTest {
             composeRule.mainClock.advanceTimeByFrame()
             frameCount += 1
         }
-        composeRule.mainClock.advanceTimeBy(160)
+        composeRule.mainClock.advanceTimeBy(200)
         composeRule.photograph("feed-deck-fanning-light")
         composeRule.mainClock.autoAdvance = true
     }

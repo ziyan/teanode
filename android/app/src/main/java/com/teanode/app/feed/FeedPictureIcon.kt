@@ -41,6 +41,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.annotation.StringRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import com.teanode.app.R
+import com.teanode.kit.feed.AgentFeedItemView
 import com.teanode.kit.feed.FeedPicture
 import com.teanode.kit.feed.FeedPictureKind
 
@@ -78,13 +87,52 @@ fun FeedPictureKind.icon(): ImageVector = when (this) {
     FeedPictureKind.Time -> Icons.Outlined.Schedule
 }
 
-/** A card's picture at its left: the icon of the symbol the agent chose, or its emoji, bare as the iPhone draws it; the newspaper for any name it does not know. */
+/** The side of a card's badge; its corners are rounded by 30 percent of it. */
+private val BADGE_SIDE = 26.dp
+
+/**
+ * A card's picture, small, as a phone draws an app's icon in a notification (ios FeedBadge): the icon of the symbol the
+ * agent chose in white on a rounded square of the color of the card's kind, or its emoji on a plain fill; the newspaper
+ * for any name it does not know.
+ */
 @Composable
-fun FeedPictureTile(pictureSymbol: String, modifier: Modifier = Modifier) {
-    Box(modifier.size(44.dp), contentAlignment = Alignment.Center) {
-        when (val picture = FeedPicture.of(pictureSymbol)) {
-            is FeedPicture.Symbol -> Icon(picture.kind.icon(), contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(32.dp))
-            is FeedPicture.Emoji -> Text(picture.text, style = MaterialTheme.typography.headlineMedium)
+fun FeedKindBadge(item: AgentFeedItemView, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(percent = 30)
+    when (val picture = FeedPicture.of(item.pictureSymbol)) {
+        is FeedPicture.Symbol -> {
+            val kindColor = feedKindColor(item.feedItemKind)
+            // Lighter at the top, as an app icon's gradient is.
+            val fill = Brush.verticalGradient(listOf(lerp(kindColor, Color.White, 0.18f), kindColor))
+            Box(modifier.size(BADGE_SIDE).clip(shape).background(fill), contentAlignment = Alignment.Center) {
+                Icon(picture.kind.icon(), contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+        }
+        is FeedPicture.Emoji -> Box(modifier.size(BADGE_SIDE).clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
+            Text(picture.text, style = MaterialTheme.typography.labelLarge)
         }
     }
+}
+
+/**
+ * The color of a card's badge, one for each kind of card, so cards of a kind are told apart at a glance (the iPhone's
+ * system colors). Never green, which is kept for what can be pressed.
+ */
+fun feedKindColor(feedItemKind: String): Color = when (feedItemKind) {
+    "alert" -> Color(0xFFFF9500)
+    "decision" -> Color(0xFF5856D6)
+    "news" -> Color(0xFFFF2D55)
+    "report" -> Color(0xFF30B0C7)
+    "idea" -> Color(0xFFAF52DE)
+    else -> Color(0xFF007AFF)
+}
+
+/** What kind of card it is, for the header of a card from no named source. */
+@StringRes
+fun feedKindWord(feedItemKind: String): Int = when (feedItemKind) {
+    "alert" -> R.string.feed_kind_alert
+    "decision" -> R.string.feed_kind_decision
+    "news" -> R.string.feed_kind_news
+    "report" -> R.string.feed_kind_report
+    "idea" -> R.string.feed_kind_idea
+    else -> R.string.feed_kind_update
 }
