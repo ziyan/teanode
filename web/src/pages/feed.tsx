@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { AgentReference, graphql, openAgentConversation, subscribe } from '../api'
@@ -75,9 +75,15 @@ const PENDING_RECHECK_MS = 8000
 // How long a stack takes to open or close, in step with the transitions of
 // .feed-stack-rest in the style sheet, and the most a card's start is delayed
 // behind the one above it.
-const STACK_MOTION_MS = 350
+const STACK_MOTION_MS = 380
 const STACK_STAGGER_MS = 45
 const STACK_STAGGER_LIMIT = 5
+// A card waiting in the deck sits this far up under the top card. The curve
+// that deals the cards overshoots a little and settles; the one that gathers
+// them speeds up as they go.
+const STACK_TUCK_PX = 24
+const STACK_EASING = 'cubic-bezier(0.34, 1.2, 0.64, 1)'
+const STACK_CLOSE_EASING = 'cubic-bezier(0.4, 0, 0.9, 0.6)'
 
 type FeedChoiceRole = 'action' | 'dismiss' | 'discuss' | 'open'
 
@@ -506,7 +512,6 @@ export function FeedPage() {
           {feedItems.map((item) => {
             const isStack = item.stackItemCount > 1 && item.feedStackKey !== ''
             const isOpen = isStack && openStackKeys.has(item.feedStackKey)
-            const stackName = item.feedStackTitle || item.feedSourceTitle
             return (
               <li
                 key={item.feedItemId}
@@ -529,24 +534,8 @@ export function FeedPage() {
                     : undefined
                 }
               >
-                {isOpen ? (
-                  <div className="feed-stack-header">
-                    {stackName && (
-                      <button
-                        type="button"
-                        className="feed-stack-title is-button"
-                        onClick={() => toggleStack(item.feedStackKey)}
-                      >
-                        {stackName}
-                      </button>
-                    )}
-                    <button type="button" className="feed-stack-less" onClick={() => toggleStack(item.feedStackKey)}>
-                      {t('feed.stackCollapse')}
-                    </button>
-                  </div>
-                ) : (
-                  item.stackItemCount > 1 &&
-                  item.feedStackTitle && <p className="feed-stack-title muted">{item.feedStackTitle}</p>
+                {item.stackItemCount > 1 && item.feedStackTitle && (
+                  <p className="feed-stack-title muted">{item.feedStackTitle}</p>
                 )}
                 <FeedCard
                   item={item}
@@ -815,17 +804,19 @@ function FeedCard({
           </span>
         </div>
       </div>
-      {stack && !stack.isOpen && item.stackItemCount > 1 && (
-        <button type="button" className="feed-stack-row" aria-expanded="false" onClick={stack.onToggle}>
+      {stack && item.stackItemCount > 1 && (
+        <button type="button" className="feed-stack-row" aria-expanded={stack.isOpen} onClick={stack.onToggle}>
           <span>
-            {item.feedStackTitle || item.feedSourceTitle
-              ? t('feed.stackMore', {
-                  count: item.stackItemCount - 1,
-                  source: item.feedStackTitle || item.feedSourceTitle,
-                })
-              : t('feed.stackMoreUnnamed', { count: item.stackItemCount - 1 })}
+            {stack.isOpen
+              ? t('feed.stackCollapse')
+              : item.feedStackTitle || item.feedSourceTitle
+                ? t('feed.stackMore', {
+                    count: item.stackItemCount - 1,
+                    source: item.feedStackTitle || item.feedSourceTitle,
+                  })
+                : t('feed.stackMoreUnnamed', { count: item.stackItemCount - 1 })}
           </span>
-          {item.stackUnreadCount > 0 && (
+          {!stack.isOpen && item.stackUnreadCount > 0 && (
             <span className="muted feed-stack-unread">{t('feed.unreadCount', { count: item.stackUnreadCount })}</span>
           )}
         </button>
@@ -975,23 +966,57 @@ function FeedStack({
   const [feedItems, setFeedItems] = useState<FeedItem[] | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [isDealt, setIsDealt] = useState(false)
   const restRef = useRef<HTMLDivElement>(null)
+  const isDealtRef = useRef(false)
   const countRef = useRef(0)
   const toastRef = useRef(toast)
   toastRef.current = toast
 
-  // The cards are drawn first inside the deck, and a moment later dealt out into
-  // the column; closing is the same the other way. Reading the layout in between
-  // makes the browser see the first state, so the change is a transition.
+  // The cards are dealt out of the deck: the room under the top card grows to
+  // their height while each card slides down from under the top card into its
+  // place, one a moment after the other. Closing is the same the other way,
+  // and the stack takes the cards out of the page once it is over. The room is
+  // cut off at its growing bottom edge only, so a card is hidden under the top
+  // card until it slides out rather than drawn over the cards below.
   const hasCards = feedItems !== null
-  useEffect(() => {
-    if (!isOpen || !hasCards) {
-      setIsDealt(false)
+  useLayoutEffect(() => {
+    const room = restRef.current
+    if (!room || !hasCards || isOpen === isDealtRef.current) return
+    isDealtRef.current = isOpen
+    const cards = Array.from(room.querySelectorAll<HTMLElement>(':scope > ul > li'))
+    for (const element of [room, ...cards]) element.getAnimations?.().forEach((animation) => animation.cancel())
+    if (isMotionReduced() || typeof room.animate !== 'function') return
+    const height = room.offsetHeight
+    const hidden = (card: HTMLElement) => ({
+      transform: `translateY(${-card.offsetTop - STACK_TUCK_PX}px) scale(0.96)`,
+      opacity: 0,
+    })
+    const shown = { transform: 'none', opacity: 1 }
+    if (isOpen) {
+      room.animate([{ height: '0px' }, { height: `${height}px` }], { duration: STACK_MOTION_MS, easing: STACK_EASING })
+      cards.forEach((card, index) =>
+        card.animate([hidden(card), shown], {
+          duration: STACK_MOTION_MS,
+          delay: Math.min(index, STACK_STAGGER_LIMIT) * STACK_STAGGER_MS,
+          easing: STACK_EASING,
+          fill: 'backwards',
+        }),
+      )
       return
     }
-    if (!isMotionReduced()) restRef.current?.getBoundingClientRect()
-    setIsDealt(true)
+    room.animate([{ height: `${height}px` }, { height: '0px' }], {
+      duration: STACK_MOTION_MS,
+      easing: STACK_CLOSE_EASING,
+      fill: 'forwards',
+    })
+    cards.forEach((card, index) =>
+      card.animate([shown, hidden(card)], {
+        duration: STACK_MOTION_MS,
+        delay: Math.min(cards.length - 1 - index, STACK_STAGGER_LIMIT) * STACK_STAGGER_MS,
+        easing: STACK_CLOSE_EASING,
+        fill: 'forwards',
+      }),
+    )
   }, [isOpen, hasCards])
 
   useEffect(() => {
@@ -1042,46 +1067,37 @@ function FeedStack({
 
   const rest = (feedItems ?? []).filter((item) => item.feedItemId !== topFeedItemId)
   return (
-    <div ref={restRef} className={isDealt ? 'feed-stack-rest is-dealt' : 'feed-stack-rest'}>
-      <div className="feed-stack-rest-inner">
-        <ul className="feed-list">
-          {rest.map((item, index) => (
-            <li
-              key={item.feedItemId}
-              style={
-                {
-                  '--deal-delay': `${Math.min(index, STACK_STAGGER_LIMIT) * STACK_STAGGER_MS}ms`,
-                } as React.CSSProperties
+    <div ref={restRef} className="feed-stack-rest">
+      <ul className="feed-list">
+        {rest.map((item) => (
+          <li key={item.feedItemId}>
+            <FeedCard
+              item={readItemIds.has(item.feedItemId) ? { ...item, isRead: true } : item}
+              isFresh={!item.isRead}
+              onSeen={onSeen}
+              onChanged={(updated) =>
+                setFeedItems((previous) =>
+                  previous
+                    ? previous.map((entry) => (entry.feedItemId === updated.feedItemId ? updated : entry))
+                    : previous,
+                )
               }
-            >
-              <FeedCard
-                item={readItemIds.has(item.feedItemId) ? { ...item, isRead: true } : item}
-                isFresh={!item.isRead}
-                onSeen={onSeen}
-                onChanged={(updated) =>
-                  setFeedItems((previous) =>
-                    previous
-                      ? previous.map((entry) => (entry.feedItemId === updated.feedItemId ? updated : entry))
-                      : previous,
-                  )
-                }
-                onRemoved={(feedItemId) =>
-                  setFeedItems((previous) =>
-                    previous ? previous.filter((entry) => entry.feedItemId !== feedItemId) : previous,
-                  )
-                }
-              />
-            </li>
-          ))}
-        </ul>
-        {nextCursor && (
-          <div className="list-foot feed-foot">
-            <button type="button" disabled={isLoadingMore} onClick={() => void loadMore()}>
-              {t('feed.more')}
-            </button>
-          </div>
-        )}
-      </div>
+              onRemoved={(feedItemId) =>
+                setFeedItems((previous) =>
+                  previous ? previous.filter((entry) => entry.feedItemId !== feedItemId) : previous,
+                )
+              }
+            />
+          </li>
+        ))}
+      </ul>
+      {nextCursor && (
+        <div className="list-foot feed-foot">
+          <button type="button" disabled={isLoadingMore} onClick={() => void loadMore()}>
+            {t('feed.more')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
