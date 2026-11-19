@@ -62,6 +62,8 @@ A new migration (the next free number, 0276 at the time of writing; check intern
     feed_stack_key        text, empty for a card that stands alone (see Stacks)
     feed_stack_title      text, the stack's title when it has one
     stack_position        integer, nullable: a card's place inside its stack, lowest on top
+    feed_card_layout      text: text, list, weather, agenda (see Card layouts)
+    layout_content        jsonb, the layout's structured content
     is_liked              boolean
     read_at, dismissed_at, created_at, updated_at, expires_at   timestamptz
 
@@ -92,7 +94,8 @@ GraphQL, in internal/api/v1api/apigraph/agent_feed.go, following agent_goal.go's
       choices: [{ choiceKey, choiceLabel, choiceRole }]   (choiceRole: action, dismiss, discuss, open),
       chosenChoiceKey (nullable), chosenAt (nullable), outcomeText, isOutcomePending (a resumed turn still running),
       feedUrgency, isLiked, isRead, isDismissed, postedAt, updatedAt,
-      feedStackKey, feedStackTitle, stackPosition (nullable), stackItemCount, stackUnreadCount   (the last two filled by ListAgentFeed on a stack's top card, 1 and 0 or 1 elsewhere)
+      feedStackKey, feedStackTitle, stackPosition (nullable), stackItemCount, stackUnreadCount,
+      feedCardLayout (text, list, weather, agenda), layoutContent (JSON object as a string, empty for text; see Card layouts)   (the last two filled by ListAgentFeed on a stack's top card, 1 and 0 or 1 elsewhere)
     }
 
 pictureSymbol is an SF Symbol name (for example cloud.sun, lock.shield, chart.line.uptrend.xyaxis, newspaper); the dashboard maps the same names to its icon set and falls back to a newspaper. Command line: teanode agent feed list [--all], show ID, choose ID CHOICE, like ID, unlike ID, less ID, dismiss ID, read ID..., discuss ID, post --title ... (--json on every one).
@@ -122,6 +125,21 @@ Cards from the same source pile up (every story a news goal finds, every idea), 
 ### A brief: a stack per run, in order
 
 A daily brief (for example every weekday at 7: today's plan, weather, five tech stories, five headlines, chat mentions, open review requests, mail worth reading) is a schedule whose run posts several cards that belong together. Three additions make that read well. First, a schedule run's cards stack per run, not per schedule: the default stack key of a schedule post is "schedule:<scheduleId>:<runId>", so each morning is its own stack and yesterday's sinks below today's. Second, a card may carry stack_position (integer, default 0); inside a stack, cards with a position sort by it ascending (the summary at 0 on top), and only cards without one sort newest first; the stack's top card in ListAgentFeed is the lowest position, or the newest when none has one. Third, a stack may carry a title (feed_stack_title, for example "Morning brief, Wed Nov 19"), taken from the first card that names one, shown instead of the source's name in "+N more from". A schedule also gains isNotifiedWhenPosted (default off): when on, the first card of each run sends one quiet notification "<schedule title> is ready" even though its cards are not urgent. The tool's post accepts stackKey, stackPosition and stackTitle. A brief's run uses only reading tools; anything it would do (archive newsletters, reply) is offered as an action choice on its own card, which stands outside the stack like every decision.
+
+### Card layouts
+
+A brief's sections read best each in its own shape, so a card has a feed_card_layout and, for the layouts other than text, structured content in layout_content (jsonb) that every app draws natively. The body stays filled in plain Markdown for every layout, so the command line, and an app that does not know a layout yet, still show the card sensibly.
+
+    text      the default: headline, body, optional facts (what every card has)
+    list      layout_content { listRows: [{ rowTitle, rowDetail, rowMeta, rowSymbol, rowUrl, rowRecordReference }] }, at most 10 rows:
+              news stories (rowMeta the source), chat mentions (rowDetail the snippet, rowMeta the channel and time),
+              review requests and assigned issues, mail worth reading (rowRecordReference opens the mail)
+    weather   layout_content { placeName, currentTemperature, temperatureUnit, conditionText, conditionSymbol, highTemperature,
+              lowTemperature, hourlyForecast: [{ forecastHour (ISO time), forecastTemperature, forecastSymbol, precipitationChancePercent }] (at most 12) }
+    agenda    layout_content { agendaEntries: [{ startsAt, endsAt, agendaTitle, agendaEntryKind: meeting, focus, task, break,
+              agendaDetail, agendaRecordReference }] } for a day plan, in time order
+
+The tool's post takes cardLayout and layoutContent and checks layoutContent against the layout's shape, refusing a malformed one with a message that says which field is wrong. Links in rowUrl must be http or https.
 
 ### Liking and why
 
@@ -191,6 +209,7 @@ None yet.
 - Decision (the person): a coding session's question is a feed card too, its options as buttons that answer the session directly.
 - Decision (the person, 2026-11-18): cards from one source are coalesced into a stack that opens to show the rest; decisions, alerts and coding questions never stack.
 - Decision (2026-11-18, from the person's morning brief example): a schedule's cards stack per run, may be ordered inside the stack and titled, and a schedule may send one quiet "is ready" notification per run.
+- Decision (the person, 2026-11-18): a brief needs cards of different designs; four layouts (text, list, weather, agenda) with structured content, each also carrying a plain body.
 - Decision: the card layout follows a reference screenshot the person gave (kept out of the repository): picture at the left, bold headline, a few lines with links, an optional table of facts, choices as buttons, and a footer of heart, Discuss, date and info.
 
 
