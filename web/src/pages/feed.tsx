@@ -413,9 +413,9 @@ export function FeedPage() {
     return () => timers.forEach((timer) => window.clearTimeout(timer))
   }, [])
 
-  // toggleStack opens a stack in place, or closes it: the cards go back into
-  // the deck and are taken out of the page when that has been seen.
-  const toggleStack = (feedStackKey: string) => {
+  // closeStack puts a stack's cards back into the deck, and takes them out of
+  // the page once that has been seen.
+  const closeStack = useCallback((feedStackKey: string) => {
     const timers = closeTimersRef.current
     window.clearTimeout(timers.get(feedStackKey))
     timers.delete(feedStackKey)
@@ -424,27 +424,57 @@ export function FeedPage() {
       next.delete(feedStackKey)
       return next
     }
+    setOpenStackKeys(without)
+    if (isMotionReduced()) {
+      setMountedStackKeys(without)
+    } else {
+      timers.set(
+        feedStackKey,
+        window.setTimeout(
+          () => {
+            timers.delete(feedStackKey)
+            setMountedStackKeys(without)
+          },
+          STACK_MOTION_MS + STACK_STAGGER_MS * STACK_STAGGER_LIMIT,
+        ),
+      )
+    }
+  }, [])
+
+  // toggleStack opens a stack in place, or closes it.
+  const toggleStack = (feedStackKey: string) => {
     if (openStackKeys.has(feedStackKey)) {
-      setOpenStackKeys(without)
-      if (isMotionReduced()) {
-        setMountedStackKeys(without)
-      } else {
-        timers.set(
-          feedStackKey,
-          window.setTimeout(
-            () => {
-              timers.delete(feedStackKey)
-              setMountedStackKeys(without)
-            },
-            STACK_MOTION_MS + STACK_STAGGER_MS * STACK_STAGGER_LIMIT,
-          ),
-        )
-      }
+      closeStack(feedStackKey)
       return
     }
+    const timers = closeTimersRef.current
+    window.clearTimeout(timers.get(feedStackKey))
+    timers.delete(feedStackKey)
     setOpenStackKeys((keys) => new Set([...keys, feedStackKey]))
     setMountedStackKeys((keys) => new Set([...keys, feedStackKey]))
   }
+
+  // A press anywhere outside an open stack gathers it back into its deck. A
+  // press in a dialog, a menu or a toast, which are drawn outside the stack but may
+  // have been opened from one of its cards, leaves it open.
+  useEffect(() => {
+    if (openStackKeys.size === 0) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null
+      if (
+        !target ||
+        !target.isConnected ||
+        target.closest('[aria-modal="true"], [role="dialog"], [role="menu"], [role="listbox"], .toasts, .lightbox')
+      )
+        return
+      const pressedKey = target.closest<HTMLElement>('[data-feed-stack-key]')?.dataset.feedStackKey
+      openStackKeys.forEach((feedStackKey) => {
+        if (feedStackKey !== pressedKey) closeStack(feedStackKey)
+      })
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [openStackKeys, closeStack])
 
   const replaceItem = useCallback((updated: FeedItem) => {
     setFeedItems((previous) =>
@@ -480,6 +510,7 @@ export function FeedPage() {
             return (
               <li
                 key={item.feedItemId}
+                data-feed-stack-key={isStack ? item.feedStackKey : undefined}
                 className={
                   item.stackItemCount > 1
                     ? isOpen

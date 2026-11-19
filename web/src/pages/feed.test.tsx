@@ -384,6 +384,22 @@ it('opens a stack in place with its other cards, pages it and collapses it', asy
   expect(screen.queryByText('Second story')).toBeNull()
 })
 
+it('gathers an open stack back into its deck at a press outside it, and not at one inside it', async () => {
+  execute.mockImplementation(async (document: string) => {
+    if (document.includes('ListAgentFeedStack')) {
+      return stackListing([stackTop, feedItem('news-second', { title: 'Second story' })])
+    }
+    return listing([stackTop, feedItem('alone', { title: 'A card alone' })])
+  })
+  drawFeed()
+  fireEvent.click(await screen.findByRole('button', { name: /\+2 more from News watch/ }))
+  const second = await screen.findByText('Second story')
+  fireEvent.pointerDown(second)
+  expect(screen.getByText('Second story')).toBeTruthy()
+  fireEvent.pointerDown(screen.getByText('A card alone'))
+  await waitFor(() => expect(screen.queryByText('Second story')).toBeNull())
+})
+
 it('marks the cards of an open stack read as they are seen and reads the stack on an event', async () => {
   const watched: { callback: IntersectionObserverCallback; element: Element }[] = []
   vi.stubGlobal(
