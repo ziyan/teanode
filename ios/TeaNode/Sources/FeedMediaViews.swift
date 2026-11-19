@@ -114,7 +114,7 @@ struct FeedMediaTile: View {
         switch media.mediaKind {
         case .video: return String(localized: "Video")
         case .photo: return String(localized: "Photo")
-        case .picture: return String(localized: "Picture")
+        case .picture: return String(localized: "Picture from the page")
         }
     }
 

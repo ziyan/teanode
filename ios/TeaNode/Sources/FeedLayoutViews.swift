@@ -206,12 +206,12 @@ struct FeedWeatherLayout: View {
 enum FeedWeatherSky {
     static func colors(for condition: AgentFeedWeatherCondition) -> [Color] {
         switch condition {
-        case .clearDay: [Color(red: 0.10, green: 0.38, blue: 0.80), Color(red: 0.30, green: 0.58, blue: 0.90)]
-        case .clearNight: [Color(red: 0.06, green: 0.08, blue: 0.25), Color(red: 0.20, green: 0.17, blue: 0.45)]
-        case .cloudy: [Color(red: 0.31, green: 0.38, blue: 0.47), Color(red: 0.47, green: 0.53, blue: 0.61)]
-        case .rain: [Color(red: 0.17, green: 0.26, blue: 0.40), Color(red: 0.30, green: 0.42, blue: 0.56)]
-        case .snow: [Color(red: 0.32, green: 0.45, blue: 0.60), Color(red: 0.50, green: 0.62, blue: 0.74)]
-        case .storm: [Color(red: 0.14, green: 0.12, blue: 0.27), Color(red: 0.31, green: 0.25, blue: 0.45)]
+        case .clearDay: [Color(red: 0.08, green: 0.31, blue: 0.62), Color(red: 0.17, green: 0.47, blue: 0.78)]
+        case .clearNight: [Color(red: 0.06, green: 0.11, blue: 0.24), Color(red: 0.16, green: 0.18, blue: 0.42)]
+        case .cloudy: [Color(red: 0.29, green: 0.33, blue: 0.40), Color(red: 0.38, green: 0.44, blue: 0.50)]
+        case .rain: [Color(red: 0.15, green: 0.23, blue: 0.32), Color(red: 0.29, green: 0.40, blue: 0.50)]
+        case .snow: [Color(red: 0.24, green: 0.35, blue: 0.47), Color(red: 0.35, green: 0.44, blue: 0.56)]
+        case .storm: [Color(red: 0.14, green: 0.12, blue: 0.23), Color(red: 0.29, green: 0.23, blue: 0.40)]
         }
     }
 }

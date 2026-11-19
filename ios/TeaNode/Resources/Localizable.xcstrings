@@ -62042,6 +62042,22 @@
         }
       }
     },
+    "Picture from the page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページの画像"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网页图片"
+          }
+        }
+      }
+    },
     "Picture removed": {
       "localizations": {
         "ja": {
