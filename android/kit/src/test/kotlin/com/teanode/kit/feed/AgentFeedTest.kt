@@ -248,6 +248,10 @@ class AgentFeedTest {
     fun aSymbolNameIsItsKindByTheLongestKnownPrefixAndAnUnknownOneIsANewspaper() {
         assertEquals(FeedPicture.Symbol(FeedPictureKind.Weather), FeedPicture.of("cloud.sun"))
         assertEquals(FeedPicture.Symbol(FeedPictureKind.Weather), FeedPicture.of("cloud.sun.fill"))
+        assertEquals(FeedPicture.Symbol(FeedPictureKind.Rain), FeedPicture.of("cloud.rain"))
+        assertEquals(FeedPicture.Symbol(FeedPictureKind.Cloud), FeedPicture.of("cloud"))
+        assertEquals(FeedPicture.Symbol(FeedPictureKind.Sun), FeedPicture.of("sun.max"))
+        assertEquals(FeedPicture.Symbol(FeedPictureKind.Night), FeedPicture.of("moon.stars"))
         assertEquals(FeedPicture.Symbol(FeedPictureKind.Security), FeedPicture.of("lock.shield"))
         assertEquals(FeedPicture.Symbol(FeedPictureKind.Chart), FeedPicture.of("chart.line.uptrend.xyaxis"))
         assertEquals(FeedPicture.Symbol(FeedPictureKind.Tray), FeedPicture.of("tray.full"))
