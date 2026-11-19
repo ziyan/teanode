@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -59,8 +60,9 @@ private val CLOSE_EASING = CubicBezierEasing(0.5f, 0f, 0.3f, 1f)
  * the feet of the first two showing below it. The row under the top card fans the deck out in place and then says "Show
  * Less", which gathers it back; the top card never moves. Opening and gathering move those same cards between tucked
  * and placed, on one curve with the column under the top card, which closed is only as tall as the feet. Each card is
- * drawn over the cards under it, as in a real deck. The stack is cut off at the top card's top edge, so a tucked card
- * taller than the top card never shows over the card above, and at the column's bottom. Tucked cards cannot be pressed,
+ * laid out at its own full height whatever the column's. Each card is drawn over the cards under it, as in a real deck.
+ * The stack is cut off below the top card's rounded top corners, so a tucked card taller than the top card never shows
+ * above it or beside its corners, and at the column's bottom. Tucked cards cannot be pressed,
  * are not read out and are not counted as seen. With animations turned off the deck just opens and closes.
  */
 @Composable
@@ -81,6 +83,7 @@ fun FeedDeck(top: AgentFeedItemView, model: FeedModel, actions: FeedActions, onS
         }
     }
     var topCardHeight by remember { mutableIntStateOf(0) }
+    val cornerPixels = with(LocalDensity.current) { FEED_CARD_CORNER.roundToPx() }
     Column(modifier) {
         // The top card is drawn over the column, so the tucked cards are hidden under it but for their feet.
         FeedCard(
@@ -93,7 +96,7 @@ fun FeedDeck(top: AgentFeedItemView, model: FeedModel, actions: FeedActions, onS
             // Until the cards are read, the room their feet will take, so nothing below moves when they come.
             Spacer(Modifier.height(FOOT_STEP * footCount))
         } else {
-            DeckColumn(progress = { progress.value }, footCount = footCount, clipAbove = { topCardHeight }) {
+            DeckColumn(progress = { progress.value }, footCount = footCount, clipAbove = { topCardHeight - cornerPixels }) {
                 for (card in others) {
                     // The cards are seen once they are spread out, not while tucked.
                     if (isOpen) LaunchedEffect(card.feedItemId) { model.noteAppeared(card) }
@@ -113,7 +116,8 @@ fun FeedDeck(top: AgentFeedItemView, model: FeedModel, actions: FeedActions, onS
  * drawn [progress] of the way from tucked to there. Tucked, a card is scaled from its foot to be narrower than the top
  * card by its foot's inset and moved so its foot shows [FOOT_STEP] under the foot above; the cards past the last foot
  * hide behind it. The column is as tall as the feet when closed and as its cards when open, cut off at its bottom and at
- * [clipAbove] above its top, the top card's top edge. The cards are measured once; the motion only resizes the column
+ * [clipAbove] above its top, the top card's top edge less its corner radius: above that the top card's corners are
+ * rounded and would let a tucked card's edge show beside them. The cards are measured once; the motion only resizes the column
  * and moves their layers.
  */
 @Composable

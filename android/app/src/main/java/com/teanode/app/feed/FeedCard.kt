@@ -76,8 +76,9 @@ import java.time.Instant
 /** The font scale from which a card lays its words under the picture instead of beside it (ios: an accessibility text size). */
 private const val LARGE_TEXT_SCALE = 1.5f
 
-private const val CARD_CORNER_DP = 20
-private val CARD_SHAPE = RoundedCornerShape(CARD_CORNER_DP.dp)
+/** The radius of a card's corners; a deck's tucked cards are cut off this far below the top card's top edge. */
+internal val FEED_CARD_CORNER = 20.dp
+private val CARD_SHAPE = RoundedCornerShape(FEED_CARD_CORNER)
 
 /** Whether the app is drawn dark, read from the theme rather than the system, since the person can choose either. */
 @Composable
