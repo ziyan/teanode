@@ -97,7 +97,7 @@ data class AgentFeedMediaView(
 
     val caption: String get() = mediaCaption.orEmpty()
 
-    val site: String get() = siteName.orEmpty()
+    val siteLabel: String get() = siteName.orEmpty()
 
     /** Whether the picture is taller than wide, which a card shows at 4:5 instead of 16:9; false when its size is not known. */
     val isPortrait: Boolean get() = (widthPixels ?: 0) > 0 && (heightPixels ?: 0) > (widthPixels ?: 0)
@@ -234,7 +234,7 @@ data class AgentFeedItemView(
         }
 
     /** The small line above the headline, as a news app labels a story: the first picture's site, else the source's name; empty when there is neither. */
-    val headerText: String get() = cardMedia.firstOrNull { media -> media.kind == AgentFeedMediaKind.Picture && media.site.isNotEmpty() }?.site?.takeIf { name -> name.isNotEmpty() } ?: feedSourceTitle
+    val headerText: String get() = cardMedia.firstOrNull { media -> media.kind == AgentFeedMediaKind.Picture && media.siteLabel.isNotEmpty() }?.siteLabel?.takeIf { name -> name.isNotEmpty() } ?: feedSourceTitle
 
     /** How the card is drawn: its layout when the content reads, else the plain text of its body. */
     val layout: FeedLayout get() = FeedLayout.read(feedCardLayout, layoutContent)

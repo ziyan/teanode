@@ -190,7 +190,7 @@ fun FeedMediaImage(path: String?, description: String, modifier: Modifier = Modi
 @Composable
 fun FeedRowThumbnail(media: AgentFeedMediaView, size: Dp, modifier: Modifier = Modifier) {
     FeedMediaImage(
-        media.imagePath, media.caption.ifEmpty { media.site },
+        media.imagePath, media.caption.ifEmpty { media.siteLabel },
         modifier.size(size).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
     )
 }
