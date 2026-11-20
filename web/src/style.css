@@ -25816,6 +25816,11 @@ button.voice-bubble-transcribe {
   border-radius: var(--radius-2);
   background: var(--field);
 }
+.feed-row-thumbnail-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
 a.feed-row:hover .feed-row-title,
 a.feed-agenda-body:hover .feed-agenda-title {
   text-decoration: underline;

@@ -39,7 +39,7 @@ struct FeedListLayout: View {
         VStack(spacing: 0) {
             ForEach(Array(listRows.enumerated()), id: \.offset) { index, listRow in
                 if index > 0 { Divider() }
-                FeedListLine(listRow: listRow, thumbnail: thumbnails[index])
+                FeedListLine(listRow: listRow, thumbnail: thumbnails[index], hasPictureColumn: !thumbnails.isEmpty)
             }
         }
     }
@@ -50,6 +50,10 @@ struct FeedListLine: View {
     let listRow: AgentFeedListRow
     /// A small picture for the row's leading edge, in place of its symbol.
     var thumbnail: AgentFeedMedia?
+    /// Whether another row of the list has a picture: a row without one then
+    /// shows its symbol in a tile of the picture's size, so every row's words
+    /// start at the same edge.
+    var hasPictureColumn = false
     @Environment(AppModel.self) private var app
     @ScaledMetric(relativeTo: .body) private var thumbnailSize: CGFloat = 56
     @Environment(\.openURL) private var openURL
@@ -102,13 +106,22 @@ struct FeedListLine: View {
         .contentShape(.rect)
     }
 
-    /// The row's thumbnail, square and rounded, or its symbol.
+    /// The row's thumbnail, square and rounded, or its symbol, in a tile of the
+    /// thumbnail's size when other rows have pictures.
     @ViewBuilder
     private var leadingPicture: some View {
         if let thumbnail {
             FeedMediaImage(path: thumbnail.imageUrl)
                 .frame(width: thumbnailSize, height: thumbnailSize)
                 .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                .accessibilityHidden(true)
+        } else if hasPictureColumn {
+            Image(systemName: feedSymbolName(listRow.rowSymbol, fallback: "doc.text"))
+                .symbolRenderingMode(.hierarchical)
+                .font(.title3)
+                .foregroundStyle(Color.secondary)
+                .frame(width: thumbnailSize, height: thumbnailSize)
+                .background(Color(uiColor: .tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
                 .accessibilityHidden(true)
         } else {
             Image(systemName: feedSymbolName(listRow.rowSymbol, fallback: "doc.text"))

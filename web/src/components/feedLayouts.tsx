@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import type { AgentReference } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { mailPath, memoryPath } from './dashboardPath'
-import { FeedRowThumbnail } from './feedMedia'
+import { FeedRowEmptyThumbnail, FeedRowThumbnail } from './feedMedia'
 import { webAddressOf, type FeedMedia } from './feedMediaLayout'
 import { WeatherIcon } from './icons'
 
@@ -178,6 +178,7 @@ export function FeedLayoutContent({
 }
 
 function FeedListRows({ rows, rowMediaByIndex }: { rows: ListRow[]; rowMediaByIndex?: Map<number, FeedMedia> }) {
+  const hasPictureColumn = (rowMediaByIndex?.size ?? 0) > 0
   return (
     <ul className="feed-rows">
       {rows.map((row, index) => {
@@ -186,7 +187,7 @@ function FeedListRows({ rows, rowMediaByIndex }: { rows: ListRow[]; rowMediaByIn
         const thumbnail = rowMediaByIndex?.get(index)
         const inside = (
           <>
-            {thumbnail && <FeedRowThumbnail media={thumbnail} />}
+            {thumbnail ? <FeedRowThumbnail media={thumbnail} /> : hasPictureColumn && <FeedRowEmptyThumbnail />}
             <span className="feed-row-text">
               <span className="feed-row-title">{row.rowTitle}</span>
               {row.rowDetail && <span className="feed-row-detail">{row.rowDetail}</span>}
