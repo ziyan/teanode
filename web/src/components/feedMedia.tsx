@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { useTranslation } from '../i18n/i18n'
 import { mediaArrangementOf, mediaAspectOf, webAddressOf, type FeedMedia } from './feedMediaLayout'
-import { PlayIcon } from './icons'
+import { GlobeIcon, PlayIcon } from './icons'
 
 // Pictures and videos of a feed card. The server sends paths that work for the
 // signed-in person's session, so they are used as the address of an image or
@@ -94,9 +94,11 @@ export function FeedMediaGallery({ cardMedia }: { cardMedia: FeedMedia[] }) {
 }
 
 // FeedRowThumbnail is the small square picture at the leading edge of a list row.
+// A picture that fails to load leaves the empty tile, so the row's words stay
+// in line with the other rows'.
 export function FeedRowThumbnail({ media }: { media: FeedMedia }) {
   const [isBroken, setIsBroken] = useState(false)
-  if (isBroken) return null
+  if (isBroken) return <FeedRowEmptyThumbnail />
   return (
     <img
       className="feed-row-thumbnail"
@@ -107,5 +109,15 @@ export function FeedRowThumbnail({ media }: { media: FeedMedia }) {
       height={56}
       onError={() => setIsBroken(true)}
     />
+  )
+}
+
+// FeedRowEmptyThumbnail stands in a list row without a picture when other rows
+// of the list have one, so every row's words start at the same edge.
+export function FeedRowEmptyThumbnail() {
+  return (
+    <span className="feed-row-thumbnail feed-row-thumbnail-empty" aria-hidden="true">
+      <GlobeIcon size={22} />
+    </span>
   )
 }

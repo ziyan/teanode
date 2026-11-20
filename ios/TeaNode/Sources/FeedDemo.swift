@@ -146,9 +146,9 @@
                             ["rowTitle": "Smaller sensors see in the dark", "rowMeta": "Sensor Notes", "rowSymbol": "newspaper", "rowUrl": "https://news.example.com/sensors"],
                         ]
                     ],
+                    // The middle story has no picture, as a story often does.
                     media: [
-                        feedMedia("feed-list", "r0", siteName: "Chip Weekly", row: 0), feedMedia("feed-list", "r1", siteName: "Example News", row: 1),
-                        feedMedia("feed-list", "r2", siteName: "Sensor Notes", row: 2),
+                        feedMedia("feed-list", "r0", siteName: "Chip Weekly", row: 0), feedMedia("feed-list", "r2", siteName: "Sensor Notes", row: 2),
                     ]),
                 // The morning brief: its first card tops the stack of five.
                 briefCards[0].merging(["stackItemCount": briefCards.count, "stackUnreadCount": 4] as [String: Any]) { _, stacked in stacked },

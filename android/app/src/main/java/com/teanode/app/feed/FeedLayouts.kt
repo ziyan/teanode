@@ -72,6 +72,11 @@ fun FeedListRows(rows: List<FeedListRow>, actions: FeedActions, modifier: Modifi
                 if (thumbnail != null) {
                     // A picture of the row's story or mail stands where its symbol would.
                     FeedRowThumbnail(thumbnail, 56.dp)
+                } else if (thumbnails.isNotEmpty()) {
+                    // Other rows have pictures: the symbol takes a tile of the picture's size so every row's words start at the same edge.
+                    Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
+                        SymbolIcon(row.rowSymbol, "doc.text", MaterialTheme.colorScheme.onSurfaceVariant, 24.dp)
+                    }
                 } else {
                     Column(Modifier.widthIn(min = 24.dp).padding(top = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         SymbolIcon(row.rowSymbol, "doc.text", MaterialTheme.colorScheme.onSurfaceVariant, 20.dp)
