@@ -784,8 +784,13 @@ func applyFeedPost(item *models.AgentFeedItem, arguments *PostAgentFeedItemArgum
 
 // AgentFeedChanged follows the caller's feed.
 func (self *graph) AgentFeedChanged(ctx context.Context) (<-chan *AgentFeedChangeView, error) {
-	_, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
+	// A subscription has no transaction of its own, so the lookup opens one,
+	// as the other subscriptions do.
+	var found *models.Agent
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		_, found, err = self.requireAgentPerson(api.ContextWithTransaction(ctx, tx))
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	received, release, err := self.agentFeedEvents.subscribe(self.database, found.UserID)
