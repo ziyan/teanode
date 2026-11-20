@@ -369,10 +369,15 @@ type FeedStackCounts struct {
 
 // CanStack says whether the card may be in a stack. A card that needs the
 // person on its own never stacks: one with a button that acts, dismisses or
-// opens, an alert, and a coding session's question.
+// opens, and an alert. A coding session's questions do stack, a day of them
+// in one stack, since a busy day of sessions asks many, and each card still
+// answers its own session once the stack is open.
 func (self *AgentFeedItem) CanStack() bool {
-	if self.FeedItemKind == FeedItemAlert || self.FeedSourceKind == FeedSourceCodingSession {
+	if self.FeedItemKind == FeedItemAlert {
 		return false
+	}
+	if self.FeedSourceKind == FeedSourceCodingSession {
+		return true
 	}
 	for _, choice := range self.Choices {
 		if choice.ChoiceRole != FeedChoiceDiscuss {
@@ -400,6 +405,12 @@ func (self *AgentFeedItem) DefaultFeedStackKey() string {
 		}
 	}
 	return ""
+}
+
+// FeedStackKeyCodingDay is the stack of the coding sessions' questions of one
+// day, the day as the person's clock tells it.
+func FeedStackKeyCodingDay(day time.Time) string {
+	return "coding:" + day.Format(time.DateOnly)
 }
 
 // FeedCursor is how far a page of the feed got.

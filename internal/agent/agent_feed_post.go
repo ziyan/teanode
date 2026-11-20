@@ -195,6 +195,18 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 		}
 		item.AgentID, item.UserID = found.ID, found.UserID
 		now := time.Now()
+		// A coding session's question goes in the stack of the day's
+		// questions, the day and its title in the person's own zone and
+		// language.
+		if item.FeedSourceKind == models.FeedSourceCodingSession && item.FeedStackKey == "" {
+			owner, err := tx.GetUser(found.UserID)
+			if err != nil {
+				return err
+			}
+			day := now.In(Location(owner))
+			item.FeedStackKey = models.FeedStackKeyCodingDay(day)
+			item.FeedStackTitle = codingStackTitle(day, push.PhoneLanguage(Language(found, owner)))
+		}
 		previous := (*models.AgentFeedItem)(nil)
 		if item.CoalesceKey != "" {
 			if previous, err = tx.GetOpenAgentFeedItemByCoalesceKey(found.ID, item.CoalesceKey); err != nil {
@@ -428,4 +440,22 @@ func (self *Agent) creditFeedSource(ctx context.Context, item *models.AgentFeedI
 		}
 		return nil
 	})
+}
+
+// The title of a day's stack of coding sessions' questions, with the day, in
+// the languages the apps are in.
+var (
+	phraseCodingStack = push.Phrase{English: "Coding sessions, %s", Chinese: "编程会话，%s", Japanese: "コーディングセッション、%s"}
+	chineseWeekdays   = [...]string{"日", "一", "二", "三", "四", "五", "六"}
+	japaneseWeekdays  = [...]string{"日", "月", "火", "水", "木", "金", "土"}
+)
+
+func codingStackTitle(day time.Time, language string) string {
+	switch language {
+	case push.LanguageChinese:
+		return phraseCodingStack.In(language, fmt.Sprintf("%d月%d日 周%s", day.Month(), day.Day(), chineseWeekdays[day.Weekday()]))
+	case push.LanguageJapanese:
+		return phraseCodingStack.In(language, fmt.Sprintf("%d月%d日(%s)", day.Month(), day.Day(), japaneseWeekdays[day.Weekday()]))
+	}
+	return phraseCodingStack.In(language, day.Format("Mon Jan 2"))
 }

@@ -370,8 +370,15 @@ func TestACodingSessionCardSettlesWhenTheQuestionIsAnswered(t *testing.T) {
 		Title: "api-pane on laptop asks", FeedSourceKind: models.FeedSourceCodingSession, FeedSourceID: "laptop/7", CoalesceKey: "laptop/7/abc123",
 		Choices: []models.FeedChoice{{ChoiceKey: "option:1", ChoiceLabel: "Yes", ChoiceRole: models.FeedChoiceAction}, {ChoiceKey: "option:2", ChoiceLabel: "No", ChoiceRole: models.FeedChoiceAction}},
 	})
-	if card.FeedStackKey != "" {
-		t.Fatal("a coding session's question never stacks")
+	if !strings.HasPrefix(card.FeedStackKey, "coding:") || !strings.HasPrefix(card.FeedStackTitle, "Coding sessions, ") {
+		t.Fatalf("a coding session's question goes in the day's stack: %q %q", card.FeedStackKey, card.FeedStackTitle)
+	}
+	other := world.post(t, &models.AgentFeedItem{
+		Title: "web-pane on desktop asks", FeedSourceKind: models.FeedSourceCodingSession, FeedSourceID: "desktop/3", CoalesceKey: "desktop/3/def456",
+		Choices: []models.FeedChoice{{ChoiceKey: "open", ChoiceLabel: "Open session", ChoiceRole: models.FeedChoiceOpen}},
+	})
+	if other.FeedStackKey != card.FeedStackKey {
+		t.Fatalf("another session's question of the same day is in the same stack: %q and %q", other.FeedStackKey, card.FeedStackKey)
 	}
 	if err := world.worker.SettleFeedItemsOfSession(context.Background(), world.agent.ID, "laptop", "7", ""); err != nil {
 		t.Fatal(err)
