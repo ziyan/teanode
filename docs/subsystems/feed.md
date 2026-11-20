@@ -51,8 +51,11 @@ card, with `stackItemCount` and `stackUnreadCount`. The stack key defaults to
 `goal:<id>` for a goal, `speak_first:<reason>` for the agent speaking first,
 and `schedule:<id>:<run conversation id>` for a schedule, so each morning's
 run is a stack of its own. A card with a button that acts, dismisses or opens,
-an alert, and a coding session's question never stack, because each needs the
-person on its own. Inside a stack the cards with a `stack_position` come first,
+and an alert never stack, because each needs the person on its own. A coding
+session's questions are the exception: a busy day of sessions asks many, so
+they stack by the day on the person's clock, `coding:<date>`, titled
+"Coding sessions, <day>" in the person's language, and each card still answers
+its own session once the stack is open. Inside a stack the cards with a `stack_position` come first,
 the lowest first, and the rest newest first; the top of a stack is its lowest
 position, else its newest card. `ListAgentFeedStack` pages one stack with an
 offset, since its order is not by time alone. `feed_stack_title` is the first

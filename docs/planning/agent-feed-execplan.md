@@ -238,6 +238,7 @@ None yet.
 - Decision (the person, 2026-11-18): an action choice is a message sent in the main conversation on the person's behalf with the card referenced, so the approval and what the agent did about it are in the conversation the person reads; dismiss choices and coding session answers send nothing.
 - Decision (the person): a coding session's question is a feed card too, its options as buttons that answer the session directly.
 - Decision (the person, 2026-11-18): cards from one source are coalesced into a stack that opens to show the rest; decisions, alerts and coding questions never stack.
+- Decision (the person, 2026-11-19): coding session questions do stack after all, one stack per day of the person's, since a day of sessions filled the feed with them; the cards already posted were moved into their day's stack by migration 0278.
 - Decision (2026-11-18, from the person's morning brief example): a schedule's cards stack per run, may be ordered inside the stack and titled, and a schedule may send one quiet "is ready" notification per run.
 - Decision (the person, 2026-11-18): a brief needs cards of different designs; four layouts (text, list, weather, agenda) with structured content, each also carrying a plain body.
 - Decision: the card layout follows a reference screenshot the person gave (kept out of the repository): picture at the left, bold headline, a few lines with links, an optional table of facts, choices as buttons, and a footer of heart, Discuss, date and info.
