@@ -127,11 +127,23 @@ struct FeedAppUpdateCard: View {
     let update: AppUpdate
     @Environment(AppModel.self) private var app
     @Environment(\.openURL) private var openURL
-    @ScaledMetric(relativeTo: .title3) private var logoSide: CGFloat = 56
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title3) private var scaledLogoSide: CGFloat = 56
+
+    /// The logo grows with the text, but no further than a large app icon:
+    /// past that it only takes the words' room.
+    private var logoSide: CGFloat { min(scaledLogoSide, 72) }
+
+    /// Beside the words at most sizes; above them at the accessibility sizes,
+    /// where a row leaves the title a word per line.
+    private var header: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(alignment: .center, spacing: 14))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 14) {
+            header {
                 Image("Logo")
                     .resizable()
                     .scaledToFit()
