@@ -152,6 +152,9 @@ struct FeedAppUpdateCard: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // Room for the close button in the corner; the install button
+            // below runs the card's width.
+            .padding(.trailing, 24)
             Button {
                 if let address = URL(string: update.installUrl) { openURL(address) }
             } label: {
@@ -164,8 +167,6 @@ struct FeedAppUpdateCard: View {
             .buttonBorderShape(.capsule)
         }
         .padding(16)
-        // Room for the close button, which sits in the corner.
-        .padding(.trailing, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             ZStack {

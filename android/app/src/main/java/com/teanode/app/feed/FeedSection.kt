@@ -58,6 +58,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalContext
+import com.teanode.app.notifications.FeedAppUpdateCard
+import com.teanode.app.notifications.rememberOfferedAppUpdate
+import com.teanode.app.ui.components.openWebPage
 
 /** How many cards of a stack are read when its deck fans out, as the iPhone reads them. */
 private const val DECK_PAGE_SIZE = 50
@@ -88,7 +92,7 @@ fun FeedSection() {
         )
     }
     TeaNodeScreen(title = stringResource(R.string.feed_title)) { contentPadding ->
-        FeedListBody(model, areDecksShown = true, modifier = Modifier.padding(contentPadding))
+        FeedListBody(model, areDecksShown = true, modifier = Modifier.padding(contentPadding), isAppUpdateShown = true)
     }
 }
 
@@ -132,7 +136,7 @@ internal fun FeedFollowing(model: FeedModel) {
 
 /** The cards of a [FeedModel] with its loading, failed and empty states, paging and pull to refresh; the feed and a stack's own screen both draw it. */
 @Composable
-internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Modifier = Modifier) {
+internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Modifier = Modifier, isAppUpdateShown: Boolean = false) {
     val session = LocalAppSession.current
     val snackbar = LocalSnackbar.current
     val navigator = LocalAppNavigator.current
@@ -154,6 +158,12 @@ internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Mo
     var infoItem: AgentFeedItemView? by remember { mutableStateOf(null) }
     val list = model.list
     val failure = model.loadFailure
+    // A newer app stays above every card of the feed until it is installed or put off; a stack's own screen does not show it.
+    val (offeredUpdate, dismissUpdate) = if (isAppUpdateShown) rememberOfferedAppUpdate() else null to {}
+    val context = LocalContext.current
+    val appUpdateCard: @Composable () -> Unit = {
+        offeredUpdate?.let { update -> FeedAppUpdateCard(update, onInstall = { openWebPage(context, update.installUrl) }, onDismiss = dismissUpdate) }
+    }
     // Where each deck is on screen, so a tap outside an open one gathers it.
     val deckBounds = remember(model) { HashMap<String, Rect>() }
     var listCoordinates: LayoutCoordinates? by remember { mutableStateOf(null) }
@@ -164,12 +174,14 @@ internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Mo
                 // Scrollable, or the pull could not be made on an empty feed.
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
+                        if (offeredUpdate != null) Box(Modifier.padding(16.dp)) { appUpdateCard() }
                         EmptyState(AppSection.Feed.icon, stringResource(R.string.feed_empty_title), Modifier.height(this@BoxWithConstraints.maxHeight), description = stringResource(R.string.feed_empty_description))
                     }
                 }
             }
             list != null -> PullToRefresh(onRefresh = { model.load() }, Modifier.fillMaxSize()) {
                 LazyColumn(Modifier.fillMaxSize().testTag(FEED_LIST_TAG), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (offeredUpdate != null) item(key = "app-update") { appUpdateCard() }
                     items(list.feedItems, key = { item -> item.feedItemId }) { item ->
                         LaunchedEffect(item.feedItemId) {
                             model.noteAppeared(item)
