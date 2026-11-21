@@ -213,7 +213,7 @@
             } else if query.contains("GetSession") {
                 answer = Self.session
             } else if query.contains("GetAppUpdate") {
-                answer = Self.screen == "app-update" ? Self.appUpdate : #"{"data":{"GetAppUpdate":null}}"#
+                answer = Self.screen == "app-update" || Self.screen == "feed-app-update" ? Self.appUpdate : #"{"data":{"GetAppUpdate":null}}"#
             } else {
                 answer = #"{"data":{}}"#
             }
