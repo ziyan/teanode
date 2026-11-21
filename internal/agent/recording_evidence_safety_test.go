@@ -336,3 +336,54 @@ func TestRecordingAutomaticLessonRecallMarksOwnedEvidence(test *testing.T) {
 		test.Fatal("automatic lesson recall lost owned recording evidence", lines)
 	}
 }
+
+func TestRecordingEvidenceStillReadsOwnMailAndCalendar(test *testing.T) {
+	configuration := config.Default()
+	worker := &Agent{settings: &Settings{Configuration: func() *config.Configuration { return configuration }}}
+	safety := &recordingEvidenceSafety{}
+	safety.restrict()
+	turn := &AskRun{agent: worker, settings: &AskSettings{Agent: &models.Agent{ID: "fixture-agent"}, Owner: &models.User{Username: "fixture-owner"}, Conversation: &models.AgentConversation{ID: "fixture-turn"}, Headless: true, recordingEvidenceSafety: safety}}
+	var handlerCount atomic.Int64
+	handler := func(context.Context, *tools.Call) (*tools.Result, error) {
+		handlerCount.Add(1)
+		return tools.TextResult("completed"), nil
+	}
+	calendarRisk := func(arguments json.RawMessage) tools.Risk {
+		if strings.Contains(string(arguments), "create") {
+			return tools.RiskWrite
+		}
+		return tools.RiskRead
+	}
+	mailSearch := &Tool{Name: "mail_search", Risk: tools.RiskRead, Run: handler}
+	calendar := &Tool{Name: "calendar", RiskOf: calendarRisk, Run: handler}
+	webFetch := &Tool{Name: "web_fetch", Risk: tools.RiskRead, Run: handler}
+	turn.offered = []*Tool{mailSearch, calendar, webFetch}
+	offeredNames := []string{}
+	for _, tool := range turn.Offered() {
+		offeredNames = append(offeredNames, tool.Name)
+	}
+	if strings.Join(offeredNames, ",") != "mail_search,calendar" {
+		test.Fatalf("a restricted dream was offered %v", offeredNames)
+	}
+	for _, read := range []llm.ToolCall{
+		{ID: "search-call", Name: "mail_search", Arguments: `{"query":"invoice"}`},
+		{ID: "agenda-call", Name: "calendar", Arguments: `{"action":"agenda"}`},
+	} {
+		answer := turn.runTool(test.Context(), configuration, turn.Offered(), nil, read)
+		if !strings.Contains(answer.content, "completed") {
+			test.Fatalf("a restricted dream could not read with %s: %s", read.Name, answer.content)
+		}
+	}
+	for _, refused := range []llm.ToolCall{
+		{ID: "create-call", Name: "calendar", Arguments: `{"action":"create"}`},
+		{ID: "fetch-call", Name: "web_fetch", Arguments: `{"url":"https://example.com/"}`},
+	} {
+		answer := turn.runTool(test.Context(), configuration, []*Tool{calendar, webFetch}, nil, refused)
+		if !strings.Contains(answer.content, "error") {
+			test.Fatalf("a restricted dream reached %s: %s", refused.Name, answer.content)
+		}
+	}
+	if handlerCount.Load() != 2 {
+		test.Fatalf("handlers ran %d times, want the two reads", handlerCount.Load())
+	}
+}

@@ -2207,7 +2207,7 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 		}
 	}
 	if self.recordingEvidenceRestricted() && !recordingLookupAllowed(tool) {
-		return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "passive recording evidence permits only memory, knowledge and recording lookups"}`)}
+		return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "passive recording evidence permits only lookups: memory, knowledge, recordings, and the person's own mail, calendar and conversations"}`)}
 	}
 	if self.ReadOnly() && tool.RiskFor(call.Arguments) != RiskRead {
 		return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "this conversation may only read; the call would change something"}`)}

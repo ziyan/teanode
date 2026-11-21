@@ -41,9 +41,18 @@ func containsRecordingEvidence(documents []*models.AgentDocument) bool {
 	}
 	return false
 }
+
+// recordingLookupAllowed names the tools a dream may still call once it
+// holds recording evidence: the lookups, and the person's own mail,
+// calendar and conversations, which the run reads and nothing else does.
+// None of them reaches outside the server, and the run is read-only by
+// then (ReadOnly), so each is offered and dispatched only for reading.
+// Without the mail and the calendar, a person whose self page carries one
+// fact from a recording had every dream held to memory, and the nightly
+// look for ideas never found anything in their mail again.
 func recordingLookupAllowed(tool *tools.Tool) bool {
 	switch tool.Name {
-	case "memory", "knowledge", "recording", "tool_search":
+	case "memory", "knowledge", "recording", "tool_search", "mail_search", "mail_read", "calendar", "conversation":
 		return true
 	}
 	return false
