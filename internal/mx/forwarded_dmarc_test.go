@@ -47,6 +47,7 @@ func TestATrustedForwardersSealVouchesForDMARC(t *testing.T) {
 	}{
 		{"a pass recorded by a trusted forwarder", "google.com", passed, "example.net", "google.com"},
 		{"the From domain differs in case", "google.com", passed, "Example.NET", "google.com"},
+		{"a pass recorded under the organizational domain of a subdomain sender", "google.com", passed, "news.example.net", "google.com"},
 		{"a forwarder that is not trusted", "forwarder.example.org", passed, "example.net", ""},
 		{"a pass recorded for another From domain", "google.com", passed, "example.com", ""},
 		{"a failure recorded by a trusted forwarder", "google.com", "mx.example.com; dmarc=fail (p=REJECT) header.from=example.net", "example.net", ""},
