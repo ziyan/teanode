@@ -21,6 +21,13 @@ import com.teanode.app.screenshots.Look
 import com.teanode.app.screenshots.PHONE_QUALIFIERS
 import com.teanode.app.screenshots.WithFontScale
 import com.teanode.app.screenshots.photograph
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.teanode.app.notifications.FeedAppUpdateCard
+import com.teanode.kit.notifications.AppUpdate
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -263,4 +270,21 @@ class FeedScreenshotTest {
         composeRule.waitForIdle()
         composeRule.photograph("feed-error-dark")
     }
+    private fun drawAppUpdate(look: Look, fontScale: Float = 1f) {
+        val update = AppUpdate(updateChannel = "android", version = "99.0.0", buildNumber = "1234", installUrl = "https://example.com/install")
+        composeRule.setContent {
+            DemoHost(appearance = look.appearance) {
+                WithFontScale(fontScale) {
+                    Box(Modifier.background(feedPageColor()).padding(16.dp)) { FeedAppUpdateCard(update, onInstall = {}, onDismiss = {}) }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+    }
+
+    @Test fun `app update card light`() { drawAppUpdate(Look.Light); composeRule.photograph("feed-app-update-light") }
+
+    @Test fun `app update card dark`() { drawAppUpdate(Look.Dark); composeRule.photograph("feed-app-update-dark") }
+
+    @Test fun `app update card at the largest text`() { drawAppUpdate(Look.Light, 2f); composeRule.photograph("feed-app-update-largest-text-light") }
 }

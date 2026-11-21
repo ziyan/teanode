@@ -396,6 +396,12 @@ struct FeedList: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 12) {
+                    // A newer app stays above every card of the feed until it
+                    // is installed or put off; an open stack does not show it.
+                    if model.feedStackKey == nil, let update = app.appUpdates.updateToOffer {
+                        FeedAppUpdateCard(update: update)
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    }
                     ForEach(model.items) { item in
                         entry(for: item)
                             .id(item.feedItemId)
@@ -633,7 +639,7 @@ struct FeedList: View {
             LoadFailedView(problemText: loadFailedText) { await model.load() }
         } else if !model.hasLoaded {
             ProgressView()
-        } else if model.items.isEmpty {
+        } else if model.items.isEmpty, model.feedStackKey != nil || app.appUpdates.updateToOffer == nil {
             ContentUnavailableView(
                 "Nothing in your feed yet", systemImage: "newspaper",
                 description: Text("Goals, schedules and alerts post here. Ask your agent to keep a feed of what you care about."))

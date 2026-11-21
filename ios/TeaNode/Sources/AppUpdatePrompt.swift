@@ -118,3 +118,89 @@ struct AppUpdateCard: View {
         .buttonStyle(.bordered)
     }
 }
+
+/// FeedAppUpdateCard offers an update at the top of the feed, above every
+/// card, until the person installs it or says not now. It is drawn apart from
+/// the agent's cards: the app's own logo, a wash of the accent and a border in
+/// it, and one large button, because it is the app speaking, not the agent.
+struct FeedAppUpdateCard: View {
+    let update: AppUpdate
+    @Environment(AppModel.self) private var app
+    @Environment(\.openURL) private var openURL
+    @ScaledMetric(relativeTo: .title3) private var logoSide: CGFloat = 56
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 14) {
+                Image("Logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: logoSide, height: logoSide)
+                    .clipShape(.rect(cornerRadius: logoSide * 0.225, style: .continuous))
+                    .shadow(color: Color.accentColor.opacity(0.35), radius: 8, y: 3)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("New version")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                    Text("TeaNode \(update.versionText)")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Color.primary)
+                    Text(update.whereWords)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // Room for the close button in the corner; the install button
+            // below runs the card's width.
+            .padding(.trailing, 24)
+            Button {
+                if let address = URL(string: update.installUrl) { openURL(address) }
+            } label: {
+                Label(update.installWords, systemImage: "arrow.down.circle.fill")
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            ZStack {
+                FeedCard.surface
+                LinearGradient(
+                    colors: [Color.accentColor.opacity(0.22), Color.accentColor.opacity(0.04)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+        }
+        .clipShape(.rect(cornerRadius: FeedCard.cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: FeedCard.cornerRadius, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 1)
+        }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                withAnimation { app.appUpdates.dismiss() }
+            } label: {
+                Label("Not now", systemImage: "xmark")
+                    .labelStyle(.iconOnly)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .padding(4)
+        }
+    }
+}
+
+extension AppUpdate {
+    /// Where the update waits, under its version on the feed's card.
+    var whereWords: LocalizedStringKey {
+        updateChannel == AppUpdateChannel.appStore.rawValue ? "Ready on the App Store" : "Ready to install from TestFlight"
+    }
+}

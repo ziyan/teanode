@@ -515,6 +515,9 @@ jobs:
           shoot feed-stack-open-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-stack-open
           shoot feed-media-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-media
           shoot feed-media-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-media
+          shoot feed-app-update-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-app-update
+          shoot feed-app-update-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-app-update
+          shoot feed-app-update-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-app-update
           shoot feed-brief-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-brief
           shoot feed-brief-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-brief
           shoot feed-brief-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-brief
