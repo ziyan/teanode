@@ -1389,6 +1389,7 @@ struct DeletedMessageBubble: View {
 /// PersonBubble is what the person said: on the right, in the accent color,
 /// with what it replies to above it.
 struct PersonBubble: View {
+    @Environment(AppModel.self) private var app
     let line: TranscriptLine
     /// The words a message of a chat mentions people by, marked in it.
     var mentions: [ChatMentionWord] = []
@@ -1462,9 +1463,24 @@ struct PersonBubble: View {
                     }
             }
             ForEach(line.references, id: \.self) { reference in
-                Label(reference.label.isEmpty && reference.photoId != nil ? String(localized: "Photo") : reference.label, systemImage: reference.recordingId != nil ? "waveform" : reference.photoId != nil ? "photo" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                let label = Label(
+                    reference.label.isEmpty && reference.photoId != nil ? String(localized: "Photo") : reference.label,
+                    systemImage: reference.recordingId != nil ? "waveform" : reference.photoId != nil ? "photo" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                // What the message asked about opens where the app keeps it.
+                if AppModel.canOpen(reference) {
+                    Button {
+                        app.open(reference)
+                    } label: {
+                        // Taller than its words, so a finger finds it.
+                        label.padding(.vertical, 4).contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    label
+                }
             }
             if let recording = line.voiceAttachment, recording.isRemoved != true {
                 VoiceMessageBubble(line: line, recording: recording, isOthers: isOthers, onTranscribe: onTranscribe)

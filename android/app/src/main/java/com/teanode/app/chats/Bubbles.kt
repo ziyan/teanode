@@ -147,6 +147,7 @@ fun PersonBubble(
 ) {
     val isOthers = line.author?.let { author -> !author.isOwnWords } ?: false
     val style = rememberInlineStyle(isOnAccent = !isOthers)
+    val navigator = com.teanode.app.shell.LocalAppNavigator.current
     Row(modifier.fillMaxWidth(), horizontalArrangement = if (isOthers) Arrangement.Start else Arrangement.End) {
         if (!isOthers) Spacer(Modifier.width(56.dp))
         Column(Modifier.weight(1f, fill = false), horizontalAlignment = if (isOthers) Alignment.Start else Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -168,7 +169,9 @@ fun PersonBubble(
                     }
                     for (reference in line.references) {
                         val label = reference.label.ifEmpty { if (reference.photoId != null) stringResource(R.string.chats_photo) else "" }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        // What the message asked about opens where the app keeps it.
+                        val opening = if (canOpenReference(reference)) Modifier.clip(RoundedCornerShape(6.dp)).clickable(role = Role.Button) { openReference(navigator, reference) } else Modifier
+                        Row(opening.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             Icon(referenceIcon(reference), contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

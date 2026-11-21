@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { AgentReference } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { photoSmallPreviewPath } from '../photos/api'
 import { formatMoney } from './common'
+import { mailPath, memoryPath } from './dashboardPath'
 import { CloseIcon, ReplyIcon, SparkIcon } from './icons'
 import { Tooltip } from './tooltip'
 
@@ -66,6 +68,19 @@ function referenceHint(reference: AgentReference): string {
   return reference.from ?? reference.path ?? ''
 }
 
+// referencePath is the dashboard page that shows what a chip names: a mail
+// by its item, a page of memory, a finance transaction, a recording, a
+// photo; null when the reference names none of them (a thread alone).
+export function referencePath(reference: AgentReference): string | null {
+  if (reference.financeTransactionId)
+    return `/finance/transactions?transaction=${encodeURIComponent(reference.financeTransactionId)}`
+  if (reference.recordingId) return `/recordings/${encodeURIComponent(reference.recordingId)}`
+  if (reference.photoId) return `/photos/${encodeURIComponent(reference.photoId)}`
+  if (reference.path) return memoryPath(reference.path)
+  if (reference.itemId) return mailPath(reference.itemId)
+  return null
+}
+
 // isReplyReference says the reference is a message of the conversation
 // the turn answers, drawn as a quote rather than a chip.
 export function isReplyReference(reference: AgentReference): boolean {
@@ -106,14 +121,18 @@ export function ReplyQuote({
 }
 
 // ReferenceChips are what a turn points at, above the box while it is
-// being written (each removable) and on the person's line once it is sent.
-// A message replied to is not among them: it is drawn as a quote.
+// being written (each removable) and on the person's line once it is sent,
+// where each opens what it names; onLeaving is called as it does, so the
+// drawer on a phone puts itself away. A message replied to is not among
+// them: it is drawn as a quote.
 export function ReferenceChips({
   references,
   onRemove,
+  onLeaving,
 }: {
   references: AgentReference[]
   onRemove?: (reference: AgentReference) => void
+  onLeaving?: () => void
 }) {
   const { t } = useTranslation()
   const chips = references.filter((reference) => !isReplyReference(reference))
@@ -122,25 +141,32 @@ export function ReferenceChips({
     <div className="agent-references">
       {chips.map((reference, index) => {
         const label = referenceLabel(reference, t)
+        const path = onRemove ? null : referencePath(reference)
         return (
           <Tooltip
             key={`${reference.itemId ?? reference.path ?? reference.financeTransactionId ?? reference.recordingId ?? reference.photoId ?? ''}-${index}`}
             label={referenceHint(reference)}
           >
-            <span className="agent-reference-chip">
-              <ReferenceMark reference={reference} /> {label}
-              {onRemove && (
-                <button
-                  type="button"
-                  className="icon-action"
-                  title={t('agentDrawer.remove')}
-                  aria-label={`${label}: ${t('agentDrawer.remove')}`}
-                  onClick={() => onRemove(reference)}
-                >
-                  <CloseIcon size={12} />
-                </button>
-              )}
-            </span>
+            {path ? (
+              <Link className="agent-reference-chip" to={path} onClick={onLeaving}>
+                <ReferenceMark reference={reference} /> {label}
+              </Link>
+            ) : (
+              <span className="agent-reference-chip">
+                <ReferenceMark reference={reference} /> {label}
+                {onRemove && (
+                  <button
+                    type="button"
+                    className="icon-action"
+                    title={t('agentDrawer.remove')}
+                    aria-label={`${label}: ${t('agentDrawer.remove')}`}
+                    onClick={() => onRemove(reference)}
+                  >
+                    <CloseIcon size={12} />
+                  </button>
+                )}
+              </span>
+            )}
           </Tooltip>
         )
       })}
