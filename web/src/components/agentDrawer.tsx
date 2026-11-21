@@ -70,6 +70,7 @@ import {
   PaperclipIcon,
   PencilIcon,
   PeopleIcon,
+  ChatIcon,
   AtIcon,
   BellIcon,
   BellOffIcon,
@@ -6160,7 +6161,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             }
             onClick={toggle}
           >
-            {available ? <SparkIcon size={20} /> : <PeopleIcon size={20} />}
+            <ChatIcon size={20} />
             {unreadChatCount > 0 ? (
               <span className="agent-drawer-badge" aria-hidden="true">
                 {unreadChatCount > 99 ? '99+' : unreadChatCount}
