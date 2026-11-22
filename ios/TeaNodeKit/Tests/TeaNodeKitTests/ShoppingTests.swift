@@ -70,6 +70,7 @@ final class ShoppingTests: XCTestCase {
             "shoppingLists": "ListShoppingLists", "shoppingList": "GetShoppingList", "shoppingItem": "GetShoppingItem",
             "shoppingListShares": "ListShoppingListShares", "shoppingStores": "ListShoppingStores",
             "shoppingStoreItems": "ListShoppingStoreItems", "openShoppingTrips": "ListOpenShoppingTrips",
+            "resumableShoppingTrip": "GetResumableShoppingTrip", "checkOffShoppingItem": "CheckOffShoppingItem", "resumeShopping": "ResumeShopping",
             "shoppingItemPrices": "ListShoppingItemPrices", "similarShoppingItems": "ListSimilarShoppingItems", "shoppingReceiptMatches": "ListShoppingReceiptMatches",
             "previewShoppingImport": "PreviewShoppingImport", "createShoppingList": "CreateShoppingList",
             "renameShoppingList": "RenameShoppingList", "deleteShoppingList": "DeleteShoppingList", "shareShoppingList": "ShareShoppingList",
@@ -490,6 +491,34 @@ final class ShoppingTests: XCTestCase {
         let (done, doneFake) = connection(answering: #"{"data":{"FinishShopping":\#(trip)}}"#)
         try await done.finishShopping()
         XCTAssertNil(try sentVariables(doneFake.sent[0])["shoppingTripId"])
+    }
+
+    func testCheckingOffAndResumingSendWhatTheServerNeeds() async throws {
+        let answer = #"{"id":"item-1","shoppingListId":"list-1","itemDescription":"Milk","neededQuantity":"1","shoppingItemState":"not_needed"}"#
+        let (checking, checkFake) = connection(answering: #"{"data":{"CheckOffShoppingItem":\#(answer)}}"#)
+        let checked = try await checking.checkOffShoppingItem(shoppingItemId: "item-1", isCheckedOff: true)
+        XCTAssertTrue(checked.isNotNeeded)
+        let sent = try sentVariables(checkFake.sent[0])
+        XCTAssertEqual(sent["shoppingItemId"], .string("item-1"))
+        XCTAssertEqual(sent["isCheckedOff"], .bool(true))
+
+        let finished = #"{"id":"trip-1","userId":"user-1","storeName":"Example Market","shoppingListIds":["list-1"],"startedAt":"2030-01-02T09:00:00Z","finishedAt":"2030-01-02T09:40:00Z","boughtItemCount":3}"#
+        let (asking, _) = connection(answering: #"{"data":{"GetResumableShoppingTrip":\#(finished)}}"#)
+        let resumable = try await asking.resumableShoppingTrip()
+        XCTAssertEqual(resumable?.boughtItemCount, 3)
+        XCTAssertNotNil(resumable?.finishedDate)
+        XCTAssertEqual(resumable?.isOpen, false)
+
+        let (none, _) = connection(answering: #"{"data":{"GetResumableShoppingTrip":null}}"#)
+        let nothing = try await none.resumableShoppingTrip()
+        XCTAssertNil(nothing)
+
+        let reopened = #"{"id":"trip-1","userId":"user-1","storeName":"Example Market","shoppingListIds":["list-1"],"startedAt":"2030-01-02T09:00:00Z"}"#
+        let (resuming, resumeFake) = connection(answering: #"{"data":{"ResumeShopping":\#(reopened)}}"#)
+        let trip = try await resuming.resumeShopping(shoppingTripId: "trip-1")
+        XCTAssertTrue(trip.isOpen)
+        XCTAssertEqual(trip.boughtItemCount, 0)
+        XCTAssertEqual(try sentVariables(resumeFake.sent[0])["shoppingTripId"], .string("trip-1"))
     }
 
     func testTheStoreScreenAsksForTheListsIncludedAndAnyStore() async throws {

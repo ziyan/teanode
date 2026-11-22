@@ -82,22 +82,45 @@ struct ShoppingPictureView: View {
     }
 }
 
-/// ShoppingListItemRow is an item on a list: its picture, which opens full
-/// screen, what it is and what it needs, and about what it costs. A tap on
-/// the words opens the item.
+/// ShoppingRowCheck is the check an item has on a list: filled when it is in
+/// a cart or checked off, and whether the person may tap it (not while it is
+/// in somebody else's cart).
+struct ShoppingRowCheck {
+    let isChecked: Bool
+    let isEnabled: Bool
+    let onToggle: () -> Void
+}
+
+/// ShoppingListItemRow is an item on a list: a check, its picture, which
+/// opens full screen, what it is and what it needs, and about what it costs.
+/// A tap on the check checks it off; a tap on the words opens the item.
 struct ShoppingListItemRow: View {
     let item: ShoppingItem
+    let check: ShoppingRowCheck
     let onOpen: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(spacing: 12) {
-            ShoppingPictureView(item: item, size: 44, isZoomable: true)
+            Button(action: check.onToggle) {
+                ShoppingCheckMark(isChecked: check.isChecked)
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .disabled(!check.isEnabled)
+            .accessibilityLabel(Text(verbatim: item.itemDescription))
+            .accessibilityValue(Text(verbatim: check.isChecked ? String(localized: "Checked off") : String(localized: "To buy")))
+            .accessibilityAddTraits(check.isChecked ? .isSelected : [])
+            // At the largest sizes the words need the width the picture takes.
+            if !dynamicTypeSize.isAccessibilitySize {
+                ShoppingPictureView(item: item, size: 44, isZoomable: true)
+            }
             Button(action: onOpen) {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: item.itemDescription)
-                            .foregroundStyle(item.isNotNeeded ? .secondary : .primary)
+                            .foregroundStyle(check.isChecked ? .secondary : .primary)
                         Text(verbatim: ShoppingWords.listItemDetail(item))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -135,44 +158,58 @@ struct ShoppingListItemRow: View {
 }
 
 /// ShoppingListItemTile is an item in the pictures layout of a list: the
-/// picture across the tile, which opens full screen, and under it what it
-/// is, what it needs and about what it costs. A tap on the words opens it.
+/// picture across the tile, which opens full screen, and under it the check
+/// with what it is, what it needs and about what it costs. A tap on the check
+/// checks it off; a tap on the words opens it.
 struct ShoppingListItemTile: View {
     let item: ShoppingItem
     /// The store or aisle the tile is under; the tiles have no headings.
     let groupName: String
+    let check: ShoppingRowCheck
     let onOpen: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ShoppingPictureView(item: item, size: nil, isZoomable: true)
-            Button(action: onOpen) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: groupName)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Text(verbatim: item.itemDescription)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(item.isNotNeeded ? .secondary : .primary)
-                        .lineLimit(2)
-                    Text(verbatim: ShoppingWords.listItemDetail(item))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                    let price = ShoppingMoney.shownLineTotal(of: item)
-                    if !price.isEmpty {
-                        Text(verbatim: price)
-                            .font(.footnote)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
+                .opacity(check.isChecked ? 0.6 : 1)
+            Text(verbatim: groupName)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            HStack(alignment: .top, spacing: 6) {
+                Button(action: check.onToggle) {
+                    ShoppingCheckMark(isChecked: check.isChecked)
+                        .frame(minHeight: 32, alignment: .top)
+                        .contentShape(.rect)
                 }
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(.rect)
+                .buttonStyle(.borderless)
+                .disabled(!check.isEnabled)
+                .accessibilityLabel(Text(verbatim: item.itemDescription))
+                .accessibilityValue(Text(verbatim: check.isChecked ? String(localized: "Checked off") : String(localized: "To buy")))
+                Button(action: onOpen) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: item.itemDescription)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(check.isChecked ? .secondary : .primary)
+                            .lineLimit(2)
+                        Text(verbatim: ShoppingWords.listItemDetail(item))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                        let price = ShoppingMoney.shownLineTotal(of: item)
+                        if !price.isEmpty {
+                            Text(verbatim: price)
+                                .font(.footnote)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
+                }
+                .shoppingWordsButton()
             }
-            .shoppingWordsButton()
         }
         // Every tile in a row as tall as the tallest, so their grounds line up.
         .frame(maxHeight: .infinity, alignment: .top)

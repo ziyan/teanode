@@ -356,6 +356,9 @@ public struct ShoppingTrip: Decodable, Identifiable, Hashable, Sendable {
     public let shoppingListIds: [String]
     public let startedAt: String
     public let finishedAt: String?
+    /// How many items the trip bought are still bought: what resuming it
+    /// puts back in the cart. Zero while it is open.
+    public let boughtItemCount: Int
 
     public init(from decoder: Decoder) throws {
         let fields = try ShoppingFields(decoder)
@@ -368,7 +371,11 @@ public struct ShoppingTrip: Decodable, Identifiable, Hashable, Sendable {
         shoppingListIds = fields.list("shoppingListIds", of: String.self)
         startedAt = fields.text("startedAt")
         finishedAt = fields.optionalText("finishedAt")
+        boughtItemCount = fields.whole("boughtItemCount")
     }
+
+    /// When it finished, nil while it is open.
+    public var finishedDate: Date? { ServerTime.date(finishedAt) }
 
     /// Who is shopping: their name, or their username when they have no name.
     public var shownShopper: String { shopperName.isEmpty ? shopperUsername : shopperName }
@@ -1109,7 +1116,7 @@ extension Documents {
         id userId listName ownerName ownerUsername isOwner isShared isReminded neededCount inCartCount notNeededCount createdAt updatedAt
         """
     static let shoppingTripFields = """
-        id userId shopperName shopperUsername storeName storeKey shoppingListIds startedAt finishedAt
+        id userId shopperName shopperUsername storeName storeKey shoppingListIds startedAt finishedAt boughtItemCount
         """
     static let shoppingShareFields = """
         id shoppingListId listName ownerUserId ownerUsername ownerName granteeUserId granteeUsername granteeName granteeCircleId
@@ -1162,6 +1169,9 @@ extension Documents {
         """
     public static let openShoppingTrips = """
         query { ListOpenShoppingTrips { \(shoppingTripFields) } }
+        """
+    public static let resumableShoppingTrip = """
+        query { GetResumableShoppingTrip { \(shoppingTripFields) } }
         """
     public static let similarShoppingItems = """
         query ($shoppingListId: String!, $itemDescription: String!) {
@@ -1257,6 +1267,11 @@ extension Documents {
           CheckShoppingItem(shoppingItemId: $shoppingItemId, isChecked: $isChecked, storeName: $storeName) { \(shoppingItemFields) }
         }
         """
+    public static let checkOffShoppingItem = """
+        mutation ($shoppingItemId: String!, $isCheckedOff: Boolean!) {
+          CheckOffShoppingItem(shoppingItemId: $shoppingItemId, isCheckedOff: $isCheckedOff) { \(shoppingItemFields) }
+        }
+        """
     public static let setShoppingItemNeed = """
         mutation ($shoppingItemId: String!, $isNeeded: Boolean!, $neededQuantity: String) {
           SetShoppingItemNeed(shoppingItemId: $shoppingItemId, isNeeded: $isNeeded, neededQuantity: $neededQuantity) { \(shoppingItemFields) }
@@ -1293,6 +1308,9 @@ extension Documents {
     public static let finishShopping = """
         mutation ($shoppingTripId: String) { FinishShopping(shoppingTripId: $shoppingTripId) { \(shoppingTripFields) } }
         """
+    public static let resumeShopping = """
+        mutation ($shoppingTripId: String!) { ResumeShopping(shoppingTripId: $shoppingTripId) { \(shoppingTripFields) } }
+        """
     public static let matchShoppingReceipt = """
         mutation ($financeReceiptId: String!) { MatchShoppingReceipt(financeReceiptId: $financeReceiptId) }
         """
@@ -1319,16 +1337,16 @@ extension Documents {
     public static let shoppingDocuments: [String: String] = [
         "shoppingLists": shoppingLists, "shoppingList": shoppingList, "shoppingItem": shoppingItem,
         "shoppingListShares": shoppingListShares, "shoppingStores": shoppingStores, "shoppingStoreItems": shoppingStoreItems,
-        "openShoppingTrips": openShoppingTrips, "shoppingItemPrices": shoppingItemPrices, "similarShoppingItems": similarShoppingItems,
+        "openShoppingTrips": openShoppingTrips, "resumableShoppingTrip": resumableShoppingTrip, "shoppingItemPrices": shoppingItemPrices, "similarShoppingItems": similarShoppingItems,
         "shoppingReceiptMatches": shoppingReceiptMatches, "previewShoppingImport": previewShoppingImport,
         "createShoppingList": createShoppingList, "renameShoppingList": renameShoppingList, "deleteShoppingList": deleteShoppingList,
         "shareShoppingList": shareShoppingList, "unshareShoppingList": unshareShoppingList,
         "setShoppingListReminder": setShoppingListReminder, "setShoppingStoreReminder": setShoppingStoreReminder,
         "addShoppingItems": addShoppingItems, "updateShoppingItem": updateShoppingItem, "removeShoppingItems": removeShoppingItems,
-        "checkShoppingItem": checkShoppingItem, "setShoppingItemNeed": setShoppingItemNeed,
+        "checkShoppingItem": checkShoppingItem, "checkOffShoppingItem": checkOffShoppingItem, "setShoppingItemNeed": setShoppingItemNeed,
         "setShoppingItemOutOfStock": setShoppingItemOutOfStock, "recordShoppingItemPrice": recordShoppingItemPrice,
         "findShoppingItemPicture": findShoppingItemPicture, "setShoppingItemPicture": setShoppingItemPicture,
-        "startShopping": startShopping, "finishShopping": finishShopping, "matchShoppingReceipt": matchShoppingReceipt,
+        "startShopping": startShopping, "finishShopping": finishShopping, "resumeShopping": resumeShopping, "matchShoppingReceipt": matchShoppingReceipt,
         "decideShoppingReceiptMatch": decideShoppingReceiptMatch, "undoShoppingReceipt": undoShoppingReceipt,
         "addShoppingItemFromReceiptLine": addShoppingItemFromReceiptLine, "shoppingEvents": shoppingEvents,
     ]
@@ -1426,6 +1444,13 @@ extension Connection {
     public func openShoppingTrips() async throws -> [ShoppingTrip] {
         struct Answer: Decodable, Sendable { let ListOpenShoppingTrips: [ShoppingTrip] }
         return try await execute(Documents.openShoppingTrips, as: Answer.self).ListOpenShoppingTrips
+    }
+
+    /// The person's latest trip, when it finished in the last few hours and
+    /// resuming it would put something back in the cart; nil otherwise.
+    public func resumableShoppingTrip() async throws -> ShoppingTrip? {
+        struct Answer: Decodable, Sendable { let GetResumableShoppingTrip: ShoppingTrip? }
+        return try await execute(Documents.resumableShoppingTrip, as: Answer.self).GetResumableShoppingTrip
     }
 
     /// An item's prices, newest first.
@@ -1569,6 +1594,18 @@ extension Connection {
         return try await execute(Documents.checkShoppingItem, variables: variables, as: Answer.self).CheckShoppingItem
     }
 
+    /// The check on a list, for a person who is not shopping: bought now with
+    /// no trip, or, unchecked, needed again (a purchase only hours old is
+    /// taken back).
+    @discardableResult
+    public func checkOffShoppingItem(shoppingItemId: String, isCheckedOff: Bool) async throws -> ShoppingItem {
+        struct Answer: Decodable, Sendable { let CheckOffShoppingItem: ShoppingItem }
+        return try await execute(
+            Documents.checkOffShoppingItem, variables: ["shoppingItemId": .string(shoppingItemId), "isCheckedOff": .bool(isCheckedOff)],
+            as: Answer.self
+        ).CheckOffShoppingItem
+    }
+
     /// Needs an item again with a count, or marks it not needed.
     @discardableResult
     public func setShoppingItemNeed(shoppingItemId: String, isNeeded: Bool, neededQuantity: String? = nil) async throws -> ShoppingItem {
@@ -1636,6 +1673,15 @@ extension Connection {
         var variables: [String: JSONValue] = [:]
         if let shoppingTripId, !shoppingTripId.isEmpty { variables["shoppingTripId"] = .string(shoppingTripId) }
         return try await execute(Documents.finishShopping, variables: variables, as: Answer.self).FinishShopping
+    }
+
+    /// Opens again a trip the person finished in the last few hours: what it
+    /// bought goes back in their cart.
+    @discardableResult
+    public func resumeShopping(shoppingTripId: String) async throws -> ShoppingTrip {
+        struct Answer: Decodable, Sendable { let ResumeShopping: ShoppingTrip }
+        return try await execute(Documents.resumeShopping, variables: ["shoppingTripId": .string(shoppingTripId)], as: Answer.self)
+            .ResumeShopping
     }
 
     // MARK: Receipts
