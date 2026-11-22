@@ -63,6 +63,20 @@ final class ShoppingTests: XCTestCase {
         return try JSONDecoder().decode(ShoppingItem.self, from: Data(json.utf8))
     }
 
+    // MARK: Searching a list
+
+    func testASearchKeepsTheItemsHoldingEveryWord() throws {
+        let oatMilk = try item("item-1", "Oat milk", store: "Example Market", aisle: "Dairy")
+        let wholeMilk = try item("item-2", "Whole milk")
+        let bread = try item("item-3", "Bread", aisle: "Bakery")
+        let items = [oatMilk, wholeMilk, bread]
+        XCTAssertEqual(ShoppingSearch.filter(items, searchText: "MILK").map(\.id), ["item-1", "item-2"])
+        XCTAssertEqual(ShoppingSearch.filter(items, searchText: "milk example").map(\.id), ["item-1"])
+        XCTAssertEqual(ShoppingSearch.filter(items, searchText: "bakery").map(\.id), ["item-3"])
+        XCTAssertEqual(ShoppingSearch.filter(items, searchText: "milk bread").map(\.id), [])
+        XCTAssertEqual(ShoppingSearch.filter(items, searchText: "  ").map(\.id), ["item-1", "item-2", "item-3"])
+    }
+
     // MARK: The documents
 
     func testTheDocumentsNameTheServersOperations() {

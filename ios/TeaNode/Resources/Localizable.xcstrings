@@ -97550,6 +97550,22 @@
           }
         }
       }
+    },
+    "Search this list": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このリストを検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索此清单"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
