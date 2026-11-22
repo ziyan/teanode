@@ -37,7 +37,10 @@
             }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
-            if let chatCallAnswer = Self.chatCallAnswer(query: query, body: request.httpBody) {
+            if query.contains("StorageUsage(") {
+                // First: its document names fields (rowFileSizes, disks) that the questions below are looked for by.
+                answer = Self.storageUsageAnswer(body: request.httpBody)
+            } else if let chatCallAnswer = Self.chatCallAnswer(query: query, body: request.httpBody) {
                 // First: a call's document names fields (members, a chat's title) that the questions below are looked for by.
                 answer = chatCallAnswer
             } else if let journalAnswer = Self.journalAnswer(query: query, body: request.httpBody) {
@@ -640,6 +643,60 @@
               {"node":{"id":"home","path":"home","kind":"topic","name":"Home","summary":"The house, the garden and what needs doing."},"hint":"","children":3},
               {"node":{"id":"travel","path":"travel","kind":"topic","name":"Travel","summary":"Trips taken and planned."},"hint":"","children":0}]}}}
             """#
+
+        /// What the database and the files hold, for the Disk usage screen:
+        /// fourteen days of invented sizes growing steadily, one disk that
+        /// fills in about twenty days and an object store that is not
+        /// measured. By person is the files only, as the server answers it.
+        static func storageUsageAnswer(body: Data?) -> String {
+            let isByPerson = String(decoding: body ?? Data(), as: UTF8.self).contains(#""by":"person""#)
+            let gigabyte: Int64 = 1 << 30
+            let areaGigabytes: [(String, Int64)] = [
+                ("search", 31), ("memory", 24), ("health", 9), ("conversations", 3), ("mail", 2), ("photos", 1), ("other", 1),
+            ]
+            let kindGigabytes: [(String, Int64)] = [
+                ("photoOriginal", 220), ("photoPreview", 40), ("mail", 1), ("recordingOriginal", 1), ("agentAttachment", 1),
+            ]
+            func pairs(_ sizes: [(String, Int64)], day: Int64) -> String {
+                sizes.map { #"{"sizeKey":"\#($0.0)","sizeBytes":\#(($0.1 * gigabyte) + day * gigabyte / 40)}"# }.joined(separator: ",")
+            }
+            var days: [String] = []
+            for day in 0..<14 {
+                let databaseBytes = (71 * gigabyte) + Int64(day) * gigabyte / 4
+                let fileBytes = (263 * gigabyte) + Int64(day) * gigabyte / 2
+                let breakdown = isByPerson ? "" : pairs(isByKindDemo(body) ? kindGigabytes : areaGigabytes, day: Int64(day))
+                days.append(
+                    #"{"sampledOn":"2026-10-\#(String(format: "%02d", day + 1))","databaseSizeBytes":\#(databaseBytes),"fileSizeBytes":\#(fileBytes),"totalSizeBytes":\#(databaseBytes + fileBytes),"breakdownSizes":[\#(breakdown)]}"#)
+            }
+            let rows: String
+            if isByPerson {
+                rows = #"""
+                    {"rowKey":"person-a","rowLabel":"Alice Example","rowSizeBytes":\#(180 * gigabyte),"rowTableCount":0,"rowFileSizes":[{"sizeKey":"photoOriginal","sizeBytes":\#(150 * gigabyte)},{"sizeKey":"photoPreview","sizeBytes":\#(28 * gigabyte)},{"sizeKey":"mail","sizeBytes":\#(2 * gigabyte)}]},
+                    {"rowKey":"person-b","rowLabel":"Bob Example","rowSizeBytes":\#(80 * gigabyte),"rowTableCount":0,"rowFileSizes":[{"sizeKey":"photoOriginal","sizeBytes":\#(70 * gigabyte)},{"sizeKey":"photoPreview","sizeBytes":\#(10 * gigabyte)}]},
+                    {"rowKey":"","rowLabel":"","rowSizeBytes":\#(4 * gigabyte),"rowTableCount":0,"rowFileSizes":[{"sizeKey":"mail","sizeBytes":\#(4 * gigabyte)}]}
+                    """#
+            } else if isByKindDemo(body) {
+                rows = kindGigabytes.map { #"{"rowKey":"\#($0.0)","rowLabel":"\#($0.0)","rowSizeBytes":\#($0.1 * gigabyte),"rowTableCount":0,"rowFileSizes":[]}"# }.joined(separator: ",")
+            } else {
+                rows = areaGigabytes.enumerated().map { #"{"rowKey":"\#($1.0)","rowLabel":"\#($1.0)","rowSizeBytes":\#($1.1 * gigabyte),"rowTableCount":\#($0 + 3),"rowFileSizes":[]}"# }.joined(separator: ",")
+            }
+            return #"""
+                {"data":{"StorageUsage":{
+                  "breakdownBy":"\#(isByPerson ? "person" : isByKindDemo(body) ? "kind" : "area")",
+                  "databaseSizeBytes":\#(74 * gigabyte),"fileSizeBytes":\#(267 * gigabyte),"totalSizeBytes":\#(341 * gigabyte),
+                  "usageRows":[\#(rows)],
+                  "historyDays":[\#(days.joined(separator: ","))],
+                  "disks":[
+                    {"diskLabel":"dataDirectory","isDiskMeasured":true,"diskTotalBytes":\#(400 * gigabyte),"diskFreeBytes":\#(40 * gigabyte),"diskUsedBytes":\#(360 * gigabyte),"projectedFullOn":"2026-10-30","daysUntilFull":20,"isProjectedFull":true},
+                    {"diskLabel":"objectStore","isDiskMeasured":false,"diskTotalBytes":null,"diskFreeBytes":null,"diskUsedBytes":null,"projectedFullOn":null,"daysUntilFull":null,"isProjectedFull":false}],
+                  "growth":{"growthSampleCount":14,"isGrowthProjectable":true,"growthBytesPerDay":\#(gigabyte * 3 / 4),"currentSizeBytes":\#(341 * gigabyte),
+                    "projectedSize30DaysBytes":\#(363 * gigabyte),"projectedSize90DaysBytes":\#(409 * gigabyte),"projectedSize365DaysBytes":\#(615 * gigabyte),"areFilesCounted":true}}}}
+                """#
+        }
+
+        private static func isByKindDemo(_ body: Data?) -> Bool {
+            String(decoding: body ?? Data(), as: UTF8.self).contains(#""by":"kind""#)
+        }
 
         /// The server's usage by day for the usage screen: invented tokens and
         /// amounts, with a bill read for most days and none for the latest.
