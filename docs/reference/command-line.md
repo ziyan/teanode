@@ -137,7 +137,7 @@ so one command serves a person and a script.
 | `session` | the browsers signed in to the dashboard |
 | `passkey` | the passkeys registered to your account; registering one needs the dashboard |
 | `settings` | the optional integrations; `settings set <section> key=value` |
-| `server` | the running instance: `status`, `restart`, `addresses`, `identity` |
+| `server` | the running instance: `status`, `restart`, `addresses`, `identity`, and `storage` (what the database and the files hold, by area, kind or person with `--by`, the growth, and when a measured disk fills; `--history` lists each day's sample) |
 | `services` | which hosted services this server offers: `get`, `set`, and `assistant --kind openai`, which starts the assistant in one step (the key is checked, a model chosen, agents offered and your own agent turned on; `--base-url` for a model server of your own, `--restart` to restart afterwards) |
 | `upgrade` | the newest release, and installing it: `status [--check]`, `apply`; `app testflight\|appstore\|android` says the newest TeaNode phone app on a channel, as the app asks this server |
 | `mail` | handled mail: `list` with filters, `get`, `content`, `download`, `opens`, `count`, `send` |
