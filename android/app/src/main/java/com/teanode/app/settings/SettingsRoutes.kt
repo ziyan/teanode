@@ -37,6 +37,7 @@ object SettingsRoutes {
     val MEMBER_PHOTOS = Routes.child(AppSection.Settings, "member-photos/{userId}/{name}")
     val MANAGE_SERVER = Routes.child(AppSection.Settings, "manage/server")
     val MANAGE_USAGE = Routes.child(AppSection.Settings, "manage/usage")
+    val MANAGE_STORAGE = Routes.child(AppSection.Settings, "manage/storage")
     val MANAGE = Routes.child(AppSection.Settings, "manage")
     val APPS = Routes.child(AppSection.Settings, "apps")
     val SESSIONS = Routes.child(AppSection.Settings, "sessions")

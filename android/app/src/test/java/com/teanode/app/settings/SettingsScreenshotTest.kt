@@ -189,6 +189,9 @@ class SettingsScreenshotTest {
     @Test fun `usage light`() = shoot("settings-usage-light") { AgentUsageScreen(onBack = {}) }
     @Test fun `usage dark`() = shoot("settings-usage-dark", AppearanceChoice.Dark) { AgentUsageScreen(onBack = {}) }
     @Test fun `usage largest text`() = shoot("settings-usage-largest-text", fontScale = 2f) { AgentUsageScreen(onBack = {}) }
+    @Test fun `storage usage light`() = shoot("settings-storage-usage-light") { StorageUsageScreen(onBack = {}) }
+    @Test fun `storage usage dark`() = shoot("settings-storage-usage-dark", AppearanceChoice.Dark) { StorageUsageScreen(onBack = {}) }
+    @Test fun `storage usage largest text`() = shoot("settings-storage-usage-largest-text", fontScale = 2f) { StorageUsageScreen(onBack = {}) }
 
     @Test fun `token dialog light`() = shoot("settings-dialog-token-new-light", before = tap("New token")) { TokensScreen(onBack = {}) }
     @Test fun `source editor light`() = shoot("settings-dialog-source-new-light", before = tap("Add a source")) { KnowledgeSourcesScreen(onBack = {}) }

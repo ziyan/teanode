@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.ToggleOn
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Checkbox
@@ -565,6 +566,7 @@ fun ManageScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
         if (operator.canOpenAgentAdmin) item { TeaNodeNavigationRow(stringResource(R.string.settings_agents_title), { onOpen(SettingsRoutes.MANAGE_AGENTS) }, leadingIcon = Icons.Outlined.Person) }
         if (operator.canManageServer) item { TeaNodeNavigationRow(stringResource(R.string.settings_server_title), { onOpen(SettingsRoutes.MANAGE_SERVER) }, leadingIcon = Icons.Outlined.Dns) }
         if (operator.canOpenAgentAdmin) item { TeaNodeNavigationRow(stringResource(R.string.settings_usage_title), { onOpen(SettingsRoutes.MANAGE_USAGE) }, leadingIcon = Icons.Outlined.History) }
+        if (operator.canManageServer) item { TeaNodeNavigationRow(stringResource(R.string.settings_storage_title), { onOpen(SettingsRoutes.MANAGE_STORAGE) }, leadingIcon = Icons.Outlined.Storage) }
         if (operator.canManageServer) item { TeaNodeNavigationRow(stringResource(R.string.settings_services_title), { onOpen(SettingsRoutes.MANAGE_SERVICES) }, leadingIcon = Icons.Outlined.ToggleOn) }
     }
 }

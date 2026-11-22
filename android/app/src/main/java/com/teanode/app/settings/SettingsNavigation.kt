@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.ToggleOn
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.runtime.Composable
@@ -112,6 +113,7 @@ fun NavGraphBuilder.settingsRoutes(navigator: AppNavigator) {
     manageRoutes(navigator)
     settingsPage(SettingsRoutes.MANAGE_SERVER) { ServerSettingsScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.MANAGE_USAGE) { AgentUsageScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.MANAGE_STORAGE) { StorageUsageScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.APPS) { ConnectedAppsScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.SESSIONS) { SessionsScreen(onBack = { navigator.back() }) }
 }
@@ -153,6 +155,7 @@ fun settingsPlaces(): List<AppPlace> = listOf(
     managePlace("agents", R.string.settings_agents_title, SettingsRoutes.MANAGE_AGENTS, Icons.Outlined.Person),
     managePlace("server", R.string.settings_server_title, SettingsRoutes.MANAGE_SERVER, Icons.Outlined.Dns),
     managePlace("usage", R.string.settings_usage_title, SettingsRoutes.MANAGE_USAGE, Icons.Outlined.History),
+    managePlace("storage", R.string.settings_storage_title, SettingsRoutes.MANAGE_STORAGE, Icons.Outlined.Storage),
     managePlace("services", R.string.settings_services_title, SettingsRoutes.MANAGE_SERVICES, Icons.Outlined.ToggleOn),
     managePlace("mail", R.string.settings_manage_mail, MailRoutes.MANAGE_ALL_MAIL, Icons.Outlined.Inbox),
     managePlace("queue", R.string.settings_manage_queue, MailRoutes.MANAGE_QUEUE, Icons.Outlined.Schedule),
