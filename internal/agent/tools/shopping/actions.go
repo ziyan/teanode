@@ -233,6 +233,10 @@ func (self *scope) tripRow(trip *models.ShoppingTrip) map[string]any {
 	if trip.StoreName != "" {
 		row["store_name"] = trip.StoreName
 	}
+	if trip.FinishedAt != nil {
+		row["finished_at"] = trip.FinishedAt.In(self.location).Format("2006-01-02 15:04")
+		row["bought_item_count"] = trip.BoughtItemCount
+	}
 	return row
 }
 
@@ -501,6 +505,19 @@ func runTrips(ctx context.Context, here *scope, asked *arguments) (*tools.Result
 		answer["note"] = "nobody is shopping now"
 	}
 	return dataResult(answer)
+}
+
+func runResumableTrip(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
+	trip, err := client.GetResumableShoppingTrip(ctx, here.operations)
+	if err != nil {
+		return nil, err
+	}
+	if trip == nil {
+		return tools.TextResult("no trip to resume: the person is shopping now, or finished none in the last few hours that bought something"), nil
+	}
+	return dataResult(map[string]any{
+		"shopping_trip": here.tripRow(trip), "note": "resume_shopping with this trip_id puts what it bought back in the person's cart",
+	})
 }
 
 func runSimilarItems(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
@@ -873,6 +890,18 @@ func runUncheck(ctx context.Context, here *scope, asked *arguments) (*tools.Resu
 	})
 }
 
+func runCheckOff(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
+	return changeEach(ctx, here, asked, "check_off", func(itemId string) (*models.ShoppingItem, error) {
+		return client.CheckOffShoppingItem(ctx, here.operations, itemId, true)
+	})
+}
+
+func runUndoCheckOff(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
+	return changeEach(ctx, here, asked, "undo_check_off", func(itemId string) (*models.ShoppingItem, error) {
+		return client.CheckOffShoppingItem(ctx, here.operations, itemId, false)
+	})
+}
+
 func runNeed(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
 	neededQuantity := ""
 	if asked.NeededQuantity != nil {
@@ -958,6 +987,20 @@ func runFinishShopping(ctx context.Context, here *scope, asked *arguments) (*too
 		return nil, err
 	}
 	return tools.TextResult("finished shopping; what was in the cart is bought"), nil
+}
+
+func runResumeShopping(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {
+	tripId := strings.TrimSpace(asked.TripID)
+	if tripId == "" {
+		return nil, errors.New("resume_shopping needs trip_id; resumable_trip gives it")
+	}
+	trip, err := client.ResumeShopping(ctx, here.operations, tripId)
+	if err != nil {
+		return nil, err
+	}
+	return noteResult("shopping again", map[string]any{
+		"shopping_trip": here.tripRow(trip), "note": "what the trip bought is back in the person's cart; finish_shopping buys it again",
+	})
 }
 
 func runMatchReceipt(ctx context.Context, here *scope, asked *arguments) (*tools.Result, error) {

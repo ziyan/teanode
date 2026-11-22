@@ -130,6 +130,14 @@ func NewShoppingCommand() *cli.Command {
 				Name: "need", Usage: "need items again, with a count", ArgsUsage: "<item id>...",
 				Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "quantity", Usage: "how many are needed, a number above zero (1 by default)"}}, Action: runShoppingNeed,
 			},
+			{
+				Name: "check-off", Usage: "check items off a list without shopping: they are bought now, and nobody is told", ArgsUsage: "<item id>...",
+				Flags: []cli.Flag{JSONFlag()}, Action: runShoppingCheckOff,
+			},
+			{
+				Name: "undo-check-off", Usage: "need items checked off again; a purchase only hours old is taken back", ArgsUsage: "<item id>...",
+				Flags: []cli.Flag{JSONFlag()}, Action: runShoppingUndoCheckOff,
+			},
 			{Name: "not-needed", Usage: "mark items bought or not wanted now; they stay on the list", ArgsUsage: "<item id>...", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingNotNeeded},
 			{
 				Name: "out-of-stock", Usage: "say a store had none of an item", ArgsUsage: "<item id>",
@@ -183,6 +191,8 @@ func NewShoppingCommand() *cli.Command {
 				Action: runShoppingShop,
 			},
 			{Name: "done", Usage: "finish shopping: what you put in the cart is bought, no receipt needed", ArgsUsage: "[trip id]", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingDone},
+			{Name: "resumable", Usage: "the trip you finished in the last few hours that 'resume' would open again", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingResumable},
+			{Name: "resume", Usage: "open again a trip you finished by mistake: what it bought goes back in your cart", ArgsUsage: "<trip id>", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingResume},
 			{Name: "receipt", Usage: "what a Finance receipt did to your lists", ArgsUsage: "<finance receipt id>", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingReceipt},
 			{Name: "match-receipt", Usage: "match a receipt to your lists again, for one read before the list had its items", ArgsUsage: "<finance receipt id>", Flags: []cli.Flag{JSONFlag()}, Action: runShoppingMatchReceipt},
 			{
@@ -954,6 +964,18 @@ func runShoppingUncheck(ctx context.Context, command *cli.Command) error {
 	})
 }
 
+func runShoppingCheckOff(ctx context.Context, command *cli.Command) error {
+	return eachShoppingItem(ctx, command, "usage: teanode shopping check-off <item id>...", "checked off:", func(connection *client.Client, shoppingItemId string) (*models.ShoppingItem, error) {
+		return client.CheckOffShoppingItem(ctx, connection, shoppingItemId, true)
+	})
+}
+
+func runShoppingUndoCheckOff(ctx context.Context, command *cli.Command) error {
+	return eachShoppingItem(ctx, command, "usage: teanode shopping undo-check-off <item id>...", "needed:", func(connection *client.Client, shoppingItemId string) (*models.ShoppingItem, error) {
+		return client.CheckOffShoppingItem(ctx, connection, shoppingItemId, false)
+	})
+}
+
 func runShoppingNeed(ctx context.Context, command *cli.Command) error {
 	return eachShoppingItem(ctx, command, "usage: teanode shopping need <item id>... [--quantity <count>]", "needed:", func(connection *client.Client, shoppingItemId string) (*models.ShoppingItem, error) {
 		return client.SetShoppingItemNeed(ctx, connection, shoppingItemId, true, command.String("quantity"))
@@ -1299,6 +1321,47 @@ func runShoppingDone(ctx context.Context, command *cli.Command) error {
 		return describeNotFound(command, err, "the trip "+tripId)
 	}
 	return printShoppingDone(command, trip, "finished shopping; what you put in the cart is bought")
+}
+
+func runShoppingResumable(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	trip, err := client.GetResumableShoppingTrip(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(trip)
+	}
+	if trip == nil {
+		_, _ = fmt.Fprintln(command.Writer, "no trip to resume")
+		return nil
+	}
+	where := "a store"
+	if trip.StoreName != "" {
+		where = trip.StoreName
+	}
+	_, _ = fmt.Fprintf(command.Writer, "you finished shopping %s at %s; 'teanode shopping resume %s' puts %s back in your cart\n",
+		forTerminal(where), shoppingMomentText(trip.FinishedAt), trip.ID, countWords(trip.BoughtItemCount, "item"))
+	return nil
+}
+
+func runShoppingResume(ctx context.Context, command *cli.Command) error {
+	arguments, err := shoppingArguments(command, 1, "usage: teanode shopping resume <trip id>")
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	trip, err := client.ResumeShopping(ctx, connection, arguments[0])
+	if err != nil {
+		return describeNotFound(command, err, "the trip "+arguments[0])
+	}
+	return printShoppingDone(command, trip, "shopping again; what the trip bought is back in your cart")
 }
 
 func runShoppingReceipt(ctx context.Context, command *cli.Command) error {

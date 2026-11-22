@@ -48,6 +48,11 @@ type ShoppingQuery interface {
 	// The trips open now on the lists the caller reaches.
 	ListOpenShoppingTrips(ctx context.Context) ([]*models.ShoppingTrip, error)
 
+	// The caller's latest trip when it finished in the last few hours and can
+	// be resumed: what it bought would go back in their cart. Null when there
+	// is none, or they are shopping now.
+	GetResumableShoppingTrip(ctx context.Context) (*models.ShoppingTrip, error)
+
 	// The branches near a position of the stores the caller's lists need
 	// something from, with reminders on, for the phone to watch: at most two
 	// of each store and six in all, nearest first. Needs location:use too.
@@ -98,6 +103,10 @@ type ShoppingMutation interface {
 
 	// Needed again with a count, or not needed (bought, if it was in the cart).
 	SetShoppingItemNeed(ctx context.Context, arguments SetShoppingItemNeedArguments) (*models.ShoppingItem, error)
+
+	// The check on a list, without shopping: bought now, with no trip and
+	// nobody told; unchecked soon after, the purchase is taken back.
+	CheckOffShoppingItem(ctx context.Context, arguments CheckOffShoppingItemArguments) (*models.ShoppingItem, error)
 	SetShoppingItemOutOfStock(ctx context.Context, arguments SetShoppingItemOutOfStockArguments) (*models.ShoppingItem, error)
 	RecordShoppingItemPrice(ctx context.Context, arguments RecordShoppingItemPriceArguments) (*models.ShoppingItemPrice, error)
 
@@ -111,6 +120,10 @@ type ShoppingMutation interface {
 	// lists reach; Finish buys what the caller put in the cart.
 	StartShopping(ctx context.Context, arguments StartShoppingArguments) (*models.ShoppingTrip, error)
 	FinishShopping(ctx context.Context, arguments FinishShoppingArguments) (*models.ShoppingTrip, error)
+
+	// Opens again a trip the caller finished in the last few hours: what it
+	// bought goes back in their cart. Nobody is told again.
+	ResumeShopping(ctx context.Context, arguments ResumeShoppingArguments) (*models.ShoppingTrip, error)
 
 	// Queues the matching of one of the caller's receipts to their lists
 	// again, for a receipt read before the lists had its items.
@@ -369,6 +382,11 @@ type SetShoppingItemNeedArguments struct {
 	NeededQuantity string `json:"neededQuantity" graphapi:"nullable"`
 }
 
+type CheckOffShoppingItemArguments struct {
+	ShoppingItemID string `json:"shoppingItemId"`
+	IsCheckedOff   bool   `json:"isCheckedOff"`
+}
+
 type SetShoppingItemOutOfStockArguments struct {
 	ShoppingItemID string `json:"shoppingItemId"`
 	IsOutOfStock   bool   `json:"isOutOfStock"`
@@ -407,6 +425,10 @@ type FinishShoppingArguments struct {
 	// The trip to end; leave out to end the caller's own open trip, or, with
 	// none open, to buy what they put in the cart all the same
 	ShoppingTripID string `json:"shoppingTripId" graphapi:"nullable"`
+}
+
+type ResumeShoppingArguments struct {
+	ShoppingTripID string `json:"shoppingTripId"`
 }
 
 type DecideShoppingReceiptMatchArguments struct {
@@ -665,6 +687,15 @@ func (self *graph) ListOpenShoppingTrips(ctx context.Context) ([]*models.Shoppin
 	}
 	trips, err := self.transaction(ctx).ListOpenShoppingTrips(user.ID)
 	return trips, translateError(err)
+}
+
+func (self *graph) GetResumableShoppingTrip(ctx context.Context) (*models.ShoppingTrip, error) {
+	user, err := self.shoppingPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	trip, err := self.transaction(ctx).GetResumableShoppingTrip(user.ID)
+	return trip, translateError(err)
 }
 
 func (self *graph) ListSimilarShoppingItems(ctx context.Context, arguments ListSimilarShoppingItemsArguments) ([]*models.ShoppingItem, error) {
@@ -1139,6 +1170,16 @@ func (self *graph) SetShoppingItemNeed(ctx context.Context, arguments SetShoppin
 	return self.changedShoppingItem(tx, item, err)
 }
 
+func (self *graph) CheckOffShoppingItem(ctx context.Context, arguments CheckOffShoppingItemArguments) (*models.ShoppingItem, error) {
+	user, err := self.shoppingPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	item, err := tx.CheckOffShoppingItem(user.ID, arguments.ShoppingItemID, arguments.IsCheckedOff)
+	return self.changedShoppingItem(tx, item, err)
+}
+
 func (self *graph) SetShoppingItemOutOfStock(ctx context.Context, arguments SetShoppingItemOutOfStockArguments) (*models.ShoppingItem, error) {
 	user, err := self.shoppingPerson(ctx)
 	if err != nil {
@@ -1278,6 +1319,20 @@ func (self *graph) FinishShopping(ctx context.Context, arguments FinishShoppingA
 		return nil, translateError(err)
 	}
 	self.announceShopping(tx, uniqueShoppingListIds(trip.ShoppingListIDs, boughtListIds))
+	return trip, nil
+}
+
+func (self *graph) ResumeShopping(ctx context.Context, arguments ResumeShoppingArguments) (*models.ShoppingTrip, error) {
+	user, err := self.shoppingPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	trip, changedListIds, err := tx.ResumeShoppingTrip(user.ID, arguments.ShoppingTripID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	self.announceShopping(tx, uniqueShoppingListIds(trip.ShoppingListIDs, changedListIds))
 	return trip, nil
 }
 
