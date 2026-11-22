@@ -7,6 +7,7 @@ import { INTEGRATION_TABS, SERVER_TABS, shownTabs } from '../pageTabs'
 import { hasPermission, useSession } from '../session'
 import { IntegrationsSection, Section } from './settings/integrations'
 import { ServerAboutPage } from './settings/server'
+import { ServerStoragePage } from './serverStorage'
 import { SetupPage } from './serviceSetup'
 
 // Everything about this server, in one place with tabs across the top.
@@ -62,6 +63,7 @@ export function ServerPage() {
 
       {tab === 'setup' && <SetupPage />}
       {tab === 'about' && <ServerAboutPage />}
+      {tab === 'usage' && <ServerStoragePage />}
       {INTEGRATION_TABS.some((candidate) => candidate.id === tab) &&
         hasPermission(session.permissions, 'server:manage') && <IntegrationsSection section={tab as Section} />}
     </>

@@ -10041,6 +10041,19 @@ button.with-icon {
   border-top: 1px solid var(--border);
 }
 
+/* The storage card's three sizes, side by side, wrapping on a phone. */
+.storage-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.storage-figure strong {
+  display: block;
+  font-size: 20px;
+}
+
 /* The usage card's range and grouping, on one line. */
 .usage-range {
   display: flex;
