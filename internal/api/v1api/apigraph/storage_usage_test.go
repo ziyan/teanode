@@ -23,6 +23,9 @@ func TestOnlyTheOperatorSeesStorageAndItAddsUpTheFiles(test *testing.T) {
 	defer release()
 
 	const mailSizeBytes, previewSizeBytes, originalSizeBytes = 1000, 200, 5000
+	// A complete recording is its original, 700, and what was derived from it,
+	// 300; the upload still pending is not stored yet. An attachment is 90.
+	const recordingOriginalSizeBytes, recordingDerivedSizeBytes, attachmentSizeBytes = 700, 300, 90
 	var owner, other *models.User
 	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
 		var err error
@@ -45,6 +48,23 @@ func TestOnlyTheOperatorSeesStorageAndItAddsUpTheFiles(test *testing.T) {
 		dbtest.Exec(test, database, `INSERT INTO "mailbox_folder" ("id", "created_at", "modified_at", "mailbox_id", "name", "kind", "uid_validity") VALUES ('storage-folder-`+folder+`', now(), now(), 'storage-mailbox', '`+folder+`', '`+folder+`', 1)`)
 		dbtest.Exec(test, database, `INSERT INTO "mailbox_item" ("id", "folder_id", "mail_id", "uid", "modseq", "added_at") VALUES ('storage-item-`+folder+`', 'storage-folder-`+folder+`', 'storage-mail', 1, 1, now())`)
 	}
+	dbtest.Exec(test, database, `INSERT INTO "recording" ("id", "user_id", "created_at", "updated_at", "client_recording_id", "recording_title", "recording_origin", "recording_capture_state")
+		VALUES ('storage-recording', '`+owner.ID+`', now(), now(), 'client-recording', 'Meeting', 'phone', 'finished')`)
+	for id, state := range map[string]string{"storage-media-done": "complete", "storage-media-pending": "pending"} {
+		dbtest.Exec(test, database, `INSERT INTO "recording_media" ("id", "recording_id", "created_at", "client_media_id", "original_filename", "original_content_type", "original_size_bytes", "original_sha256", "timeline_start_ms", "media_duration_ms", "part_count", "recording_upload_state")
+			VALUES ('`+id+`', 'storage-recording', now(), '`+id+`', 'a.m4a', 'audio/mp4', 700, 'sha', 0, 1000, 1, '`+state+`')`)
+	}
+	dbtest.Exec(test, database, `INSERT INTO "recording_blob" ("id", "recording_id", "recording_media_id", "created_at", "recording_blob_purpose", "blob_size_bytes", "blob_sha256")
+		VALUES ('storage-blob', 'storage-recording', 'storage-media-done', now(), 'audio', 300, 'sha')`)
+	var agentID string
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		agent, err := transaction.CreateAgent(&models.Agent{UserID: owner.ID, Name: "Storage agent"})
+		if err != nil {
+			test.Fatalf("CreateAgent: %s", err)
+		}
+		agentID = agent.ID
+	})
+	dbtest.Exec(test, database, `INSERT INTO "agent_attachment" ("id", "created_at", "agent_id", "name", "size") VALUES ('storage-attachment', now(), '`+agentID+`', 'notes.txt', 90)`)
 	ownerContext := func(principal *api.Principal, transaction db.Transaction) context.Context {
 		return api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), transaction)
 	}
@@ -69,10 +89,10 @@ func TestOnlyTheOperatorSeesStorageAndItAddsUpTheFiles(test *testing.T) {
 		for _, row := range view.UsageRows {
 			sizes[row.RowKey] = row.RowSizeBytes
 		}
-		if sizes[models.StorageFileKindMail] != mailSizeBytes || sizes[models.StorageFileKindPhotoOriginal] != originalSizeBytes || sizes[models.StorageFileKindPhotoPreview] != previewSizeBytes || len(sizes) != len(models.StorageFileKinds) {
+		if sizes[models.StorageFileKindMail] != mailSizeBytes || sizes[models.StorageFileKindRecordingOriginal] != recordingOriginalSizeBytes || sizes[models.StorageFileKindRecordingDerived] != recordingDerivedSizeBytes || sizes[models.StorageFileKindAgentAttachment] != attachmentSizeBytes || sizes[models.StorageFileKindPhotoOriginal] != originalSizeBytes || sizes[models.StorageFileKindPhotoPreview] != previewSizeBytes || len(sizes) != len(models.StorageFileKinds) {
 			test.Errorf("by kind = %v", sizes)
 		}
-		if view.FileSizeBytes != mailSizeBytes+originalSizeBytes+previewSizeBytes || view.TotalSizeBytes != view.DatabaseSizeBytes+view.FileSizeBytes || view.DatabaseSizeBytes <= 0 {
+		if view.FileSizeBytes != mailSizeBytes+originalSizeBytes+previewSizeBytes+recordingOriginalSizeBytes+recordingDerivedSizeBytes+attachmentSizeBytes || view.TotalSizeBytes != view.DatabaseSizeBytes+view.FileSizeBytes || view.DatabaseSizeBytes <= 0 {
 			test.Errorf("totals: database %d files %d total %d", view.DatabaseSizeBytes, view.FileSizeBytes, view.TotalSizeBytes)
 		}
 
@@ -80,7 +100,7 @@ func TestOnlyTheOperatorSeesStorageAndItAddsUpTheFiles(test *testing.T) {
 		if err != nil {
 			test.Fatalf("StorageUsage by person: %s", err)
 		}
-		if len(view.UsageRows) != 1 || view.UsageRows[0].RowKey != owner.ID || view.UsageRows[0].RowLabel != "Alice Example" || view.UsageRows[0].RowSizeBytes != mailSizeBytes+originalSizeBytes+previewSizeBytes {
+		if len(view.UsageRows) != 1 || view.UsageRows[0].RowKey != owner.ID || view.UsageRows[0].RowLabel != "Alice Example" || view.UsageRows[0].RowSizeBytes != mailSizeBytes+originalSizeBytes+previewSizeBytes+recordingOriginalSizeBytes+recordingDerivedSizeBytes+attachmentSizeBytes {
 			test.Errorf("by person = %+v", view.UsageRows)
 		}
 
