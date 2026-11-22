@@ -72,6 +72,19 @@ items, mark them out of stock, price them and upload receipts. Only the owner
 shares it further or deletes it. Shares appear on the Sharing page with every
 other kind, as `shopping_list`.
 
+## Checking off without shopping
+
+A list has a check on each item, for a person who is not at a store: they
+bought it elsewhere, or have it already. `CheckOffShoppingItem` buys the item
+now, with no trip and nobody told. Unchecked again within three hours
+(`models.ShoppingPurchaseUndoableFor`) the purchase is taken back: the item is
+needed, last bought when it was before. Later, unchecking needs it again and
+keeps the purchase. While the person has a trip open, the same check puts the
+item in their cart instead, as the store screen does. An item stores the trip
+that last bought it and when it was bought before that
+(`bought_shopping_trip_id`, `previous_last_bought_at`, migration 0280), which
+is all taking a purchase back needs.
+
 ## Shopping a store
 
 At the store a person shops a store, not a list. The store screen
@@ -94,6 +107,18 @@ needed, and with no trip named it ends the person's own trip, or buys their
 cart when none is open. An item in another person's cart stays in theirs:
 checking it again does not take it over, and unchecking it (from a screen that
 is behind) leaves it there. Unchecking an item already bought leaves it bought.
+
+Every client's Done shopping opens the cart first: what the person put in it,
+each item with a check that takes it out, and about what it comes to. Snapping
+the receipt uploads it, starts its reading and finishes at once; finishing
+without a receipt asks first. Done buys the cart before the receipt is read,
+so the matcher also considers items bought in the last twelve hours
+(`models.ShoppingReceiptBoughtWithin`). A Done tapped by mistake is undone by
+`ResumeShopping`: for three hours, the person's latest trip opens again, with
+what it bought (and is still bought) back in their cart.
+`GetResumableShoppingTrip` says which trip that is, and the Shopping screen,
+the list and the store offer it. On the store screen, what is in a cart moves
+under the items still to find.
 
 The dashboard draws Shopping as the mailbox is drawn: the lists and the stores
 in the column, the open list, store or receipt in the pane, one at a time on a
