@@ -41,10 +41,21 @@ internal object ShoppingDemoData {
         Item("demo-item-rice", "Rice", store = EXAMPLE_MARKET, aisle = "Canned goods", aisleRank = 2, itemRank = 1, quantity = "1", unit = "bag", outOfStock = true),
         Item("demo-item-chili", "Frozen chili", store = CORNER_GROCER, aisle = "Frozen", aisleRank = 3, quantity = "2", price = "4.50"),
         Item("demo-item-towels", "Paper towels", aisle = "Household", aisleRank = 4, quantity = "1"),
+        Item("demo-item-bread", "Rye bread", store = EXAMPLE_MARKET, aisle = "Bakery", aisleRank = 5, quantity = "1", price = "3.25", state = "in_cart", cartedBy = "Robin"),
         Item("demo-item-bananas", "Bananas", store = EXAMPLE_MARKET, aisle = "Produce", aisleRank = 1, quantity = "1", unit = "bunch", price = "0.59", state = "not_needed", boughtAt = "2030-01-01T09:00:00Z"),
     )
 
     fun itemById(id: String): Item = items.firstOrNull { item -> item.id == id } ?: items.first()
+
+    /** A test sets these to show the person shopping now, or a trip they finished a moment ago and may resume. */
+    var isShoppingNow: Boolean = false
+    var isResumable: Boolean = false
+
+    fun ownTrip(isFinished: Boolean): String = """
+        {"id":"demo-trip-own","userId":"demo-user","shopperName":"Robin","shopperUsername":"robin","storeName":"$EXAMPLE_MARKET","storeKey":"examplemarket",
+         "shoppingListIds":["$GROCERIES_LIST_ID"],"startedAt":"2030-01-02T09:00:00Z","finishedAt":${if (isFinished) "\"2030-01-02T15:41:00Z\"" else "null"},
+         "boughtItemCount":${if (isFinished) 3 else 0}}
+    """.trimIndent()
 
     private fun trip(storeName: String, userId: String = "demo-user-2", shopper: String = "Sam") = """
         {"id":"demo-trip-1","userId":"$userId","shopperName":"$shopper","shopperUsername":"sam","storeName":"$storeName","storeKey":"${storeName.lowercase().filter { character -> character.isLetterOrDigit() }}",
@@ -129,7 +140,13 @@ val shoppingDemoAnswerers: List<DemoAnswerer> = listOf(
         "[${like.joinToString(",") { item -> item.json() }}]"
     },
     graphQLField("ListShoppingReceiptMatches", ShoppingDemoData.receipt),
-    graphQLField("ListOpenShoppingTrips", "[]"),
+    graphQLField("ListOpenShoppingTrips") { _ -> if (ShoppingDemoData.isShoppingNow) "[${ShoppingDemoData.ownTrip(false)}]" else "[]" },
+    graphQLField("GetResumableShoppingTrip") { _ -> if (ShoppingDemoData.isResumable) ShoppingDemoData.ownTrip(true) else "null" },
+    graphQLField("ResumeShopping") { _ -> ShoppingDemoData.ownTrip(false) },
+    graphQLField("CheckOffShoppingItem") { variables ->
+        val isCheckedOff = variables.text("isCheckedOff") == "true"
+        ShoppingDemoData.itemById(variables.text("shoppingItemId").orEmpty()).json(if (isCheckedOff) "not_needed" else "needed")
+    },
     graphQLField("PreviewShoppingImport", ShoppingDemoData.IMPORT_PREVIEW),
     graphQLField("ListWatchedStores", "[]"),
     graphQLField("ListCirclePeople", ShoppingDemoData.PEOPLE),

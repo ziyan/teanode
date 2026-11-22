@@ -162,4 +162,38 @@
     <string name="shopping_item_taken_off_for_everyone">%1$s 将从所有共享对象的清单中移除。</string>
     <string name="shopping_not_available_to_you">你无法使用购物功能</string>
     <string name="shopping_not_allowed_description">你的账户不能创建购物清单。管理你的 TeaNode 服务器的人可以为你开启。</string>
+    <string name="shopping_checked_off">已勾选</string>
+    <string name="shopping_check_off_item">勾选 %1$s</string>
+    <string name="shopping_uncheck_item">把 %1$s 放回清单</string>
+    <string name="shopping_take_out_of_cart">把 %1$s 从购物车中取出</string>
+    <string name="shopping_in_someones_cart">在 %1$s 的购物车里</string>
+    <string name="shopping_cart_title">你的购物车</string>
+    <string name="shopping_cart_empty">你的购物车里还没有东西。</string>
+    <string name="shopping_close">关闭</string>
+    <string name="shopping_snap_the_receipt">拍下收据</string>
+    <string name="shopping_finish_without_receipt">不拍收据，直接完成</string>
+    <string name="shopping_finish_without_receipt_question">不拍收据就完成吗？</string>
+    <string name="shopping_finish_without_receipt_message_empty">这次购物将结束。接下来三小时内你可以恢复它。</string>
+    <string name="shopping_finish_action">完成</string>
+    <string name="shopping_done_shopping_snapped">购物完成。正在读取收据，读取完成后会补上价格。</string>
+    <string name="shopping_sending_receipt">正在发送收据…</string>
+    <string name="shopping_resume">恢复</string>
+    <string name="shopping_resume_finished_at_store">你在 %2$s 结束了在 %1$s 的购物</string>
+    <string name="shopping_resume_finished_at">你在 %1$s 结束了购物</string>
+    <string name="shopping_resumed">已恢复购物。</string>
+    <string name="shopping_shopping_at">正在 %1$s 购物 · 购物车里有 %2$d 件</string>
+    <string name="shopping_shopping_anywhere">正在购物 · 购物车里有 %1$d 件</string>
+    <string name="shopping_done_shopping_count">购物完成 · %1$d</string>
+    <plurals name="shopping_cart_summary">
+        <item quantity="other">%1$d 件商品</item>
+    </plurals>
+    <plurals name="shopping_cart_summary_priced">
+        <item quantity="other">%1$d 件商品，约 %2$s</item>
+    </plurals>
+    <plurals name="shopping_finish_without_receipt_message">
+        <item quantity="other">购物车里的 %1$d 件商品会标记为已买。接下来三小时内你可以恢复这次购物。</item>
+    </plurals>
+    <plurals name="shopping_resume_items_back">
+        <item quantity="other">%1$d 件商品会放回你的购物车</item>
+    </plurals>
 </resources>

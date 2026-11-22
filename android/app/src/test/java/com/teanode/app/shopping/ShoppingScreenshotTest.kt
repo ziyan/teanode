@@ -34,6 +34,8 @@ class ShoppingScreenshotTest {
     @After
     fun resetDemo() {
         ShoppingDemoData.listsOverride = null
+        ShoppingDemoData.isResumable = false
+        ShoppingDemoData.isShoppingNow = false
     }
 
     private fun shoot(name: String, look: Look, fontScale: Float? = null, isSheet: Boolean = false, content: @Composable () -> Unit) {
@@ -96,6 +98,37 @@ class ShoppingScreenshotTest {
     @Test fun `store largest text`() = shoot("store-largest-text", Look.Light, 2f) { ShoppingStoreScreen(ShoppingDemoData.EXAMPLE_MARKET, emptyList()) }
     @Test fun `store pictures`() = shoot("store-pictures", Look.Light) { ShoppingStoreScreen(ShoppingDemoData.EXAMPLE_MARKET, emptyList(), ShoppingLayoutChoice.Pictures) }
     @Test fun `any store`() = shoot("store-any", Look.Light) { ShoppingStoreScreen("", emptyList()) }
+
+    @Test fun `cart sheet light`() = shoot("cart", Look.Light, isSheet = true) {
+        ShoppingCartSheet(listOf(item("demo-item-soup"), item("demo-item-bread")), false, null, {}, {}, {}, {})
+    }
+    @Test fun `cart sheet dark`() = shoot("cart", Look.Dark, isSheet = true) {
+        ShoppingCartSheet(listOf(item("demo-item-soup"), item("demo-item-bread")), false, null, {}, {}, {}, {})
+    }
+    @Test fun `cart sheet largest text`() = shoot("cart-largest-text", Look.Light, 2f, isSheet = true) {
+        ShoppingCartSheet(listOf(item("demo-item-soup"), item("demo-item-bread")), true, null, {}, {}, {}, {})
+    }
+
+    @Test fun `list with the resume row`() {
+        ShoppingDemoData.isResumable = true
+        shoot("list-resume", Look.Light) { ShoppingListScreen(ShoppingDemoData.GROCERIES_LIST_ID) }
+    }
+    @Test fun `list with the resume row dark`() {
+        ShoppingDemoData.isResumable = true
+        shoot("list-resume", Look.Dark) { ShoppingListScreen(ShoppingDemoData.GROCERIES_LIST_ID) }
+    }
+    @Test fun `store with the resume row`() {
+        ShoppingDemoData.isResumable = true
+        shoot("store-resume", Look.Light) { ShoppingStoreScreen(ShoppingDemoData.EXAMPLE_MARKET, emptyList()) }
+    }
+    @Test fun `home with the resume row`() {
+        ShoppingDemoData.isResumable = true
+        shoot("lists-resume", Look.Light) { ShoppingSection() }
+    }
+    @Test fun `home while shopping`() {
+        ShoppingDemoData.isShoppingNow = true
+        shoot("lists-shopping", Look.Light) { ShoppingSection() }
+    }
 
     @Test fun `item sheet light`() = shoot("item-sheet", Look.Light, isSheet = true) {
         ShoppingItemSheet(LocalConnection.current, item("demo-item-apples"), {}, {}, {}, null)

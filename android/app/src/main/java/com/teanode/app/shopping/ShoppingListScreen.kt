@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -104,6 +105,8 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
     var removing by remember { mutableStateOf<ShoppingItem?>(null) }
     // Touch and hold on an item offers what the iPhone's swipe and menu do: Need again (for one not needed now) and Remove.
     fun itemActions(item: ShoppingItem) = ShoppingItemActions(onNeedAgain = { needingAgain = item }, onRemove = { removing = item })
+    @Composable
+    fun itemCheck(item: ShoppingItem) = shoppingListCheck(item, ownUserId) { state.check(item) }
     var isAdding by remember { mutableStateOf(false) }
     var addingStoreName by remember { mutableStateOf("") }
     var isImporting by remember { mutableStateOf(false) }
@@ -112,16 +115,24 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
     var isConfirmingDelete by remember { mutableStateOf(false) }
     var isChoosingStore by remember { mutableStateOf(false) }
     var isChoosingReceiptSource by remember { mutableStateOf(false) }
+    var isCartOpen by remember { mutableStateOf(false) }
+    var isConfirmingFinish by remember { mutableStateOf(false) }
+    // Whether the receipt being chosen is the one that finishes the trip (from the cart), or one scanned from the menu.
+    var isSnappingAtDone by remember { mutableStateOf(false) }
+    fun receiptChosen(file: ShoppingPendingFile) {
+        if (isSnappingAtDone) receiptReader.snapAndFinish(file, finish = { state.finishTrip() }, onFinished = { isCartOpen = false })
+        else receiptReader.scan(file)
+    }
 
     LaunchedEffect(state) { state.load() }
     FollowShopping(connection, session.isDemo) { state.load() }
     LaunchedEffect(state.isDeleted) { if (state.isDeleted) navigator.back() }
 
     val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
-        if (uri != null) receiptReader.scan(context.readPendingFile(uri, "receipt.jpg"))
+        if (uri != null) receiptChosen(context.readPendingFile(uri, "receipt.jpg"))
     }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
-        if (bitmap != null) receiptReader.scan(bitmap.toPendingFile("receipt.jpg"))
+        if (bitmap != null) receiptChosen(bitmap.toPendingFile("receipt.jpg"))
     }
 
     val list = state.list
@@ -171,7 +182,7 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                         DropdownMenuItem(text = { Text(stringResource(R.string.shopping_import)) }, leadingIcon = { Icon(Icons.Outlined.Download, null) }, onClick = { isMenuOpen = false; isImporting = true })
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.shopping_upload_a_receipt)) }, leadingIcon = { Icon(Icons.Outlined.CameraAlt, null) },
-                            onClick = { isMenuOpen = false; isChoosingReceiptSource = true },
+                            onClick = { isMenuOpen = false; isSnappingAtDone = false; isChoosingReceiptSource = true },
                         )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.shopping_remind_me_at_stores)) },
@@ -191,8 +202,8 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.isShopping) {
                         ExtendedFloatingActionButton(
-                            onClick = { scope.launch { state.finish(context.getString(R.string.shopping_done_shopping)) } },
-                            icon = { Icon(Icons.Outlined.Check, null) }, text = { Text(stringResource(R.string.shopping_done)) },
+                            onClick = { isCartOpen = true },
+                            icon = { Icon(Icons.Outlined.Check, null) }, text = { Text(stringResource(R.string.shopping_done_shopping_button)) },
                         )
                     }
                     ExtendedFloatingActionButton(
@@ -221,6 +232,11 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                         ShoppingListGrouping.Aisle -> words.aisleTitle(group)
                     }
                     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+                        state.resumableTrip?.let { trip ->
+                            item("resume") {
+                                ShoppingResumeRow(trip, state.resumable.isResuming, onResume = { scope.launch { state.resume(context.getString(R.string.shopping_resumed)) } })
+                            }
+                        }
                         item("subtitle") {
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
@@ -246,10 +262,10 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                         }
                         if (layout == ShoppingLayoutChoice.Pictures) {
                             val placed = groups.flatMap { group -> group.items.map { item -> ShoppingPlacedItem(item, groupTitle(group)) } }
-                            tileRows(placed, words, actionsOf = ::itemActions) { item -> editing = item }
+                            tileRows(placed, words, actionsOf = ::itemActions, checkOf = { item -> itemCheck(item) }) { item -> editing = item }
                             if (state.notNeeded.isNotEmpty()) {
-                                item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_not_needed)) }
-                                tileRows(state.notNeeded.map { item -> ShoppingPlacedItem(item, words.listItemPlace(item)) }, words, actionsOf = ::itemActions) { item -> editing = item }
+                                item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_checked_off)) }
+                                tileRows(state.notNeeded.map { item -> ShoppingPlacedItem(item, words.listItemPlace(item)) }, words, actionsOf = ::itemActions, checkOf = { item -> itemCheck(item) }) { item -> editing = item }
                             }
                         } else {
                             for (group in groups) {
@@ -262,11 +278,11 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                                         }
                                     }
                                 }
-                                items(group.items, key = { item -> "item-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item)) }
+                                items(group.items, key = { item -> "item-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item), check = itemCheck(item)) }
                             }
                             if (state.notNeeded.isNotEmpty()) {
-                                item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_not_needed)) }
-                                items(state.notNeeded, key = { item -> "not-needed-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item)) }
+                                item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_checked_off)) }
+                                items(state.notNeeded, key = { item -> "not-needed-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item), check = itemCheck(item)) }
                             }
                         }
                     }
@@ -275,6 +291,30 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
         }
     }
 
+    if (isCartOpen) {
+        val ownCart = state.ownCart
+        ShoppingCartSheet(
+            items = ownCart, showsListName = ownCart.map { item -> item.shoppingListId }.distinct().size > 1, busyText = receiptReader.readingText,
+            onTakeOut = { item -> state.check(item) },
+            onSnapReceipt = { isSnappingAtDone = true; isChoosingReceiptSource = true },
+            onFinishWithoutReceipt = { isConfirmingFinish = true },
+            onDismiss = { isCartOpen = false },
+        )
+    }
+    if (isConfirmingFinish) {
+        val cartCount = state.ownCart.size
+        ConfirmationDialog(
+            title = stringResource(R.string.shopping_finish_without_receipt_question),
+            text = if (cartCount == 0) stringResource(R.string.shopping_finish_without_receipt_message_empty)
+            else pluralStringResource(R.plurals.shopping_finish_without_receipt_message, cartCount, cartCount),
+            confirmLabel = stringResource(R.string.shopping_finish_action),
+            onConfirm = {
+                isConfirmingFinish = false
+                scope.launch { if (state.finish(context.getString(R.string.shopping_done_shopping))) isCartOpen = false }
+            },
+            onDismiss = { isConfirmingFinish = false },
+        )
+    }
     if (isChoosingStore) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { isChoosingStore = false },
@@ -370,10 +410,16 @@ internal fun SectionTitle(text: String) {
 }
 
 /** Tiles two to a row, which fills a section's one row of the list. */
-internal fun androidx.compose.foundation.lazy.LazyListScope.tileRows(placed: List<ShoppingPlacedItem>, words: ShoppingWords, actionsOf: ((ShoppingItem) -> ShoppingItemActions)? = null, onOpen: (ShoppingItem) -> Unit) {
+internal fun androidx.compose.foundation.lazy.LazyListScope.tileRows(
+    placed: List<ShoppingPlacedItem>,
+    words: ShoppingWords,
+    actionsOf: ((ShoppingItem) -> ShoppingItemActions)? = null,
+    checkOf: (@Composable (ShoppingItem) -> ShoppingListCheck)? = null,
+    onOpen: (ShoppingItem) -> Unit,
+) {
     items(placed.chunked(2), key = { row -> "tiles-" + row.first().item.id }) { row ->
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            for (cell in row) ShoppingListItemTile(cell.item, cell.groupName, words, onOpen = { onOpen(cell.item) }, modifier = Modifier.weight(1f), actions = actionsOf?.invoke(cell.item))
+            for (cell in row) ShoppingListItemTile(cell.item, cell.groupName, words, onOpen = { onOpen(cell.item) }, modifier = Modifier.weight(1f), actions = actionsOf?.invoke(cell.item), check = checkOf?.invoke(cell.item))
             if (row.size == 1) Box(Modifier.weight(1f))
         }
     }

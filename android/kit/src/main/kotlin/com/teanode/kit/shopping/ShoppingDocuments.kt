@@ -12,7 +12,7 @@ object ShoppingDocuments {
 
     const val SHOPPING_LIST_FIELDS = $$"""id userId listName ownerName ownerUsername isOwner isShared isReminded neededCount inCartCount notNeededCount createdAt updatedAt"""
 
-    const val SHOPPING_TRIP_FIELDS = $$"""id userId shopperName shopperUsername storeName storeKey shoppingListIds startedAt finishedAt"""
+    const val SHOPPING_TRIP_FIELDS = $$"""id userId shopperName shopperUsername storeName storeKey shoppingListIds startedAt finishedAt boughtItemCount"""
 
     const val SHOPPING_SHARE_FIELDS = $$"""id shoppingListId listName ownerUserId ownerUsername ownerName granteeUserId granteeUsername granteeName granteeCircleId
         granteeCircleName createdAt"""
@@ -52,6 +52,8 @@ object ShoppingDocuments {
             shoppingTrips { $${SHOPPING_TRIP_FIELDS} }
           }
         }"""
+
+    const val RESUMABLE_SHOPPING_TRIP = $$"""query { GetResumableShoppingTrip { $${SHOPPING_TRIP_FIELDS} } }"""
 
     const val OPEN_SHOPPING_TRIPS = $$"""query { ListOpenShoppingTrips { $${SHOPPING_TRIP_FIELDS} } }"""
 
@@ -133,6 +135,10 @@ object ShoppingDocuments {
           CheckShoppingItem(shoppingItemId: $shoppingItemId, isChecked: $isChecked, storeName: $storeName) { $${SHOPPING_ITEM_FIELDS} }
         }"""
 
+    const val CHECK_OFF_SHOPPING_ITEM = $$"""mutation ($shoppingItemId: String!, $isCheckedOff: Boolean!) {
+          CheckOffShoppingItem(shoppingItemId: $shoppingItemId, isCheckedOff: $isCheckedOff) { $${SHOPPING_ITEM_FIELDS} }
+        }"""
+
     const val SET_SHOPPING_ITEM_NEED = $$"""mutation ($shoppingItemId: String!, $isNeeded: Boolean!, $neededQuantity: String) {
           SetShoppingItemNeed(shoppingItemId: $shoppingItemId, isNeeded: $isNeeded, neededQuantity: $neededQuantity) { $${SHOPPING_ITEM_FIELDS} }
         }"""
@@ -162,6 +168,8 @@ object ShoppingDocuments {
 
     const val FINISH_SHOPPING = $$"""mutation ($shoppingTripId: String) { FinishShopping(shoppingTripId: $shoppingTripId) { $${SHOPPING_TRIP_FIELDS} } }"""
 
+    const val RESUME_SHOPPING = $$"""mutation ($shoppingTripId: String!) { ResumeShopping(shoppingTripId: $shoppingTripId) { $${SHOPPING_TRIP_FIELDS} } }"""
+
     const val MATCH_SHOPPING_RECEIPT = $$"""mutation ($financeReceiptId: String!) { MatchShoppingReceipt(financeReceiptId: $financeReceiptId) }"""
 
     const val DECIDE_SHOPPING_RECEIPT_MATCH = $$"""mutation ($shoppingReceiptMatchId: String!, $isApplied: Boolean!) {
@@ -188,6 +196,7 @@ object ShoppingDocuments {
         "shoppingStores" to SHOPPING_STORES,
         "shoppingStoreItems" to SHOPPING_STORE_ITEMS,
         "openShoppingTrips" to OPEN_SHOPPING_TRIPS,
+        "resumableShoppingTrip" to RESUMABLE_SHOPPING_TRIP,
         "similarShoppingItems" to SIMILAR_SHOPPING_ITEMS,
         "shoppingItemPrices" to SHOPPING_ITEM_PRICES,
         "shoppingReceiptMatches" to SHOPPING_RECEIPT_MATCHES,
@@ -203,6 +212,7 @@ object ShoppingDocuments {
         "updateShoppingItem" to UPDATE_SHOPPING_ITEM,
         "removeShoppingItems" to REMOVE_SHOPPING_ITEMS,
         "checkShoppingItem" to CHECK_SHOPPING_ITEM,
+        "checkOffShoppingItem" to CHECK_OFF_SHOPPING_ITEM,
         "setShoppingItemNeed" to SET_SHOPPING_ITEM_NEED,
         "setShoppingItemOutOfStock" to SET_SHOPPING_ITEM_OUT_OF_STOCK,
         "recordShoppingItemPrice" to RECORD_SHOPPING_ITEM_PRICE,
@@ -210,6 +220,7 @@ object ShoppingDocuments {
         "setShoppingItemPicture" to SET_SHOPPING_ITEM_PICTURE,
         "startShopping" to START_SHOPPING,
         "finishShopping" to FINISH_SHOPPING,
+        "resumeShopping" to RESUME_SHOPPING,
         "matchShoppingReceipt" to MATCH_SHOPPING_RECEIPT,
         "decideShoppingReceiptMatch" to DECIDE_SHOPPING_RECEIPT_MATCH,
         "undoShoppingReceipt" to UNDO_SHOPPING_RECEIPT,

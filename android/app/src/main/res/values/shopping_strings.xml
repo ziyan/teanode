@@ -162,4 +162,42 @@
     <string name="shopping_item_taken_off_for_everyone">%1$s is taken off the list for everyone it is shared with.</string>
     <string name="shopping_not_available_to_you">Shopping is not available to you</string>
     <string name="shopping_not_allowed_description">Your account is not allowed to keep shopping lists. Whoever manages your TeaNode server can allow it.</string>
+    <string name="shopping_checked_off">Checked off</string>
+    <string name="shopping_check_off_item">Check off %1$s</string>
+    <string name="shopping_uncheck_item">Put %1$s back on the list</string>
+    <string name="shopping_take_out_of_cart">Take %1$s out of the cart</string>
+    <string name="shopping_in_someones_cart">In the cart of %1$s</string>
+    <string name="shopping_cart_title">Your cart</string>
+    <string name="shopping_cart_empty">Nothing in your cart yet.</string>
+    <string name="shopping_close">Close</string>
+    <string name="shopping_snap_the_receipt">Snap the receipt</string>
+    <string name="shopping_finish_without_receipt">Finish without a receipt</string>
+    <string name="shopping_finish_without_receipt_question">Finish without a receipt?</string>
+    <string name="shopping_finish_without_receipt_message_empty">This trip ends. You can resume it for the next three hours.</string>
+    <string name="shopping_finish_action">Finish</string>
+    <string name="shopping_done_shopping_snapped">Done shopping. The receipt is being read; prices are added when it is done.</string>
+    <string name="shopping_sending_receipt">Sending the receipt…</string>
+    <string name="shopping_resume">Resume</string>
+    <string name="shopping_resume_finished_at_store">You finished shopping at %1$s at %2$s</string>
+    <string name="shopping_resume_finished_at">You finished shopping at %1$s</string>
+    <string name="shopping_resumed">Shopping resumed.</string>
+    <string name="shopping_shopping_at">Shopping at %1$s · %2$d in your cart</string>
+    <string name="shopping_shopping_anywhere">Shopping · %1$d in your cart</string>
+    <string name="shopping_done_shopping_count">Done shopping · %1$d</string>
+    <plurals name="shopping_cart_summary">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
+    <plurals name="shopping_cart_summary_priced">
+        <item quantity="one">%1$d item, about %2$s</item>
+        <item quantity="other">%1$d items, about %2$s</item>
+    </plurals>
+    <plurals name="shopping_finish_without_receipt_message">
+        <item quantity="one">The %1$d item in your cart is marked bought. You can resume this trip for the next three hours.</item>
+        <item quantity="other">The %1$d items in your cart are marked bought. You can resume this trip for the next three hours.</item>
+    </plurals>
+    <plurals name="shopping_resume_items_back">
+        <item quantity="one">%1$d item goes back in your cart</item>
+        <item quantity="other">%1$d items go back in your cart</item>
+    </plurals>
 </resources>
