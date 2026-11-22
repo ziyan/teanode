@@ -285,6 +285,7 @@ type Transaction interface {
 	VectorOperation
 	PlanUsageOperation
 	AgentBillingOperation
+	StorageUsageOperation
 	OverviewSectionOperation
 	GraphOperation
 	KnowledgeOperation

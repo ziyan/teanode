@@ -37,6 +37,7 @@ change with it.
 | `photos.md` | The photo library: uploads, processing, descriptions, faces, albums, the iPhone's backup |
 | `shopping.md` | Shopping lists: items and their states, who reaches a list, shopping a store live, receipts checking items off, pictures and the reminder at a store |
 | `finance.md` | Linked institutions, transactions, exchange rates, net worth, budgets and savings targets |
+| `storage-usage.md` | What the database and the blob store hold, the daily samples, the line fitted through them, the disks that are measured, and the warning before one fills |
 | `search.md` | One search of a person's words across chats, mail, contacts, photos, memory, documents, recordings, places and finance: the areas, who may search what, time and failure |
 
 Two conventions hold throughout. *Rules* are the mailbox's rules and nothing
