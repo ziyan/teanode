@@ -89,9 +89,11 @@ const CHART_SERIES = 5
 const TONES: SeriesTone[] = ['output', 'input', 'cached', 'deep', 'core', 'rem']
 
 // dayOf is a date as a date input wants it, in the person's own zone.
+// dayOf is the UTC day a moment falls on: the samples are one a UTC day, so
+// the range is in UTC days too, or the newest sample falls outside a range
+// that ends "today" in the evening west of UTC.
 function dayOf(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  return date.toISOString().slice(0, 10)
 }
 
 // formatStorageBytes is a size in 1024-based units to the terabyte and
@@ -134,8 +136,8 @@ export function ServerStoragePage() {
     () =>
       graphql<{ StorageUsage: Usage }>(STORAGE_USAGE, {
         by,
-        since: since ? new Date(since + 'T00:00:00').toISOString() : undefined,
-        until: until ? new Date(until + 'T00:00:00').toISOString() : undefined,
+        since: since ? since + 'T00:00:00Z' : undefined,
+        until: until ? until + 'T00:00:00Z' : undefined,
       }),
     [by, since, until],
   )
