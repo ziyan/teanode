@@ -49,18 +49,23 @@ type Warning struct {
 	WarningDays   int
 	DaysUntilFull float64
 	FullOn        time.Time
+
+	// Growth is the disk's own, the line its fill date comes from.
+	Growth Growth
 }
 
 // DueWarnings says which warnings to send now and which disks have recovered.
-// A disk projected to fill within thirty days is warned about once, and again
-// when it comes within seven; previous is the warning last sent for each disk.
-// A disk no longer projected to fill within thirty days is in recovered, so
+// Each disk's fill date comes from a line through its own samples. A disk
+// projected to fill within thirty days is warned about once, and again when
+// it comes within seven; previous is the warning last sent for each disk. A
+// disk no longer projected to fill within thirty days is in recovered, so
 // that its next warning is sent as a first.
-func DueWarnings(growth Growth, disks []Disk, previous map[string]*models.StorageDiskWarning, now time.Time) (due []Warning, recovered []string) {
+func DueWarnings(samples []models.StorageUsageSample, disks []Disk, previous map[string]*models.StorageDiskWarning, now time.Time) (due []Warning, recovered []string) {
 	for _, disk := range disks {
 		if !disk.IsMeasured {
 			continue
 		}
+		growth := Fit(DiskDayTotals(samples, disk.DiskLabel), now)
 		fullOn, daysUntilFull := growth.FullOn(disk.DiskFreeBytes, disk.IsMeasured, now)
 		warningDays := 0
 		if fullOn != nil {
@@ -73,7 +78,7 @@ func DueWarnings(growth Growth, disks []Disk, previous map[string]*models.Storag
 				recovered = append(recovered, disk.DiskLabel)
 			}
 		case sent == nil || warningDays < sent.WarningDays:
-			due = append(due, Warning{DiskLabel: disk.DiskLabel, WarningDays: warningDays, DaysUntilFull: daysUntilFull, FullOn: *fullOn})
+			due = append(due, Warning{DiskLabel: disk.DiskLabel, WarningDays: warningDays, DaysUntilFull: daysUntilFull, FullOn: *fullOn, Growth: growth})
 		}
 	}
 	return due, recovered

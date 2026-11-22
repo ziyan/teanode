@@ -49,6 +49,22 @@ func DayTotals(samples []models.StorageUsageSample, isFilesCounted bool) []DayTo
 	return totals
 }
 
+// DiskDayTotals is what one disk held on each UTC day it was measured, from
+// its own samples. A disk's fill date is fitted through these and not
+// through the database and file totals, because the disk also gains and
+// loses what the server does not count: files moved to another store, logs,
+// other programs. Oldest first.
+func DiskDayTotals(samples []models.StorageUsageSample, diskLabel string) []DayTotal {
+	var totals []DayTotal
+	for _, sample := range samples {
+		if sample.MeasureKind == models.StorageMeasureDisk && sample.MeasureKey == diskLabel {
+			totals = append(totals, DayTotal{Day: sample.SampledOn.UTC(), SizeBytes: sample.MeasuredBytes})
+		}
+	}
+	sort.Slice(totals, func(left, right int) bool { return totals[left].Day.Before(totals[right].Day) })
+	return totals
+}
+
 // Growth is a line fitted through the recent daily totals.
 type Growth struct {
 	// SampleCount is how many daily totals the line was fitted through.
@@ -117,7 +133,7 @@ func projectedBytes(currentBytes int64, bytesPerDay float64, days int) int64 {
 	return max(0, currentBytes+int64(math.Round(bytesPerDay*float64(days))))
 }
 
-// FullOn is the day a disk with freeBytes of room fills at this growth, and
+// FullOn is the day a disk with freeBytes of room fills at this growth (the disk's own, see DiskDayTotals), and
 // how many days away that is. It is nil when the totals are not projectable,
 // when the server is not growing, or when the disk is not measured.
 func (self Growth) FullOn(freeBytes int64, isMeasured bool, now time.Time) (*time.Time, float64) {

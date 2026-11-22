@@ -65,10 +65,11 @@ The projection is a least-squares line through the daily totals (database plus
 files, the files left out when they are in an object store) of the last thirty
 days, or fewer when there is less history, and none below three samples. It
 gives growth per day and the size in 30, 90 and 365 days from the newest total.
-A measured disk fills on the day its free bytes are used up at that rate; there
-is no date when the totals are not growing. All measured disks are projected
-against the same growth, which is right where the database, the files and
-the data directory share one disk.
+A measured disk is projected the same way, through its own daily samples of
+the bytes in use, and fills on the day its free bytes are used up at that rate;
+there is no date when it is not growing. The disk's own line, not the totals,
+because the disk also holds what the server does not count (files moved to
+another store, logs, other programs) and loses what is moved off it.
 
 ## The warning
 

@@ -55,7 +55,6 @@ func (self *Agent) SampleStorage(ctx context.Context, now time.Time) error {
 	configuration := self.settings.Configuration()
 	disks := storageusage.Disks(configuration)
 	var due []storageusage.Warning
-	var growth storageusage.Growth
 	err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		isLocked, err := tx.TryAdvisoryLock(storageSampleLockKey)
 		if err != nil {
@@ -85,7 +84,6 @@ func (self *Agent) SampleStorage(ctx context.Context, now time.Time) error {
 		if err != nil {
 			return err
 		}
-		growth = storageusage.Fit(storageusage.DayTotals(samples, !storageusage.IsObjectStoreOnly(configuration)), now)
 		previous := map[string]*models.StorageDiskWarning{}
 		for _, disk := range disks {
 			warning, err := tx.GetStorageDiskWarning(disk.DiskLabel)
@@ -97,7 +95,7 @@ func (self *Agent) SampleStorage(ctx context.Context, now time.Time) error {
 			}
 		}
 		var recovered []string
-		due, recovered = storageusage.DueWarnings(growth, disks, previous, now)
+		due, recovered = storageusage.DueWarnings(samples, disks, previous, now)
 		for _, diskLabel := range recovered {
 			if err := tx.DeleteStorageDiskWarning(diskLabel); err != nil {
 				return err
@@ -109,19 +107,19 @@ func (self *Agent) SampleStorage(ctx context.Context, now time.Time) error {
 		return err
 	}
 	for _, warning := range due {
-		self.tellOperatorsOfFullDisk(ctx, warning, growth, disks)
+		self.tellOperatorsOfFullDisk(ctx, warning, disks)
 	}
 	return nil
 }
 
 // storageWarningSummary is what the operators are told about a disk.
-func storageWarningSummary(warning storageusage.Warning, growth storageusage.Growth, disk storageusage.Disk) string {
+func storageWarningSummary(warning storageusage.Warning, disk storageusage.Disk) string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "The %s disk is projected to fill in about %d days, on %s.",
 		storageDiskWords(warning.DiskLabel), int(warning.DaysUntilFull+0.5), warning.FullOn.Format("2006-01-02"))
-	fmt.Fprintf(&builder, "\n\nIt has %s free of %s. The database and the files have been growing by %s a day over the last %d samples.",
+	fmt.Fprintf(&builder, "\n\nIt has %s free of %s. What is on it has been growing by %s a day over the last %d daily samples.",
 		storageusage.DescribeBytes(disk.DiskFreeBytes), storageusage.DescribeBytes(disk.DiskTotalBytes),
-		storageusage.DescribeBytes(int64(growth.GrowthBytesPerDay)), growth.SampleCount)
+		storageusage.DescribeBytes(int64(warning.Growth.GrowthBytesPerDay)), warning.Growth.SampleCount)
 	builder.WriteString("\n\nThe Disk usage tab of the Server page, and `teanode server storage`, show what is taking the room.")
 	return builder.String()
 }
@@ -142,7 +140,7 @@ func storageDiskWords(diskLabel string) string {
 // warning is remembered only once somebody was told, or when there is nobody
 // to tell, so a turn that was running in every conversation does not lose
 // it: the next sample says it again.
-func (self *Agent) tellOperatorsOfFullDisk(ctx context.Context, warning storageusage.Warning, growth storageusage.Growth, disks []storageusage.Disk) {
+func (self *Agent) tellOperatorsOfFullDisk(ctx context.Context, warning storageusage.Warning, disks []storageusage.Disk) {
 	var disk storageusage.Disk
 	for _, candidate := range disks {
 		if candidate.DiskLabel == warning.DiskLabel {
@@ -158,7 +156,7 @@ func (self *Agent) tellOperatorsOfFullDisk(ctx context.Context, warning storageu
 		log.Warningf("cannot find the operators to warn of the %s disk: %s", warning.DiskLabel, err)
 		return
 	}
-	summary := storageWarningSummary(warning, growth, disk)
+	summary := storageWarningSummary(warning, disk)
 	checkIn := models.AlertMarker + " The server projects that one of its disks will fill soon; you told the operator. This is not the person speaking. What you said follows."
 	isTold := len(agentIds) == 0
 	for _, agentId := range agentIds {

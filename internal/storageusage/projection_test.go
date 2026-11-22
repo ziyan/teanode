@@ -22,6 +22,20 @@ func dayTotals(sizesGigabytes ...int64) []storageusage.DayTotal {
 	return totals
 }
 
+// diskSamples is the daily samples of one disk holding these many gigabytes,
+// the last of them today.
+func diskSamples(diskLabel string, usedGigabytes ...int64) []models.StorageUsageSample {
+	samples := make([]models.StorageUsageSample, 0, len(usedGigabytes))
+	for _, total := range dayTotals(usedGigabytes...) {
+		totalBytes, freeBytes := 1000*gigabyte, 1000*gigabyte-total.SizeBytes
+		samples = append(samples, models.StorageUsageSample{
+			SampledOn: total.Day, MeasureKind: models.StorageMeasureDisk, MeasureKey: diskLabel,
+			MeasuredBytes: total.SizeBytes, DiskTotalBytes: &totalBytes, DiskFreeBytes: &freeBytes, SampledAt: total.Day,
+		})
+	}
+	return samples
+}
+
 func TestAFitThroughSteadyGrowthGivesItsSlopeAndTheSizesAhead(test *testing.T) {
 	test.Parallel()
 	growth := storageusage.Fit(dayTotals(100, 102, 104, 106, 108), today)
@@ -123,30 +137,30 @@ func TestDayTotalsAddTheDatabaseAndTheFilesOfEachDay(test *testing.T) {
 func TestAWarningIsSentOnceAtThirtyDaysAndOnceMoreAtSeven(test *testing.T) {
 	test.Parallel()
 	disk := storageusage.Disk{DiskLabel: storageusage.DiskDataDirectory, IsMeasured: true, DiskTotalBytes: 500 * gigabyte, DiskFreeBytes: 40 * gigabyte}
-	growth := storageusage.Fit(dayTotals(100, 102, 104, 106), today)
+	samples := diskSamples(disk.DiskLabel, 100, 102, 104, 106)
 	previous := map[string]*models.StorageDiskWarning{}
 
-	due, recovered := storageusage.DueWarnings(growth, []storageusage.Disk{disk}, previous, today)
+	due, recovered := storageusage.DueWarnings(samples, []storageusage.Disk{disk}, previous, today)
 	if len(due) != 1 || due[0].WarningDays != 30 || len(recovered) != 0 {
 		test.Fatalf("first: due %+v recovered %v, want one warning at 30 days", due, recovered)
 	}
 	previous[disk.DiskLabel] = &models.StorageDiskWarning{DiskLabel: disk.DiskLabel, WarningDays: 30}
-	if due, _ := storageusage.DueWarnings(growth, []storageusage.Disk{disk}, previous, today); len(due) != 0 {
+	if due, _ := storageusage.DueWarnings(samples, []storageusage.Disk{disk}, previous, today); len(due) != 0 {
 		test.Errorf("the next day: due %+v, the same warning was repeated", due)
 	}
 
 	disk.DiskFreeBytes = 10 * gigabyte
-	due, _ = storageusage.DueWarnings(growth, []storageusage.Disk{disk}, previous, today)
+	due, _ = storageusage.DueWarnings(samples, []storageusage.Disk{disk}, previous, today)
 	if len(due) != 1 || due[0].WarningDays != 7 {
 		test.Fatalf("at 5 days: due %+v, want one warning at 7 days", due)
 	}
 	previous[disk.DiskLabel] = &models.StorageDiskWarning{DiskLabel: disk.DiskLabel, WarningDays: 7}
-	if due, _ := storageusage.DueWarnings(growth, []storageusage.Disk{disk}, previous, today); len(due) != 0 {
+	if due, _ := storageusage.DueWarnings(samples, []storageusage.Disk{disk}, previous, today); len(due) != 0 {
 		test.Errorf("after the 7 day warning: due %+v, the same warning was repeated", due)
 	}
 
 	disk.DiskFreeBytes = 400 * gigabyte
-	due, recovered = storageusage.DueWarnings(growth, []storageusage.Disk{disk}, previous, today)
+	due, recovered = storageusage.DueWarnings(samples, []storageusage.Disk{disk}, previous, today)
 	if len(due) != 0 || len(recovered) != 1 || recovered[0] != disk.DiskLabel {
 		test.Errorf("after space was freed: due %+v recovered %v, want the disk forgotten", due, recovered)
 	}
@@ -154,9 +168,32 @@ func TestAWarningIsSentOnceAtThirtyDaysAndOnceMoreAtSeven(test *testing.T) {
 
 func TestADiskThatIsNotMeasuredIsNeverWarnedAbout(test *testing.T) {
 	test.Parallel()
-	growth := storageusage.Fit(dayTotals(100, 200, 300, 400), today)
-	due, recovered := storageusage.DueWarnings(growth, []storageusage.Disk{{DiskLabel: storageusage.DiskObjectStore}}, nil, today)
+	samples := diskSamples(storageusage.DiskObjectStore, 100, 200, 300, 400)
+	due, recovered := storageusage.DueWarnings(samples, []storageusage.Disk{{DiskLabel: storageusage.DiskObjectStore}}, nil, today)
 	if len(due) != 0 || len(recovered) != 0 {
 		test.Errorf("due %+v recovered %v for an object store", due, recovered)
+	}
+}
+
+// A disk fills at the rate its own use grows, not the rate the database and
+// the files grow: files moved to another store keep the disk level however
+// fast the rows say the files are growing.
+func TestADiskIsProjectedFromItsOwnSamples(test *testing.T) {
+	test.Parallel()
+	disk := storageusage.Disk{DiskLabel: storageusage.DiskDataDirectory, IsMeasured: true, DiskTotalBytes: 500 * gigabyte, DiskFreeBytes: 40 * gigabyte}
+	growingTotals := []models.StorageUsageSample{}
+	for _, total := range dayTotals(100, 120, 140, 160) {
+		growingTotals = append(growingTotals, models.StorageUsageSample{
+			SampledOn: total.Day, MeasureKind: models.StorageMeasureDatabase, MeasureKey: models.StorageDatabaseTotalKey, MeasuredBytes: total.SizeBytes,
+		})
+	}
+	samples := append(growingTotals, diskSamples(disk.DiskLabel, 460, 460, 460, 460)...)
+	if due, _ := storageusage.DueWarnings(samples, []storageusage.Disk{disk}, nil, today); len(due) != 0 {
+		test.Errorf("a level disk was warned about: %+v", due)
+	}
+	samples = append(growingTotals, diskSamples(disk.DiskLabel, 454, 456, 458, 460)...)
+	due, _ := storageusage.DueWarnings(samples, []storageusage.Disk{disk}, nil, today)
+	if len(due) != 1 || due[0].WarningDays != 30 || math.Abs(due[0].Growth.GrowthBytesPerDay-float64(2*gigabyte)) > 1 {
+		test.Errorf("a disk growing 2 GiB a day with 40 GiB free: due %+v", due)
 	}
 }

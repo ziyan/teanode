@@ -116,9 +116,9 @@ type StorageDiskView struct {
 	DiskFreeBytes  *int64 `json:"diskFreeBytes"`
 	DiskUsedBytes  *int64 `json:"diskUsedBytes"`
 
-	// ProjectedFullOn is the day the disk fills at the fitted growth, as
-	// YYYY-MM-DD in UTC; null when the server is not growing, there is too
-	// little history, or the disk is not measured.
+	// ProjectedFullOn is the day the disk fills at the rate a line through
+	// its own daily samples gives, as YYYY-MM-DD in UTC; null when the disk is
+	// not growing, there is too little history, or it is not measured.
 	ProjectedFullOn *string  `json:"projectedFullOn"`
 	DaysUntilFull   *float64 `json:"daysUntilFull"`
 
@@ -243,7 +243,8 @@ func (self *graph) StorageUsage(ctx context.Context, arguments StorageUsageArgum
 		if disk.IsMeasured {
 			totalBytes, freeBytes, usedBytes := disk.DiskTotalBytes, disk.DiskFreeBytes, disk.DiskUsedBytes()
 			diskView.DiskTotalBytes, diskView.DiskFreeBytes, diskView.DiskUsedBytes = &totalBytes, &freeBytes, &usedBytes
-			if fullOn, daysUntilFull := growth.FullOn(disk.DiskFreeBytes, true, now); fullOn != nil {
+			diskGrowth := storageusage.Fit(storageusage.DiskDayTotals(recent, disk.DiskLabel), now)
+			if fullOn, daysUntilFull := diskGrowth.FullOn(disk.DiskFreeBytes, true, now); fullOn != nil {
 				fullOnText := fullOn.Format(storageDateLayout)
 				diskView.ProjectedFullOn, diskView.DaysUntilFull = &fullOnText, &daysUntilFull
 				diskView.IsProjectedFull = storageusage.WarningDaysFor(daysUntilFull) > 0

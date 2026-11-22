@@ -45,7 +45,7 @@ func NewServerCommand() *cli.Command {
 				Usage: "what the database and the files hold, its growth, and when a disk fills",
 				Description: "The database by area, the files by kind or by person, a line fitted through\n" +
 					"the last thirty days of daily samples, and each measured disk with the day\n" +
-					"it fills at that rate. A disk that fills within thirty days is marked, as the\n" +
+					"it fills at the rate its own use grew. A disk that fills within thirty days is marked, as the\n" +
 					"operators are warned. Needs server:manage.",
 				Flags: []cli.Flag{
 					JSONFlag(),

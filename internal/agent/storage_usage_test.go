@@ -105,10 +105,16 @@ func (self *storageFixture) growingBy(test *testing.T, days int, bytesPerDay int
 	var samples []models.StorageUsageSample
 	for daysAgo := days - 1; daysAgo >= 0; daysAgo-- {
 		day := today.AddDate(0, 0, -daysAgo)
-		samples = append(samples, models.StorageUsageSample{
-			SampledOn: day, MeasureKind: models.StorageMeasureDatabase, MeasureKey: models.StorageDatabaseTotalKey,
-			MeasuredBytes: int64(days-daysAgo) * bytesPerDay, SampledAt: day,
-		})
+		usedBytes, totalBytes, freeBytes := int64(days-daysAgo)*bytesPerDay, int64(1)<<50, int64(1)<<40
+		samples = append(samples,
+			models.StorageUsageSample{
+				SampledOn: day, MeasureKind: models.StorageMeasureDatabase, MeasureKey: models.StorageDatabaseTotalKey,
+				MeasuredBytes: usedBytes, SampledAt: day,
+			},
+			models.StorageUsageSample{
+				SampledOn: day, MeasureKind: models.StorageMeasureDisk, MeasureKey: storageusage.DiskDataDirectory,
+				MeasuredBytes: usedBytes, DiskTotalBytes: &totalBytes, DiskFreeBytes: &freeBytes, SampledAt: day,
+			})
 	}
 	dbtest.RunTransactionOn(test, self.database, func(tx db.Transaction) {
 		if _, err := tx.InsertStorageUsageSamples(samples); err != nil {
