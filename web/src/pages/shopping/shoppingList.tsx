@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
-import { graphql } from '../../api'
 import { useBreadcrumbDetail } from '../../components/breadcrumb'
 import { ErrorMessage, Loading } from '../../components/common'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
@@ -14,11 +13,10 @@ import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { Key, useTranslation } from '../../i18n/i18n'
 import { useSession } from '../../session'
-import { READ_RECEIPT } from '../finance/financeApi'
 import {
+  checkOffShoppingItem,
   checkShoppingItem,
   deleteShoppingList,
-  finishShopping,
   getShoppingList,
   listShoppingListShares,
   listShoppingStores,
@@ -26,24 +24,25 @@ import {
   renameShoppingList,
   setShoppingItemNeed,
   ShoppingItem,
+  ShoppingItemState,
   ShoppingList,
   ShoppingTrip,
 } from './shoppingApi'
+import { ShoppingCartDialog, ShoppingResumeRow, useReceiptReader } from './shoppingCart'
 import { ShoppingImportDialog } from './shoppingImportDialog'
 import { ShoppingItemDialog, ShoppingItemDialogTarget } from './shoppingItemDialog'
 import { ShoppingItemGrid, ShoppingItemTable } from './shoppingItemTable'
 import {
   countShoppingTabs,
   isPositiveNumber,
+  isInOwnCart,
   isShoppingTab,
-  MAXIMUM_UPLOAD_BYTES,
   plainNumber,
   SHOPPING_PATH,
   shoppingListAddress,
   shoppingStoreAddress,
   isOnShoppingTab,
   ShoppingTab,
-  uploadAgentAttachment,
 } from './shoppingItems'
 import { ShoppingPaneBack, useShoppingLayout } from './shoppingLayout'
 import { ShoppingViewSwitch, useShoppingView } from './shoppingView'
@@ -79,6 +78,7 @@ type Opened =
   | { dialogKind: 'removeItem'; shoppingItem: ShoppingItem }
   | { dialogKind: 'needAgain'; shoppingItem: ShoppingItem }
   | { dialogKind: 'shopAtStore' }
+  | { dialogKind: 'cart' }
 
 export function ShoppingListPage() {
   const { shoppingListId = '' } = useParams()
@@ -86,12 +86,16 @@ export function ShoppingListPage() {
   const toast = useToast()
   const navigate = useNavigate()
   const session = useSession()
-  const { reloadShoppingLists } = useShoppingLayout()
+  const { reloadShoppingLists, ownTrip: layoutTrip, resumableTrip } = useShoppingLayout()
   const [parameters, setParameters] = useSearchParams()
   const content = useQuery(() => getShoppingList(shoppingListId), [shoppingListId], { refresh: false })
   const [opened, setOpened] = useState<Opened | null>(null)
   const [isBusy, setIsBusy] = useState(false)
   const receiptInput = useRef<HTMLInputElement>(null)
+  const readReceipt = useReceiptReader()
+  // What the person just checked, shown at once while the server answers:
+  // the state each item will be in. An answer, or a refusal, removes it.
+  const [pendingStates, setPendingStates] = useState<Record<string, ShoppingItemState>>({})
 
   const askedTab = parameters.get('tab')
   const tab: ShoppingTab = isShoppingTab(askedTab) ? askedTab : 'to-buy'
@@ -102,7 +106,19 @@ export function ShoppingListPage() {
   })
 
   const shoppingList = content.data?.shoppingList ?? null
-  const shoppingItems = useMemo(() => content.data?.shoppingItems ?? [], [content.data])
+  const shoppingItems = useMemo(
+    () =>
+      (content.data?.shoppingItems ?? []).map((item) => {
+        const pendingState = pendingStates[item.id]
+        if (!pendingState || pendingState === item.shoppingItemState) return item
+        return {
+          ...item,
+          shoppingItemState: pendingState,
+          cartedByUserId: pendingState === 'in_cart' ? (session.userId ?? '') : '',
+        }
+      }),
+    [content.data, pendingStates, session.userId],
+  )
   const counts = useMemo(() => countShoppingTabs(shoppingItems), [shoppingItems])
   const tabItems = useMemo(() => shoppingItems.filter((item) => isOnShoppingTab(item, tab)), [shoppingItems, tab])
   const shownItems = tabItems.slice(offset, offset + pageSize)
@@ -119,10 +135,11 @@ export function ShoppingListPage() {
   )
 
   const openTrips = (content.data?.shoppingTrips ?? []).filter((trip) => trip.finishedAt === null)
-  const ownTrip = openTrips.find((trip) => trip.userId === session.userId) ?? null
-  const hasOwnCart = shoppingItems.some(
-    (item) => item.shoppingItemState === 'in_cart' && item.cartedByUserId === session.userId,
-  )
+  const ownTrip = openTrips.find((trip) => trip.userId === session.userId) ?? layoutTrip
+  const hasOwnCart = shoppingItems.some((item) => isInOwnCart(item, session.userId))
+  const isShopping = ownTrip !== null
+  const ownCartCount = shoppingItems.filter((item) => isInOwnCart(item, session.userId)).length
+  const resumeHere = resumableTrip?.shoppingListIds.includes(shoppingListId) ? resumableTrip : null
   const [shoppingView, chooseShoppingView] = useShoppingView()
 
   async function reloadAll() {
@@ -148,19 +165,36 @@ export function ShoppingListPage() {
 
   async function uploadReceipt(file: File | undefined) {
     if (!file) return
-    if (file.size > MAXIMUM_UPLOAD_BYTES) {
-      toast.failed(t('shopping.fileTooLarge', { name: file.name, size: String(MAXIMUM_UPLOAD_BYTES >> 20) }))
-      return
-    }
     setIsBusy(true)
     try {
-      const agentAttachmentId = await uploadAgentAttachment(file)
-      await graphql(READ_RECEIPT, { agentAttachmentId })
-      toast.done(t('shopping.receiptReading'))
+      if (await readReceipt(file)) toast.done(t('shopping.receiptReading'))
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  // checkItem is the round check on a row. It answers at once and is put
+  // right if the server refuses. An item to buy is put in the cart while the
+  // person shops, else it is bought now without starting a trip; a checked
+  // one goes back to the list.
+  async function checkItem(shoppingItem: ShoppingItem, isChecked: boolean) {
+    const nextState: ShoppingItemState = !isChecked ? 'needed' : isShopping ? 'in_cart' : 'not_needed'
+    setPendingStates((previous) => ({ ...previous, [shoppingItem.id]: nextState }))
+    try {
+      if (shoppingItem.shoppingItemState === 'not_needed') await checkOffShoppingItem(shoppingItem.id, false)
+      else if (shoppingItem.shoppingItemState === 'in_cart' || isShopping)
+        await checkShoppingItem(shoppingItem.id, isChecked)
+      else await checkOffShoppingItem(shoppingItem.id, true)
+      reloadShoppingLists()
+      await content.reload(true)
     } catch (caught) {
       toast.failure(caught, t('shopping.failed'))
     } finally {
-      setIsBusy(false)
+      setPendingStates((previous) => {
+        const remaining = { ...previous }
+        delete remaining[shoppingItem.id]
+        return remaining
+      })
     }
   }
 
@@ -255,15 +289,16 @@ export function ShoppingListPage() {
 
         <div className="page-actions shopping-list-actions">
           {/* There is no starting: the first item put in the cart starts
-              the person's trip and tells the others. Done shows once there
-              is something to buy, and needs no receipt. */}
+              the person's trip and tells the others. Done opens the cart,
+              where the receipt is snapped or the trip finished without one. */}
           {ownTrip || hasOwnCart ? (
             <button
               type="button"
+              className="primary"
               disabled={isBusy}
-              onClick={() => void act(() => finishShopping(ownTrip?.id), t('shopping.shoppingDone'))}
+              onClick={() => setOpened({ dialogKind: 'cart' })}
             >
-              {t('shopping.doneShopping')}
+              {ownCartCount > 0 ? t('shopping.doneShoppingCount', { count: ownCartCount }) : t('shopping.doneShopping')}
             </button>
           ) : null}
           {ownTrip?.storeName ? (
@@ -307,6 +342,8 @@ export function ShoppingListPage() {
           </button>
         </div>
 
+        {resumeHere ? <ShoppingResumeRow shoppingTrip={resumeHere} onResumed={() => void reloadAll()} /> : null}
+
         <div className="shopping-tabs-row">
           <Tabs items={tabs} active={tab} onSelect={selectTab} />
           <ShoppingViewSwitch shoppingView={shoppingView} onChoose={chooseShoppingView} />
@@ -319,7 +356,7 @@ export function ShoppingListPage() {
             shoppingItems={shownItems}
             tab={tab}
             isBusy={isBusy}
-            onCheck={(shoppingItem, isChecked) => void act(() => checkShoppingItem(shoppingItem.id, isChecked))}
+            onCheck={(shoppingItem, isChecked) => void checkItem(shoppingItem, isChecked)}
             onEdit={(shoppingItem) => setOpened({ dialogKind: 'item', target: { shoppingItem } })}
             onRemove={(shoppingItem) => setOpened({ dialogKind: 'removeItem', shoppingItem })}
             onNeedAgain={(shoppingItem) => setOpened({ dialogKind: 'needAgain', shoppingItem })}
@@ -329,7 +366,7 @@ export function ShoppingListPage() {
             shoppingItems={shownItems}
             tab={tab}
             isBusy={isBusy}
-            onCheck={(shoppingItem, isChecked) => void act(() => checkShoppingItem(shoppingItem.id, isChecked))}
+            onCheck={(shoppingItem, isChecked) => void checkItem(shoppingItem, isChecked)}
             onEdit={(shoppingItem) => setOpened({ dialogKind: 'item', target: { shoppingItem } })}
             onRemove={(shoppingItem) => setOpened({ dialogKind: 'removeItem', shoppingItem })}
             onNeedAgain={(shoppingItem) => setOpened({ dialogKind: 'needAgain', shoppingItem })}
@@ -446,6 +483,19 @@ export function ShoppingListPage() {
               t('shopping.neededAgain', { itemDescription: opened.shoppingItem.itemDescription }),
             )
             if (isDone) setOpened(null)
+          }}
+          onClose={() => setOpened(null)}
+        />
+      ) : null}
+      {opened?.dialogKind === 'cart' ? (
+        <ShoppingCartDialog
+          ownTrip={ownTrip}
+          shoppingListId={shoppingList.id}
+          storeName={null}
+          onChanged={() => void reloadAll()}
+          onFinished={() => {
+            setOpened(null)
+            void reloadAll()
           }}
           onClose={() => setOpened(null)}
         />
