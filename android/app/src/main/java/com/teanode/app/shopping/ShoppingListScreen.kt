@@ -1,6 +1,15 @@
 package com.teanode.app.shopping
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.ImeAction
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +25,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
@@ -60,6 +72,7 @@ import com.teanode.app.session.LocalAppSession
 import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.ui.components.ConfirmationDialog
+import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
 import com.teanode.app.ui.components.LocalSnackbar
@@ -67,6 +80,7 @@ import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.kit.shopping.ShoppingGrouping
 import com.teanode.kit.shopping.ShoppingGroup
 import com.teanode.kit.shopping.ShoppingItem
+import com.teanode.kit.shopping.ShoppingSearch
 import com.teanode.kit.shopping.openTrips
 import kotlinx.coroutines.launch
 
@@ -97,6 +111,11 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
     val receiptReader = remember(connection) { ShoppingReceiptReader(connection, scope, snackbar, { text -> snackbar.show(text) }, context) }
     var layout by remember { mutableStateOf(initialLayout) }
     var grouping by remember { mutableStateOf(ShoppingListGrouping.Store) }
+    // Kept across a rotation, so the typed words and the filtered list stay where they were.
+    var isSearching by rememberSaveable { mutableStateOf(false) }
+    var searchText by rememberSaveable { mutableStateOf("") }
+    fun closeSearch() { isSearching = false; searchText = "" }
+    BackHandler(isSearching) { closeSearch() }
     var isRefreshing by remember { mutableStateOf(false) }
     var isMenuOpen by remember { mutableStateOf(false) }
     var isLayoutMenuOpen by remember { mutableStateOf(false) }
@@ -139,9 +158,11 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
     val title = list?.listName.orEmpty()
     TeaNodeScreen(
         title = title,
-        onBack = { navigator.back() },
+        onBack = { if (isSearching) closeSearch() else navigator.back() },
+        titleContent = if (isSearching) ({ ShoppingSearchField(searchText, onChange = { text -> searchText = text }) }) else null,
         actions = {
-            if (state.hasLoaded) {
+            if (state.hasLoaded && !isSearching) {
+                IconButton(onClick = { isSearching = true }) { Icon(Icons.Outlined.Search, contentDescription = stringResource(R.string.shopping_search_this_list)) }
                 Box {
                     IconButton(onClick = { isLayoutMenuOpen = true }) {
                         Icon(if (layout == ShoppingLayoutChoice.List) Icons.Outlined.ViewList else Icons.Outlined.GridView, contentDescription = stringResource(R.string.shopping_layout))
@@ -223,15 +244,20 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                     isRefreshing = isRefreshing,
                     onRefresh = { scope.launch { isRefreshing = true; state.load(); isRefreshing = false } },
                 ) {
+                    // Every section is filtered by the one rule the iPhone and the dashboard use; a group left with no items is not shown.
+                    val shownToBuy = if (isSearching) state.toBuy.filter { item -> ShoppingSearch.matches(item, searchText) } else state.toBuy
+                    val shownNotNeeded = if (isSearching) state.notNeeded.filter { item -> ShoppingSearch.matches(item, searchText) } else state.notNeeded
                     val groups = when (grouping) {
-                        ShoppingListGrouping.Store -> ShoppingGrouping.byStore(state.toBuy)
-                        ShoppingListGrouping.Aisle -> ShoppingGrouping.byAisle(state.toBuy)
+                        ShoppingListGrouping.Store -> ShoppingGrouping.byStore(shownToBuy)
+                        ShoppingListGrouping.Aisle -> ShoppingGrouping.byAisle(shownToBuy)
                     }
                     fun groupTitle(group: ShoppingGroup): String = when (grouping) {
                         ShoppingListGrouping.Store -> words.storeTitle(group)
                         ShoppingListGrouping.Aisle -> words.aisleTitle(group)
                     }
-                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+                    if (isSearching && searchText.isNotBlank() && shownToBuy.isEmpty() && shownNotNeeded.isEmpty()) {
+                        EmptyState(Icons.Outlined.SearchOff, stringResource(R.string.shopping_no_items_match, searchText.trim()))
+                    } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
                         state.resumableTrip?.let { trip ->
                             item("resume") {
                                 ShoppingResumeRow(trip, state.resumable.isResuming, onResume = { scope.launch { state.resume(context.getString(R.string.shopping_resumed)) } })
@@ -263,9 +289,9 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                         if (layout == ShoppingLayoutChoice.Pictures) {
                             val placed = groups.flatMap { group -> group.items.map { item -> ShoppingPlacedItem(item, groupTitle(group)) } }
                             tileRows(placed, words, actionsOf = ::itemActions, checkOf = { item -> itemCheck(item) }) { item -> editing = item }
-                            if (state.notNeeded.isNotEmpty()) {
+                            if (shownNotNeeded.isNotEmpty()) {
                                 item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_checked_off)) }
-                                tileRows(state.notNeeded.map { item -> ShoppingPlacedItem(item, words.listItemPlace(item)) }, words, actionsOf = ::itemActions, checkOf = { item -> itemCheck(item) }) { item -> editing = item }
+                                tileRows(shownNotNeeded.map { item -> ShoppingPlacedItem(item, words.listItemPlace(item)) }, words, actionsOf = ::itemActions, checkOf = { item -> itemCheck(item) }) { item -> editing = item }
                             }
                         } else {
                             for (group in groups) {
@@ -280,9 +306,9 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                                 }
                                 items(group.items, key = { item -> "item-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item), check = itemCheck(item)) }
                             }
-                            if (state.notNeeded.isNotEmpty()) {
+                            if (shownNotNeeded.isNotEmpty()) {
                                 item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_checked_off)) }
-                                items(state.notNeeded, key = { item -> "not-needed-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item), check = itemCheck(item)) }
+                                items(shownNotNeeded, key = { item -> "not-needed-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item), check = itemCheck(item)) }
                             }
                         }
                     }
@@ -402,6 +428,25 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
             text = { androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth()) }, confirmButton = {},
         )
     }
+}
+
+/** The bar's search box: a field with a clear button, focused when it appears so the keyboard comes up. */
+@Composable
+private fun ShoppingSearchField(searchText: String, onChange: (String) -> Unit) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    TextField(
+        value = searchText, onValueChange = onChange, singleLine = true,
+        placeholder = { Text(stringResource(R.string.shopping_search_this_list)) },
+        trailingIcon = {
+            if (searchText.isNotEmpty()) {
+                IconButton(onClick = { onChange("") }) { Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.shopping_clear_search)) }
+            }
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
+        modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+    )
 }
 
 @Composable

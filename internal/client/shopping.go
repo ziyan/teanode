@@ -33,7 +33,7 @@ const (
 const (
 	DocumentListShoppingLists = `query { ListShoppingLists ` + shoppingListSelection + ` }`
 
-	DocumentGetShoppingList = `query ($shoppingListId: String!, $shoppingItemStates: [String!], $offset: Int, $pageSize: Int) { GetShoppingList(shoppingListId: $shoppingListId, shoppingItemStates: $shoppingItemStates, offset: $offset, pageSize: $pageSize) { totalCount shoppingList ` + shoppingListSelection + ` shoppingItems ` + shoppingItemSelection + ` shoppingTrips ` + shoppingTripSelection + ` } }`
+	DocumentGetShoppingList = `query ($shoppingListId: String!, $shoppingItemStates: [String!], $searchText: String, $offset: Int, $pageSize: Int) { GetShoppingList(shoppingListId: $shoppingListId, shoppingItemStates: $shoppingItemStates, searchText: $searchText, offset: $offset, pageSize: $pageSize) { totalCount shoppingList ` + shoppingListSelection + ` shoppingItems ` + shoppingItemSelection + ` shoppingTrips ` + shoppingTripSelection + ` } }`
 
 	DocumentGetShoppingItem = `query ($shoppingItemId: String!) { GetShoppingItem(shoppingItemId: $shoppingItemId) ` + shoppingItemSelection + ` }`
 
@@ -198,6 +198,7 @@ type ShoppingReceiptView struct {
 type ShoppingListQuery struct {
 	ShoppingListID     string
 	ShoppingItemStates []string
+	SearchText         string
 	Offset             int
 	PageSize           int
 }
@@ -276,6 +277,9 @@ func GetShoppingList(ctx context.Context, executor Executor, query ShoppingListQ
 	variables := map[string]any{"shoppingListId": query.ShoppingListID}
 	if len(query.ShoppingItemStates) > 0 {
 		variables["shoppingItemStates"] = query.ShoppingItemStates
+	}
+	if query.SearchText != "" {
+		variables["searchText"] = query.SearchText
 	}
 	if query.Offset > 0 {
 		variables["offset"] = query.Offset

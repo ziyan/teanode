@@ -655,4 +655,34 @@ class ShoppingTest {
         assertEquals(listOf("Example Market Express"), ShoppingStoreSuggestions.names("example market", stores))
         assertEquals(emptyList<String>(), ShoppingStoreSuggestions.names("zzz", stores))
     }
+
+    private fun searchItem(description: String, details: String = "", storeName: String = "", aisleName: String = "") =
+        ShoppingItem(id = "item", itemDescription = description, itemDetails = details, storeName = storeName, aisleName = aisleName)
+
+    @Test
+    fun blankSearchTextMatchesEverything() {
+        val item = searchItem("Apples")
+        assertTrue(ShoppingSearch.matches(item, ""))
+        assertTrue(ShoppingSearch.matches(item, "  \t "))
+    }
+
+    @Test
+    fun searchIgnoresCaseAndLooksInEveryField() {
+        val item = searchItem("Oat Milk", details = "unsweetened, barista", storeName = "Example Market", aisleName = "Dairy")
+        assertTrue(ShoppingSearch.matches(item, "OAT"))
+        assertTrue(ShoppingSearch.matches(item, "barista"))
+        assertTrue(ShoppingSearch.matches(item, "example mar"))
+        assertTrue(ShoppingSearch.matches(item, "dairy"))
+        assertFalse(ShoppingSearch.matches(item, "bread"))
+    }
+
+    @Test
+    fun searchNeedsEveryWordButNotInTheSameField() {
+        val item = searchItem("Oat Milk", storeName = "Example Market", aisleName = "Dairy")
+        assertTrue(ShoppingSearch.matches(item, "  milk   market "))
+        assertTrue(ShoppingSearch.matches(item, "dairy oat"))
+        assertFalse(ShoppingSearch.matches(item, "milk bakery"))
+        assertFalse(ShoppingSearch.matches(item, "mlik"))
+    }
 }
+

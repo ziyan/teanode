@@ -191,3 +191,43 @@ func TestAReceiptStillMatchesWhatWasJustBought(t *testing.T) {
 		}
 	})
 }
+
+// Searching a list keeps the items whose description, details, store or
+// aisle hold every word, without case, and a % in the search means itself.
+func TestSearchingAListKeepsItemsHoldingEveryWord(t *testing.T) {
+	t.Parallel()
+	world := newShoppingWorld(t)
+	world.run(t, func(tx db.Transaction) {
+		groceries := mustCreateShoppingList(t, tx, world.owner.ID, "Groceries")
+		mustAddShoppingItems(t, tx, world.owner.ID, groceries.ID,
+			&models.ShoppingItem{ItemDescription: "Oat milk", StoreName: "Example Market", AisleName: "Dairy"},
+			&models.ShoppingItem{ItemDescription: "Whole milk", ItemDetails: "the blue cap"},
+			&models.ShoppingItem{ItemDescription: "Bread", AisleName: "Bakery"},
+			&models.ShoppingItem{ItemDescription: "100% juice"})
+		searched := func(searchText string) []string {
+			items, total, err := tx.ListShoppingItems(world.owner.ID, groceries.ID, nil, searchText, 0, 50)
+			if err != nil || int(total) != len(items) {
+				t.Fatalf("ListShoppingItems(%q): %d of %d, %v", searchText, len(items), total, err)
+			}
+			descriptions := []string{}
+			for _, item := range items {
+				descriptions = append(descriptions, item.ItemDescription)
+			}
+			slices.Sort(descriptions)
+			return descriptions
+		}
+		for searchText, expected := range map[string][]string{
+			"MILK":         {"Oat milk", "Whole milk"},
+			"milk example": {"Oat milk"},
+			"blue":         {"Whole milk"},
+			"bakery":       {"Bread"},
+			"%":            {"100% juice"},
+			"  ":           {"100% juice", "Bread", "Oat milk", "Whole milk"},
+			"milk bread":   {},
+		} {
+			if found := searched(searchText); !slices.Equal(found, expected) {
+				t.Errorf("searching %q found %v, expected %v", searchText, found, expected)
+			}
+		}
+	})
+}

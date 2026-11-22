@@ -428,7 +428,7 @@ jobs:
           shoot shopping-light light large -TeaNodeDemo -TeaNodeTab shopping
           shoot shopping-dark dark large -TeaNodeDemo -TeaNodeTab shopping
           shoot shopping-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab shopping
-          for shopping_screen in shopping-list shopping-list-pictures shopping-store shopping-store-pictures shopping-cart shopping-resume shopping-item shopping-import shopping-add-similar shopping-add-alike shopping-add-store; do
+          for shopping_screen in shopping-list shopping-list-search shopping-list-pictures shopping-store shopping-store-pictures shopping-cart shopping-resume shopping-item shopping-import shopping-add-similar shopping-add-alike shopping-add-store; do
             shoot "$shopping_screen-light" light large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"
             shoot "$shopping_screen-dark" dark large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"
             shoot "$shopping_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab shopping -TeaNodeScreen "$shopping_screen"

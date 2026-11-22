@@ -42,6 +42,7 @@ import {
   shoppingListAddress,
   shoppingStoreAddress,
   isOnShoppingTab,
+  matchesShoppingSearch,
   ShoppingTab,
 } from './shoppingItems'
 import { ShoppingPaneBack, useShoppingLayout } from './shoppingLayout'
@@ -119,8 +120,17 @@ export function ShoppingListPage() {
       }),
     [content.data, pendingStates, session.userId],
   )
-  const counts = useMemo(() => countShoppingTabs(shoppingItems), [shoppingItems])
-  const tabItems = useMemo(() => shoppingItems.filter((item) => isOnShoppingTab(item, tab)), [shoppingItems, tab])
+  // The search is in the address too. While it holds words, every tab is
+  // filtered by it and counts only what matches, so an item on another tab
+  // can be found.
+  const searchText = parameters.get('q') ?? ''
+  const isSearching = searchText.trim() !== ''
+  const matchingItems = useMemo(
+    () => shoppingItems.filter((item) => matchesShoppingSearch(item, searchText)),
+    [shoppingItems, searchText],
+  )
+  const counts = useMemo(() => countShoppingTabs(matchingItems), [matchingItems])
+  const tabItems = useMemo(() => matchingItems.filter((item) => isOnShoppingTab(item, tab)), [matchingItems, tab])
   const shownItems = tabItems.slice(offset, offset + pageSize)
   useKeepPageInRange(pageIndex, pageSize, content.data ? tabItems.length : null, setPageIndex)
   useBreadcrumbDetail(shoppingList?.listName)
@@ -204,6 +214,20 @@ export function ShoppingListPage() {
         const written = new URLSearchParams(previous)
         if (next === 'to-buy') written.delete('tab')
         else written.set('tab', next)
+        written.delete('page')
+        return written
+      },
+      { replace: true },
+    )
+  }
+
+  // Typing goes back to the first page, as choosing a tab does.
+  function changeSearch(next: string) {
+    setParameters(
+      (previous) => {
+        const written = new URLSearchParams(previous)
+        if (next.trim() === '') written.delete('q')
+        else written.set('q', next)
         written.delete('page')
         return written
       },
@@ -344,12 +368,34 @@ export function ShoppingListPage() {
 
         {resumeHere ? <ShoppingResumeRow shoppingTrip={resumeHere} onResumed={() => void reloadAll()} /> : null}
 
+        <div className="shopping-search-row">
+          <input
+            type="search"
+            value={searchText}
+            placeholder={t('shopping.searchPlaceholder')}
+            aria-label={t('shopping.searchPlaceholder')}
+            onChange={(event) => changeSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') changeSearch('')
+            }}
+          />
+        </div>
+
         <div className="shopping-tabs-row">
           <Tabs items={tabs} active={tab} onSelect={selectTab} />
           <ShoppingViewSwitch shoppingView={shoppingView} onChoose={chooseShoppingView} />
         </div>
 
-        {tabItems.length === 0 ? (
+        {tabItems.length === 0 && isSearching ? (
+          <>
+            <SettingsEmpty>{t('shopping.searchEmpty', { searchText: searchText.trim() })}</SettingsEmpty>
+            <div className="page-actions">
+              <button type="button" onClick={() => changeSearch('')}>
+                {t('shopping.searchClear')}
+              </button>
+            </div>
+          </>
+        ) : tabItems.length === 0 ? (
           <SettingsEmpty>{t(EMPTY_TAB_WORDS[tab])}</SettingsEmpty>
         ) : shoppingView === 'pictures' ? (
           <ShoppingItemGrid

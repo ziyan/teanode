@@ -35,6 +35,22 @@ export function isOnShoppingTab(item: ShoppingItem, tab: ShoppingTab): boolean {
   }
 }
 
+// matchesShoppingSearch says whether an item answers the words typed in the
+// list's search field: every word must be found, ignoring case, in the
+// description, the details, the store or the aisle. Other apps use the same
+// rule, so there is no fuzzy matching here. No words match everything.
+export function matchesShoppingSearch(item: ShoppingItem, searchText: string): boolean {
+  const words = searchText
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word !== '')
+  if (words.length === 0) return true
+  const haystacks = [item.itemDescription, item.itemDetails, item.storeName, item.aisleName].map((field) =>
+    field.toLowerCase(),
+  )
+  return words.every((word) => haystacks.some((haystack) => haystack.includes(word)))
+}
+
 export function countShoppingTabs(items: ShoppingItem[]): Record<ShoppingTab, number> {
   const counts: Record<ShoppingTab, number> = { 'to-buy': 0, 'in-cart': 0, 'out-of-stock': 0, 'not-needed': 0 }
   for (const item of items) {

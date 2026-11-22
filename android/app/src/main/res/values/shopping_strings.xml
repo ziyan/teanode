@@ -200,4 +200,7 @@
         <item quantity="one">%1$d item goes back in your cart</item>
         <item quantity="other">%1$d items go back in your cart</item>
     </plurals>
+    <string name="shopping_search_this_list">Search this list</string>
+    <string name="shopping_clear_search">Clear search</string>
+    <string name="shopping_no_items_match">No items match “%1$s”</string>
 </resources>

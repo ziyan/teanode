@@ -261,6 +261,10 @@ type GetShoppingListArguments struct {
 	// needed, in_cart, not_needed; every state when none is given
 	ShoppingItemStates []string `json:"shoppingItemStates" graphapi:"nullable"`
 
+	// Only the items whose description, details, store or aisle hold every
+	// word of it, without case; every item when empty
+	SearchText string `json:"searchText" graphapi:"nullable"`
+
 	// Skip this many items; 0 by default
 	Offset int `json:"offset" graphapi:"nullable"`
 
@@ -556,7 +560,7 @@ func (self *graph) GetShoppingList(ctx context.Context, arguments GetShoppingLis
 	if pageSize == 0 {
 		pageSize = 200
 	}
-	items, total, err := tx.ListShoppingItems(user.ID, list.ID, states, arguments.Offset, pageSize)
+	items, total, err := tx.ListShoppingItems(user.ID, list.ID, states, arguments.SearchText, arguments.Offset, pageSize)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -920,7 +924,7 @@ func (self *graph) DeleteShoppingList(ctx context.Context, arguments ShoppingLis
 	// Its items' pictures go with it, read before the rows do.
 	items := []*models.ShoppingItem{}
 	for offset := 0; ; offset += 500 {
-		page, total, err := tx.ListShoppingItems(user.ID, arguments.ShoppingListID, nil, offset, 500)
+		page, total, err := tx.ListShoppingItems(user.ID, arguments.ShoppingListID, nil, "", offset, 500)
 		if err != nil {
 			return false, translateError(err)
 		}

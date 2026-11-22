@@ -67,6 +67,7 @@ type arguments struct {
 	ItemID             string          `json:"item_id"`
 	ItemIDs            []string        `json:"item_ids"`
 	ShoppingItemStates []string        `json:"shopping_item_states"`
+	SearchText         string          `json:"search_text"`
 	Offset             int             `json:"offset"`
 	PageSize           int             `json:"page_size"`
 	ListName           string          `json:"list_name"`
@@ -371,7 +372,7 @@ func runList(ctx context.Context, here *scope, asked *arguments) (*tools.Result,
 		return nil, err
 	}
 	page, err := client.GetShoppingList(ctx, here.operations, client.ShoppingListQuery{
-		ShoppingListID: listId, ShoppingItemStates: asked.ShoppingItemStates, Offset: offset, PageSize: pageSize,
+		ShoppingListID: listId, ShoppingItemStates: asked.ShoppingItemStates, SearchText: strings.TrimSpace(asked.SearchText), Offset: offset, PageSize: pageSize,
 	})
 	if err != nil {
 		return nil, err
@@ -381,6 +382,9 @@ func runList(ctx context.Context, here *scope, asked *arguments) (*tools.Result,
 	pageNote(answer, offset, len(rows), page.TotalCount)
 	if page.TotalCount == 0 {
 		answer["note"] = "no items in these states"
+		if strings.TrimSpace(asked.SearchText) != "" {
+			answer["note"] = "no items match the search"
+		}
 	}
 	return dataResult(answer)
 }

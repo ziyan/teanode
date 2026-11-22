@@ -21,8 +21,10 @@ import (
 type ShoppingItemOperation interface {
 	// ListShoppingItems are a page of a list's items in the given states (all
 	// of them when none is given), by aisle and then by their order, with how
-	// many there are in all.
-	ListShoppingItems(userId, shoppingListId string, shoppingItemStates []models.ShoppingItemState, offset, limit int) ([]*models.ShoppingItem, int64, error)
+	// many there are in all. A search text keeps the items whose description,
+	// details, store or aisle hold every word of it, without case; the apps
+	// filter a list they have loaded by the same rule.
+	ListShoppingItems(userId, shoppingListId string, shoppingItemStates []models.ShoppingItemState, searchText string, offset, limit int) ([]*models.ShoppingItem, int64, error)
 
 	// GetShoppingItem is one item on a list the person reaches.
 	GetShoppingItem(userId, shoppingItemId string) (*models.ShoppingItem, error)
@@ -267,7 +269,7 @@ func (self *transaction) shoppingItemsOf(query *gorm.DB) ([]*models.ShoppingItem
 	return items, nil
 }
 
-func (self *transaction) ListShoppingItems(userId, shoppingListId string, shoppingItemStates []models.ShoppingItemState, offset, limit int) ([]*models.ShoppingItem, int64, error) {
+func (self *transaction) ListShoppingItems(userId, shoppingListId string, shoppingItemStates []models.ShoppingItemState, searchText string, offset, limit int) ([]*models.ShoppingItem, int64, error) {
 	if offset < 0 || limit < 1 || limit > shoppingPageSizeMost {
 		return nil, 0, ErrInvalidArguments
 	}
@@ -284,6 +286,11 @@ func (self *transaction) ListShoppingItems(userId, shoppingListId string, shoppi
 			states = append(states, string(state))
 		}
 		query = query.Where("\"shopping_item_state\" IN ?", states)
+	}
+	for _, word := range strings.Fields(searchText) {
+		pattern := "%" + escapeLike(word) + "%"
+		query = query.Where(`("item_description" ILIKE ? OR "item_details" ILIKE ? OR "store_name" ILIKE ? OR "aisle_name" ILIKE ?)`,
+			pattern, pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

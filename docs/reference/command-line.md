@@ -816,7 +816,7 @@ are compared without case or punctuation, so `Example Market` and
 | Command | What it does |
 | --- | --- |
 | `teanode shopping lists` | the lists you reach, yours first: id, name, how many items are needed, in the cart and not needed, whose it is, whether it is shared and whether you are reminded on arriving at a store |
-| `teanode shopping show LIST [--state needed\|in_cart\|not_needed]... [--limit N] [--offset N]` | one list and its items in the order the list keeps them (by aisle), and who is shopping it now. `--state` keeps the items in those states, every state by default. A page is 200 items, at most 500; a full page says on standard error where to continue |
+| `teanode shopping show LIST [--state needed\|in_cart\|not_needed]... [--search WORDS] [--limit N] [--offset N]` | one list and its items in the order the list keeps them (by aisle), and who is shopping it now. `--state` keeps the items in those states, every state by default. `--search` keeps the items whose description, details, store or aisle hold every word, without case. A page is 200 items, at most 500; a full page says on standard error where to continue |
 | `teanode shopping item ITEM-ID` | one item: its details, count, store, aisle, state, latest price and where its picture came from |
 | `teanode shopping similar LIST DESCRIPTION` | the items that read like what you are about to add, on the list and your other lists, nearest first and at most five: words in any order, plurals, a word only begun and small misspellings all match. It adds nothing |
 | `teanode shopping create NAME` / `rename LIST NAME` | make a list, or give one another name |

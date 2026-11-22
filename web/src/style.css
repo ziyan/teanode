@@ -22175,6 +22175,15 @@ button.person-row:focus-visible {
   width: 100%;
 }
 
+/* The list's search field, on a line above the tabs. */
+.shopping-search-row {
+  margin-bottom: var(--space-2);
+}
+
+.shopping-search-row input {
+  width: 100%;
+}
+
 /* The tabs of a list and the layout switch on one line, the switch at the
    end; the line under the tabs runs under both. */
 .shopping-tabs-row {

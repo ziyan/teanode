@@ -3,6 +3,7 @@ package com.teanode.app.shopping
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.longClick
@@ -78,6 +79,26 @@ class ShoppingScreenshotTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Remove").assertExists()
         composeRule.photograph("shopping-item-menu-light")
+    }
+
+    @Test fun `list search with matches`() {
+        composeRule.setContent { DemoHost(appearance = Look.Light.appearance) { ShoppingListScreen(ShoppingDemoData.GROCERIES_LIST_ID) } }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Search this list").performClick()
+        composeRule.onNodeWithText("Search this list").performTextInput("produce app")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Apples").assertExists()
+        composeRule.photograph("shopping-list-search-light")
+    }
+
+    @Test fun `list search with no match`() {
+        composeRule.setContent { DemoHost(appearance = Look.Light.appearance) { ShoppingListScreen(ShoppingDemoData.GROCERIES_LIST_ID) } }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("Search this list").performClick()
+        composeRule.onNodeWithText("Search this list").performTextInput("zzz")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("No items match “zzz”").assertExists()
+        composeRule.photograph("shopping-list-search-empty-light")
     }
 
     @Test fun `remove confirmation`() {

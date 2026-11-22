@@ -85,6 +85,17 @@ that last bought it and when it was bought before that
 (`bought_shopping_trip_id`, `previous_last_bought_at`, migration 0280), which
 is all taking a purchase back needs.
 
+## Searching a list
+
+A list has a search field on every screen. An item matches when its
+description, details, store or aisle hold every word typed, without case: "milk
+example" finds the oat milk for Example Market, and "produce" every item in that
+aisle. The apps filter the list they have loaded, every section and the checked
+off items too, so something bought last week can be found and needed again.
+`GetShoppingList` takes the same search as `searchText` (`ILIKE` on the four
+columns, one condition per word), which the CLI's `show --search` and the
+tool's `search_text` send.
+
 ## Shopping a store
 
 At the store a person shops a store, not a list. The store screen

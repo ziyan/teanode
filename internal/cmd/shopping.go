@@ -67,6 +67,7 @@ func NewShoppingCommand() *cli.Command {
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringSliceFlag{Name: "state", Usage: "only items in this state: needed, in_cart or not_needed; repeat it for more than one (every state by default)"},
+					&cli.StringFlag{Name: "search", Usage: "only items whose description, details, store or aisle hold every word of this, without case"},
 					&cli.IntFlag{Name: "limit", Usage: "items to show, at most 500 (200 by default)"},
 					&cli.IntFlag{Name: "offset", Usage: "how many items to skip, for the next page"},
 				},
@@ -404,7 +405,7 @@ func runShoppingShow(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	page, err := client.GetShoppingList(ctx, connection, client.ShoppingListQuery{
-		ShoppingListID: list.ID, ShoppingItemStates: shoppingItemStates, Offset: int(command.Int("offset")), PageSize: int(command.Int("limit")),
+		ShoppingListID: list.ID, ShoppingItemStates: shoppingItemStates, SearchText: strings.TrimSpace(command.String("search")), Offset: int(command.Int("offset")), PageSize: int(command.Int("limit")),
 	})
 	if err != nil {
 		return describeNotFound(command, err, "the list "+arguments[0])

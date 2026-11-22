@@ -196,4 +196,7 @@
     <plurals name="shopping_resume_items_back">
         <item quantity="other">%1$d 点がカートに戻ります</item>
     </plurals>
+    <string name="shopping_search_this_list">このリストを検索</string>
+    <string name="shopping_clear_search">検索をクリア</string>
+    <string name="shopping_no_items_match">「%1$s」に一致する商品はありません</string>
 </resources>

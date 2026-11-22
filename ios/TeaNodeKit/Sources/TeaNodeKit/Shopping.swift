@@ -232,6 +232,23 @@ public enum ShoppingStoreSuggestions {
 
 /// ShoppingItemState is where an item is: wanted, put in the cart at the
 /// store, or bought and kept on the list to be wanted again.
+/// ShoppingSearch is the search on a list: an item matches when its
+/// description, details, store or aisle hold every word of the search,
+/// without case. The server and the other apps search by the same rule.
+public enum ShoppingSearch {
+    public static func matches(_ item: ShoppingItem, searchText: String) -> Bool {
+        let words = searchText.lowercased().split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return true }
+        let fields = [item.itemDescription, item.itemDetails, item.storeName, item.aisleName].map { $0.lowercased() }
+        return words.allSatisfy { word in fields.contains { field in field.contains(word) } }
+    }
+
+    /// The items that match, in their order.
+    public static func filter(_ items: [ShoppingItem], searchText: String) -> [ShoppingItem] {
+        items.filter { item in matches(item, searchText: searchText) }
+    }
+}
+
 public enum ShoppingItemState: String, CaseIterable, Sendable {
     case needed
     case inCart = "in_cart"

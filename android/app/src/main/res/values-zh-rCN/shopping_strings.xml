@@ -196,4 +196,7 @@
     <plurals name="shopping_resume_items_back">
         <item quantity="other">%1$d 件商品会放回你的购物车</item>
     </plurals>
+    <string name="shopping_search_this_list">搜索此清单</string>
+    <string name="shopping_clear_search">清除搜索</string>
+    <string name="shopping_no_items_match">没有符合“%1$s”的商品</string>
 </resources>

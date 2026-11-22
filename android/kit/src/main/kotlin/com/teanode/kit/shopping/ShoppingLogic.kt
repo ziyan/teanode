@@ -377,3 +377,12 @@ object ShoppingGrouping {
         items.filter { item -> !item.isNotNeeded } to items.filter { item -> item.isNotNeeded }.sortedWith(itemOrder)
 }
 
+/** The rule the list's search box uses, the same on the iPhone and the dashboard: every typed word, in any case, appears in the item's name, details, store or aisle. No fuzzy matching, so what is shown is what was typed. */
+object ShoppingSearch {
+    fun matches(item: ShoppingItem, searchText: String): Boolean {
+        val words = searchText.lowercase(Locale.ROOT).split(Regex("\\s+")).filter { word -> word.isNotEmpty() }
+        if (words.isEmpty()) return true
+        val fields = listOf(item.itemDescription, item.itemDetails, item.storeName, item.aisleName).map { field -> field.lowercase(Locale.ROOT) }
+        return words.all { word -> fields.any { field -> field.contains(word) } }
+    }
+}

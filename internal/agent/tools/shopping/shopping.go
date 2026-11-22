@@ -43,8 +43,8 @@ func init() {
 		return tools.Grouped([]*tools.Tool{
 			read("shopping_lists", "The lists the person reaches, their own first, each with how many items are needed, in the cart and not needed, whose it is and whether it is shared. A page at a time.",
 				tools.Object(map[string]any{"offset": offsetProperty, "page_size": pageSizeProperty}), runLists),
-			read("shopping_list", "One list with its items, grouped as the list keeps them (by aisle), and who is shopping it now. shopping_item_states keeps only the items in those states (every state when left out).",
-				tools.Object(map[string]any{"list_id": listIDProperty, "shopping_item_states": itemStatesProperty, "offset": offsetProperty, "page_size": pageSizeProperty}, "list_id"), runList),
+			read("shopping_list", "One list with its items, grouped as the list keeps them (by aisle), and who is shopping it now. shopping_item_states keeps only the items in those states (every state when left out); search_text keeps only the items whose description, details, store or aisle hold every word of it, without case.",
+				tools.Object(map[string]any{"list_id": listIDProperty, "shopping_item_states": itemStatesProperty, "search_text": searchTextProperty, "offset": offsetProperty, "page_size": pageSizeProperty}, "list_id"), runList),
 			read("shopping_item", "One item: its details, count, store, aisle, picture source, latest price and where it is.",
 				tools.Object(map[string]any{"item_id": itemIDProperty}, "item_id"), runItem),
 			read("shopping_similar_items", "The items that read like one about to be added, on the list named and the person's other lists, nearest first and at most five, in every state. "+
@@ -222,6 +222,7 @@ var (
 	itemIDProperty             = tools.StringProperty("the item, by the item_id that list or store gives")
 	itemIDsProperty            = tools.ArrayProperty("several items instead of item_id (up to 100), each by its item_id", map[string]any{"type": "string"})
 	itemStatesProperty         = tools.ArrayProperty("for list: only items in these states, from needed, in_cart and not_needed; every state when left out", map[string]any{"type": "string", "enum": []string{"needed", "in_cart", "not_needed"}})
+	searchTextProperty         = tools.StringProperty("for list: words to look for, such as oat milk; only the items whose description, details, store or aisle hold every one, without case")
 	offsetProperty             = tools.IntegerProperty("for lists, list, store, prices and receipt: skip this many rows, for the next page: the next_offset of the page before")
 	pageSizeProperty           = tools.IntegerProperty("for lists, list, store, prices and receipt: rows to a page, 1 to 200; 50 by default")
 	listNameProperty           = tools.StringProperty("the list's name, 1 to 200 characters, such as Groceries")

@@ -141,7 +141,8 @@ struct ShoppingScreen: View {
         /// `-TeaNodeScreen shopping-list`, `shopping-item` and `shopping-import` open the
         /// first list (the last two with the item or the import sheet over it), and
         /// `shopping-store` the store screen; `shopping-list-pictures` and
-        /// `shopping-store-pictures` show those two as pictures.
+        /// `shopping-store-pictures` show those two as pictures, and
+        /// `shopping-list-search` the list searched for its produce.
         private func openDemoScreen() {
             guard DemoServer.isRequested, path.isEmpty, let screen = DemoServer.screen else { return }
             if screen.hasPrefix("shopping-list") || screen == "shopping-item" || screen == "shopping-import" || screen.hasPrefix("shopping-add-") {
@@ -311,6 +312,8 @@ struct ShoppingListScreen: View {
     @State private var isShowingCart = false
     @State private var pickedReceiptItems: [PhotosPickerItem] = []
     @State private var isTakingReceiptPicture = false
+    /// What the person searches the list for; empty shows every item.
+    @State private var searchText = ""
     @AppStorage(ShoppingLayoutChoice.storageKey) private var layoutName = ShoppingLayoutChoice.list.rawValue
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -372,7 +375,18 @@ struct ShoppingListScreen: View {
             .safeAreaInset(edge: .bottom) { floatingControls }
             .toolbarVisibility(.hidden, for: .tabBar)
             .overlay { stateOverlay }
+            // Under the title, always: at the bottom it would sit behind
+            // Done shopping and the add button.
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search this list"))
     }
+
+    private var isSearching: Bool { !searchText.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// The items to buy that match the search.
+    private var shownToBuy: [ShoppingItem] { ShoppingSearch.filter(model.toBuy, searchText: searchText) }
+
+    /// The checked-off items that match the search.
+    private var shownNotNeeded: [ShoppingItem] { ShoppingSearch.filter(model.notNeeded, searchText: searchText) }
 
     private var subtitle: String {
         guard model.hasLoaded else { return "" }
@@ -428,7 +442,7 @@ struct ShoppingListScreen: View {
                         tileGrid(placedToBuy)
                     }
                 }
-                if !model.notNeeded.isEmpty {
+                if !shownNotNeeded.isEmpty {
                     Section("Checked off") {
                         tileGrid(placedNotNeeded)
                     }
@@ -441,9 +455,9 @@ struct ShoppingListScreen: View {
                         groupHeader(group)
                     }
                 }
-                if !model.notNeeded.isEmpty {
+                if !shownNotNeeded.isEmpty {
                     Section("Checked off") {
-                        ForEach(model.notNeeded) { item in row(item) }
+                        ForEach(shownNotNeeded) { item in row(item) }
                     }
                 }
             }
@@ -484,8 +498,8 @@ struct ShoppingListScreen: View {
 
     private var groups: [ShoppingGroup] {
         switch grouping {
-        case .store: ShoppingGrouping.byStore(model.toBuy)
-        case .aisle: ShoppingGrouping.byAisle(model.toBuy)
+        case .store: ShoppingGrouping.byStore(shownToBuy)
+        case .aisle: ShoppingGrouping.byAisle(shownToBuy)
         }
     }
 
@@ -508,7 +522,7 @@ struct ShoppingListScreen: View {
 
     /// The items not needed now, each with its store and aisle.
     private var placedNotNeeded: [ShoppingPlacedItem] {
-        model.notNeeded.map { item in ShoppingPlacedItem(item: item, groupName: ShoppingWords.listItemPlace(item)) }
+        shownNotNeeded.map { item in ShoppingPlacedItem(item: item, groupName: ShoppingWords.listItemPlace(item)) }
     }
 
     /// Tiles in a grid that fills a section's one row, each with the store or
@@ -591,6 +605,8 @@ struct ShoppingListScreen: View {
             ContentUnavailableView(
                 "Nothing on this list", systemImage: AppSection.shopping.systemImage,
                 description: Text("Add an item, or import a list from text or a picture."))
+        } else if isSearching && shownToBuy.isEmpty && shownNotNeeded.isEmpty {
+            ContentUnavailableView.search(text: searchText.trimmingCharacters(in: .whitespaces))
         }
     }
 
@@ -732,6 +748,8 @@ struct ShoppingListScreen: View {
                 editing = model.items.first { $0.itemDescription == "Apples" }
             } else if DemoServer.screen == "shopping-import" {
                 isImporting = true
+            } else if DemoServer.screen == "shopping-list-search" {
+                searchText = "produce"
             } else if DemoServer.screen?.hasPrefix("shopping-add-") == true {
                 isAdding = true
             }
