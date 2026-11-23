@@ -172,8 +172,7 @@ type agentModel struct {
 
 	SpokeFirstAt           *time.Time `gorm:"column:spoke_first_at"`
 	OnboardedAt            *time.Time `gorm:"column:onboarded_at"`
-	IsMemoryCheckEnabled   bool       `gorm:"column:is_memory_check_enabled"`
-	IsIdeasEnabled         bool       `gorm:"column:is_ideas_enabled"`
+	IsSuggestionsEnabled   bool       `gorm:"column:is_suggestions_enabled"`
 	SpeakFirstSnoozedUntil *time.Time `gorm:"column:speak_first_snoozed_until"`
 
 	// The person's say over alerts. See migration 0126.
@@ -269,8 +268,7 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		DreamBootstrap:         model.DreamBootstrap,
 		SpokeFirstAt:           localTime(model.SpokeFirstAt),
 		OnboardedAt:            localTime(model.OnboardedAt),
-		IsMemoryCheckEnabled:   model.IsMemoryCheckEnabled,
-		IsIdeasEnabled:         model.IsIdeasEnabled,
+		IsSuggestionsEnabled:   model.IsSuggestionsEnabled,
 		SpeakFirstSnoozedUntil: localTime(model.SpeakFirstSnoozedUntil),
 		IsAlertsEnabled:        model.IsAlertsEnabled,
 		AlertQuietStart:        model.AlertQuietStart,
@@ -348,8 +346,7 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		DreamBootstrap:         agent.DreamBootstrap,
 		SpokeFirstAt:           agent.SpokeFirstAt,
 		OnboardedAt:            agent.OnboardedAt,
-		IsMemoryCheckEnabled:   agent.IsMemoryCheckEnabled,
-		IsIdeasEnabled:         agent.IsIdeasEnabled,
+		IsSuggestionsEnabled:   agent.IsSuggestionsEnabled,
 		SpeakFirstSnoozedUntil: agent.SpeakFirstSnoozedUntil,
 		DecayedAt:              agent.DecayedAt,
 		FollowUpBackfilledAt:   agent.FollowUpBackfilledAt,
@@ -486,7 +483,7 @@ func (self *transaction) CreateAgent(agent *models.Agent) (*models.Agent, error)
 	// what it remembers, offers ideas and tells the person what their mail
 	// says they should know until the person says otherwise. A Go false
 	// here is the zero value nobody chose, not a choice.
-	created.IsMemoryCheckEnabled, created.IsIdeasEnabled, created.IsAlertsEnabled = true, true, true
+	created.IsSuggestionsEnabled, created.IsAlertsEnabled = true, true
 	if created.FeedDestination == "" {
 		created.FeedDestination = models.FeedDestinationFeed
 	}
@@ -556,8 +553,7 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"dream_from":           model.DreamFrom, "dream_until": model.DreamUntil,
 			"dreamed_at":              model.DreamedAt,
 			"dream_bootstrap":         model.DreamBootstrap,
-			"is_memory_check_enabled": model.IsMemoryCheckEnabled,
-			"is_ideas_enabled":        model.IsIdeasEnabled,
+			"is_suggestions_enabled":  model.IsSuggestionsEnabled,
 			"is_alerts_enabled":       model.IsAlertsEnabled,
 			"alert_quiet_start":       model.AlertQuietStart,
 			"alert_quiet_end":         model.AlertQuietEnd,

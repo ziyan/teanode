@@ -111,7 +111,7 @@ func TestTheIdeaStepLooksOnceADayWhateverTheReadingSpent(t *testing.T) {
 	defer provider.Close()
 	worker, run := digestSplitWorld(t, database, provider.URL)
 	ideaCatalogForTest(t)
-	run.Agent.IsIdeasEnabled = true
+	run.Agent.IsSuggestionsEnabled = true
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		if _, err := tx.PutAgentNode(&models.AgentNode{AgentID: run.Agent.ID, Path: "things/boiler", Kind: models.NodeThing, Name: "Boiler"}); err != nil {
 			t.Fatal(err)
