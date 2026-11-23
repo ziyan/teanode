@@ -5807,22 +5807,6 @@
         }
       }
     },
-    "Each run of the schedule becomes a turn of this goal, and the goal takes none of its own. Answers appear in the goal's conversation instead of arriving by mail.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スケジュールの実行ごとにこのゴールの1回の動きになり、ゴール自身は動きません。回答はメールではなく、ゴールの会話に表示されます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "计划的每次运行都会成为这个目标的一轮，目标自己不再另外行动。回答会出现在目标的对话里，而不是通过邮件发送。"
-          }
-        }
-      }
-    },
     "Near %@": {
       "localizations": {
         "ja": {
@@ -5947,22 +5931,6 @@
         }
       }
     },
-    "Run this goal on a schedule": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このゴールをスケジュールで動かす"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "让这个目标按计划运行"
-          }
-        }
-      }
-    },
     "See the photos and save them.": {
       "localizations": {
         "ja": {
@@ -6011,22 +5979,6 @@
         }
       }
     },
-    "The goal now runs on that schedule.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ゴールはそのスケジュールで動くようになりました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "目标现在按该计划运行。"
-          }
-        }
-      }
-    },
     "The photos stay in their owners' libraries.": {
       "localizations": {
         "ja": {
@@ -6039,22 +5991,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "照片仍保留在各自所有者的图库中。"
-          }
-        }
-      }
-    },
-    "There are no other schedules to use.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使えるほかのスケジュールはありません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有其他可用的计划。"
           }
         }
       }
@@ -7919,22 +7855,6 @@
         }
       }
     },
-    "Use a schedule": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スケジュールを使う"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用计划"
-          }
-        }
-      }
-    },
     "Use as album cover": {
       "localizations": {
         "ja": {
@@ -8539,22 +8459,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加规则"
-          }
-        }
-      }
-    },
-    "Add a schedule": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スケジュールを追加"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "添加计划"
           }
         }
       }
@@ -12191,22 +12095,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "截止"
-          }
-        }
-      }
-    },
-    "By mail": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メールで"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发邮件"
           }
         }
       }
@@ -19703,22 +19591,6 @@
         }
       }
     },
-    "Five fields (minute hour day month weekday) in your zone. 0 8 * * 1-5 is weekdays at eight; @at 2030-09-12 09:00 is once, at that moment; @in 20m is once, twenty minutes from now.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分 時 日 月 曜日 の五つの欄、あなたの時間帯で。0 8 * * 1-5 は平日八時、@at 2030-09-12 09:00 はその時刻に一度、@in 20m は二十分後に一度。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "五个字段（分 时 日 月 周），按你的时区。0 8 * * 1-5 是工作日八点；@at 2030-09-12 09:00 是那一刻一次；@in 20m 是二十分钟后一次。"
-          }
-        }
-      }
-    },
     "Five fields, in your own zone. Leave it empty and it is read once a day.": {
       "localizations": {
         "ja": {
@@ -22465,22 +22337,6 @@
         }
       }
     },
-    "Into the conversation": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "会話へ"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "送到对话里"
-          }
-        }
-      }
-    },
     "Into the mailbox of %@": {
       "localizations": {
         "ja": {
@@ -22749,22 +22605,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已放回待选的想法中。"
-          }
-        }
-      }
-    },
-    "It is in Schedules below, as \"Daily brief\".": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下のスケジュールに「Daily brief」としてあります。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "它在下面的日程中，名为“Daily brief”。"
           }
         }
       }
@@ -27105,22 +26945,6 @@
         }
       }
     },
-    "Next %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "次回：%@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下一次：%@"
-          }
-        }
-      }
-    },
     "Next attempt": {
       "localizations": {
         "ja": {
@@ -29227,22 +29051,6 @@
         }
       }
     },
-    "Nothing is scheduled yet.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "まだ予定されていません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "尚未安排。"
-          }
-        }
-      }
-    },
     "Nothing is starred": {
       "localizations": {
         "ja": {
@@ -29399,22 +29207,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有识别出启动此进程的程序，可能没有任何程序会重新启动它。如果是手动运行的，它会一直停着，直到你自己启动它。"
-          }
-        }
-      }
-    },
-    "Nothing scheduled.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "予定はありません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有定时任务。"
           }
         }
       }
@@ -30097,22 +29889,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "星期（1 周一至 7 周日）"
-          }
-        }
-      }
-    },
-    "On its own time": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "決まった時間に"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "定时去做"
           }
         }
       }
@@ -33147,22 +32923,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已重新排队。"
-          }
-        }
-      }
-    },
-    "Queued; the answer arrives where the schedule says.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キューに入れました。答えは予定の届け先に届きます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已排队；答复会送到定时任务指定的地方。"
           }
         }
       }
@@ -37253,22 +37013,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "定时回合"
-          }
-        }
-      }
-    },
-    "Schedules": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スケジュール"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "计划"
           }
         }
       }
@@ -42560,22 +42304,6 @@
         }
       }
     },
-    "The brief is off. The schedule is still there.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ブリーフを停止しました。スケジュールは残っています。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "简报已关闭，日程仍保留。"
-          }
-        }
-      }
-    },
     "The brief is on.": {
       "localizations": {
         "ja": {
@@ -43552,22 +43280,6 @@
         }
       }
     },
-    "The schedule runs for each new message that matches all of these. To run it for every new message, choose Any message.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "これらすべてに一致する新着メールごとに実行されます。すべての新着メールで実行するには、「すべてのメッセージ」を選んでください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对每封同时满足以上全部条件的新邮件运行。若要对每封新邮件都运行，请选择“任何邮件”。"
-          }
-        }
-      }
-    },
     "The sender is told at once, the way the list asks to be left.": {
       "localizations": {
         "ja": {
@@ -44022,22 +43734,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "此人会在所有地方被登出，其 API 令牌也会失效。"
-          }
-        }
-      }
-    },
-    "Things your agent does at set times, in your zone: a morning brief, a Friday round-up. A scheduled run can confirm nothing, so it only does what needs no confirmation.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "あなたのタイムゾーンで、決まった時間にエージェントが行うこと。朝のまとめ、金曜の振り返りなど。予定実行では確認ができないため、確認の要らないことだけを行います。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "助手按你的时区在固定时间做的事：早间简报、周五总结。定时运行无法确认，所以只做无需确认的事。"
           }
         }
       }
@@ -48110,54 +47806,6 @@
         }
       }
     },
-    "What the day holds and what is waiting for you, sent to you as mail. It is an ordinary schedule called \"Daily brief\"; change what it asks for in Schedules below.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今日の予定と待っていることを、メールで送ります。実体は「Daily brief」という通常のスケジュールで、内容は下のスケジュールで変えられます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今天有什么安排、有什么在等你，以邮件发送。它其实是一条名为“Daily brief”的普通日程；在下面的日程中可以修改内容。"
-          }
-        }
-      }
-    },
-    "What the day holds and what is waiting for you, sent to you as mail. It is the schedule called “Daily brief” below, where you can change what it asks for.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今日の予定と待っていることを、メールで送ります。下の「Daily brief」というスケジュールがそれで、そこで内容を変えられます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今天有什么安排、有什么在等你，以邮件发送。它就是下面名为“Daily brief”的日程，可以在那里修改它要做的事。"
-          }
-        }
-      }
-    },
-    "What the day holds and what is waiting for you, sent to you as mail. Turning it on adds an ordinary schedule called “Daily brief” below, where you can change what it asks for.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今日の予定と待っていることを、メールで送ります。オンにすると、下に「Daily brief」という通常のスケジュールが追加され、そこで内容を変えられます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今天有什么安排、有什么在等你，以邮件发送。开启后会在下面添加一条名为“Daily brief”的普通日程，可以在那里修改它要做的事。"
-          }
-        }
-      }
-    },
     "What the registry offers": {
       "localizations": {
         "ja": {
@@ -48282,22 +47930,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "称呼"
-          }
-        }
-      }
-    },
-    "What to do, as you would say it": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "何をするか、話しかけるように"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "做什么，像平时说话一样"
           }
         }
       }
@@ -48954,22 +48586,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "发件方来自何处"
-          }
-        }
-      }
-    },
-    "Where the answer goes": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "答えの届け先"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "答复送到哪里"
           }
         }
       }
@@ -97905,6 +97521,374 @@
           "stringUnit": {
             "state": "translated",
             "value": "可从 TestFlight 安装"
+          }
+        }
+      }
+    },
+    "Add a time": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時刻を追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加时间"
+          }
+        }
+      }
+    },
+    "At its own pace": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のペースで"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按自己的节奏"
+          }
+        }
+      }
+    },
+    "Daily brief": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "毎日のブリーフ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每日简报"
+          }
+        }
+      }
+    },
+    "It takes a turn now.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今すぐ動きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它现在就行动。"
+          }
+        }
+      }
+    },
+    "Next": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次回"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一次"
+          }
+        }
+      }
+    },
+    "Next: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次回：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一次：%@"
+          }
+        }
+      }
+    },
+    "Notifies you when it posts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投稿時に通知します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布时通知你"
+          }
+        }
+      }
+    },
+    "Notify me when it posts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投稿時に通知する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布时通知我"
+          }
+        }
+      }
+    },
+    "On %@ at %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "On mail": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メール受信時"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收到邮件时"
+          }
+        }
+      }
+    },
+    "Open the brief's goal": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブリーフの目標を開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开简报的目标"
+          }
+        }
+      }
+    },
+    "Own pace": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のペース"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自己的节奏"
+          }
+        }
+      }
+    },
+    "Remove this time": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この時刻を削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除此时间"
+          }
+        }
+      }
+    },
+    "Resumed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已继续"
+          }
+        }
+      }
+    },
+    "Set times": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "決まった時刻"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定时间"
+          }
+        }
+      }
+    },
+    "The brief is off. Its goal is paused.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブリーフをオフにしました。目標は一時停止中です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "简报已关闭，它的目标已暂停。"
+          }
+        }
+      }
+    },
+    "The goal takes a turn for each new message that matches all of these. To take one for every new message, choose Any message.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以上の条件にすべて当てはまる新着メールごとに、目標が動きます。すべての新着メールで動かすには「すべてのメッセージ」を選びます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每封符合以上全部条件的新邮件，目标都会行动一次。要对每封新邮件都行动，请选择“任意邮件”。"
+          }
+        }
+      }
+    },
+    "Times are in your zone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時刻はあなたのタイムゾーンです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "时间按你所在的时区计算。"
+          }
+        }
+      }
+    },
+    "What the day holds and what is waiting for you, in your feed. It is the goal called “Daily brief”, where you can change what it asks for.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日の予定とあなたを待っていることが、フィードに届きます。これは“Daily brief”という目標で、そこで依頼内容を変更できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天的安排和等你处理的事，会发到你的动态里。它就是名为“Daily brief”的目标，你可以在那里修改它的要求。"
+          }
+        }
+      }
+    },
+    "What the day holds and what is waiting for you, in your feed. Turning it on adds a goal called “Daily brief”, where you can change what it asks for.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日の予定とあなたを待っていることが、フィードに届きます。オンにすると“Daily brief”という目標が追加され、そこで依頼内容を変更できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天的安排和等你处理的事，会发到你的动态里。开启后会添加一个名为“Daily brief”的目标，你可以在那里修改它的要求。"
+          }
+        }
+      }
+    },
+    "Your agent decides when it takes a turn.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "いつ動くかはエージェントが決めます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由你的助理决定何时行动。"
+          }
+        }
+      }
+    },
+    "on %@ at %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "paused": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已暂停"
           }
         }
       }
