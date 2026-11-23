@@ -14,6 +14,7 @@
     <string name="location_more">More</string>
     <string name="location_close">Close</string>
     <string name="location_open_street_map_credit">© OpenStreetMap contributors</string>
+    <string name="location_map_failed">The map could not be loaded.</string>
     <string name="location_no_visits_yet">No visits yet</string>
     <string name="location_visit_shows_up_after_a_while">A visit shows up here after you spend a while somewhere.</string>
     <string name="location_turn_on_record_where_i_go">Turn on Record where I go in the settings, and your visits show up here.</string>

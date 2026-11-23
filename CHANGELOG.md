@@ -6,6 +6,34 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.3] - 2026-11-23
+
+### Fixed
+
+- Mail forwarded from Gmail is no longer refused when its sender signs from a subdomain, lists signed headers twice, or sends from a no-reply domain with no mail servers. (#766)
+
+## [0.230.2] - 2026-11-23
+
+### Fixed
+
+- Android testers can install every new build: build numbers only grow. (#760)
+
+## [0.230.1] - 2026-11-23
+
+### Changed
+
+- The Android app draws its maps from your TeaNode server, like the dashboard, using the map style in the server's places settings. The phone no longer asks OpenStreetMap for map tiles itself. (#774)
+
+## [0.230.0] - 2026-11-23
+
+### Added
+
+- A feed of cards from the agent on the dashboard, iPhone and Android: alerts, ideas, scheduled briefs, goal news and coding session questions, with buttons to answer, a heart, Discuss, and stacks that open to show the rest. (#765)
+
+### Changed
+
+- What the agent says without being asked goes to the feed instead of the main conversation; a setting sends it back. (#765)
+
 ## [0.229.1] - 2026-11-19
 
 ### Fixed

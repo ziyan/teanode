@@ -25,7 +25,7 @@ robolectric = "4.16"
 roborazzi = "1.76.0"
 playServicesLocation = "21.3.0"
 healthConnect = "1.1.0"
-osmdroid = "6.1.20"
+maplibre = "13.7.1"
 guava = "33.4.0-android"
 appcompat = "1.7.0"
 
@@ -66,7 +66,7 @@ roborazzi = { module = "io.github.takahirom.roborazzi:roborazzi", version.ref = 
 roborazzi-compose = { module = "io.github.takahirom.roborazzi:roborazzi-compose", version.ref = "roborazzi" }
 play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
 health-connect-client = { module = "androidx.health.connect:connect-client", version.ref = "healthConnect" }
-osmdroid-android = { module = "org.osmdroid:osmdroid-android", version.ref = "osmdroid" }
+maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
 
 androidx-core-telecom = { module = "androidx.core:core-telecom", version.ref = "coreTelecom" }

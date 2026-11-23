@@ -32,7 +32,7 @@ const PhoneKeyBytes = 32
 // Content is a notification as the phone shows it, before encryption.
 type Content struct {
 	// NotificationKind is what this is: alert, herdr_question,
-	// goal_needs_you, speak_first, approval, question, answer, circle, chat,
+	// goal_needs_you, speak_first, feed, approval, question, answer, circle, chat,
 	// skill_share_call, photo, location, shopping, journalEveningQuestion or test.
 	NotificationKind string `json:"notificationKind"`
 
@@ -63,6 +63,15 @@ type Content struct {
 
 	// ThreadID groups notifications on the lock screen.
 	ThreadID string `json:"threadId,omitempty"`
+
+	// FeedItemID is, for a feed notification (notificationKind feed), the
+	// card to open. A decision's choices are its buttons, as feed:<choice
+	// key>, which the phone sends to ChooseAgentFeedItem.
+	FeedItemID string `json:"feedItemId,omitempty"`
+
+	// IsQuiet says the notification is shown without sound, for a brief that
+	// is ready rather than something that cannot wait.
+	IsQuiet bool `json:"isQuiet,omitempty"`
 
 	// For a coding session's question: where to send the answer.
 	Computer            string `json:"computer,omitempty"`

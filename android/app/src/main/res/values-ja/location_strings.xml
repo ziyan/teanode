@@ -14,6 +14,7 @@
     <string name="location_more">その他</string>
     <string name="location_close">閉じる</string>
     <string name="location_open_street_map_credit">© OpenStreetMap contributors</string>
+    <string name="location_map_failed">地図を読み込めませんでした。</string>
     <string name="location_no_visits_yet">訪問はまだありません</string>
     <string name="location_visit_shows_up_after_a_while">しばらく滞在すると、訪問がここに表示されます。</string>
     <string name="location_turn_on_record_where_i_go">設定で「行った場所を記録」をオンにすると、訪問がここに表示されます。</string>

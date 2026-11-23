@@ -180,6 +180,7 @@
     <string name="chats_people">ユーザー</string>
     <string name="chats_people_and_agents_to_mention">メンションできる人とエージェント</string>
     <string name="chats_photo">写真</string>
+    <string name="chats_feed_item_reference">カード：%1$s</string>
     <string name="chats_photo_library">写真ライブラリ</string>
     <string name="chats_play_voice_message">ボイスメッセージを再生</string>
     <string name="chats_react_with">%1$s でリアクション</string>

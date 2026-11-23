@@ -89,7 +89,7 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 		return self.startBackgroundSubagent(ctx, parent, prompt, title)
 	}
 
-	conversation, err := self.createSubagentRun(ctx, parent.settings.Agent.ID, title)
+	conversation, err := self.createSubagentRun(ctx, parent.settings.Agent.ID, title, parent.settings.Conversation.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,17 +153,19 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 // createSubagentRun makes the conversation a subagent works in: one of
 // its own, of the kind runs use, so the working is kept and readable
 // afterwards without being in the middle of what the person is reading
-// now.
-func (self *Agent) createSubagentRun(ctx context.Context, agentId, title string) (*models.AgentConversation, error) {
+// now. Its subject is the conversation that started it, so what it posts
+// to the feed is credited to the goal or schedule behind that conversation.
+func (self *Agent) createSubagentRun(ctx context.Context, agentId, title, parentConversationId string) (*models.AgentConversation, error) {
 	var conversation *models.AgentConversation
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		conversation, err = tx.CreateAgentConversation(&models.AgentConversation{
-			AgentID: agentId,
-			Kind:    models.AgentConversationRun,
-			Title:   "Subagent: " + title,
-			JobKind: string(models.AgentJobSubagent),
-			Surface: "subagent",
-			LastAt:  time.Now(),
+			AgentID:   agentId,
+			Kind:      models.AgentConversationRun,
+			Title:     "Subagent: " + title,
+			JobKind:   string(models.AgentJobSubagent),
+			SubjectID: parentConversationId,
+			Surface:   "subagent",
+			LastAt:    time.Now(),
 		})
 		return err
 	}); err != nil {

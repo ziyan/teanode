@@ -91,6 +91,17 @@ type speakFirstReason struct {
 	// to say nothing this time.
 	prepare func(ctx context.Context, run *Run, now time.Time) (map[string]string, bool, error)
 
+	// feedLines, when set, is what the turn is told when the agent's person
+	// has unasked words sent to their feed: it posts a card with the feed
+	// tool in a run of its own, and writes nothing in the main conversation.
+	// A reason with neither this nor feedCard stays a conversation.
+	feedLines string
+
+	// feedCard, when set, makes the card itself, with no turn: for what is
+	// already written (an idea). It runs where checkIn runs and has the same
+	// effects on the reason's own records.
+	feedCard func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time) (*models.AgentFeedItem, error)
+
 	// checkIn is the turn's message, given what prepare returned.
 	checkIn func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time, prepared map[string]string) (string, error)
 }
@@ -98,9 +109,9 @@ type speakFirstReason struct {
 // speakFirstReasons is every reason, in the order they are asked: an
 // introduction before anything else, then a tour of a phone just connected,
 // then a trip about to start, which will not wait, then a memory check, then
-// an idea.
+// an idea, then the weekly offer to file a pile of mail.
 func (self *Agent) speakFirstReasons() []speakFirstReason {
-	return []speakFirstReason{self.onboardingReason(), self.phoneTourReason(), self.tripReason(), self.memoryCheckReason(), self.ideaReason()}
+	return []speakFirstReason{self.onboardingReason(), self.phoneTourReason(), self.tripReason(), self.memoryCheckReason(), self.ideaReason(), self.mailOrganizeReason()}
 }
 
 func (self *Agent) speakFirstReasonNamed(name string) (speakFirstReason, bool) {
@@ -279,7 +290,7 @@ func (self *Agent) whileNoTurnRuns(conversationId string, work func() error) (bo
 // line. One already queued or running is left to run.
 func (self *Agent) SpeakFirstNow(tx db.Transaction, agent *models.Agent, reason string) error {
 	if _, ok := self.speakFirstReasonNamed(reason); !ok {
-		return fmt.Errorf("the agent speaks first for %s, %s, %s, %s or %s, not %q", SpeakFirstOnboarding, SpeakFirstPhoneTour, SpeakFirstTrip, SpeakFirstMemoryCheck, SpeakFirstIdea, reason)
+		return fmt.Errorf("the agent speaks first for %s, %s, %s, %s, %s or %s, not %q", SpeakFirstOnboarding, SpeakFirstPhoneTour, SpeakFirstTrip, SpeakFirstMemoryCheck, SpeakFirstIdea, SpeakFirstMailOrganize, reason)
 	}
 	open, err := tx.CountAgentJobs(&db.AgentJobFilter{
 		AgentID:  agent.ID,
@@ -328,8 +339,17 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 	}
 	var conversation *models.AgentConversation
 	var message string
+	var card *models.AgentFeedItem
+	isFed := wantsFeed(run.Agent) && (reason.feedLines != "" || reason.feedCard != nil)
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if conversation, err = scheduleConversation(tx, run.Agent.ID, ""); err != nil {
+		if isFed && reason.feedLines != "" {
+			// Not the person's conversation: a run of its own, which the card
+			// it posts names as its source.
+			conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.Agent.ID, Kind: models.AgentConversationRun, Title: "Speaking first: " + reason.name, JobID: run.Job.ID, JobKind: string(models.AgentJobSpeakFirst), SubjectID: reason.name, Surface: "schedule", LastAt: time.Now()})
+		} else {
+			conversation, err = scheduleConversation(tx, run.Agent.ID, "")
+		}
+		if err != nil {
 			return err
 		}
 		// Looked at under the agent's row, held until this commits, so that
@@ -341,8 +361,17 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 		}); err != nil || isSpent {
 			return err
 		}
+		if isFed && reason.feedCard != nil {
+			if card, err = reason.feedCard(ctx, tx, run.Agent, run.Owner, now); err != nil || card == nil {
+				return err
+			}
+			return tx.MarkAgentSpokeFirst(run.Agent.ID, &now, nil, nil)
+		}
 		if message, err = reason.checkIn(ctx, tx, run.Agent, run.Owner, now, prepared); err != nil || strings.TrimSpace(message) == "" {
 			return err
+		}
+		if isFed {
+			message += "\n\n" + reason.feedLines
 		}
 		// Recorded before the turn rather than after it: a turn that
 		// fails half-way still interrupted the person.
@@ -350,13 +379,22 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 	}); err != nil {
 		return err
 	}
+	if card != nil {
+		card.RunConversationID = ""
+		_, _, err := self.PostFeedItem(ctx, &FeedPost{AgentID: run.Agent.ID, Item: card})
+		return err
+	}
 	if strings.TrimSpace(message) == "" {
 		return nil
+	}
+	surface := speakFirstSurfacePrefix + reason.name
+	if isFed {
+		surface = "schedule"
 	}
 	took := func(message string) error {
 		turn, err := self.Ask(&AskSettings{
 			Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
-			Message: message, Surface: speakFirstSurfacePrefix + reason.name, Headless: true, CanAsk: reason.canAsk,
+			Message: message, Surface: surface, Headless: true, CanAsk: reason.canAsk && !isFed,
 			UsageKind: string(models.AgentJobSpeakFirst),
 		})
 		if err != nil {
@@ -376,7 +414,7 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 		return nil
 	}
 	started := time.Now()
-	if err := took(message); err != nil || ctx.Err() != nil || reason.didNothing == nil {
+	if err := took(message); err != nil || ctx.Err() != nil || reason.didNothing == nil || isFed {
 		return err
 	}
 	// Once more, when the turn ended having done nothing it was for. A

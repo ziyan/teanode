@@ -64,6 +64,17 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"GetDeviceSetupCapabilities":          client.DocumentDeviceSetupCapabilities,
 		"CreateDeviceSetupProfile":            client.DocumentCreateDeviceSetupProfile,
 
+		"ListAgentFeed":             client.DocumentListAgentFeed,
+		"ListAgentFeedStack":        client.DocumentListAgentFeedStack,
+		"GetAgentFeedItem":          client.DocumentGetAgentFeedItem,
+		"ChooseAgentFeedItem":       client.DocumentChooseAgentFeedItem,
+		"LikeAgentFeedItem":         client.DocumentLikeAgentFeedItem,
+		"ShowLessLikeAgentFeedItem": client.DocumentShowLessLikeAgentFeedItem,
+		"DismissAgentFeedItem":      client.DocumentDismissAgentFeedItem,
+		"MarkAgentFeedRead":         client.DocumentMarkAgentFeedRead,
+		"DiscussAgentFeedItem":      client.DocumentDiscussAgentFeedItem,
+		"PostAgentFeedItem":         client.DocumentPostAgentFeedItem,
+
 		"ListMailboxes":          client.DocumentListMailboxes,
 		"ListAllMailboxes":       client.DocumentListAllMailboxes,
 		"CreateMailboxFolder":    client.DocumentCreateMailboxFolder,
