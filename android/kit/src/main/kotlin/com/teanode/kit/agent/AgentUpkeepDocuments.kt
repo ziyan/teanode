@@ -1,6 +1,6 @@
 package com.teanode.kit.agent
 
-/** The GraphQL documents of the agent's upkeep pages (memory, dreams, schedules, alerts, connections, activity). Copied from the iPhone app's Documents (ios/TeaNodeKit), text unchanged. */
+/** The GraphQL documents of the agent's upkeep pages (memory, dreams, alerts, connections, activity). Copied from the iPhone app's Documents (ios/TeaNodeKit), text unchanged. */
 object AgentUpkeepDocuments {
     val AGENT_UPKEEP_FIELDS = """
 id enabled operatorDisabledAt dreamFrom dreamUntil dreamBootstrap isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost lookAroundWeekday lookAroundTime
@@ -94,34 +94,6 @@ mutation (${'$'}on: Boolean!) { DreamAgentNow(bootstrap: ${'$'}on) }
 
     val REREAD_DOCUMENTS = """
 mutation (${'$'}minutes: Int!) { RereadAgentDocuments(minutes: ${'$'}minutes) }
-""".trimEnd()
-
-    val AGENT_SCHEDULES = """
-query { ListAgentSchedules { id name cron prompt deliver enabled lastRunAt nextRunAt conversationId mailConditions { field header operator value } } }
-""".trimEnd()
-
-    val SAVE_AGENT_SCHEDULE = """
-mutation (${'$'}scheduleId: String, ${'$'}name: String, ${'$'}cron: String, ${'$'}mailConditions: [MailboxRuleConditionInput!], ${'$'}prompt: String, ${'$'}deliver: String, ${'$'}enabled: Boolean) {
-  SaveAgentSchedule(scheduleId: ${'$'}scheduleId, name: ${'$'}name, cron: ${'$'}cron, mailConditions: ${'$'}mailConditions, prompt: ${'$'}prompt, deliver: ${'$'}deliver, enabled: ${'$'}enabled) { id }
-}
-""".trimEnd()
-
-    val DELETE_AGENT_SCHEDULE = """
-mutation (${'$'}scheduleId: String!) { DeleteAgentSchedule(scheduleId: ${'$'}scheduleId) }
-""".trimEnd()
-
-    val RUN_AGENT_SCHEDULE = """
-mutation (${'$'}scheduleId: String!) { RunAgentSchedule(scheduleId: ${'$'}scheduleId) }
-""".trimEnd()
-
-    val SET_DAILY_BRIEF = """
-mutation (${'$'}enabled: Boolean!, ${'$'}at: String, ${'$'}days: [Int!]) {
-  SetAgentBrief(enabled: ${'$'}enabled, at: ${'$'}at, days: ${'$'}days) { id }
-}
-""".trimEnd()
-
-    val RUN_DAILY_BRIEF = """
-mutation { RunAgentBriefNow { id name } }
 """.trimEnd()
 
     val AGENT_ALERTS = """

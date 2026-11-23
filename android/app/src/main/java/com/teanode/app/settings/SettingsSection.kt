@@ -177,7 +177,7 @@ fun SettingsSection() {
             item { TeaNodeNavigationRow(stringResource(R.string.settings_sources_title), { navigator.navigate(SettingsRoutes.SOURCES) }, leadingIcon = Icons.Outlined.Inbox) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_memory_title), { navigator.navigate(SettingsRoutes.MEMORY) }, leadingIcon = Icons.Outlined.Psychology) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_dreams_title), { navigator.navigate(SettingsRoutes.DREAMS) }, leadingIcon = Icons.Outlined.NightsStay) }
-            item { TeaNodeNavigationRow(stringResource(R.string.settings_schedules_title), { navigator.navigate(SettingsRoutes.SCHEDULES) }, leadingIcon = Icons.Outlined.Schedule) }
+            item { TeaNodeNavigationRow(stringResource(R.string.settings_brief_page_title), { navigator.navigate(SettingsRoutes.BRIEF) }, leadingIcon = Icons.Outlined.Schedule) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_alerts_title), { navigator.navigate(SettingsRoutes.ALERTS) }, leadingIcon = Icons.Outlined.Notifications) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_connections_title), { navigator.navigate(SettingsRoutes.CONNECTIONS) }, leadingIcon = Icons.Outlined.Hub) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_activity_title), { navigator.navigate(SettingsRoutes.ACTIVITY) }, leadingIcon = Icons.AutoMirrored.Outlined.ListAlt) }

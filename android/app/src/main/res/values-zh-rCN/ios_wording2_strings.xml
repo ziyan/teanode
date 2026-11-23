@@ -6,7 +6,6 @@
     <string name="mail_manage_choose_mailbox">选择邮箱…</string>
     <string name="settings_manage_not_allowed">此账户无权管理服务器。</string>
     <string name="settings_manage_nothing">没有可管理的内容</string>
-    <string name="settings_schedules_cron_hint">五个字段（分 时 日 月 周），按你的时区。0 8 * * 1-5 是工作日八点；@at 2030-09-12 09:00 是那一刻一次；@in 20m 是二十分钟后一次。</string>
     <string name="settings_sources_cron_label">多久读取一次（cron 格式）</string>
     <string name="settings_sources_cron_hint">五个字段，按你所在的时区。留空则每天读取一次。</string>
     <string name="mail_manage_first_fetched">首次拉取</string>

@@ -10,11 +10,11 @@ import androidx.compose.material.icons.outlined.TrackChanges
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.teanode.app.R
-import com.teanode.app.calendar.DateWords
 import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.ui.components.EmptyState
@@ -22,13 +22,11 @@ import com.teanode.app.ui.components.LoadedContent
 import com.teanode.app.ui.components.TeaNodeRow
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.TeaNodeSectionHeader
-import com.teanode.app.ui.components.relativeTimeText
 import com.teanode.app.ui.components.rememberLoad
 import com.teanode.kit.calendar.ServerTime
 import com.teanode.kit.goals.AgentGoal
 import com.teanode.kit.goals.goals
 import kotlinx.coroutines.delay
-import java.time.Instant
 
 /** How often the list reads the goals again while it is open: the agent works on its own, so they change under the person. */
 private const val POLL_INTERVAL_MS = 10_000L
@@ -79,7 +77,10 @@ fun GoalsSection() {
                 goalSection(R.string.goals_working, list.filter { goal -> goal.goalState == "working" }) { goal ->
                     navigator.navigate(GoalRoutes.detail(goal.conversationId))
                 }
-                goalSection(R.string.goals_done, list.filter { goal -> !goal.isOpen }) { goal ->
+                goalSection(R.string.goals_paused, list.filter { goal -> goal.isPaused }) { goal ->
+                    navigator.navigate(GoalRoutes.detail(goal.conversationId))
+                }
+                goalSection(R.string.goals_done, list.filter { goal -> !goal.isOpen && !goal.isPaused }) { goal ->
                     navigator.navigate(GoalRoutes.detail(goal.conversationId))
                 }
             }
@@ -93,24 +94,23 @@ private fun androidx.compose.foundation.lazy.LazyListScope.goalSection(titleReso
     items(shown, key = { goal -> goal.conversationId }) { goal -> GoalRow(goal) { onOpen(goal) } }
 }
 
-/** GoalRow is a goal in the list: its title, what it is doing now, and when it looks next. */
+/**
+ * GoalRow is a goal in the list: its title, what it is doing now, when it runs in words, and when it runs next. Every
+ * line is one line, so rows of goals with and without times differ only by the lines they have.
+ */
 @Composable
 fun GoalRow(goal: AgentGoal, onClick: () -> Unit) {
-    val next = if (goal.isOpen) ServerTime.instant(goal.goalNextAt) else null
-    val nextText = when {
-        next == null -> null
-        // A check-in whose time has passed is about to run, not "next 17 hours ago".
-        next.isAfter(Instant.now()) -> stringResource(R.string.goals_next_at, relativeTimeText(next.toEpochMilli()).replaceFirstChar { letter -> letter.lowercase() })
-        else -> stringResource(R.string.goals_next_soon)
-    }
+    val resources = LocalContext.current.resources
+    val next = if (goal.goalState == "working") ServerTime.instant(goal.goalNextAt) else null
+    val nextText = next?.let { moment -> stringResource(R.string.goals_next_at, GoalWords.nextTimeText(moment)) }
     TeaNodeRow(
         headline = goal.goalTitle,
-        supporting = listOfNotNull(goal.goalStatus.ifEmpty { null }, nextText).joinToString("\n").ifEmpty { null },
-        supportingMaxLines = 3,
+        supporting = (listOfNotNull(goal.goalStatus.ifEmpty { null }) + GoalWords.whenLines(resources, goal) + listOfNotNull(nextText)).joinToString("\n").ifEmpty { null },
+        supportingMaxLines = 4,
         onClick = onClick,
     )
 }
 
-/** The date of a goal's next check-in as the detail shows it. */
-internal fun nextCheckInText(goal: AgentGoal): String? =
-    if (goal.isOpen) ServerTime.instant(goal.goalNextAt)?.let { moment -> DateWords.abbreviatedDateTime(moment) } else null
+/** The date of a goal's next time as the detail shows it. */
+internal fun nextTimeText(goal: AgentGoal): String? =
+    if (goal.goalState == "working") ServerTime.instant(goal.goalNextAt)?.let { moment -> GoalWords.nextTimeText(moment) } else null

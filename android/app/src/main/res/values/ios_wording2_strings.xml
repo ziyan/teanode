@@ -6,7 +6,6 @@
     <string name="mail_manage_choose_mailbox">Choose a mailbox…</string>
     <string name="settings_manage_not_allowed">This account may not manage the server.</string>
     <string name="settings_manage_nothing">Nothing to manage</string>
-    <string name="settings_schedules_cron_hint">Five fields (minute hour day month weekday) in your zone. 0 8 * * 1-5 is weekdays at eight; @at 2030-09-12 09:00 is once, at that moment; @in 20m is once, twenty minutes from now.</string>
     <string name="settings_sources_cron_label">How often to read it, as a cron line</string>
     <string name="settings_sources_cron_hint">Five fields, in your own zone. Leave it empty and it is read once a day.</string>
     <string name="mail_manage_first_fetched">First fetched</string>

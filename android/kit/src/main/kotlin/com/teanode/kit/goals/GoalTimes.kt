@@ -1,4 +1,4 @@
-package com.teanode.kit.agent
+package com.teanode.kit.goals
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -7,9 +7,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
-/** One condition of a mail-triggered schedule: a field of the message, how it is compared, and with what. */
+/** One condition of a goal that also takes a turn when mail arrives: a field of the message, how it is compared, and with what. */
 @Serializable
-data class ScheduleMailCondition(
+data class GoalMailCondition(
     @SerialName("field") val mailField: String = "from",
     val header: String? = null,
     @SerialName("operator") val comparisonOperator: String = "contains",
@@ -31,12 +31,12 @@ data class ScheduleMailCondition(
     }
 }
 
-/** What a schedule that runs when mail arrives is made of. */
-object ScheduleMailTrigger {
+/** What a goal that takes a turn when mail arrives is made of. */
+object GoalMailTrigger {
     val fields = listOf("from", "to", "subject", "header", "any")
 
     /** Whether the conditions can be saved: there is one, and each that needs a value has it (and a header name for a header). */
-    fun isComplete(conditions: List<ScheduleMailCondition>): Boolean {
+    fun isComplete(conditions: List<GoalMailCondition>): Boolean {
         if (conditions.isEmpty()) return false
         return conditions.all { condition ->
             if (condition.isBare) return@all true
@@ -45,20 +45,24 @@ object ScheduleMailTrigger {
         }
     }
 
-    fun variables(conditions: List<ScheduleMailCondition>): JsonElement = JsonArray(conditions.map { condition -> condition.variables })
+    fun variables(conditions: List<GoalMailCondition>): JsonElement = JsonArray(conditions.map { condition -> condition.variables })
 }
 
-/** The morning brief: a schedule of a fixed name, with its time and days read from its cron line. */
+/** The morning brief: the goal the server writes itself, with its time and days read from its first cron line. */
 object DailyBrief {
-    const val SCHEDULE_NAME = "Daily brief"
+    const val GOAL_TITLE = "Daily brief"
+    const val WRITTEN_BY = "built_in"
     private const val DEFAULT_CRON = "30 7 * * 1-5"
 
-    fun schedule(schedules: List<AgentSchedule>): AgentSchedule? = schedules.firstOrNull { schedule -> schedule.name == SCHEDULE_NAME }
+    fun goal(goals: List<AgentGoal>): AgentGoal? = goals.firstOrNull { goal -> goal.goalWrittenBy == WRITTEN_BY && goal.goalTitle == GOAL_TITLE }
 
-    private fun fields(cron: String?): List<String> = (cron ?: DEFAULT_CRON).split(' ').filter { field -> field.isNotEmpty() }
+    /** The cron line the brief runs on: its first weekly time, or the default when it has none. */
+    fun cron(goal: AgentGoal?): String = goal?.goalTimes.orEmpty().firstOrNull { line -> GoalTiming.of(line) != null } ?: DEFAULT_CRON
+
+    private fun fields(cron: String): List<String> = cron.split(' ').filter { field -> field.isNotEmpty() }
 
     /** The time of day a brief goes out, "HH:MM". */
-    fun time(cron: String?): String {
+    fun time(cron: String): String {
         val fields = fields(cron)
         val hour = if (fields.size > 1) fields[1] else "7"
         val minute = if (fields.isNotEmpty()) fields[0] else "30"
@@ -66,15 +70,15 @@ object DailyBrief {
     }
 
     /** The days a brief goes out on (1 is Monday); Monday to Friday when the cron line says none. */
-    fun dayNumbers(cron: String?): List<Int> {
+    fun dayNumbers(cron: String): List<Int> {
         val fields = fields(cron)
         if (fields.size != 5) return (1..5).toList()
-        return ScheduleWeekday.dayNumbers(fields[4])?.takeIf { days -> days.isNotEmpty() } ?: (1..5).toList()
+        return GoalWeekday.dayNumbers(fields[4])?.takeIf { days -> days.isNotEmpty() } ?: (1..5).toList()
     }
 }
 
-/** Days of the week as the schedules number them: 1 is Monday and 7 is Sunday, where cron's 0 is Sunday too. */
-object ScheduleWeekday {
+/** Days of the week as the goals number them: 1 is Monday and 7 is Sunday, where cron's 0 is Sunday too. */
+object GoalWeekday {
     val allDayNumbers: List<Int> = (1..7).toList()
 
     /** The day numbers a cron day-of-week field stands for; null when it is not a list of days and ranges. */
@@ -118,7 +122,7 @@ object ScheduleWeekday {
 }
 
 /** A weekly time as a person sets it: an hour and minute, on some days. Cron lines that are anything else are not a timing. */
-data class ScheduleTiming(val hour: Int, val minute: Int, val dayNumbers: List<Int>) {
+data class GoalTiming(val hour: Int, val minute: Int, val dayNumbers: List<Int>) {
     sealed interface DayPattern {
         data object EveryDay : DayPattern
         data object Weekdays : DayPattern
@@ -134,26 +138,72 @@ data class ScheduleTiming(val hour: Int, val minute: Int, val dayNumbers: List<I
         java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(locale).format(java.time.LocalTime.of(hour, minute))
 
     /** The cron line for this timing. */
-    val cron: String get() = "$minute $hour * * ${ScheduleWeekday.cronField(dayNumbers)}"
+    val cron: String get() = "$minute $hour * * ${GoalWeekday.cronField(dayNumbers)}"
 
     companion object {
-        fun of(cron: String): ScheduleTiming? {
+        fun of(cron: String): GoalTiming? {
             val fields = cron.split(' ').filter { field -> field.isNotEmpty() }
             if (fields.size != 5 || fields[2] != "*" || fields[3] != "*") return null
             if (!fields[0].all { character -> character in '0'..'9' } || !fields[1].all { character -> character in '0'..'9' }) return null
             val minute = fields[0].toIntOrNull() ?: return null
             val hour = fields[1].toIntOrNull() ?: return null
             if (minute !in 0..59 || hour !in 0..23) return null
-            val days = ScheduleWeekday.dayNumbers(fields[4]) ?: return null
-            return ScheduleTiming(hour, minute, days)
+            val days = GoalWeekday.dayNumbers(fields[4]) ?: return null
+            return GoalTiming(hour, minute, days)
         }
 
         fun dayPattern(dayNumbers: List<Int>): DayPattern = when {
-            dayNumbers == ScheduleWeekday.allDayNumbers -> DayPattern.EveryDay
+            dayNumbers == GoalWeekday.allDayNumbers -> DayPattern.EveryDay
             dayNumbers == (1..5).toList() -> DayPattern.Weekdays
             dayNumbers == listOf(6, 7) -> DayPattern.Weekends
             dayNumbers.size == 1 -> DayPattern.OneDay(dayNumbers[0])
             else -> DayPattern.SomeDays(dayNumbers)
         }
+    }
+}
+
+/**
+ * One of a goal's times as the editor holds it: a weekly time, a single moment, or a line it cannot take apart, which
+ * is kept as it was written.
+ */
+sealed interface GoalTimeLine {
+    /** What goes to the server: a cron line or `@at yyyy-MM-dd HH:mm`. */
+    val line: String
+
+    data class Weekly(val timing: GoalTiming) : GoalTimeLine {
+        override val line: String get() = timing.cron
+    }
+
+    data class Moment(val date: java.time.LocalDate, val hour: Int, val minute: Int) : GoalTimeLine {
+        override val line: String get() = "@at " + date + " " + "%02d:%02d".format(hour, minute)
+
+        /** The day as the locale writes it: "Dec 11, 2026". */
+        fun dateText(locale: java.util.Locale = java.util.Locale.getDefault()): String =
+            java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM).withLocale(locale).format(date)
+
+        /** The time of day as the locale writes it: "9:00 AM". */
+        fun timeText(locale: java.util.Locale = java.util.Locale.getDefault()): String =
+            java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(locale).format(java.time.LocalTime.of(hour, minute))
+    }
+
+    data class Other(override val line: String) : GoalTimeLine
+
+    companion object {
+        private val momentPattern = Regex("""^@at (\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2})$""")
+
+        fun of(line: String): GoalTimeLine {
+            GoalTiming.of(line)?.let { timing -> return Weekly(timing) }
+            val match = momentPattern.matchEntire(line.trim())
+            if (match != null) {
+                val date = runCatching { java.time.LocalDate.parse(match.groupValues[1]) }.getOrNull()
+                val hour = match.groupValues[2].toInt()
+                val minute = match.groupValues[3].toInt()
+                if (date != null && hour in 0..23 && minute in 0..59) return Moment(date, hour, minute)
+            }
+            return Other(line)
+        }
+
+        /** The weekly time a new row starts as. */
+        fun newWeekly(): GoalTimeLine = Weekly(GoalTiming(8, 0, (1..5).toList()))
     }
 }
