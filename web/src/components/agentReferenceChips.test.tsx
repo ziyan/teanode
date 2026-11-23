@@ -1,7 +1,12 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { isReplyReference, ReferenceChips, ReplyQuote, referenceLabel } from './agentReferenceChips'
+import { isReplyReference, ReferenceChips, ReplyQuote, referenceLabel, referencePath } from './agentReferenceChips'
+
+// inRouter renders a sent chip, which is a link, where links can be drawn.
+const inRouter = (element: ReactElement) => render(<MemoryRouter>{element}</MemoryRouter>)
 
 vi.mock('../i18n/i18n', () => ({
   useTranslation: () => ({
@@ -66,8 +71,28 @@ it('takes a finance transaction chip off', () => {
 
 // Sent, the chips are drawn without a way to take them off.
 it('draws a sent chip without a remove button', () => {
-  render(<ReferenceChips references={[fee]} />)
+  inRouter(<ReferenceChips references={[fee]} />)
   expect(screen.queryByRole('button')).toBeNull()
+})
+
+// Sent, each chip opens what it names, and says so as it goes, so that the
+// drawer on a phone puts itself away; a thread with no item opens nothing.
+it('opens what a sent chip names', () => {
+  expect(referencePath({ itemId: 'item1', subject: 'Thursday?' })).toBe('/mailbox/starred/item1')
+  expect(referencePath({ path: 'people/a-neighbor', name: 'A neighbor' })).toBe('/knowledge/people/a-neighbor')
+  expect(referencePath({ financeTransactionId: 'transaction-1' })).toBe(
+    '/finance/transactions?transaction=transaction-1',
+  )
+  expect(referencePath({ recordingId: 'recording-1' })).toBe('/recordings/recording-1')
+  expect(referencePath({ photoId: 'photo-1' })).toBe('/photos/photo-1')
+  expect(referencePath({ threadId: 'thread-1', subject: 'Thursday?' })).toBeNull()
+  const onLeaving = vi.fn()
+  inRouter(<ReferenceChips references={[fee, { threadId: 'thread-1', subject: 'Thursday?' }]} onLeaving={onLeaving} />)
+  const link = screen.getByRole('link', { name: /Invented Brokerage/ })
+  expect(link.getAttribute('href')).toBe(`/finance/transactions?transaction=${fee.financeTransactionId}`)
+  expect(screen.getAllByRole('link')).toHaveLength(1)
+  fireEvent.click(link)
+  expect(onLeaving).toHaveBeenCalled()
 })
 
 // A message replied to is drawn as a quote, not as a chip, and the quote
@@ -78,7 +103,7 @@ it('draws a reply as a quote rather than a chip', () => {
     quotedRole: 'assistant' as const,
     quotedText: 'The ferry leaves at nine.',
   }
-  const { container } = render(<ReferenceChips references={[reply]} />)
+  const { container } = inRouter(<ReferenceChips references={[reply]} />)
   expect(container.textContent).toBe('')
   const onRemove = vi.fn()
   render(<ReplyQuote reference={reply} title="Replying to Bertie" onRemove={onRemove} />)
@@ -107,7 +132,7 @@ it('names a photo by its title and draws its small picture in the chip', () => {
 
 // A photo whose picture cannot be read still has a chip: the spark stands in.
 it('falls back to the spark when the photo has no picture to draw', () => {
-  const { container } = render(<ReferenceChips references={[{ photoId: 'photo-1', photoTitle: 'Harbor' }]} />)
+  const { container } = inRouter(<ReferenceChips references={[{ photoId: 'photo-1', photoTitle: 'Harbor' }]} />)
   fireEvent.error(container.querySelector('img.agent-reference-photo')!)
   expect(container.querySelector('img')).toBeNull()
   expect(container.querySelector('svg')).not.toBeNull()
