@@ -808,8 +808,13 @@ extension Documents {
         photoFileRoles processingErrorMessage isOwnedByCaller ownerName
         """
     public static let listPhotos = """
-        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $accountUserId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) {
-          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, accountUserId: $accountUserId, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) { \(photoFields) }
+        query ($beforePhotoId: String, $offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $accountUserId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) {
+          ListPhotos(beforePhotoId: $beforePhotoId, offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, accountUserId: $accountUserId, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) { \(photoFields) }
+        }
+        """
+    public static let countPhotos = """
+        query ($isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $accountUserId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) {
+          CountPhotos(isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, accountUserId: $accountUserId, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers)
         }
         """
     static let photoDescriptionFields = """
