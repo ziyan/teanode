@@ -45,7 +45,7 @@ All Android paths are under `app/src/main/java/com/teanode/app/` (screens) and
 
 | iOS file | Android | Mark |
 | --- | --- | --- |
-| GoalsView.swift: list, detail, schedule picker, starter, drop confirmation | goals/GoalsSection.kt, GoalDetailScreen.kt, GoalSchedulePickerScreen.kt, GoalStarterScreen.kt | done |
+| GoalsView.swift: list, detail, When editor, starter, drop confirmation | goals/GoalsSection.kt, GoalDetailScreen.kt, GoalWhenEditor.kt, GoalWords.kt, GoalStarterScreen.kt | done |
 | GoalsView.swift: Ask agent hand-off | goals/ChatHandoff.kt (Chats' ChatsHooks.openConversation) | done |
 | IdeasView.swift | ideas/IdeasSection.kt | done (the try-it hand-off uses ChatHandoff, same caveat) |
 

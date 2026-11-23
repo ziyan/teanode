@@ -34,6 +34,9 @@ there too, under `[goal done]`, once. Left on the Goals tab, the person never
 learned that what they asked for had happened, and the conversation they talk
 in did not know either.
 
+Changed since: a goal no longer owns schedules. Its times and the mail it waits
+for are its own (`20261122-a-schedule-is-a-goal-on-set-times.md`).
+
 Goals are no longer put on conversations the person chats in. Alerts,
 schedules made in the main conversation, speaking first and statement imports
 keep posting to the main conversation as before.

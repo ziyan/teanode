@@ -337,7 +337,7 @@ permission. `docs/subsystems/the-ask-loop.md` is the whole of it.
 
 **A job** is work nobody is watching: a row in `agent_job` claimed by one
 instance and run to completion. The kinds are `triage`, `research`,
-`summarize`, `embed`, `reply`, `send`, `schedule`, `backfill`, `remember`,
+`summarize`, `embed`, `reply`, `send`, `goal`, `backfill`, `remember`,
 `ingest`, `dream`, `alert` and `noop`. `docs/subsystems/jobs-and-schedules.md` covers
 the queue.
 

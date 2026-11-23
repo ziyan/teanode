@@ -162,11 +162,11 @@ func TestSpeakingFirstIsSpentOnceTheAgentHasSpoken(t *testing.T) {
 	}
 }
 
-func TestAMessageIsNotedOnAScheduleOnce(t *testing.T) {
-	first := models.AgentScheduleArrival{MailboxItemID: "item-1"}
+func TestAMessageIsNotedOnAGoalOnce(t *testing.T) {
+	first := models.AgentGoalArrival{MailboxItemID: "item-1"}
 	arrivals := withArrival(nil, first)
 	arrivals = withArrival(arrivals, first)
-	arrivals = withArrival(arrivals, models.AgentScheduleArrival{MailboxItemID: "item-2"})
+	arrivals = withArrival(arrivals, models.AgentGoalArrival{MailboxItemID: "item-2"})
 	if len(arrivals) != 2 {
 		t.Fatalf("%+v", arrivals)
 	}

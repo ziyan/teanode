@@ -589,7 +589,7 @@ func isFollowUpStillToBeTold(candidate *models.AgentAlertCandidate, followUps []
 func (self *Agent) alertConversation(ctx context.Context, run *Run) (*models.AgentConversation, error) {
 	var main *models.AgentConversation
 	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		main, err = scheduleConversation(tx, run.Agent.ID, "")
+		main, err = personsConversation(tx, run.Agent.ID, "")
 		return err
 	})
 	return main, err
@@ -1034,7 +1034,7 @@ func (self *Agent) deliverAlert(ctx context.Context, run *Run, conversationId st
 			for _, candidate := range taken {
 				candidateIds = append(candidateIds, candidate.ID)
 			}
-			conversation, err := scheduleConversation(tx, run.Agent.ID, conversationId)
+			conversation, err := personsConversation(tx, run.Agent.ID, conversationId)
 			if err != nil {
 				return err
 			}

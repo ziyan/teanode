@@ -28,7 +28,7 @@ object SettingsRoutes {
     val SOURCES = Routes.child(AppSection.Settings, "sources")
     val MEMORY = Routes.child(AppSection.Settings, "memory")
     val DREAMS = Routes.child(AppSection.Settings, "dreams")
-    val SCHEDULES = Routes.child(AppSection.Settings, "schedules")
+    val BRIEF = Routes.child(AppSection.Settings, "brief")
     val ALERTS = Routes.child(AppSection.Settings, "alerts")
     val CONNECTIONS = Routes.child(AppSection.Settings, "connections")
     val ACTIVITY = Routes.child(AppSection.Settings, "activity")

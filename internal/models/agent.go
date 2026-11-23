@@ -627,7 +627,6 @@ const (
 	AgentJobRecordingKnowledge AgentJobKind = "recording_sync"
 	AgentJobReply              AgentJobKind = "reply"
 	AgentJobSend               AgentJobKind = "send"
-	AgentJobSchedule           AgentJobKind = "schedule"
 
 	// AgentJobExtract reads a message triage thought carries an appointment
 	// or somebody's details in its words, and offers what it found. It

@@ -482,7 +482,7 @@ answers carry the untrusted mark.
   that another person's location is not repeated into a chat, because the
   agent's words are posted to the room.
 - **In a run neither the person nor a program they connected over MCP
-  started** (an inbound mail, a webhook, a schedule the agent wrote), the same
+  started** (an inbound mail, a webhook, a goal the agent wrote), the same
   holds: only the owner's own location is read, since the content that began
   the run could have somebody else's read out to whoever wrote it.
 - **The journal**: for every person who has visits, one document for each ended

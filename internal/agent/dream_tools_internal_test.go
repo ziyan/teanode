@@ -177,7 +177,7 @@ func TestTheNightIsOfferedThePersonsWholeToolKit(t *testing.T) {
 	// And it is not the pair any more. A short prompt still defers the
 	// tools nobody named, which tool_search loads, so what says the filter
 	// is gone is the breadth of what is left rather than any one name.
-	for _, wanted := range []string{"web_search", "schedule", "share_file"} {
+	for _, wanted := range []string{"web_search", "goal", "share_file"} {
 		if !offered[wanted] {
 			t.Errorf("the night is no longer filtered to the lookup pair, so %s is offered too: %v", wanted, asked[0])
 		}

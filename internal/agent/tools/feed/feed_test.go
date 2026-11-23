@@ -78,19 +78,9 @@ func TestAGoalTurnPostsACardThatNamesTheGoal(t *testing.T) {
 	}
 }
 
-// A card posted from the person's own conversation belongs to the agent, and
-// a run of a schedule's is the schedule's.
-func TestACardPostedInAScheduleRunNamesTheSchedule(t *testing.T) {
+// A card posted from the person's own conversation belongs to the agent.
+func TestACardPostedInTheMainConversationNamesNoSource(t *testing.T) {
 	operations := &recordedOperations{}
-	run := &models.AgentConversation{ID: "run-1", Kind: models.AgentConversationRun, JobKind: string(models.AgentJobSchedule), SubjectID: "schedule-1"}
-	if _, err := feedTool(t).Run(tools.WithRun(context.Background(), &feedRun{operations: operations, conversation: run}), &tools.Call{ID: "c1", Arguments: []byte(`{"action":"post","title":"Weather in Springfield"}`)}); err != nil {
-		t.Fatal(err)
-	}
-	if variables := operations.variables[0]; variables["feedSourceKind"] != "schedule" || variables["feedSourceId"] != "schedule-1" {
-		t.Fatalf("schedule run: %+v", variables)
-	}
-
-	operations = &recordedOperations{}
 	main := &models.AgentConversation{ID: "main-1", Kind: models.AgentConversationMain}
 	if _, err := feedTool(t).Run(tools.WithRun(context.Background(), &feedRun{operations: operations, conversation: main}), &tools.Call{ID: "c1", Arguments: []byte(`{"action":"post","title":"A test card"}`)}); err != nil {
 		t.Fatal(err)

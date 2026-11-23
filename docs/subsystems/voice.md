@@ -172,8 +172,7 @@ The same hand-off serves typed turns. Where the operator set
 `agent.models.quick`, a turn a person types in the dashboard, the extension,
 the app or a chat app starts on that model, is offered `think_harder`, and
 hands anything that needs reasoning to the ask model. A turn from the command
-line, the API or mail, one the agent started itself (a schedule, a goal's
-check-in, a subagent, background work), one whose person chose their own
+line, the API or mail, one the agent started itself (a goal's check-in, a subagent, background work), one whose person chose their own
 model, and one the depth judgement chose to dig on all start on the ask model
 as before.
 

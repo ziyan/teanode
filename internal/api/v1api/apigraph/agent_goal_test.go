@@ -68,13 +68,8 @@ func TestAGoalStartedThroughTheAPIIsListedReadAndClosed(t *testing.T) {
 	if started.GoalState != "working" || started.GoalTitle != "Boiler reply" || started.ConversationID == "" {
 		t.Fatalf("started: %+v", started)
 	}
-	// What the goal made: a schedule in its conversation, and a mail rule
-	// noted against it.
+	// What the goal made: a mail rule noted against it.
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		next := time.Now().Add(time.Hour)
-		if _, err := tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: agentId, Name: "Look for the reply", Cron: "0 9 * * *", Prompt: "look", Deliver: "drawer", ConversationID: started.ConversationID, Enabled: true, NextRunAt: &next}); err != nil {
-			t.Fatalf("CreateAgentSchedule: %s", err)
-		}
 		if _, err := tx.AddAgentGoalArtifact(&models.AgentGoalArtifact{AgentID: agentId, ConversationID: started.ConversationID, GoalArtifactKind: models.GoalArtifactMailRule, ArtifactReference: "Landlord", ArtifactTitle: "mail rule Landlord"}); err != nil {
 			t.Fatalf("AddAgentGoalArtifact: %s", err)
 		}
@@ -92,8 +87,34 @@ func TestAGoalStartedThroughTheAPIIsListedReadAndClosed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetAgentGoal: %s", err)
 		}
-		if len(read.Activity) != 1 || len(read.Schedules) != 1 || len(read.Artifacts) != 1 || read.Schedules[0].Name != "Look for the reply" {
+		if len(read.Activity) != 1 || len(read.Artifacts) != 1 || len(read.GoalTimes) != 0 {
 			t.Fatalf("the goal with what it made: %+v", read)
+		}
+
+		// Given a time, it is due then; paused, it is due never; taken up
+		// again, it is due at its time; run, it is due now.
+		nine := []string{"0 9 * * *"}
+		timed, err := resolver.UpdateAgentGoal(ctx, UpdateAgentGoalArguments{ConversationID: started.ConversationID, GoalTimes: nine})
+		if err != nil || len(timed.GoalTimes) != 1 || timed.GoalNextAt == nil || !timed.GoalNextAt.After(time.Now()) || timed.GoalWrittenBy != models.WrittenByAgent {
+			t.Fatalf("UpdateAgentGoal: %+v %v", timed, err)
+		}
+		if _, err := resolver.UpdateAgentGoal(ctx, UpdateAgentGoalArguments{ConversationID: started.ConversationID, GoalTimes: []string{"at nine"}}); err == nil {
+			t.Errorf("a time that is not one was taken")
+		}
+		paused, err := resolver.SetAgentGoalState(ctx, SetAgentGoalStateArguments{ConversationID: started.ConversationID, GoalState: "paused"})
+		if err != nil || paused.GoalState != "paused" || paused.GoalNextAt != nil {
+			t.Fatalf("paused: %+v %v", paused, err)
+		}
+		if _, err := resolver.RunAgentGoal(ctx, RunAgentGoalArguments{ConversationID: started.ConversationID}); err == nil {
+			t.Errorf("a paused goal was run")
+		}
+		resumed, err := resolver.SetAgentGoalState(ctx, SetAgentGoalStateArguments{ConversationID: started.ConversationID, GoalState: "working"})
+		if err != nil || resumed.GoalNextAt == nil || !resumed.GoalNextAt.Equal(*timed.GoalNextAt) {
+			t.Fatalf("taken up again, it is due at its time: %+v %v", resumed, err)
+		}
+		ran, err := resolver.RunAgentGoal(ctx, RunAgentGoalArguments{ConversationID: started.ConversationID})
+		if err != nil || ran.GoalNextAt == nil || ran.GoalNextAt.After(time.Now()) {
+			t.Fatalf("run, it is due now: %+v %v", ran, err)
 		}
 	})
 
@@ -107,6 +128,13 @@ func TestAGoalStartedThroughTheAPIIsListedReadAndClosed(t *testing.T) {
 		}
 		if _, err := resolver.SetAgentGoalState(ctx, SetAgentGoalStateArguments{ConversationID: started.ConversationID, GoalState: "dropped"}); err == nil {
 			t.Errorf("a stranger dropped the goal")
+		}
+		renamed := "Mine now"
+		if _, err := resolver.UpdateAgentGoal(ctx, UpdateAgentGoalArguments{ConversationID: started.ConversationID, GoalTitle: &renamed}); err == nil {
+			t.Errorf("a stranger changed the goal")
+		}
+		if _, err := resolver.RunAgentGoal(ctx, RunAgentGoalArguments{ConversationID: started.ConversationID}); err == nil {
+			t.Errorf("a stranger ran the goal")
 		}
 		if listed, err := resolver.ListAgentGoals(ctx, ListAgentGoalsArguments{}); err != nil || len(listed) != 0 {
 			t.Errorf("a stranger listed goals: %+v %v", listed, err)
@@ -124,9 +152,8 @@ func TestAGoalStartedThroughTheAPIIsListedReadAndClosed(t *testing.T) {
 	})
 }
 
-// Starting a goal with a schedule that is not the person's starts nothing:
-// the goal and the move are one write.
-func TestAGoalStartedWithAStrangersScheduleIsNotStarted(t *testing.T) {
+// Starting a goal with a time that is not one starts nothing.
+func TestAGoalWithATimeThatIsNotOneIsNotStarted(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 	var person *models.User
@@ -149,11 +176,11 @@ func TestAGoalStartedWithAStrangersScheduleIsNotStarted(t *testing.T) {
 	principal := &api.Principal{User: person, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}})}
 	err := database.TransactionContext(context.Background(), func(tx db.Transaction) error {
 		_, err := resolver.StartAgentGoal(api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), tx),
-			StartAgentGoalArguments{GoalTitle: "Boiler", GoalDescription: "Watch for the reply.", ScheduleIDs: []string{"no-such-schedule"}})
+			StartAgentGoalArguments{GoalTitle: "Boiler", GoalDescription: "Watch for the reply.", GoalTimes: []string{"every morning"}})
 		return err
 	})
 	if err == nil {
-		t.Fatal("a goal with a schedule that is not there was started")
+		t.Fatal("a goal with a time that is not one was started")
 	}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		if goals, err := tx.ListAgentGoals(agentId, nil, 10); err != nil || len(goals) != 0 {

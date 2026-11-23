@@ -15,12 +15,12 @@ import (
 	"github.com/ziyan/teanode/internal/storage"
 )
 
-// A schedule that waits for mail is set off by a message that passes its
+// A goal that waits for mail is set off by a message that passes its
 // conditions as it arrives, and not by one that does not or by one the
-// filters put in Junk. The tick runs it; its turn is told what came, with the
-// sender quoted as unverified, and the run forgets the message afterwards
-// while the schedule stays on, waiting for the next.
-func TestAScheduleRunsWhenItsMailArrives(t *testing.T) {
+// filters put in Junk. The tick gives it a turn; the turn is told what came,
+// with the sender quoted as unverified, and forgets the message afterwards
+// while the goal stays on, waiting for the next.
+func TestAGoalTakesATurnWhenItsMailArrives(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
@@ -47,10 +47,11 @@ func TestAScheduleRunsWhenItsMailArrives(t *testing.T) {
 
 	var found *models.Agent
 	var mailbox *models.Mailbox
-	var schedule *models.AgentSchedule
+	var goal *models.AgentConversation
 	var inbox, junk *models.MailboxFolder
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		owner, err := tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example", Timezone: "Europe/Berlin", TimezoneMode: "fixed"})
+		var owner *models.User
+		owner, err = tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example", Timezone: "Europe/Berlin", TimezoneMode: "fixed"})
 		if err != nil {
 			t.Fatalf("CreateUser: %s", err)
 		}
@@ -67,8 +68,9 @@ func TestAScheduleRunsWhenItsMailArrives(t *testing.T) {
 			t.Fatalf("GetFolderByKind junk: %v %s", junk, err)
 		}
 		conditions := []models.MailboxRuleCondition{{Field: "from", Operator: "contains", Value: "news@school.example"}}
-		if schedule, err = tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: found.ID, Name: "School pictures", MailConditions: conditions, Prompt: "Save the pictures it links.", Deliver: "drawer", Enabled: true}); err != nil {
-			t.Fatalf("CreateAgentSchedule: %s", err)
+		if goal, err = worker.StartGoal(tx, found, owner, &agent.GoalStart{GoalTitle: "School pictures", GoalDescription: "Save the pictures it links.",
+			GoalMailConditions: conditions, GoalWrittenBy: models.WrittenByPerson}); err != nil {
+			t.Fatalf("StartGoal: %s", err)
 		}
 	})
 	deliver := func(folder *models.MailboxFolder, from, subject string) *models.MailboxItem {
@@ -88,16 +90,16 @@ func TestAScheduleRunsWhenItsMailArrives(t *testing.T) {
 	deliver(inbox, "someone@elsewhere.example", "Lunch?")
 	deliver(junk, "news@school.example", "Pictures from today, again")
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		waiting, _ := tx.GetAgentSchedule(schedule.ID)
-		if len(waiting.MailArrivals) != 0 || waiting.NextRunAt != nil {
-			t.Fatalf("mail that does not pass, or that went to Junk, set the schedule off: %+v", waiting)
+		waiting, _ := tx.GetAgentConversation(goal.ID)
+		if len(waiting.GoalMailArrivals) != 0 || waiting.GoalNextAt != nil {
+			t.Fatalf("mail that does not pass, or that went to Junk, set the goal off: %+v", waiting)
 		}
 	})
 	item := deliver(inbox, "School News <news@school.example>", "Pictures from today")
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		waiting, _ := tx.GetAgentSchedule(schedule.ID)
-		if len(waiting.MailArrivals) != 1 || waiting.MailArrivals[0].MailboxItemID != item.ID || waiting.NextRunAt == nil {
-			t.Fatalf("the message should be noted and the schedule due: %+v", waiting)
+		waiting, _ := tx.GetAgentConversation(goal.ID)
+		if len(waiting.GoalMailArrivals) != 1 || waiting.GoalMailArrivals[0].MailboxItemID != item.ID || waiting.GoalNextAt == nil {
+			t.Fatalf("the message should be noted and the goal due: %+v", waiting)
 		}
 	})
 
@@ -109,7 +111,7 @@ func TestAScheduleRunsWhenItsMailArrives(t *testing.T) {
 	for {
 		var done bool
 		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-			jobs, _ := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: found.ID, Kinds: []models.AgentJobKind{models.AgentJobSchedule}}, nil)
+			jobs, _ := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: found.ID, Kinds: []models.AgentJobKind{models.AgentJobGoal}}, nil)
 			done = len(jobs) == 1 && jobs[0].Status == models.AgentJobDone
 		})
 		if done || time.Now().After(deadline) {
@@ -118,13 +120,13 @@ func TestAScheduleRunsWhenItsMailArrives(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		jobs, _ := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: found.ID, Kinds: []models.AgentJobKind{models.AgentJobSchedule}}, nil)
+		jobs, _ := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: found.ID, Kinds: []models.AgentJobKind{models.AgentJobGoal}}, nil)
 		if len(jobs) != 1 || jobs[0].Status != models.AgentJobDone {
-			t.Fatalf("the schedule should have run once: %+v", jobs)
+			t.Fatalf("the goal should have taken one turn: %+v", jobs)
 		}
-		after, _ := tx.GetAgentSchedule(schedule.ID)
-		if after == nil || !after.Enabled || len(after.MailArrivals) != 0 || after.NextRunAt != nil || after.LastRunAt == nil {
-			t.Fatalf("the run should forget the message and leave the schedule on, waiting: %+v", after)
+		after, _ := tx.GetAgentConversation(goal.ID)
+		if after == nil || after.GoalState != models.GoalWorking || len(after.GoalMailArrivals) != 0 || after.GoalNextAt != nil {
+			t.Fatalf("the turn should forget the message and leave the goal on, waiting: %+v", after)
 		}
 	})
 	if len(*requests) == 0 {
@@ -132,39 +134,38 @@ func TestAScheduleRunsWhenItsMailArrives(t *testing.T) {
 	}
 	turn := ""
 	for _, message := range (*requests)[0]["messages"].([]any) {
-		if content, _ := message.(map[string]any)["content"].(string); strings.Contains(content, models.ScheduleMarker) {
+		if content, _ := message.(map[string]any)["content"].(string); strings.Contains(content, models.GoalCheckInMarker) {
 			turn = content
 		}
 	}
-	for _, want := range []string{"mail it waits for arrived", `"Pictures from today"`, `"School News <news@school.example>"`, "item_id " + item.ID, "not verified", "Save the pictures it links."} {
+	for _, want := range []string{"when mail it waits for arrives", `"Pictures from today"`, `"School News <news@school.example>"`, "item_id " + item.ID, "not verified", "Save the pictures it links."} {
 		if !strings.Contains(turn, want) {
 			t.Errorf("the turn should say %q:\n%s", want, turn)
 		}
 	}
-	if strings.Contains(turn, "Lunch?") || strings.Contains(turn, "again") {
+	if strings.Contains(turn, "Lunch?") || strings.Contains(turn, "today, again") {
 		t.Errorf("the turn was told about mail that did not set it off:\n%s", turn)
 	}
 }
 
-// A schedule runs at set times or on arriving mail, never both, and its mail
-// conditions are those a message can be judged by as it arrives.
-func TestAScheduleOnMailIsValidated(t *testing.T) {
+// A goal's mail conditions are those a message can be judged by as it
+// arrives, each with what it needs to be judged.
+func TestAGoalsMailConditionsAreValidated(t *testing.T) {
 	for _, test := range []struct {
-		name     string
-		schedule models.AgentSchedule
-		isValid  bool
+		name       string
+		conditions []models.MailboxRuleCondition
+		isValid    bool
 	}{
-		{"on mail", models.AgentSchedule{Name: "n", Prompt: "p", MailConditions: []models.MailboxRuleCondition{{Field: "subject", Operator: "matches", Value: "^Pictures"}}}, true},
-		{"any message", models.AgentSchedule{Name: "n", Prompt: "p", MailConditions: []models.MailboxRuleCondition{{Field: "any"}}}, true},
-		{"both", models.AgentSchedule{Name: "n", Prompt: "p", Cron: "0 8 * * *", MailConditions: []models.MailboxRuleCondition{{Field: "any"}}}, false},
-		{"neither", models.AgentSchedule{Name: "n", Prompt: "p"}, false},
-		{"a field known only after sorting", models.AgentSchedule{Name: "n", Prompt: "p", MailConditions: []models.MailboxRuleCondition{{Field: "category", Operator: "equals", Value: "receipt"}}}, false},
-		{"a broken pattern", models.AgentSchedule{Name: "n", Prompt: "p", MailConditions: []models.MailboxRuleCondition{{Field: "subject", Operator: "matches", Value: "("}}}, false},
-		{"no value", models.AgentSchedule{Name: "n", Prompt: "p", MailConditions: []models.MailboxRuleCondition{{Field: "from", Operator: "contains"}}}, false},
-		{"a header without its name", models.AgentSchedule{Name: "n", Prompt: "p", MailConditions: []models.MailboxRuleCondition{{Field: "header", Operator: "contains", Value: "x"}}}, false},
+		{"on mail", []models.MailboxRuleCondition{{Field: "subject", Operator: "matches", Value: "^Pictures"}}, true},
+		{"any message", []models.MailboxRuleCondition{{Field: "any"}}, true},
+		{"none", nil, true},
+		{"a field known only after sorting", []models.MailboxRuleCondition{{Field: "category", Operator: "equals", Value: "receipt"}}, false},
+		{"a broken pattern", []models.MailboxRuleCondition{{Field: "subject", Operator: "matches", Value: "("}}, false},
+		{"no value", []models.MailboxRuleCondition{{Field: "from", Operator: "contains"}}, false},
+		{"a header without its name", []models.MailboxRuleCondition{{Field: "header", Operator: "contains", Value: "x"}}, false},
 	} {
-		if err := test.schedule.Validate(); (err == nil) != test.isValid {
-			t.Errorf("%s: Validate said %v, want valid %v", test.name, err, test.isValid)
+		if err := models.ValidateGoalMailConditions(test.conditions); (err == nil) != test.isValid {
+			t.Errorf("%s: said %v, want valid %v", test.name, err, test.isValid)
 		}
 	}
 }

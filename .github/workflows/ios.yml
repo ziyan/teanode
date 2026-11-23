@@ -504,6 +504,14 @@ jobs:
           shoot finance-person-all-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-person-all
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
+          shoot goals-dark dark large -TeaNodeDemo -TeaNodeTab goals
+          shoot goals-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab goals
+          # A goal's page with its times, and the editor open on a goal that takes a turn when mail arrives.
+          shoot goal-detail-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen goal-detail
+          shoot goal-detail-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen goal-detail
+          shoot goal-detail-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen goal-detail
+          shoot goal-when-editor-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen goal-when-editor
+          shoot goal-when-editor-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen goal-when-editor
           # The agent's feed (docs/planning/agent-feed-execplan.md): cards with a table of facts, a decision to
           # answer, a coding session's question and a mail tidy-up proposal.
           shoot feed-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed
@@ -677,17 +685,14 @@ jobs:
           shoot agent-usage-cost-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage-cost
           shoot rules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen rules
           shoot dreams-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dreams
-          shoot schedules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules
+          shoot daily-brief-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen daily-brief
           # The days of the morning brief, with Monday to Friday chosen and with none, and the brief's row that opens them.
-          for brief_days_screen in schedules-brief-days schedules-brief-days-none; do
+          for brief_days_screen in daily-brief-days daily-brief-days-none; do
             shoot "$brief_days_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$brief_days_screen"
             shoot "$brief_days_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$brief_days_screen"
             shoot "$brief_days_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$brief_days_screen"
           done
-          shoot schedules-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules
-          # The editor open on a schedule that runs when mail arrives, with its conditions.
-          shoot schedules-mail-editor-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules-mail-editor
-          shoot schedules-mail-editor-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules-mail-editor
+          shoot daily-brief-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen daily-brief
           shoot activity-run-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
           shoot activity-run-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
           # The alert settings, with what the agent is following.
@@ -852,6 +857,7 @@ jobs:
             "finance-receipt-entry|-TeaNodeTab finance -TeaNodeScreen finance-receipt-entry"
             "ideas|-TeaNodeTab ideas"
             "goals|-TeaNodeTab goals"
+            "goal-detail|-TeaNodeTab settings -TeaNodeScreen goal-detail"
             "photos-library|-TeaNodeTab photos -TeaNodeScreen photos-library"
             "photos-viewer|-TeaNodeTab photos -TeaNodeScreen photos-viewer"
             "photos-viewer-info|-TeaNodeTab photos -TeaNodeScreen photos-viewer-info"

@@ -96,7 +96,7 @@ func newPhoneFixture(t *testing.T) *phoneFixture {
 func (self *phoneFixture) sayOnItsOwn(t *testing.T, said string) {
 	t.Helper()
 	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
-		main, err := scheduleConversation(tx, self.agent.ID, "")
+		main, err := personsConversation(tx, self.agent.ID, "")
 		if err != nil {
 			t.Fatalf("scheduleConversation: %s", err)
 		}

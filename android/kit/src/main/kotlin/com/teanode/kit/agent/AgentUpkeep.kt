@@ -117,24 +117,6 @@ data class ReadingProgress(
     val spent: Double = 0.0, val costLeft: Double = 0.0, val currency: String? = null, val dreams: Int = 0,
 )
 
-/** A schedule: something the agent does at a time, or when mail matching conditions arrives. */
-@Serializable
-data class AgentSchedule(
-    val id: String,
-    val name: String,
-    val cron: String,
-    val prompt: String = "",
-    val deliver: String = "drawer",
-    val enabled: Boolean = true,
-    val lastRunAt: String? = null,
-    val nextRunAt: String? = null,
-    val conversationId: String? = null,
-    val mailConditions: List<ScheduleMailCondition>? = null,
-) {
-    val isDeliveredByMail: Boolean get() = deliver == "mail"
-    val isTriggeredByMail: Boolean get() = !mailConditions.isNullOrEmpty()
-}
-
 /** One mail an alert covers. */
 @Serializable
 data class AlertCovered(val mailId: String = "", val subject: String = "", val fromAddress: String = "")
@@ -255,8 +237,6 @@ data class MemoryCheckQuestion(
 
 @Serializable private class AgentReadingProgressAnswer(val AgentReadingProgress: ReadingProgress)
 
-@Serializable private class ListAgentSchedulesAnswer(val ListAgentSchedules: List<AgentSchedule?>)
-
 @Serializable private class ListAgentAlertsAnswer(val ListAgentAlerts: List<AgentAlert?> = emptyList(), val ListAgentAlertMutes: List<AgentAlertMute?> = emptyList())
 
 @Serializable private class ListAgentLearnedAnswer(val ListAgentLearned: List<AgentLearnedFact?>)
@@ -302,31 +282,6 @@ suspend fun Connection.dreamNow() {
 
 suspend fun Connection.setDreamBootstrap(isBootstrapping: Boolean) {
     execute<JsonObject>(AgentUpkeepDocuments.DREAM_BOOTSTRAP, variablesOf("on" to isBootstrapping))
-}
-
-suspend fun Connection.agentSchedules(): List<AgentSchedule> = execute<ListAgentSchedulesAnswer>(AgentUpkeepDocuments.AGENT_SCHEDULES).ListAgentSchedules.filterNotNull()
-
-suspend fun Connection.saveAgentSchedule(
-    scheduleId: String? = null, name: String? = null, cron: String? = null, prompt: String? = null, deliver: String? = null, isEnabled: Boolean? = null,
-    mailConditions: List<ScheduleMailCondition>? = null,
-) {
-    val variables = mutableMapOf<String, JsonElement>()
-    scheduleId?.let { variables.putAll(variablesOf("scheduleId" to it)) }
-    name?.let { variables.putAll(variablesOf("name" to it)) }
-    cron?.let { variables.putAll(variablesOf("cron" to it)) }
-    prompt?.let { variables.putAll(variablesOf("prompt" to it)) }
-    deliver?.let { variables.putAll(variablesOf("deliver" to it)) }
-    isEnabled?.let { variables.putAll(variablesOf("enabled" to it)) }
-    mailConditions?.let { conditions -> variables["mailConditions"] = ScheduleMailTrigger.variables(conditions) }
-    execute<JsonObject>(AgentUpkeepDocuments.SAVE_AGENT_SCHEDULE, variables)
-}
-
-suspend fun Connection.deleteAgentSchedule(scheduleId: String) {
-    execute<JsonObject>(AgentUpkeepDocuments.DELETE_AGENT_SCHEDULE, variablesOf("scheduleId" to scheduleId))
-}
-
-suspend fun Connection.runAgentSchedule(scheduleId: String) {
-    execute<JsonObject>(AgentUpkeepDocuments.RUN_AGENT_SCHEDULE, variablesOf("scheduleId" to scheduleId))
 }
 
 /** The alerts sent and the mutes the person set. */
@@ -385,18 +340,6 @@ suspend fun Connection.agentRuns(first: Int = 50, offset: Int = 0, jobId: String
     val words = query.trim()
     if (words.isNotEmpty()) variables.putAll(variablesOf("query" to words))
     return execute<ListAgentRunsAnswer>(AgentUpkeepDocuments.AGENT_RUNS, variables).ListAgentRuns
-}
-
-/** Turns the morning brief on or off, at a time on some days (1 is Monday, 7 is Sunday); no days is the schedule's own. */
-suspend fun Connection.setDailyBrief(isEnabled: Boolean, time: String, days: List<Int>) {
-    val variables = mutableMapOf<String, JsonElement>("enabled" to kotlinx.serialization.json.JsonPrimitive(isEnabled), "at" to kotlinx.serialization.json.JsonPrimitive(time))
-    if (days.isNotEmpty()) variables["days"] = kotlinx.serialization.json.JsonArray(days.map { day -> kotlinx.serialization.json.JsonPrimitive(day) })
-    execute<JsonObject>(AgentUpkeepDocuments.SET_DAILY_BRIEF, variables)
-}
-
-/** Sends the brief now. */
-suspend fun Connection.runDailyBrief() {
-    execute<JsonObject>(AgentUpkeepDocuments.RUN_DAILY_BRIEF)
 }
 
 /** How well the agent answered the check questions from one place: its memory, the sources, or both. */

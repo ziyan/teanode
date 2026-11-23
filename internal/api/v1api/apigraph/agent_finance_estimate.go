@@ -2,8 +2,6 @@ package apigraph
 
 import (
 	"context"
-	"strings"
-	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
@@ -11,13 +9,13 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// AssetEstimateScheduleName is what the schedule that estimates assets from
-// the web is called. Found by name, as the daily brief's is, because a
-// person who renames it has made it theirs and allowing another estimate
-// should leave it alone.
-const AssetEstimateScheduleName = agent.AssetEstimateScheduleName
+// AssetEstimateGoalName is what the goal that estimates assets from the web
+// is called. Found by title, as the daily brief's is, because a person who
+// renames it has made it theirs and allowing another estimate should leave
+// it alone.
+const AssetEstimateGoalName = agent.AssetEstimateGoalTitle
 
-// assetEstimateCron is when the schedule runs: the first of each month in
+// assetEstimateCron is when the goal takes its turn: the first of each month in
 // the morning, in the person's zone. A car or a house moves slowly enough
 // that a monthly estimate is plenty, and each estimate costs a turn and a
 // few searches.
@@ -30,55 +28,41 @@ func isEstimatedByAgent(asset *models.Asset) bool {
 }
 
 // startAssetEstimates is what allowing the agent to estimate an asset does:
-// it makes the monthly schedule that estimates every such asset when there
-// is none, and runs that schedule now, so the new asset has a value today
-// rather than on the first of next month. A schedule the person switched
-// off stays off and is not run: they said to stop estimating, and a job for
-// a switched-off schedule would do nothing anyway. Nothing here fails the
-// change to the asset: a schedule that cannot be made or run is logged, and
-// the person can still ask the agent or add a schedule themselves.
+// it starts the monthly goal that estimates every such asset when there is
+// none, and gives that goal a turn now, so the new asset has a value today
+// rather than on the first of next month. A goal the person paused stays
+// paused and takes no turn: they said to stop estimating. Nothing here fails
+// the change to the asset: a goal that cannot be started or run is logged,
+// and the person can still ask the agent or start one themselves.
 func (self *graph) startAssetEstimates(ctx context.Context, tx db.Transaction, principal *api.Principal, found *models.Agent) {
 	if !agent.FeatureAllowed(self.config.Current(), "schedules") {
 		return
 	}
-	schedules, err := tx.ListAgentSchedules(found.ID)
-	if err != nil {
-		log.Warningf("cannot read the schedules of agent %s to start asset estimates: %s", found.ID, err)
+	worker := self.agentWorker()
+	if worker == nil {
 		return
 	}
-	var estimates *models.AgentSchedule
-	for _, schedule := range schedules {
-		if strings.EqualFold(schedule.Name, AssetEstimateScheduleName) {
-			estimates = schedule
-			break
-		}
+	estimates, err := findGoalByTitle(tx, found.ID, AssetEstimateGoalName)
+	if err != nil {
+		log.Warningf("cannot read the goals of agent %s to start asset estimates: %s", found.ID, err)
+		return
 	}
 	if estimates == nil {
-		schedule := &models.AgentSchedule{
-			AgentID: found.ID, Name: AssetEstimateScheduleName, Cron: assetEstimateCron,
-			Prompt: agent.AssetEstimatePrompt(),
+		if estimates, err = worker.StartGoal(tx, found, principal.User, &agent.GoalStart{
+			GoalTitle: AssetEstimateGoalName, GoalDescription: agent.AssetEstimatePrompt(), GoalTimes: []string{assetEstimateCron},
 			// The person's own words, because the person allowed the
 			// estimates, as with the daily brief's switch, and recorded as
 			// built in for the same reason: it reads the web.
-			WrittenBy: models.WrittenByBuiltIn,
-			Deliver:   models.AgentDeliverDrawer, Enabled: true,
-		}
-		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
-		if err != nil {
-			log.Warningf("cannot settle the asset estimate schedule of agent %s: %s", found.ID, err)
-			return
-		}
-		schedule.NextRunAt = next
-		if estimates, err = tx.CreateAgentSchedule(schedule); err != nil {
-			log.Warningf("cannot make the asset estimate schedule of agent %s: %s", found.ID, err)
+			GoalWrittenBy: models.WrittenByBuiltIn,
+		}); err != nil {
+			log.Warningf("cannot start the asset estimate goal of agent %s: %s", found.ID, err)
 			return
 		}
 	}
-	worker := self.agentWorker()
-	if worker == nil || !estimates.Enabled {
+	if estimates.GoalState != models.GoalWorking {
 		return
 	}
-	if _, err := worker.Enqueue(tx, models.AgentJobSchedule, found.ID, "", estimates.ID); err != nil {
-		log.Warningf("cannot run the asset estimate schedule of agent %s: %s", found.ID, err)
+	if _, err := worker.RunGoalNow(tx, found, estimates.ID); err != nil {
+		log.Warningf("cannot run the asset estimate goal of agent %s: %s", found.ID, err)
 	}
 }

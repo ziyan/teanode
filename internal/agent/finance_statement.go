@@ -1036,7 +1036,7 @@ func (self *Agent) tellMailImport(ctx context.Context, run *Run, checkIn, summar
 func (self *Agent) tellAgent(ctx context.Context, database db.Database, agentId, checkIn, summary string) error {
 	var conversation *models.AgentConversation
 	if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		conversation, err = scheduleConversation(tx, agentId, "")
+		conversation, err = personsConversation(tx, agentId, "")
 		return err
 	}); err != nil {
 		return err
