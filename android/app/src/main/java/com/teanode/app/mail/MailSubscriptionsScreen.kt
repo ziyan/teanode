@@ -27,9 +27,8 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.MarkEmailRead
 import androidx.compose.material.icons.outlined.MarkEmailUnread
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.MoveToInbox
 import androidx.compose.material.icons.outlined.Newspaper
-import androidx.compose.material.icons.outlined.NotificationsActive
-import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Report
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.ThumbUp
@@ -184,7 +183,7 @@ fun SubscriptionRow(subscription: MailSubscription, modifier: Modifier = Modifie
             val counts = buildList {
                 add(pluralStringResource(R.plurals.mail_messages_count, subscription.count, subscription.count))
                 if (subscription.unread > 0) add(stringResource(R.string.mail_unread_count, subscription.unread))
-                if (subscription.mutedAt != null) add(stringResource(R.string.mail_muted))
+                if (subscription.mutedAt != null) add(stringResource(R.string.mail_out_of_inbox))
             }.joinToString(" · ")
             Text(counts, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             val requested = ServerTime.instant(subscription.requestedAt)
@@ -304,8 +303,8 @@ fun SubscriptionReaderScreen(mail: MailModel, key: String, onBack: () -> Unit, o
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text(stringResource(if (shown.mutedAt == null) R.string.mail_mute else R.string.mail_unmute)) },
-                            leadingIcon = { Icon(if (shown.mutedAt == null) Icons.Outlined.NotificationsOff else Icons.Outlined.NotificationsActive, null) },
+                            text = { Text(stringResource(if (shown.mutedAt == null) R.string.mail_keep_out_of_inbox else R.string.mail_let_back_into_inbox)) },
+                            leadingIcon = { Icon(if (shown.mutedAt == null) Icons.Outlined.Archive else Icons.Outlined.MoveToInbox, null) },
                             onClick = {
                                 isMenuOpen = false
                                 val isMuted = shown.mutedAt == null
@@ -418,7 +417,7 @@ fun SubscriptionReaderScreen(mail: MailModel, key: String, onBack: () -> Unit, o
                 "link" -> stringResource(R.string.mail_leave_by_link)
                 else -> stringResource(if (shown.stripped) R.string.mail_leave_none_stripped else R.string.mail_leave_none)
             },
-            confirmLabel = if (leaveKind == "none") stringResource(R.string.mail_mute_instead) else stringResource(R.string.mail_unsubscribe),
+            confirmLabel = if (leaveKind == "none") stringResource(R.string.mail_keep_out_of_inbox_instead) else stringResource(R.string.mail_unsubscribe),
             isDestructive = leaveKind != "none",
             onConfirm = {
                 isConfirmingLeave = false
