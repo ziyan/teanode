@@ -228,11 +228,14 @@ position (as a check-in does), so typing an address for home never leaves two
 places at one address. The words the person typed leave the server for the
 provider, the same as a search does.
 
-**To the map host**, when the dashboard shows a map: the dashboard's content
-security policy allows nothing but this server, so the server fetches the style
-and the tiles from the one host of the configured style and hands them on. The
-host sees the server's address and which tiles are asked for, never the person.
-Only accounts that may use Location are served, up to 600 files a minute each.
+**To the map host**, when the dashboard or the Android app shows a map: the
+dashboard's content security policy allows nothing but this server, and the
+Android app refuses any map address that is not its own server's, so the server
+fetches the style and the tiles from the one host of the configured style and
+hands them on. The host sees the server's address and which tiles are asked
+for, never the person. Only accounts that may use Location are served, up to
+600 files a minute each. The iPhone app draws Apple's maps, which the phone
+fetches from Apple.
 
 Names and addresses are written by strangers (OpenStreetMap) or by the person,
 so everywhere they reach a model they are cleaned (one line, cut, no angle
