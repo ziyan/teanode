@@ -24,13 +24,15 @@ than it and scrolls the grid to that number, which reads only the page there.
 
 ## Progress
 
-- [ ] iPhone: TeaNodeKit reads a page by number and counts a list; a window of pages; the grid, Years, Months and the viewer on it.
+- [x] iPhone: TeaNodeKit reads a page by number and counts a list; a window of pages; the grid, Years, Months and the viewer on it. Built and kit tests pass on the Mac; demo screenshots of library, Years, Months and viewer checked.
 - [ ] Android: the same in kit and app.
 - [ ] Review, screenshots, tester builds.
 
 ## Surprises & Discoveries
 
-(none yet)
+- The Trash and a search are read whole into a window that holds one page (`PhotoWindow(whole:)`), since their layouts need every photo. The Trash is now read by offset in pages of 500 until the count is reached, not by cursor.
+- A photo taken out of a list that is not held on a page cannot be known to be in it, so the list is counted again (iPhone `takeOut`).
+- After a date change the iPhone counts the photos newer than the new date, reads the pages round that place and moves the viewer to the photo (`movedPhoto`).
 
 ## Decision Log
 
