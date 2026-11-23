@@ -19,6 +19,8 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.teanode.app.TeaNodeApplication
 import com.teanode.kit.Connection
+import com.teanode.kit.SecretStore
+import com.teanode.kit.TeaNodeError
 import com.teanode.kit.photos.PhotoBackupCredential
 import com.teanode.kit.photos.PhotoBackupFailure
 import com.teanode.kit.photos.PhotoBackupFileRole
@@ -41,6 +43,7 @@ import com.teanode.kit.photos.createPhotoBackupCredential
 import com.teanode.kit.photos.revokePhotoBackupCredential
 import com.teanode.kit.photos.findPhotos
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,9 +66,14 @@ import java.util.concurrent.TimeUnit
 
 /**
  * What the person chose for photo backup, kept on the phone per account: on or off, paused, and whether mobile data may
- * be used. The device password backup signs in with is kept sealed with the Keystore, never in these preferences.
+ * be used. The device password backup signs in with is kept sealed with the Keystore, never in these preferences; only
+ * its id is kept here, so the server's copy can be taken back even when the sealed one cannot be read.
  */
-class PhotoBackupSettings(private val context: Context, private val accountKey: String) {
+class PhotoBackupSettings(
+    private val context: Context,
+    private val accountKey: String,
+    private val secrets: SecretStore = com.teanode.app.session.KeystoreSecretStore(context),
+) {
     private val preferences = context.getSharedPreferences("teanode.photoBackup", Context.MODE_PRIVATE)
 
     private fun key(name: String) = "$accountKey|$name"
@@ -89,13 +97,46 @@ class PhotoBackupSettings(private val context: Context, private val accountKey: 
     private fun credentialName() = "photoBackupCredential|$accountKey"
 
     fun credential(): PhotoBackupCredential? =
-        runCatching { Json.decodeFromString(PhotoBackupCredential.serializer(), (com.teanode.app.session.KeystoreSecretStore(context).read(credentialName()) ?: return null).decodeToString()) }.getOrNull()
+        runCatching { Json.decodeFromString(PhotoBackupCredential.serializer(), (secrets.read(credentialName()) ?: return null).decodeToString()) }.getOrNull()
+
+    /** The id of the device password made for this account, kept from the moment the server answers. */
+    var credentialId: String?
+        get() = preferences.getString(key("credentialId"), null)
+        // Written at once rather than later, so a password the server made is never without a record here.
+        set(identifier) { preferences.edit().putString(key("credentialId"), identifier).commit() }
+
+    /** Device passwords this phone let go of whose server copy is still to be taken back, because it was offline. */
+    var unrevokedCredentialIds: Set<String>
+        get() = preferences.getStringSet(key("unrevokedCredentialIds"), null).orEmpty().toSet()
+        set(identifiers) { preferences.edit().putStringSet(key("unrevokedCredentialIds"), identifiers).commit() }
 
     fun saveCredential(credential: PhotoBackupCredential) {
-        com.teanode.app.session.KeystoreSecretStore(context).write(credentialName(), Json.encodeToString(PhotoBackupCredential.serializer(), credential).toByteArray())
+        secrets.write(credentialName(), Json.encodeToString(PhotoBackupCredential.serializer(), credential).toByteArray())
     }
 
-    fun forgetCredential() = com.teanode.app.session.KeystoreSecretStore(context).delete(credentialName())
+    /**
+     * Forgets the device password here and marks it to be taken back on the server, by [revokeForgottenCredentials] now
+     * or on the next pass, so a password the phone no longer keeps does not stay valid.
+     */
+    @Synchronized
+    fun forgetCredential() {
+        val forgotten = credential()?.credentialId ?: credentialId
+        runCatching { secrets.delete(credentialName()) }
+        credentialId = null
+        if (forgotten != null) unrevokedCredentialIds = unrevokedCredentialIds + forgotten
+    }
+
+    /**
+     * Takes back on the server every device password this phone let go of. One the server no longer has, or refuses to
+     * take back, is settled; only a network failure leaves it for the next try.
+     */
+    suspend fun revokeForgottenCredentials(connection: Connection) = withContext(NonCancellable + Dispatchers.IO) {
+        for (identifier in unrevokedCredentialIds) {
+            val outcome = runCatching { connection.revokePhotoBackupCredential(identifier) }
+            val failure = outcome.exceptionOrNull()
+            if (failure == null || failure is TeaNodeError) synchronized(this@PhotoBackupSettings) { unrevokedCredentialIds = unrevokedCredentialIds - identifier }
+        }
+    }
 
     // What the phone remembers of each item: its client id and which files the server has.
     private val recordsFile get() = File(context.filesDir, "photo-backup-" + accountKey.hashCode().toUInt().toString(16) + ".json")
@@ -347,14 +388,23 @@ class PhotoBackupWorker(private val context: Context, parameters: WorkerParamete
      */
     private suspend fun credentialFor(connection: Connection, settings: PhotoBackupSettings): PhotoBackupCredential = credentialLock.withLock {
         settings.credential()?.let { kept -> return@withLock kept }
-        val created = connection.createPhotoBackupCredential(deviceName())
-        try {
-            settings.saveCredential(created)
-        } catch (failure: Exception) {
-            runCatching { connection.revokePhotoBackupCredential(created.credentialId) }
-            throw IllegalStateException("the device password could not be kept on this phone", failure)
+        // One the phone made but can no longer read is let go of, and taken back with any others before a new one.
+        if (settings.credentialId != null) settings.forgetCredential()
+        settings.revokeForgottenCredentials(connection)
+        // Once the server is asked, the answer is kept even if this pass is stopped meanwhile ("Back up now" replaces a
+        // running pass): a password made and then dropped would stay valid on the server with nothing to revoke it.
+        withContext(NonCancellable) {
+            val created = connection.createPhotoBackupCredential(deviceName())
+            settings.credentialId = created.credentialId
+            try {
+                settings.saveCredential(created)
+            } catch (failure: Exception) {
+                settings.forgetCredential()
+                settings.revokeForgottenCredentials(connection)
+                throw IllegalStateException("the device password could not be kept on this phone", failure)
+            }
+            created
         }
-        created
     }
 
     /** Asks the server which client ids it has, so items another phone or an earlier install sent are not sent again. */
