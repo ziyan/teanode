@@ -131,6 +131,12 @@ public struct PhotoWindow: Equatable, Sendable {
         stalePageIndexes = Set(pages.keys)
     }
 
+    /// Says that some pages held may be out of date, to be read again.
+    public mutating func markStale(_ pageIndexes: [Int]) {
+        guard !isWhole else { return }
+        stalePageIndexes.formUnion(pageIndexes.filter { pages[$0] != nil })
+    }
+
     /// Puts a photo as the server now has it in place of the one held. True
     /// when it was held.
     @discardableResult

@@ -116,7 +116,16 @@ extension PhotoListQuery {
     /// from 0. The list's own end is kept, since a photo after it was never in
     /// the list. Nil when there are none, which is place 0.
     public func newer(than period: PhotoPeriod, calendar: Calendar = .current) -> PhotoListQuery? {
-        let takenAfter = max(period.takenBefore, filter.effectiveTakenAfter(calendar: calendar) ?? period.takenBefore)
+        newer(thanMoment: period.takenBefore, calendar: calendar)
+    }
+}
+
+extension PhotoListQuery {
+    /// The list kept to the photos taken after a moment: counting them gives
+    /// about the place in the list of a photo taken at it, which a page and the
+    /// pages beside it then hold. Nil when there are none, which is place 0.
+    public func newer(thanMoment moment: Date, calendar: Calendar = .current) -> PhotoListQuery? {
+        let takenAfter = max(moment, filter.effectiveTakenAfter(calendar: calendar) ?? moment)
         if let end = filter.effectiveTakenBefore(calendar: calendar), end <= takenAfter { return nil }
         var newer = self
         newer.filter.takenAfter = takenAfter
@@ -153,6 +162,13 @@ extension Connection {
     /// place in the list of the period's newest photo, counted from 0.
     public func countPhotos(in list: PhotoListQuery, newerThan period: PhotoPeriod) async throws -> Int {
         guard let newer = list.newer(than: period) else { return 0 }
+        return try await countPhotos(in: newer)
+    }
+
+    /// How many photos of a list are newer than a moment: about the place in
+    /// the list of a photo taken at it.
+    public func countPhotos(in list: PhotoListQuery, newerThanMoment moment: Date) async throws -> Int {
+        guard let newer = list.newer(thanMoment: moment) else { return 0 }
         return try await countPhotos(in: newer)
     }
 }
