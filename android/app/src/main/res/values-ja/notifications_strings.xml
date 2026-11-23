@@ -31,6 +31,9 @@
     <string name="notifications_update_install">インストールページを開く</string>
     <string name="notifications_update_not_now">今はしない</string>
     <string name="notifications_update_ready">TeaNode %1$s をインストールできます。</string>
+    <string name="notifications_update_new_version">新しいバージョン</string>
+    <string name="notifications_update_title">TeaNode %1$s</string>
+    <string name="notifications_update_ready_short">インストールできます</string>
     <string name="notifications_shortcut_record">録音を開始</string>
     <string name="notifications_shortcut_call_agent">エージェントに電話</string>
     <string name="notifications_shortcut_ask_agent">エージェントに聞く</string>
@@ -38,4 +41,5 @@
     <string name="notifications_turn_waiting">あなたを待っています</string>
     <string name="notifications_turn_done">完了</string>
     <string name="notifications_turn_failed">問題が起きて止まりました</string>
+    <string name="notifications_did_not_reach_feed">回答がフィードに届きませんでした：%1$s</string>
 </resources>

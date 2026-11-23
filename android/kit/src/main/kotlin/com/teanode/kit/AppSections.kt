@@ -6,6 +6,7 @@ package com.teanode.kit
  * The names are the iPhone app's (`AppSection`), and [routeName] is what a deep link and a route say.
  */
 enum class AppSection(val routeName: String) {
+    Feed("feed"),
     Agent("agent"),
     Journal("journal"),
     Goals("goals"),
@@ -34,7 +35,7 @@ enum class AppSection(val routeName: String) {
 enum class AppSectionGroup(val sections: List<AppSection>) {
     EveryDay(
         listOf(
-            AppSection.Agent, AppSection.Journal, AppSection.Mail, AppSection.Photos, AppSection.Calendar, AppSection.Contacts,
+            AppSection.Feed, AppSection.Agent, AppSection.Journal, AppSection.Mail, AppSection.Photos, AppSection.Calendar, AppSection.Contacts,
             AppSection.Location, AppSection.Health, AppSection.Passwords, AppSection.Shopping,
         ),
     ),
@@ -51,7 +52,7 @@ enum class AppSectionGroup(val sections: List<AppSection>) {
 object TabBarChoice {
     const val STORAGE_KEY = "tabBarSections"
     const val MOST_COUNT = 3
-    val defaultSections = listOf(AppSection.Agent, AppSection.Mail, AppSection.Photos)
+    val defaultSections = listOf(AppSection.Feed, AppSection.Agent, AppSection.Mail)
     val defaultText: String get() = text(defaultSections)
 
     /** The parts written in text, as [text] writes them: known ones, each once, Settings never, three at most. */
@@ -93,7 +94,7 @@ data class SectionFacts(
             AppSection.Recordings -> hasRecordingOwner
             // The agent's screen also holds the person's chats, which need no agent.
             AppSection.Agent -> offered.isAssistantEnabled || holds("circle:use")
-            AppSection.Goals, AppSection.Ideas, AppSection.Knowledge, AppSection.Finance -> offered.isAssistantEnabled
+            AppSection.Feed, AppSection.Goals, AppSection.Ideas, AppSection.Knowledge, AppSection.Finance -> offered.isAssistantEnabled
             AppSection.Location -> holds("location:use")
             AppSection.Health -> holds("health:use")
             AppSection.Journal -> holds("journal:use")

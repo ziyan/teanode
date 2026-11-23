@@ -38,6 +38,7 @@ func NewAgentCommand() *cli.Command {
 			newAgentSurveyCommand(),
 			newAgentBackgroundCommand(),
 			newAgentGoalCommand(),
+			newAgentFeedCommand(),
 			newAgentWaitingCommand(),
 			newAgentTabCommand(),
 			newAgentPhoneCommand(),
@@ -203,6 +204,7 @@ func newAgentSettingsCommand() *cli.Command {
 					"alerts (true|false: whether it tells you unasked what your mail says you should know now),\n" +
 					"alert-quiet-start, alert-quiet-end (HH:MM in your zone: its night, when only what cannot wait is said),\n" +
 					"alert-daily-most (how many a day at most; 0 for the default of 5),\n" +
+					"feed-destination (feed|main: where what it says unasked goes, your feed or your main conversation),\n" +
 					"look-around-weekday (sunday to saturday), look-around-time (HH:MM in your zone: when it looks around your town\n" +
 					"for what is on each week; empty for the default of thursday at 17:00),\n" +
 					"unattended (comma list of outward, money, destructive, granting, listed: what it may do without your word\n" +
@@ -561,6 +563,7 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		AlertQuietStart    string     `json:"alertQuietStart"`
 		AlertQuietEnd      string     `json:"alertQuietEnd"`
 		AlertDailyMost     int        `json:"alertDailyMost"`
+		FeedDestination    string     `json:"feedDestination"`
 		LookAroundWeekday  string     `json:"lookAroundWeekday"`
 		LookAroundTime     string     `json:"lookAroundTime"`
 		DailyTokens        int64      `json:"dailyTokens"`
@@ -616,6 +619,11 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		alerts = fmt.Sprintf("on, at most %d a day, quiet from %s to %s", settings.EffectiveAlertDailyMost(), start, end)
 	}
 	fields = append(fields, [2]string{"alerts", alerts})
+	feedDestination := agent.FeedDestination
+	if feedDestination == "" {
+		feedDestination = models.FeedDestinationFeed
+	}
+	fields = append(fields, [2]string{"says unasked things in", map[string]string{models.FeedDestinationFeed: "the feed", models.FeedDestinationMain: "the main conversation"}[feedDestination]})
 	lookAround := &models.Agent{LookAroundWeekday: agent.LookAroundWeekday, LookAroundTime: agent.LookAroundTime}
 	lookAroundWeekday, lookAroundTime := lookAround.LookAroundSchedule()
 	fields = append(fields, [2]string{"looks around town", lookAroundWeekday + " at " + lookAroundTime})
@@ -715,6 +723,8 @@ func runAgentSettingsSet(ctx context.Context, command *cli.Command) error {
 				return fmt.Errorf("%s: %q is not a number", key, value)
 			}
 			variables["alertDailyMost"] = most
+		case "feed-destination":
+			variables["feedDestination"] = value
 		case "look-around-weekday":
 			variables["lookAroundWeekday"] = value
 		case "look-around-time":

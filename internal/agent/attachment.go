@@ -200,6 +200,12 @@ func referenceLines(references []models.AgentReference) string {
 			parts = append(parts, fmt.Sprintf("photo %s (%q): described below when it was pointed at in this turn; look at the picture with the photo tool (look with photo_ids) and read its details with the same tool (read with photo_id) when the answer needs them",
 				reference.PhotoID, reference.PhotoTitle))
 		}
+		if reference.FeedItemID != "" {
+			// A card of the agent's feed, not a message: the turn it was
+			// pointed at carries what it said.
+			parts = append(parts, fmt.Sprintf("feed card %s (%q): described below when it was pointed at in this turn; \"this\" is the card, which you posted or which was posted for you",
+				reference.FeedItemID, reference.FeedItemTitle))
+		}
 		if reference.QuotedText != "" {
 			// A message of this conversation the person is answering: what
 			// they write is about it, and "this" or "that" means it.
@@ -245,6 +251,9 @@ func userTurn(ctx context.Context, store storage.Storage, text string, attachmen
 		}
 		if reference.PhotoContext != "" {
 			blocks = append(blocks, reference.PhotoContext)
+		}
+		if reference.FeedItemContext != "" {
+			blocks = append(blocks, reference.FeedItemContext)
 		}
 	}
 	blocks = append(blocks, text)

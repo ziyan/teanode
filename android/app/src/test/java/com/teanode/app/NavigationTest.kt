@@ -44,8 +44,11 @@ class NavigationTest {
     @Test
     fun theAppOpensOnTheFirstPartInTheBar() {
         composeRule.setContent { AppRoot(rememberDemoSession()) }
-        barItem("agent").assertIsSelected()
-        barItem("mail").assertIsNotSelected()
+        // The feed is first in the bar and is where the app opens, with the unread count the demo's cards have.
+        barItem("feed").assertIsSelected()
+        barItem("agent").assertIsNotSelected()
+        composeRule.waitUntil(15_000) { composeRule.onAllNodesWithText("New sign-in from a laptop").fetchSemanticsNodes().isNotEmpty() }
+        barItem("agent").performClick()
         // Chats is built: its first screen is the list of conversations, which starts with the main chat.
         composeRule.waitUntil(15_000) { composeRule.onAllNodesWithText("Main chat").fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithText("Main chat").assertIsDisplayed()
