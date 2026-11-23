@@ -6,6 +6,7 @@ import com.teanode.kit.sortedByKeys
 import com.teanode.kit.settings.trimmedText
 import com.teanode.kit.settings.variablesOf
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -189,8 +190,19 @@ data class AuditEvent(
         get() {
             val beforeFields = fieldsOf(before)
             val afterFields = fieldsOf(after)
-            return (beforeFields.keys + afterFields.keys).filter { field -> beforeFields[field] != afterFields[field] }.toSortedSet().toList()
+            return (beforeFields.keys + afterFields.keys).filter { field -> comparable(beforeFields[field]) != comparable(afterFields[field]) }.toSortedSet().toList()
         }
+
+    /**
+     * A field as it is compared: missing, null, an empty list and an empty object are all unset, so an older row that
+     * wrote an empty list on one side and null on the other shows no change that was never made.
+     */
+    private fun comparable(fieldValue: JsonElement?): JsonElement? = when {
+        fieldValue == null || fieldValue is JsonNull -> null
+        fieldValue is JsonArray && fieldValue.isEmpty() -> null
+        fieldValue is JsonObject && fieldValue.isEmpty() -> null
+        else -> fieldValue
+    }
 
     /** What one side held in a field. */
     fun beforeValue(field: String): JsonElement? = fieldsOf(before)[field]

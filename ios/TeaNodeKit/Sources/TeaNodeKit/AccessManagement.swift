@@ -264,7 +264,19 @@ public struct AuditEvent: Codable, Hashable, Sendable, Identifiable {
     public var changedFields: [String] {
         let beforeFields = Self.fields(before)
         let afterFields = Self.fields(after)
-        return Set(beforeFields.keys).union(afterFields.keys).filter { beforeFields[$0] != afterFields[$0] }.sorted()
+        return Set(beforeFields.keys).union(afterFields.keys).filter { Self.comparable(beforeFields[$0]) != Self.comparable(afterFields[$0]) }.sorted()
+    }
+
+    /// A field as it is compared: missing, null, an empty list and an empty
+    /// object are all unset, so an older row that wrote an empty list on one
+    /// side and null on the other shows no change that was never made.
+    private static func comparable(_ fieldValue: JSONValue?) -> JSONValue? {
+        switch fieldValue {
+        case .none, .null: return nil
+        case .array(let items) where items.isEmpty: return nil
+        case .object(let fields) where fields.isEmpty: return nil
+        default: return fieldValue
+        }
     }
 
     /// What one side held in a field.
