@@ -8096,6 +8096,23 @@ button.agent-reaction:focus-visible {
   padding-block: 1px;
 }
 
+/* A chip is never wider than the box it is in: its words give way, cut short
+   with an ellipsis, and its mark and the cross that takes it off keep their
+   size, so a long headline cannot push the cross out of reach. */
+.agent-reference-chip {
+  min-width: 0;
+}
+.agent-reference-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-reference-chip > svg,
+.agent-reference-chip .icon-action {
+  flex: none;
+}
+
 /* The cross that takes a chip off: an icon action, at the chip's size
    rather than a row's. */
 .agent-attachment-chip .icon-action,
@@ -25330,6 +25347,19 @@ button.voice-bubble-transcribe {
   order: -1;
 }
 
+/* What waits to be sent takes a line of the box and no more, whatever is in
+   it: a chip with a long title is cut short rather than widening the box. */
+.agent-composer > .agent-drawer-pending {
+  flex: 1 0 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.agent-drawer-pending .agent-references,
+.agent-drawer-pending .agent-attachments {
+  min-width: 0;
+  max-width: 100%;
+}
+
 /* The buttons go under the words, the add menu on the left and the rest on
    the right. Each round button sits inside its tooltip's anchor, which is
    display: contents, so the button itself is what the box lays out and what
@@ -25518,4 +25548,557 @@ button.voice-bubble-transcribe {
   width: 36px;
   padding: 0;
   justify-content: center;
+}
+
+/* --- feed ---------------------------------------------------------------- */
+
+/* The agent's feed: a column of cards, narrower than the page because a card
+   is read like a post, and a line of text stretched across a wide window is
+   hard to follow. */
+.feed-page {
+  max-width: 720px;
+  margin-inline: auto;
+}
+.feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.feed-card {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+/* A card nobody has looked at yet: a small dot in the corner. The dot is drawn
+   over the padding, so nothing in the card moves when it is seen. */
+.feed-fresh-dot {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-round);
+  background: var(--accent);
+}
+.feed-picture {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-round);
+  background: var(--field);
+  color: var(--text);
+}
+.feed-picture-emoji {
+  font-size: 22px;
+  line-height: 1;
+}
+.feed-content {
+  flex: 1;
+  min-width: 0;
+}
+.feed-title {
+  margin: 0 var(--space-4) var(--space-1) 0;
+  font-size: 16px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.feed-body {
+  overflow-wrap: anywhere;
+}
+.feed-facts {
+  width: 100%;
+  margin: var(--space-2) 0;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.feed-facts th,
+.feed-facts td {
+  padding: 4px 0;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+.feed-facts tr:last-child th,
+.feed-facts tr:last-child td {
+  border-bottom: 0;
+}
+.feed-facts th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--muted);
+  padding-right: var(--space-3);
+}
+.feed-facts td {
+  text-align: right;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.feed-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-1);
+}
+.feed-outcome {
+  margin: var(--space-3) 0 var(--space-1);
+}
+.feed-outcome p {
+  margin: 0 0 4px;
+}
+.feed-chosen {
+  font-weight: 650;
+}
+.feed-working {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.feed-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.feed-discuss {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  padding: 4px 10px;
+}
+.feed-footer-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  min-width: 0;
+}
+.feed-date {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.feed-like.is-liked {
+  color: var(--bad);
+}
+.feed-like.is-liked svg {
+  fill: currentColor;
+}
+.feed-source-links {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
+  overflow-wrap: anywhere;
+}
+.feed-foot {
+  justify-content: center;
+  border-top: 0;
+}
+
+@media (max-width: 600px) {
+  .feed-card {
+    gap: var(--space-2);
+  }
+  .feed-picture {
+    width: 34px;
+    height: 34px;
+  }
+  /* The choices fill the width, so each is easy to hit with a thumb. */
+  .feed-choices button {
+    flex: 1 1 auto;
+  }
+}
+
+/* A stack of cards from one source is a deck: the top card with the stack's
+   next cards tucked under it, the feet of the first two showing below it. The
+   tucked cards are the real ones, in the room under the top card, placed by the
+   page; opening the stack moves them out and closing moves them back. */
+.feed-stack {
+  position: relative;
+}
+.feed-stack.is-deck {
+  isolation: isolate;
+}
+.feed-stack.is-deck > .feed-card {
+  z-index: 2;
+}
+.feed-stack.is-deck.is-closed {
+  cursor: pointer;
+}
+.feed-stack.is-closed > .feed-card {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+}
+.feed-stack-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  margin-top: var(--space-3);
+  font-size: 13px;
+}
+.feed-stack-unread {
+  font-size: 12px;
+}
+/* The cards of a stack. They sit under the top card, so a card in the deck is
+   hidden by it but for its foot, and the room is cut off at its bottom edge,
+   which grows as the cards are dealt; the page also cuts them off at the
+   top card's top edge. Each card is placed and scaled from its foot, so a
+   tucked card's foot stays where the page put it. */
+.feed-stack-rest {
+  position: relative;
+  z-index: 1;
+  margin-left: var(--space-4);
+  clip-path: inset(-100vh -24px 0 -24px);
+}
+.feed-stack-rest > .feed-list > li {
+  position: relative;
+  transform-origin: 50% 100%;
+}
+/* A tucked card is not pressed; a press on its foot opens the stack. */
+.feed-stack-rest.is-tucked {
+  pointer-events: none;
+}
+@media (max-width: 600px) {
+  .feed-stack-rest {
+    margin-left: var(--space-2);
+  }
+}
+.feed-card > .feed-stack-row {
+  flex: 1 0 100%;
+}
+
+.feed-stack-title {
+  margin: 0 0 var(--space-1) var(--space-1);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+/* Card layouts: rows, the weather and a day's agenda. */
+.feed-rows,
+.feed-agenda {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+.feed-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.feed-rows li:last-child .feed-row {
+  border-bottom: 0;
+}
+.feed-row {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.feed-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.feed-row-thumbnail {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-2);
+  background: var(--field);
+}
+.feed-row-thumbnail-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+a.feed-row:hover .feed-row-title,
+a.feed-agenda-body:hover .feed-agenda-title {
+  text-decoration: underline;
+}
+.feed-row-title,
+.feed-agenda-title {
+  font-weight: 650;
+}
+.feed-row-detail,
+.feed-row-meta {
+  font-size: 13px;
+}
+.feed-weather-place {
+  margin: 0 0 var(--space-1);
+  font-size: 13px;
+}
+.feed-weather-now {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.feed-weather-temperature {
+  font-size: 40px;
+  font-weight: 650;
+  line-height: 1;
+}
+.feed-weather-condition {
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+}
+.feed-weather-hours {
+  display: flex;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0 0 var(--space-1);
+  overflow-x: auto;
+}
+.feed-weather-hours li {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 44px;
+  font-size: 13px;
+}
+.feed-weather-rain {
+  font-size: 12px;
+  color: var(--muted);
+}
+.feed-agenda-entry {
+  display: grid;
+  grid-template-columns: 64px 12px 1fr;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  --agenda-color: var(--muted);
+}
+.feed-agenda-entry.is-meeting {
+  --agenda-color: var(--accent);
+}
+.feed-agenda-time {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  text-align: right;
+}
+.feed-agenda-end {
+  opacity: 0.7;
+}
+.feed-agenda-marker {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  justify-self: center;
+  border-radius: var(--radius-round);
+  background: var(--agenda-color);
+}
+.feed-agenda-entry.is-break .feed-agenda-marker {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--agenda-color);
+}
+.feed-agenda-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+/* Pictures and videos of a card. They run edge to edge across the top of the
+   card, under its rounded corners. */
+.feed-kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 var(--space-4) 2px 0;
+  font-size: 12px;
+  font-weight: 650;
+}
+.feed-kicker-symbol {
+  display: inline-flex;
+}
+.feed-kicker-symbol svg {
+  width: 14px;
+  height: 14px;
+}
+.feed-media {
+  /* A row of its own, running out to the card's edges: as wide as the card's
+     content and both side paddings, which the negative margins take back. */
+  flex: 0 0 calc(100% + 2 * var(--card-padding-inline));
+  min-width: 0;
+  margin: calc(-1 * var(--space-4)) calc(-1 * var(--card-padding-inline)) 0;
+  overflow: hidden;
+  border-radius: var(--radius-3) var(--radius-3) 0 0;
+}
+.feed-media-tile {
+  position: relative;
+  margin: 0;
+}
+.feed-media-frame {
+  position: relative;
+  overflow: hidden;
+  background: var(--field);
+}
+.feed-media-tile.is-wide .feed-media-frame {
+  aspect-ratio: 16 / 9;
+}
+.feed-media-tile.is-portrait .feed-media-frame {
+  aspect-ratio: 4 / 5;
+}
+.feed-media-image,
+.feed-media-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.feed-media-video {
+  background: #000;
+}
+.feed-media-link,
+.feed-media-play-button {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 0;
+  cursor: pointer;
+}
+.feed-media-play {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  transform: translate(-50%, -50%);
+  border-radius: var(--radius-round);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  transition: transform 150ms ease;
+}
+.feed-media-play svg {
+  fill: currentColor;
+  margin-left: 2px;
+}
+.feed-media-play-button:hover .feed-media-play {
+  transform: translate(-50%, -50%) scale(1.08);
+}
+.feed-media-caption {
+  margin: 0;
+  padding: var(--space-1) var(--space-3) 0;
+  font-size: 12px;
+}
+.feed-media.is-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+}
+.feed-media.is-scroll {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+.feed-media.is-scroll .feed-media-tile {
+  flex: none;
+  width: min(260px, 70%);
+  scroll-snap-align: start;
+}
+
+/* The weather card is drawn on a gradient of its condition. The gradients are
+   dark enough in the lighter half for white text in either color scheme. */
+.feed-card.is-weather {
+  --muted: rgba(255, 255, 255, 0.82);
+  --text: #fff;
+  --border: rgba(255, 255, 255, 0.28);
+  --field: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border-color: transparent;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+.feed-card.is-weather.is-clearDay {
+  background: linear-gradient(160deg, #14509e 0%, #2b78c8 100%);
+}
+.feed-card.is-weather.is-clearNight {
+  background: linear-gradient(160deg, #0f1b3d 0%, #2a2f6b 100%);
+}
+.feed-card.is-weather.is-cloudy {
+  background: linear-gradient(160deg, #4a5566 0%, #627080 100%);
+}
+.feed-card.is-weather.is-rain {
+  background: linear-gradient(160deg, #263a52 0%, #4a6580 100%);
+}
+.feed-card.is-weather.is-snow {
+  background: linear-gradient(160deg, #3d5878 0%, #587090 100%);
+}
+.feed-card.is-weather.is-storm {
+  background: linear-gradient(160deg, #241f3a 0%, #4a3b66 100%);
+}
+.feed-card.is-weather .feed-fresh-dot {
+  background: #fff;
+}
+.feed-card.is-weather .feed-picture {
+  color: #fff;
+}
+.feed-card.is-weather button,
+.feed-card.is-weather .icon-action {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.35);
+  text-shadow: none;
+}
+.feed-card.is-weather .feed-like.is-liked {
+  color: #fff;
+}
+.feed-card.is-weather .feed-weather-rain {
+  color: #fff;
+}
+
+/* The agenda hangs off a time rail: a line down the left of the dots, and a
+   dot of a color per kind of entry. */
+.feed-agenda-entry {
+  --agenda-color: var(--muted);
+}
+.feed-agenda-entry.is-meeting {
+  --agenda-color: #2f6fd0;
+}
+.feed-agenda-entry.is-focus {
+  --agenda-color: #7a52c7;
+}
+.feed-agenda-entry.is-task {
+  --agenda-color: var(--good);
+}
+.feed-agenda-entry.is-break {
+  --agenda-color: var(--warn);
+}
+.feed-agenda-marker {
+  position: relative;
+  width: 10px;
+  height: 10px;
+}
+.feed-agenda-marker::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: -14px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--border-strong, var(--border));
+}
+.feed-agenda-entry:last-child .feed-agenda-marker::after {
+  display: none;
 }

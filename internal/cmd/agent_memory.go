@@ -57,7 +57,8 @@ func newAgentScheduleCommand() *cli.Command {
 				ArgsUsage: "<name> <cron> <prompt | ->, or --on-mail ... <name> <prompt | ->",
 				Flags: []cli.Flag{
 					JSONFlag(),
-					&cli.StringFlag{Name: "deliver", Usage: "where the answer goes: drawer (into your conversation) or mail", Value: "drawer"},
+					&cli.StringFlag{Name: "deliver", Usage: "where the answer goes: feed (cards in your feed, the default), drawer (into your conversation) or mail"},
+					&cli.BoolFlag{Name: "notify", Usage: "for a schedule that answers in the feed: one quiet notification when a run's first card is posted"},
 					onMailFlag(),
 				},
 				Action: runAgentScheduleAdd,
@@ -72,7 +73,8 @@ func newAgentScheduleCommand() *cli.Command {
 					&cli.StringFlag{Name: "cron", Usage: "a cron line in your zone, a moment (\"@at 2026-09-12 09:00\"), or a distance from now (\"@in 20m\"); runs it at set times again if it ran on mail"},
 					onMailFlag(),
 					&cli.StringFlag{Name: "prompt", Usage: "what to do; - reads it from stdin"},
-					&cli.StringFlag{Name: "deliver", Usage: "where the answer goes: drawer (into your conversation) or mail"},
+					&cli.StringFlag{Name: "deliver", Usage: "where the answer goes: feed, drawer (into your conversation) or mail"},
+					&cli.BoolFlag{Name: "notify", Usage: "for a schedule that answers in the feed: one quiet notification when a run's first card is posted; --notify=false stops it"},
 				},
 				Action: runAgentScheduleSet,
 			},
@@ -208,7 +210,13 @@ func runAgentScheduleAdd(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	arguments := command.Args().Slice()
-	fields := map[string]any{"deliver": command.String("deliver"), "enabled": true}
+	fields := map[string]any{"enabled": true}
+	if command.String("deliver") != "" {
+		fields["deliver"] = command.String("deliver")
+	}
+	if command.IsSet("notify") {
+		fields["isNotifiedWhenPosted"] = command.Bool("notify")
+	}
 	promptFrom := 2
 	if len(conditions) > 0 {
 		if len(arguments) < 2 {
@@ -272,6 +280,9 @@ func runAgentScheduleSet(ctx context.Context, command *cli.Command) error {
 	}
 	if command.IsSet("deliver") {
 		fields["deliver"] = command.String("deliver")
+	}
+	if command.IsSet("notify") {
+		fields["isNotifiedWhenPosted"] = command.Bool("notify")
 	}
 	if len(fields) == 0 {
 		return fmt.Errorf("say what to change: --name, --cron, --on-mail, --prompt or --deliver")

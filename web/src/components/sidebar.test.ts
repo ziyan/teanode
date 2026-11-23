@@ -59,3 +59,10 @@ it('offers each page once', () => {
   const identities = pages.map((page) => `${page.to} ${page.label}`)
   expect(new Set(identities).size).toBe(identities.length)
 })
+
+it('offers the Feed first, and only to somebody with an agent', () => {
+  expect(pagePaths(['agent:use'])[0]).toBe('/feed')
+  expect(pagePaths(['agent:use'], { isAgentAvailable: false })).not.toContain('/feed')
+  const withoutMailbox = { hasMailbox: false, hasMailboxRail: false }
+  expect(pagePaths(['agent:use'], withoutMailbox)[0]).toBe('/feed')
+})

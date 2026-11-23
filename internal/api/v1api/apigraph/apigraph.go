@@ -109,7 +109,11 @@ type graph struct {
 	// to the tabs and phones of the people on them; chatCallSignals holds
 	// the media server's offers until each device reads them
 	// (chat_call_events.go).
-	chatCallEvents  chatCallEventHub
+	chatCallEvents chatCallEventHub
+	// agentFeedEvents is the one listener for changes to the agent's feed,
+	// fanned out to the tabs and phones of the person each is for
+	// (agent_feed_events.go).
+	agentFeedEvents agentFeedEventHub
 	chatCallSignals chatCallSignals
 	mapLimitsOnce   sync.Once
 	mapLimitsValue  *ratelimit.Registry
@@ -224,6 +228,7 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	// The picture of a link preview, fetched from the linked page once and
 	// served from here (link_preview.go).
 	router.Path(api.PathLinkPreviewImage).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.linkPreviewImageView)
+	router.Path(api.PathFeedMedia).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.feedMediaView)
 	router.Path(api.PathShoppingPicture).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.shoppingPictureView)
 	// The map style host's files, fetched here for the signed-in browser
 	// (location_map.go).

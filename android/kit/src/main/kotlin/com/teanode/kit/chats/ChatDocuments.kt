@@ -16,7 +16,7 @@ object ChatDocuments {
     private const val MESSAGE_FIELDS = """
         id createdAt role content name toolCallId
         attachments { id name contentType size isRemoved audioDurationMS audioWaveform }
-        references { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
+        references { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle feedItemId feedItemTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
         mentionedUserIds isAllMentioned isVoiceMessage transcriptText transcriptState
