@@ -170,7 +170,7 @@ internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Mo
     // The cards sit on the grouped page, so in light mode they are white on grey.
     Box(modifier.fillMaxSize().background(feedPageColor()).onGloballyPositioned { coordinates -> listCoordinates = coordinates }.gatherDecksOnTapOutside(model, deckBounds) { listCoordinates }) {
         when {
-            list != null && list.feedItems.isEmpty() -> PullToRefresh(onRefresh = { model.load() }, Modifier.fillMaxSize()) {
+            list != null && list.feedItems.isEmpty() -> PullToRefresh(onRefresh = { model.refresh() }, Modifier.fillMaxSize()) {
                 // Scrollable, or the pull could not be made on an empty feed.
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -179,7 +179,7 @@ internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Mo
                     }
                 }
             }
-            list != null -> PullToRefresh(onRefresh = { model.load() }, Modifier.fillMaxSize()) {
+            list != null -> PullToRefresh(onRefresh = { model.refresh() }, Modifier.fillMaxSize()) {
                 LazyColumn(Modifier.fillMaxSize().testTag(FEED_LIST_TAG), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (offeredUpdate != null) item(key = "app-update") { appUpdateCard() }
                     items(list.feedItems, key = { item -> item.feedItemId }) { item ->
