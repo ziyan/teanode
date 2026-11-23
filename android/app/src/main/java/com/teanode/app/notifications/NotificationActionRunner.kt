@@ -6,6 +6,7 @@ import androidx.core.app.NotificationCompat
 import com.teanode.app.R
 import com.teanode.app.session.ErrorWords
 import com.teanode.kit.Connection
+import com.teanode.kit.feed.chooseAgentFeedItem
 import com.teanode.kit.notifications.NotificationCategories
 import com.teanode.kit.notifications.NotificationDocuments
 import com.teanode.kit.notifications.NotificationInfo
@@ -43,6 +44,7 @@ class NotificationActionRunner(private val context: Context, private val push: P
                         when {
                             info.notificationKind == "chat" -> context.getString(R.string.notifications_did_not_reach_chat, reason)
                             info.notificationKind == NotificationCategories.JOURNAL_EVENING_QUESTION -> context.getString(R.string.notifications_did_not_reach_journal, reason)
+                            info.notificationKind == NotificationCategories.FEED_ITEM -> context.getString(R.string.notifications_did_not_reach_feed, reason)
                             else -> context.getString(R.string.notifications_did_not_reach_agent, reason)
                         },
                     )
@@ -72,6 +74,7 @@ class NotificationActionRunner(private val context: Context, private val push: P
                     "attachmentIds" to JsonArray(emptyList()),
                 ),
             )
+            is NotificationPress.ChooseFeedItem -> connection.chooseAgentFeedItem(press.feedItemId, press.choiceKey)
             is NotificationPress.SetMood -> connection.execute(
                 NotificationDocuments.SET_JOURNAL_MOOD, JsonElement.serializer(),
                 mapOf("day" to JsonPrimitive(press.day), "moodLevel" to JsonPrimitive(press.moodLevel)),

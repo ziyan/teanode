@@ -244,6 +244,10 @@ type UpdateAgentArguments struct {
 	AlertQuietEnd   *string `json:"alertQuietEnd"`
 	AlertDailyMost  *int    `json:"alertDailyMost"`
 
+	// FeedDestination is where what the agent says unasked goes: feed, the
+	// default, or main, the main conversation.
+	FeedDestination *string `json:"feedDestination"`
+
 	// LookAroundWeekday and LookAroundTime are when the agent looks around
 	// their town each week for what is on: a lower-case day name such as
 	// "thursday" and "HH:MM" in their own zone, empty for the default.
@@ -684,6 +688,16 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 		}
 		if arguments.IsAlertsEnabled != nil {
 			agent.IsAlertsEnabled = *arguments.IsAlertsEnabled
+		}
+		if arguments.FeedDestination != nil {
+			destination := strings.ToLower(strings.TrimSpace(*arguments.FeedDestination))
+			if !models.IsFeedDestination(destination) {
+				return fmt.Errorf("%w: %q is not a destination; use feed or main", api.ErrInvalidArguments, *arguments.FeedDestination)
+			}
+			if destination == "" {
+				destination = models.FeedDestinationFeed
+			}
+			agent.FeedDestination = destination
 		}
 		if arguments.AlertQuietStart != nil {
 			start, err := clockTime(*arguments.AlertQuietStart)
