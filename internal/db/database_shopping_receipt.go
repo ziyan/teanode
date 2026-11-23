@@ -305,6 +305,11 @@ func (self *transaction) applyShoppingReceiptMatch(userId string, receipt *agent
 	}
 	// Bought fewer than needed: what is left is still needed.
 	updates := withUpdatedAt(boughtShoppingItemUpdates(boughtAt), now)
+	if models.ShoppingItemState(row.ShoppingItemState) != models.ShoppingItemStateNotNeeded {
+		// Bought now by the receipt, not by the trip that last bought it, so
+		// resuming that trip must not take it back into the cart.
+		updates["bought_shopping_trip_id"] = nil
+	}
 	if match.MatchedQuantity != nil && models.ShoppingItemState(row.ShoppingItemState) == models.ShoppingItemStateNeeded {
 		needed, isNeededParsed := parseRat(row.NeededQuantity)
 		bought, isBoughtParsed := parseRat(*match.MatchedQuantity)

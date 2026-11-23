@@ -359,7 +359,17 @@ func (self *transaction) ResumeShoppingTrip(userId, shoppingTripId string) (*mod
 			return nil, nil, err
 		}
 	}
-	if err := self.tx.Model(&shoppingTripModel{}).Where("\"id\" = ?", row.ID).Update("finished_at", nil).Error; err != nil {
+	// A trip is open only while it is younger than ShoppingTripStaleAfter,
+	// and one resumed near the end of the undo window may already be older:
+	// the next check would then find no open trip, start a new one and buy
+	// the resumed cart again. Its start moves up just enough that the
+	// resumed trip stays open as long as the undo window lasts.
+	tripUpdates := map[string]any{"finished_at": nil}
+	if latestStart := now.Add(-(models.ShoppingTripStaleAfter - models.ShoppingPurchaseUndoableFor)); row.StartedAt.Before(latestStart) {
+		tripUpdates["started_at"] = latestStart
+		row.StartedAt = latestStart
+	}
+	if err := self.tx.Model(&shoppingTripModel{}).Where("\"id\" = ?", row.ID).Updates(tripUpdates).Error; err != nil {
 		return nil, nil, err
 	}
 	row.FinishedAt = nil

@@ -231,3 +231,40 @@ func TestSearchingAListKeepsItemsHoldingEveryWord(t *testing.T) {
 		}
 	})
 }
+
+// A long trip finished near the end of the undo window is open once
+// resumed: the next check goes into it rather than starting a trip that
+// would buy the resumed cart again.
+func TestALongTripResumedLateStaysOpen(t *testing.T) {
+	t.Parallel()
+	world := newShoppingWorld(t)
+	var milk, eggs *models.ShoppingItem
+	var trip *models.ShoppingTrip
+	world.run(t, func(tx db.Transaction) {
+		groceries := mustCreateShoppingList(t, tx, world.owner.ID, "Groceries")
+		added := mustAddShoppingItems(t, tx, world.owner.ID, groceries.ID,
+			&models.ShoppingItem{ItemDescription: "Milk"}, &models.ShoppingItem{ItemDescription: "Eggs"})
+		milk, eggs = added[0], added[1]
+		var err error
+		if _, trip, _, err = tx.CheckShoppingItem(world.owner.ID, milk.ID, true, "Example Market"); err != nil || trip == nil {
+			t.Fatalf("CheckShoppingItem: %+v %v", trip, err)
+		}
+		if _, _, err := tx.FinishShoppingTrip(world.owner.ID, trip.ID); err != nil {
+			t.Fatal(err)
+		}
+	})
+	dbtest.Exec(t, world.database, `UPDATE "shopping_trip" SET "started_at" = now() - interval '7 hours',
+		"finished_at" = now() - interval '2 hours 30 minutes' WHERE "id" = '`+trip.ID+`'`)
+	world.run(t, func(tx db.Transaction) {
+		if _, _, err := tx.ResumeShoppingTrip(world.owner.ID, trip.ID); err != nil {
+			t.Fatalf("ResumeShoppingTrip: %v", err)
+		}
+		if _, started, _, err := tx.CheckShoppingItem(world.owner.ID, eggs.ID, true, ""); err != nil || started != nil {
+			t.Fatalf("a check after a late resume started another trip: %+v %v", started, err)
+		}
+		inCart, _ := tx.GetShoppingItem(world.owner.ID, milk.ID)
+		if inCart.ShoppingItemState != models.ShoppingItemStateInCart {
+			t.Fatalf("the resumed milk left the cart: %+v", inCart)
+		}
+	})
+}
