@@ -180,6 +180,7 @@
     <string name="chats_people">People</string>
     <string name="chats_people_and_agents_to_mention">People and agents you can mention</string>
     <string name="chats_photo">Photo</string>
+    <string name="chats_feed_item_reference">Card: %1$s</string>
     <string name="chats_photo_library">Photo library</string>
     <string name="chats_play_voice_message">Play voice message</string>
     <string name="chats_react_with">React %1$s</string>

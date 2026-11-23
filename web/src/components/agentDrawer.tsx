@@ -4020,7 +4020,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             (reference.financeTransactionId &&
               reference.financeTransactionId === detail.reference.financeTransactionId) ||
             (reference.recordingId && reference.recordingId === detail.reference.recordingId) ||
-            (reference.photoId && reference.photoId === detail.reference.photoId),
+            (reference.photoId && reference.photoId === detail.reference.photoId) ||
+            (reference.feedItemId && reference.feedItemId === detail.reference.feedItemId),
         )
           ? previous
           : [...previous, detail.reference],

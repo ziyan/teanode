@@ -202,6 +202,12 @@ const (
 	// small one a list row needs.
 	PathAvatarUser = Prefix + "/avatar/user/{userId}"
 
+	// PathFeedMedia is the picture of a web page shown on a card of the
+	// feed, as this server kept it: a JPEG scaled down to at most 1200
+	// pixels wide, served only to the card's person. A changed picture has
+	// a new key, so a copy can be kept for a day.
+	PathFeedMedia = Prefix + "/feed/items/{feedItemId}/media/{mediaKey}"
+
 	// PathLinkPreviewImage is the picture of a link preview, as this server
 	// kept it: a JPEG scaled down to at most 600 pixels wide. Fetched from the
 	// linked page once and served from here, so that showing a preview does
@@ -283,6 +289,11 @@ func BimiLogoPath(fileId string) string {
 // SenderLogoPath is PathSenderLogo with its parameter filled in.
 func SenderLogoPath(domain string) string {
 	return Prefix + "/logo/" + url.PathEscape(domain)
+}
+
+// FeedMediaPath is PathFeedMedia with its parameters filled in.
+func FeedMediaPath(feedItemId, mediaKey string) string {
+	return Prefix + "/feed/items/" + url.PathEscape(feedItemId) + "/media/" + url.PathEscape(mediaKey)
 }
 
 // LinkPreviewImagePath is PathLinkPreviewImage with its parameter filled in.

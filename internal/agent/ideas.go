@@ -15,6 +15,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/push"
 	"github.com/ziyan/teanode/internal/util/security"
 )
 
@@ -636,6 +637,12 @@ func nextIdeaToOffer(tx db.Transaction, agent *models.Agent) (*models.AgentIdea,
 	return nil, nil
 }
 
+// What the buttons of an idea's card say.
+var (
+	phraseIdeaDoIt   = push.Phrase{English: "Do it", Chinese: "去做", Japanese: "お願いする"}
+	phraseIdeaNotNow = push.Phrase{English: "Not now", Chinese: "暂不", Japanese: "今はしない"}
+)
+
 // ideaReason is the agent offering one idea to a person who has gone quiet,
 // at most once a day. The idea is the
 // highest ranked one they have not been shown; offering it marks it shown,
@@ -660,6 +667,28 @@ func (self *Agent) ideaReason() speakFirstReason {
 			}
 			next, err := nextIdeaToOffer(tx, agent)
 			return next != nil, err
+		},
+		feedCard: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time) (*models.AgentFeedItem, error) {
+			idea, err := nextIdeaToOffer(tx, agent)
+			if err != nil || idea == nil {
+				return nil, err
+			}
+			language := Language(agent, owner)
+			localizeIdeas([]*models.AgentIdea{idea}, language)
+			if err := tx.MarkAgentIdeasShown(agent.ID, []string{idea.ID}, now); err != nil {
+				return nil, err
+			}
+			phoneLanguage := push.PhoneLanguage(language)
+			return &models.AgentFeedItem{
+				FeedItemKind: models.FeedItemIdea, FeedSourceKind: models.FeedSourceSpeakFirst, FeedSourceID: SpeakFirstIdea,
+				Title: idea.Headline, Body: strings.TrimSpace(idea.Body + "\n\n" + idea.SuggestionReason), PictureSymbol: "lightbulb",
+				// Named by the idea, so that the choice carries which one it was.
+				CoalesceKey: "idea:" + idea.ID,
+				Choices: []models.FeedChoice{
+					{ChoiceKey: "start", ChoiceLabel: phraseIdeaDoIt.In(phoneLanguage), ChoiceRole: models.FeedChoiceAction},
+					{ChoiceKey: "not_now", ChoiceLabel: phraseIdeaNotNow.In(phoneLanguage), ChoiceRole: models.FeedChoiceDismiss},
+				},
+			}, nil
 		},
 		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time, prepared map[string]string) (string, error) {
 			idea, err := nextIdeaToOffer(tx, agent)

@@ -76,6 +76,8 @@ object NotificationBuilder {
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(openIntent(context, "default", notificationId, info))
+        // A quiet one (a feed brief that is ready) arrives without sound, vibration or a banner, as on the iPhone.
+        if (content.isQuiet) builder.setSilent(true).setPriority(NotificationCompat.PRIORITY_DEFAULT)
         // Messages of one conversation or kind are gathered under one, as iOS gathers them by their thread.
         content.threadId?.takeIf { thread -> thread.isNotEmpty() }?.let { thread -> builder.setGroup(thread) }
         val specs = NotificationCategories.buttons(content)

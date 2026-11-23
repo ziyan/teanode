@@ -31,6 +31,9 @@
     <string name="notifications_update_install">Open the install page</string>
     <string name="notifications_update_not_now">Not now</string>
     <string name="notifications_update_ready">TeaNode %1$s is ready to install.</string>
+    <string name="notifications_update_new_version">New version</string>
+    <string name="notifications_update_title">TeaNode %1$s</string>
+    <string name="notifications_update_ready_short">Ready to install</string>
     <string name="notifications_shortcut_record">Start recording</string>
     <string name="notifications_shortcut_call_agent">Call your agent</string>
     <string name="notifications_shortcut_ask_agent">Ask your agent</string>
@@ -38,4 +41,5 @@
     <string name="notifications_turn_waiting">Waiting for you</string>
     <string name="notifications_turn_done">Done</string>
     <string name="notifications_turn_failed">Stopped with a problem</string>
+    <string name="notifications_did_not_reach_feed">That answer did not reach your feed: %1$s</string>
 </resources>

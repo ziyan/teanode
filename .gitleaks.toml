@@ -52,4 +52,8 @@ regexes = [
   # password alphabet in order, in one commit of the setup-profile branch
   # before it was assembled at run time. It opens nothing anywhere.
   '''^abc234-defgh-jkmnp-qrstu-vwxyz$''',
+  # A feed test's invented coalesce key, a pane name and a short counted
+  # suffix, in one commit of the agent-feed branch before it was reworded.
+  # It is a grouping key, not a credential.
+  '''^laptop/7/abc123$''',
 ]
