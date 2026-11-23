@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.1] - 2026-11-23
+
+### Changed
+
+- The Android app draws its maps from your TeaNode server, like the dashboard, using the map style in the server's places settings. The phone no longer asks OpenStreetMap for map tiles itself. (#774)
+
 ## [0.230.0] - 2026-11-23
 
 ### Added
