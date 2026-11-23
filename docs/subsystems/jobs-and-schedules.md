@@ -3,7 +3,7 @@
 Everything the agent does with nobody watching.
 
 `internal/agent/agent.go` (the worker), `triage.go`, `summarize.go`,
-`embed.go`, `reply.go`, `send.go`, `research.go`, `schedule.go`, `goal.go`,
+`embed.go`, `reply.go`, `send.go`, `research.go`, `goal.go`, `goal_times.go`,
 `internal/db/database_agent.go`, `internal/agent/tools/cron.go`.
 
 ## The queue
@@ -88,9 +88,9 @@ cannot retain the separate failure allowance or claim-identity protection.
   context before a reply and writes notes onto the insight.
 - **reply** — drafts an answer on the person's behalf. Everything below.
 - **send** — sends one held reply once its hold has passed.
-- **schedule** — a turn at a time somebody chose.
 - **goal** — a turn of the agent's own toward a goal, in the goal's own
-  conversation. Its subject is the conversation, so the queue's own rule of one
+  conversation, at a time the goal set itself or at one of the times somebody
+  chose for it. Its subject is the conversation, so the queue's own rule of one
   open job per agent, kind and subject is what keeps a goal to one turn at a
   time. The tick also runs `surfaceGoals`, which says each goal that came to
   need the person in their main conversation, once; see `conversations.md`.
@@ -140,136 +140,98 @@ send workers before upgrading; their acceptance path cannot join this boundary.
 The mail goes out as the person, marked in the audit trail as the agent's
 doing, carrying `Auto-Submitted: auto-replied`.
 
-## Schedules
+## Goals, and the times they run at
 
-A schedule is a name, a cron line or the mail it waits for, a prompt, and
-where the answer goes: the drawer or an email.
+A **goal** is a sentence the agent works toward in a conversation of its own
+until it is met or the person drops it (`conversations.md` has the rest of
+its life: how it calls the person, how they answer). This section is when its
+turns are.
 
-Three forms are understood. Five cron fields in the person's own zone; `@at`
-and a moment, which runs once and is then removed; and `@in` and a
-distance, which is resolved to a moment when it is stored, so it does not move
-every time it is looked at.
+A goal keeps its own pace unless it is given **times** or **mail** to wait
+for. Its times (`goal_times`) are cron lines in the person's zone, five fields
+(`30 7 * * 1-5`), or `@at` and a moment, which is dropped once it has passed;
+`@in` and a distance is accepted and stored as the moment it means, so it does
+not move every time it is read. Its mail (`goal_mail_conditions`) is the tests
+a mailbox rule makes (from, to, subject, a header, or any message; contains,
+equals or matches), only those a message can be judged by as it arrives. A goal
+keeps at most twelve times. The daily brief and the asset estimates are goals
+their switches start, found by title.
 
-Due schedules are found under a row lock, their next run is computed and
-written, and a job is queued. A schedule whose agent is switched off still
-advances, so it skips its runs rather than firing them all at once when the
-agent comes back. A schedule with no time left is ended by its run once that
-run is done, not when it is queued: switched off as it was queued, the run
-found it off and did nothing, and every reminder for one moment was dropped.
-A schedule for one moment is then removed, having done what it was for; one
-whose cron line stops making sense is switched off, so it can be seen and
-mended.
-
-The run is a headless turn with the whole catalog the person's permissions
-allow — but nobody is present to confirm anything, so every call that would
-ask is refused with an explanation rather than performed, except the kinds the
-person allows for when they are not there (see `devices.md`).
-
-A schedule that answers in the drawer takes that turn in the conversation it
-was made in, the way a goal's check-in does: the turn opens with a message
-marked `[schedule]`, which the drawer draws as a muted line, saying which
-schedule is due and what it says, fenced as a note when the agent wrote it.
-One made from the dashboard or the command line, or whose conversation is
-gone, takes it in the main conversation. A schedule that answers by mail runs
-in a `run` transcript of its own and mails what it said, the subject being the
-first line when that line is short enough.
-
-Mail notifications use the job identifier as a durable submission identity.
-Acceptance, Sent filing and the submission record commit in one transaction;
-a failure of the final SQL write rolls all of them back. A retry returns the
-existing acceptance even if the generated answer or notification address changed.
-The same schedule's next occurrence has a new job and may send a new answer.
-Before another scheduled model turn starts, the worker checks whether that job's
-mail was already accepted. This record survives message retention. Goal notices
-use the same acceptance path but remain best effort when the first attempt fails.
-This does not make every tool effect or conversation insertion within a scheduled
-turn idempotent, and it does not guarantee exactly one remote SMTP delivery.
-
-### Schedules that run on arriving mail
-
-A schedule can wait for mail instead of a time: its `mail_conditions` are the
-tests a mailbox rule makes (from, to, subject, a header, or any message;
-contains, equals or matches), and it has no cron line. Only tests a message
-can be judged by as it arrives are allowed, not the ones that wait for the
-agent's sorting.
-
-The delivery hook (`noteMailForSchedules` in `internal/agent/schedule_mail.go`)
-runs inside the delivery transaction for a mailbox the agent was given. For
-each enabled schedule whose conditions the message passes, unless the filters
-put it in Junk or Trash, it appends the message to the schedule's
-`mail_arrivals` (its item id, mailbox, From line, subject, when, and whether
-DMARC passed or it was submitted here) and makes the schedule due now. Nothing
-slower happens there, for the same reason as the agent's other delivery work.
-
-The sweep that runs clock schedules queues the run (`dueMailSchedule`). While
-an earlier run of the same schedule is still going it waits thirty seconds and
-looks again, rather than letting the job dedupe swallow the new mail. Messages
-that come together share one run. The run's opening message lists what came,
-oldest first, with senders and subjects quoted as data and an unverified
-sender said to be one; the turn reads a message with `mail_read` by its item
-id. When the run is done it forgets the messages it was told about and keeps
-any that came during it. At most fifty are kept for a run; past that the
-oldest are dropped and the run is told more may have come.
-
-A schedule that waits for mail is never ended for having no time left. A cron
-line given to it makes it run at set times again, dropping the conditions and
-whatever was waiting; conditions given to a clock schedule do the reverse.
-
-## Goals, and how they differ from a schedule
-
-A schedule is a clock with a prompt. A **goal** is a sentence on a
-conversation that the agent works toward until it is met, and the two look
-alike from the queue and are opposite everywhere else:
-
-| | schedule | goal |
+| | at its own pace | on set times |
 | --- | --- | --- |
-| where the turn runs | the conversation it was made in (a `run` transcript when it mails) | the person's own conversation |
-| what it remembers | the conversation, when it answers there | everything, it is the same transcript |
-| when the next one is | the cron line says, or the next message it waits for | the last turn says, within bounds |
-| how it ends | one for a moment is removed once it has run; a repeating one when somebody switches it off | the agent says `met`, or the person clears it |
+| when the next turn is | the last turn says, within bounds | the soonest of its times, or now when its mail came |
+| what decides it | the agent, through `note` | the worker, whatever the turn asked |
+| the day's caps | apply | do not: the person chose the cadence |
+| how it ends | the agent says `met`, or the person closes it | the same; times that are all moments end with `met` |
 
-The sweep, `dueGoals`, queues one job per conversation whose goal is
-`working` with its time passed, and writes nothing: the dedupe on the subject
-means the sweep five seconds later finds the job in flight, and the handler is
-what moves the time on, since only it knows what the turn decided.
+The sweep, `dueGoals`, queues one job per goal conversation that is `working`
+with its time passed, and writes nothing: the dedupe on the subject means the
+sweep five seconds later finds the job in flight, and the handler is what
+moves the time on, since only it knows what the turn decided. A goal that is
+`paused` is not queued and hears no mail; taken up again it is due at its next
+time.
 
 `runGoal` then, in order: reads the conversation and stops if the goal is no
-longer working; counts the goal jobs finished for this conversation since the
-person's own midnight and, at **forty-eight**, puts the next turn at tomorrow's
-midnight with a note saying so; counts them again since the later of the
-goal's setting and the person's last word and, at **twenty-four**, sets the
-goal `waiting` with the note "Goal stalled: …", writes that line into the
-transcript, and mails them under the same subject, so a goal nobody can meet
-stops rather than costing the day's cap every day and the person sees in the
-conversation that it did, with their three ways on -- write, clear, change; checks the
-budget and, when it is spent, puts the next turn at the reset with the
-budget's reason as the note; and otherwise runs one headless turn in the
+longer working; for a goal at its own pace counts the goal jobs finished for
+this conversation since the person's own midnight and, at **forty-eight**,
+puts the next turn at tomorrow's midnight with a note saying so, and counts
+them again since the later of the goal's setting and the person's last word
+and, at **twenty-four**, sets the goal `waiting` with the note "Goal stalled:
+…", writes that line into the transcript and lets the sweep call the person,
+so a goal nobody can meet stops rather than costing the day's cap every day;
+checks the budget and, when it is spent, puts the next turn at the reset with
+the budget's reason as the note; and otherwise runs one headless turn in the
 conversation with the check-in as its message.
 
-Afterwards it reads the row again. A turn that called the `goal` tool has
-already written what happens next. One that did not is silent, and the next
-turn is **twice as far off** as the last, bounded by five minutes and a day —
-so a goal waiting on a nightly build backs off by itself. A turn that ended
-`waiting` or `met` is **told to the person by mail**, from a granted mailbox to
-the account's notification address, the same path a schedule's answer takes;
-it is best effort and never a dead letter, because the state is on the
-conversation either way.
+The check-in says what the goal is for: in the person's words when they wrote
+it, or pressed the switch that started it (`goal_written_by` is `person` or
+`built_in`), and fenced as a note the agent wrote for itself otherwise, since
+an agent writes on the strength of what it has read and what it has read
+includes mail from strangers. A goal on set times is also told its times,
+which of them this turn is for, and what mail came, oldest first, with senders
+and subjects quoted as data and an unverified sender said to be one. A turn a
+goal woke counts as the person asking (which Passwords needs) only for a goal
+the person wrote, with a tap on a screen, on times they chose and waiting for
+no mail: the command line's token is one the agent's own shell holds too, so a
+goal written or changed from there is the agent's.
 
-A goal that waits is resumed by the person: at the end of their own turn in
-that conversation the state goes back to `working`, a minute out. The bounds
-are constants in `internal/agent/goal.go` and
-`internal/agent/tools/goal`; there is no setting.
+Afterwards a goal on set times goes on to its next time whatever the turn
+said, forgets the messages it was told about (those that came during the turn
+stay, and make it due again at once), and drops a moment that has had its
+turn; with no time left and no mail to wait for, it goes back to a pace of its
+own. A failed turn on set times is not tried again before its next time,
+since each try would post its cards again. A goal at its own pace reads the
+row again: a turn that called the `goal` tool has already written what happens
+next; one that did not is asked once more with the goal tool alone, and failing
+that the next turn is **twice as far off** as the last, bounded by five
+minutes and a day, so a goal waiting on a nightly build backs off by itself.
+
+What a goal tells the person goes to their feed with the feed tool. The cards
+of one turn of a goal on set times are one stack, keyed by that turn's job, so
+each morning's brief is a stack of its own; with `is_goal_notified_when_posted`
+the first card of a turn sends one quiet notification. A `wait` and a `met` are
+said in the person's main conversation by `surfaceGoals`.
+
+### Mail a goal waits for
+
+The delivery hook (`noteMailForGoals` in `internal/agent/goal_times.go`) runs
+inside the delivery transaction for a mailbox the agent was given. For each
+working goal whose conditions the message passes, unless the filters put it in
+Junk or Trash, it appends the message to the goal's `goal_mail_arrivals` (its
+item id, mailbox, From line, subject, when, and whether DMARC passed or it was
+submitted here) and makes the goal due now. Nothing slower happens there, for
+the same reason as the agent's other delivery work. Messages that come together
+share one turn; at most fifty are kept for a turn, and past that the oldest are
+dropped and the turn is told more may have come.
 
 ## Caveats
 
 - **The day's cap counts jobs, not turns.** A goal job that did nothing but
   postpone itself for the budget still counts toward the forty-eight, and one
-  the retention sweep removed no longer does.
+  the retention sweep removed no longer does. A goal on set times is outside
+  both caps, and is bounded only by its times and the budget.
 - **A goal turn cannot confirm anything**, being headless, so a goal that needs
   something sent or deleted can only prepare it and call `goal` with `wait`.
-- **`@in` only works from the agent's own tool.** The command line and the
-  dashboard save a schedule without resolving it, so `@in 20m` there fails with
-  a message about five cron fields.
 - **Day and weekday are ANDed**, not ORed as in classic cron: a line naming both
   runs only when both match.
 - **Embedding backfill only happens through a backfill job**, and a backfill job
@@ -279,5 +241,3 @@ are constants in `internal/agent/goal.go` and
 - **A deferral spends a retry**, as above.
 - **The describer takes no claim**, so two instances can describe the same
   conversation and pay for both calls.
-- Sending a scheduled answer by mail does not carry the audit principal that a
-  reply does.

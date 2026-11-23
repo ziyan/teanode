@@ -15,10 +15,17 @@ type AgentGoal struct {
 	GoalTitle       string `json:"goalTitle"`
 	GoalDescription string `json:"goalDescription"`
 
-	// GoalState is working, waiting, met or dropped, and GoalStatus the
-	// agent's one line on where it stands.
+	// GoalState is working, waiting, paused, met or dropped, and
+	// GoalStatus the agent's one line on where it stands.
 	GoalState  string `json:"goalState"`
 	GoalStatus string `json:"goalStatus"`
+
+	// GoalTimes are when its turns are, in the person's zone, and
+	// GoalMailConditions the mail it takes a turn for.
+	GoalTimes                []string               `json:"goalTimes"`
+	GoalMailConditions       []MailboxRuleCondition `json:"goalMailConditions"`
+	GoalWrittenBy            string                 `json:"goalWrittenBy"`
+	IsGoalNotifiedWhenPosted bool                   `json:"isGoalNotifiedWhenPosted"`
 
 	GoalSetAt      *time.Time `json:"goalSetAt"`
 	GoalNextAt     *time.Time `json:"goalNextAt"`
@@ -26,7 +33,6 @@ type AgentGoal struct {
 	LastAt         time.Time  `json:"lastAt"`
 
 	Activity       []*AgentGoalActivity   `json:"activity,omitempty"`
-	Schedules      []*AgentGoalSchedule   `json:"schedules,omitempty"`
 	BackgroundWork []*AgentBackgroundWork `json:"backgroundWork,omitempty"`
 	Artifacts      []*AgentGoalArtifact   `json:"artifacts,omitempty"`
 }
@@ -40,16 +46,6 @@ type AgentGoalActivity struct {
 	ActivityDetail   string    `json:"activityDetail,omitempty"`
 }
 
-// AgentGoalSchedule is a schedule a goal made.
-type AgentGoalSchedule struct {
-	ID             string                 `json:"id"`
-	Name           string                 `json:"name"`
-	Cron           string                 `json:"cron"`
-	MailConditions []MailboxRuleCondition `json:"mailConditions,omitempty"`
-	IsEnabled      bool                   `json:"enabled"`
-	NextRunAt      *time.Time             `json:"nextRunAt"`
-}
-
 // AgentGoalArtifact is a mail rule, a reminder or an alert mute a goal
 // made.
 type AgentGoalArtifact struct {
@@ -60,7 +56,7 @@ type AgentGoalArtifact struct {
 	ArtifactTitle     string    `json:"artifactTitle"`
 }
 
-const goalFields = `conversationId goalTitle goalDescription goalState goalStatus goalSetAt goalNextAt goalSurfacedAt lastAt`
+const goalFields = `conversationId goalTitle goalDescription goalState goalStatus goalTimes goalMailConditions { field header operator value } goalWrittenBy isGoalNotifiedWhenPosted goalSetAt goalNextAt goalSurfacedAt lastAt`
 
 // The documents the command line and the goal tool send, exported so a
 // test can check them against the schema.
@@ -72,16 +68,18 @@ const (
 		GetAgentGoal(conversationId: $conversationId) {
 			` + goalFields + `
 			activity { id createdAt goalActivityKind activityHeadline activityDetail }
-			schedules { id name cron mailConditions { field header operator value } enabled nextRunAt }
 			backgroundWork { ` + backgroundWorkFields + ` }
 			artifacts { id createdAt goalArtifactKind artifactReference artifactTitle }
 		}
 	}`
-	DocumentStartAgentGoal = `mutation ($goalTitle: String!, $goalDescription: String!, $originConversationId: String, $scheduleIds: [String!]) {
-		StartAgentGoal(goalTitle: $goalTitle, goalDescription: $goalDescription, originConversationId: $originConversationId, scheduleIds: $scheduleIds) { ` + goalFields + ` }
+	DocumentStartAgentGoal = `mutation ($goalTitle: String!, $goalDescription: String!, $originConversationId: String, $goalTimes: [String!], $goalMailConditions: [MailboxRuleConditionInput!], $isGoalNotifiedWhenPosted: Boolean) {
+		StartAgentGoal(goalTitle: $goalTitle, goalDescription: $goalDescription, originConversationId: $originConversationId, goalTimes: $goalTimes, goalMailConditions: $goalMailConditions, isGoalNotifiedWhenPosted: $isGoalNotifiedWhenPosted) { ` + goalFields + ` }
 	}`
-	DocumentMoveAgentScheduleToGoal = `mutation ($scheduleId: String!, $conversationId: String!) {
-		MoveAgentScheduleToGoal(scheduleId: $scheduleId, conversationId: $conversationId) { id name cron enabled conversationId nextRunAt }
+	DocumentUpdateAgentGoal = `mutation ($conversationId: String!, $goalTitle: String, $goalDescription: String, $goalTimes: [String!], $goalMailConditions: [MailboxRuleConditionInput!], $isGoalNotifiedWhenPosted: Boolean) {
+		UpdateAgentGoal(conversationId: $conversationId, goalTitle: $goalTitle, goalDescription: $goalDescription, goalTimes: $goalTimes, goalMailConditions: $goalMailConditions, isGoalNotifiedWhenPosted: $isGoalNotifiedWhenPosted) { ` + goalFields + ` }
+	}`
+	DocumentRunAgentGoal = `mutation ($conversationId: String!) {
+		RunAgentGoal(conversationId: $conversationId) { ` + goalFields + ` }
 	}`
 	DocumentTellAgentGoal = `mutation ($conversationId: String!, $text: String!) {
 		TellAgentGoal(conversationId: $conversationId, text: $text) { ` + goalFields + ` }
@@ -118,15 +116,74 @@ func GetAgentGoal(ctx context.Context, connection *Client, conversationId string
 	return result.GetAgentGoal, nil
 }
 
+// AgentGoalChange is what a goal is started with or changed by: only what is
+// not nil is sent, and an empty list of times or mail conditions takes them
+// away.
+type AgentGoalChange struct {
+	GoalTitle                *string
+	GoalDescription          *string
+	GoalTimes                []string
+	GoalMailConditions       []MailboxRuleCondition
+	IsGoalNotifiedWhenPosted *bool
+}
+
+func (self *AgentGoalChange) variables() map[string]any {
+	variables := map[string]any{}
+	if self.GoalTitle != nil {
+		variables["goalTitle"] = *self.GoalTitle
+	}
+	if self.GoalDescription != nil {
+		variables["goalDescription"] = *self.GoalDescription
+	}
+	if self.GoalTimes != nil {
+		variables["goalTimes"] = self.GoalTimes
+	}
+	if self.GoalMailConditions != nil {
+		variables["goalMailConditions"] = self.GoalMailConditions
+	}
+	if self.IsGoalNotifiedWhenPosted != nil {
+		variables["isGoalNotifiedWhenPosted"] = *self.IsGoalNotifiedWhenPosted
+	}
+	return variables
+}
+
 // StartAgentGoal starts a goal in the background.
-func StartAgentGoal(ctx context.Context, connection *Client, goalTitle, goalDescription string) (*AgentGoal, error) {
+func StartAgentGoal(ctx context.Context, connection *Client, change *AgentGoalChange) (*AgentGoal, error) {
 	var result struct {
 		StartAgentGoal *AgentGoal `json:"StartAgentGoal"`
 	}
-	if err := connection.Execute(ctx, DocumentStartAgentGoal, map[string]any{"goalTitle": goalTitle, "goalDescription": goalDescription}, &result); err != nil {
+	variables := change.variables()
+	if _, ok := variables["goalTitle"]; !ok {
+		variables["goalTitle"] = ""
+	}
+	if err := connection.Execute(ctx, DocumentStartAgentGoal, variables, &result); err != nil {
 		return nil, err
 	}
 	return result.StartAgentGoal, nil
+}
+
+// UpdateAgentGoal changes a goal.
+func UpdateAgentGoal(ctx context.Context, connection *Client, conversationId string, change *AgentGoalChange) (*AgentGoal, error) {
+	var result struct {
+		UpdateAgentGoal *AgentGoal `json:"UpdateAgentGoal"`
+	}
+	variables := change.variables()
+	variables["conversationId"] = conversationId
+	if err := connection.Execute(ctx, DocumentUpdateAgentGoal, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.UpdateAgentGoal, nil
+}
+
+// RunAgentGoal gives a working goal a turn now.
+func RunAgentGoal(ctx context.Context, connection *Client, conversationId string) (*AgentGoal, error) {
+	var result struct {
+		RunAgentGoal *AgentGoal `json:"RunAgentGoal"`
+	}
+	if err := connection.Execute(ctx, DocumentRunAgentGoal, map[string]any{"conversationId": conversationId}, &result); err != nil {
+		return nil, err
+	}
+	return result.RunAgentGoal, nil
 }
 
 // TellAgentGoal passes the person's words to a goal.
@@ -140,7 +197,8 @@ func TellAgentGoal(ctx context.Context, connection *Client, conversationId, text
 	return result.TellAgentGoal, nil
 }
 
-// SetAgentGoalState marks a goal met or dropped, or takes it up again.
+// SetAgentGoalState marks a goal met, dropped or paused, or takes it up
+// again.
 func SetAgentGoalState(ctx context.Context, connection *Client, conversationId, goalState string) (*AgentGoal, error) {
 	var result struct {
 		SetAgentGoalState *AgentGoal `json:"SetAgentGoalState"`
@@ -149,15 +207,4 @@ func SetAgentGoalState(ctx context.Context, connection *Client, conversationId, 
 		return nil, err
 	}
 	return result.SetAgentGoalState, nil
-}
-
-// MoveAgentScheduleToGoal makes a schedule one of a goal's.
-func MoveAgentScheduleToGoal(ctx context.Context, connection *Client, scheduleId, conversationId string) (*AgentGoalSchedule, error) {
-	var result struct {
-		MoveAgentScheduleToGoal *AgentGoalSchedule `json:"MoveAgentScheduleToGoal"`
-	}
-	if err := connection.Execute(ctx, DocumentMoveAgentScheduleToGoal, map[string]any{"scheduleId": scheduleId, "conversationId": conversationId}, &result); err != nil {
-		return nil, err
-	}
-	return result.MoveAgentScheduleToGoal, nil
 }

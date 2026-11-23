@@ -8,7 +8,7 @@ import (
 )
 
 // Passwords is used only in a turn the person started: they typed or spoke it
-// with their own tap on a screen, or a schedule they wrote themselves woke it.
+// with their own tap on a screen, or a goal they wrote themselves woke it.
 // Anything else, and anything this does not know, is not theirs.
 func TestOnlyATurnThePersonStartedIsTheirs(t *testing.T) {
 	person := func(surface string) *AskRun {
@@ -66,13 +66,12 @@ func TestOnlyATurnThePersonStartedIsTheirs(t *testing.T) {
 		t.Error("an unattended turn")
 	}
 
-	// A schedule is the person's only when they wrote it, mailed or in a
-	// conversation.
-	for _, surface := range []string{"schedule", "mail"} {
-		own := &AskRun{settings: &AskSettings{Surface: surface, Headless: true, IsPersonsSchedule: true}}
+	// A goal's turn is the person's only when they wrote the goal.
+	for _, surface := range []string{"goal", "mail"} {
+		own := &AskRun{settings: &AskSettings{Surface: surface, Headless: true, IsPersonsGoal: true}}
 		written := &AskRun{settings: &AskSettings{Surface: surface, Headless: true}}
 		if !own.IsStartedByPerson() || written.IsStartedByPerson() {
-			t.Errorf("%s: the person's schedule %v, the agent's %v", surface, own.IsStartedByPerson(), written.IsStartedByPerson())
+			t.Errorf("%s: the person's goal %v, the agent's %v", surface, own.IsStartedByPerson(), written.IsStartedByPerson())
 		}
 	}
 
@@ -83,8 +82,8 @@ func TestOnlyATurnThePersonStartedIsTheirs(t *testing.T) {
 	}{
 		"of a conversation with the person": {person("drawer"), true},
 		"of a mail's research":              {person("research"), false},
-		"of the person's schedule":          {&AskRun{settings: &AskSettings{Surface: "schedule", Headless: true, IsPersonsSchedule: true}}, true},
-		"of the agent's own schedule":       {&AskRun{settings: &AskSettings{Surface: "schedule", Headless: true}}, false},
+		"of the person's goal":              {&AskRun{settings: &AskSettings{Surface: "goal", Headless: true, IsPersonsGoal: true}}, true},
+		"of the agent's own goal":           {&AskRun{settings: &AskSettings{Surface: "goal", Headless: true}}, false},
 	} {
 		child := &AskRun{settings: &AskSettings{Surface: "subagent", confirmVia: testCase.parent}}
 		if child.IsStartedByPerson() != testCase.wanted {
@@ -115,26 +114,26 @@ func TestACommandTheAgentRanIsNotTheirs(t *testing.T) {
 	}
 }
 
-// A run that a schedule the agent wrote woke can say so, so that Passwords
-// tells the person how to open it; the person's own schedule, a built-in one
+// A run that a goal the agent wrote woke can say so, so that Passwords
+// tells the person how to open it; the person's own goal, a built-in one
 // and a typed turn cannot, and a subagent is its parent's.
-func TestARunWokenByAnAgentsScheduleSaysSo(t *testing.T) {
-	agents := &AskRun{settings: &AskSettings{Surface: "schedule", Headless: true, IsAgentsSchedule: true}}
-	if !agents.IsWokenByAgentsSchedule() {
-		t.Error("the agent's schedule")
+func TestARunWokenByAnAgentsGoalSaysSo(t *testing.T) {
+	agents := &AskRun{settings: &AskSettings{Surface: "goal", Headless: true, IsAgentsGoal: true}}
+	if !agents.IsWokenByAgentsGoal() {
+		t.Error("the agent's goal")
 	}
 	for name, run := range map[string]*AskRun{
-		"the person's schedule": {settings: &AskSettings{Surface: "schedule", Headless: true, IsPersonsSchedule: true}},
-		"a built-in schedule":   {settings: &AskSettings{Surface: "schedule", Headless: true}},
-		"a typed turn":          {settings: &AskSettings{Surface: "drawer", Message: "hello"}},
+		"the person's goal": {settings: &AskSettings{Surface: "goal", Headless: true, IsPersonsGoal: true}},
+		"a built-in goal":   {settings: &AskSettings{Surface: "goal", Headless: true}},
+		"a typed turn":      {settings: &AskSettings{Surface: "drawer", Message: "hello"}},
 	} {
-		if run.IsWokenByAgentsSchedule() {
+		if run.IsWokenByAgentsGoal() {
 			t.Errorf("%s", name)
 		}
 	}
 	child := &AskRun{settings: &AskSettings{Surface: "subagent", Headless: true, confirmVia: agents}}
-	if !child.IsWokenByAgentsSchedule() {
-		t.Error("a subagent of the agent's schedule")
+	if !child.IsWokenByAgentsGoal() {
+		t.Error("a subagent of the agent's goal")
 	}
 }
 

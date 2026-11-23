@@ -762,6 +762,7 @@ enum GoalWords {
         switch goalState {
         case "working": String(localized: "working")
         case "waiting": String(localized: "waiting for you")
+        case "paused": String(localized: "paused")
         case "met": String(localized: "met")
         case "dropped": String(localized: "dropped")
         default: goalState ?? ""

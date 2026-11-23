@@ -41,25 +41,25 @@ const elsewhereWords = "Passwords is used only in the TeaNode app and on the das
 // agent wrote for itself. What such a run does is steered by content the
 // person did not write or by a program that holds a token, and a login is the
 // last thing to hand to that. It says where to ask instead.
-const notTheirsWords = "Passwords is used only in a conversation the person starts in the TeaNode app or on the dashboard, or in a schedule the person wrote themselves, not in a run that a mail, a message, a webhook, a goal, a dream, the command line or any other program or content started. Ask in the TeaNode app or on the dashboard."
+const notTheirsWords = "Passwords is used only in a conversation the person starts in the TeaNode app or on the dashboard, or in a goal the person wrote themselves on times they chose, not in a run that a mail, a message, a webhook, another goal, a dream, the command line or any other program or content started. Ask in the TeaNode app or on the dashboard."
 
-// agentsScheduleWords is the answer in place of notTheirsWords for a run that
-// a schedule the agent wrote woke. It says what the person can do about it, so
-// the model tells them instead of trying again: a schedule they open
-// and save themselves is theirs, and its runs may use Passwords.
-const agentsScheduleWords = "This run was woken by a schedule that the agent wrote, not one the person wrote, so Passwords is closed to it. The person can open the schedule on the dashboard or in the app (Agent, Schedules) and save it themselves to let its runs use Passwords. Tell them so."
+// agentsGoalWords is the answer in place of notTheirsWords for a run that a
+// goal the agent wrote woke. It says what the person can do about it, so the
+// model tells them instead of trying again: a goal on set times that they
+// open and save themselves is theirs, and its turns may use Passwords.
+const agentsGoalWords = "This run was woken by a goal that the agent wrote, not one the person wrote, so Passwords is closed to it. The person can open the goal on the dashboard or in the app (Goals) and save it themselves, with the times it runs at, to let its turns use Passwords. Tell them so."
 
-// agentsScheduleRun is a run that can say a schedule the agent wrote woke it.
-type agentsScheduleRun interface {
-	IsWokenByAgentsSchedule() bool
+// agentsGoalRun is a run that can say a goal the agent wrote woke it.
+type agentsGoalRun interface {
+	IsWokenByAgentsGoal() bool
 }
 
 // notTheirsAnswer is the words for a run the person did not start: the ones
 // for a schedule the agent wrote when that is what woke it, otherwise
 // notTheirsWords.
 func notTheirsAnswer(run tools.Run) string {
-	if woken, ok := run.(agentsScheduleRun); ok && woken.IsWokenByAgentsSchedule() {
-		return agentsScheduleWords
+	if woken, ok := run.(agentsGoalRun); ok && woken.IsWokenByAgentsGoal() {
+		return agentsGoalWords
 	}
 	return notTheirsWords
 }

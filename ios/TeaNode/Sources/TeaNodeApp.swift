@@ -670,9 +670,9 @@ struct SettingsForm: View {
                                 .foregroundStyle(.primary)
                         }
                         NavigationLink {
-                            SchedulesView(connection: connection)
+                            DailyBriefView(connection: connection)
                         } label: {
-                            Label("Schedules", systemImage: "clock")
+                            Label("Daily brief", systemImage: "sun.max")
                                 .foregroundStyle(.primary)
                         }
                         NavigationLink {
@@ -846,10 +846,11 @@ struct SettingsForm: View {
                 case "alerts": MutedAlertsView(connection: connection)
                 case "alerts-following": MutedAlertsView(connection: connection, focusesFollowing: true)
                 case "activity-run": AgentActivityView(connection: connection)
-                case "schedules": SchedulesView(connection: connection)
-                case "schedules-brief-days": BriefDaysDemoScreen(isEmpty: false)
-                case "schedules-brief-days-none": BriefDaysDemoScreen(isEmpty: true)
-                case "schedules-mail-editor": ScheduleEditorDemoScreen(connection: connection)
+                case "daily-brief": DailyBriefView(connection: connection)
+                case "daily-brief-days": BriefDaysDemoScreen(isEmpty: false)
+                case "daily-brief-days-none": BriefDaysDemoScreen(isEmpty: true)
+                case "goal-detail": GoalDetailDemoScreen(connection: connection)
+                case "goal-when-editor": GoalWhenEditorDemoScreen(connection: connection)
                 case "agent-usage": AgentUsageView(connection: connection)
                 case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
                 case "storage-usage": StorageUsageView(connection: connection)

@@ -187,7 +187,7 @@ func (self *Agent) dueSpeakFirstReason(ctx context.Context, tx db.Transaction, a
 	if spoke != nil && now.Sub(*spoke) < speakFirstQuiet {
 		return "", nil
 	}
-	main, err := scheduleConversation(tx, agent.ID, "")
+	main, err := personsConversation(tx, agent.ID, "")
 	if err != nil {
 		return "", err
 	}
@@ -347,7 +347,7 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 			// it posts names as its source.
 			conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.Agent.ID, Kind: models.AgentConversationRun, Title: "Speaking first: " + reason.name, JobID: run.Job.ID, JobKind: string(models.AgentJobSpeakFirst), SubjectID: reason.name, Surface: "schedule", LastAt: time.Now()})
 		} else {
-			conversation, err = scheduleConversation(tx, run.Agent.ID, "")
+			conversation, err = personsConversation(tx, run.Agent.ID, "")
 		}
 		if err != nil {
 			return err

@@ -4,12 +4,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
-import com.teanode.kit.agent.runDailyBrief
-import com.teanode.kit.agent.setDailyBrief
+import com.teanode.kit.goals.goals
+import com.teanode.kit.goals.runDailyBrief
+import com.teanode.kit.goals.setDailyBrief
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsOff
@@ -36,10 +38,10 @@ import com.teanode.app.ui.components.TeaNodeRow
 import com.teanode.app.ui.components.TeaNodeSectionHeader
 import com.teanode.app.ui.components.relativeTimeText
 import com.teanode.app.ui.components.rememberLoad
+import com.teanode.app.ui.components.TeaNodeNavigationRow
 import com.teanode.kit.agent.AgentAlert
 import com.teanode.kit.agent.AgentBackgroundWork
 import com.teanode.kit.agent.AgentDream
-import com.teanode.kit.agent.AgentSchedule
 import com.teanode.kit.agent.AgentUpkeepPreferences
 import com.teanode.kit.agent.UpkeepClock
 import com.teanode.kit.agent.agentAlerts
@@ -47,11 +49,9 @@ import com.teanode.kit.agent.agentCorrections
 import com.teanode.kit.agent.agentDreamState
 import com.teanode.kit.agent.agentDreams
 import com.teanode.kit.agent.agentRuns
-import com.teanode.kit.agent.agentSchedules
 import com.teanode.kit.agent.agentUpkeep
 import com.teanode.kit.agent.backgroundWork
 import com.teanode.kit.agent.connectedServers
-import com.teanode.kit.agent.deleteAgentSchedule
 import com.teanode.kit.agent.disconnectServer
 import com.teanode.kit.agent.dreamNow
 import com.teanode.kit.agent.gradeMemoryNow
@@ -71,8 +71,6 @@ import com.teanode.kit.agent.deleteKnowledgeSource
 import com.teanode.kit.agent.memoryCheckQuestions
 import com.teanode.kit.agent.muteAgentAlert
 import com.teanode.kit.agent.readingProgress
-import com.teanode.kit.agent.runAgentSchedule
-import com.teanode.kit.agent.saveAgentSchedule
 import com.teanode.kit.agent.startMemoryCheck
 import com.teanode.kit.agent.stopBackgroundWork
 import com.teanode.kit.agent.unmuteAgentAlert
@@ -109,173 +107,50 @@ private fun ClockField(label: String, text: String, onChange: (String) -> Unit) 
     FormField(text, onChange, label, placeholder = "HH:MM", isError = UpkeepClock.hourAndMinute(text) == null, keyboardType = KeyboardType.Number)
 }
 
-/** What the agent does at a time: list, switch on and off, run now, delete, and make one. */
+/**
+ * The daily brief: the goal the server writes itself. Switch it on, choose the time and days, send one now, and open its
+ * goal to see what it did and change what it asks for.
+ */
 @Composable
-fun SchedulesScreen(onBack: () -> Unit) {
-    val resources = androidx.compose.ui.platform.LocalContext.current.resources
+fun DailyBriefScreen(onBack: () -> Unit) {
     val connection = LocalConnection.current
+    val navigator = com.teanode.app.shell.LocalAppNavigator.current
     val actions = rememberActionRunner()
-    val loaded = rememberLoad { connection.agentSchedules() }
-    var removing by remember { mutableStateOf<AgentSchedule?>(null) }
-    var isAdding by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<AgentSchedule?>(null) }
-    val ranText = stringResource(R.string.settings_schedules_ran)
-    val savedText = stringResource(R.string.settings_saved)
-    val removedText = stringResource(R.string.settings_access_removed)
-    LoadedSettingsPage(
-        stringResource(R.string.settings_schedules_title), onBack, loaded,
-        floatingActionButton = { FloatingActionButton(onClick = { isAdding = true }) { Icon(Icons.Outlined.Add, stringResource(R.string.settings_schedules_new)) } },
-    ) { schedules ->
-        item { DailyBriefCard(schedules, actions, onChanged = { loaded.refresh() }) }
-        if (schedules.none { schedule -> schedule.name != com.teanode.kit.agent.DailyBrief.SCHEDULE_NAME }) item { TeaNodeRow(headline = stringResource(R.string.settings_schedules_none)) }
-        items(schedules.filter { schedule -> schedule.name != com.teanode.kit.agent.DailyBrief.SCHEDULE_NAME }.size) { index ->
-            val schedule = schedules.filter { candidate -> candidate.name != com.teanode.kit.agent.DailyBrief.SCHEDULE_NAME }[index]
-            val next = ServerTime.instant(schedule.nextRunAt)?.let { instant -> stringResource(R.string.settings_schedules_next, shortDateTime(instant)) }
-            val last = ServerTime.instant(schedule.lastRunAt)?.let { instant -> stringResource(R.string.settings_last_used, relativeTimeText(instant.toEpochMilli())) }
-            TeaNodeRow(
-                onClick = { editing = schedule },
-                headline = schedule.name, supporting = listOfNotNull(if (schedule.isTriggeredByMail) UpkeepWords.scheduleMailText(resources, schedule.mailConditions.orEmpty()) else UpkeepWords.scheduleTimingText(resources, schedule.cron) ?: schedule.cron, next, last, schedule.prompt.ifEmpty { null }).joinToString("\n"), supportingMaxLines = 5,
-                trailing = {
-                    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        IconButton(onClick = { actions.run(ranText) { connection.runAgentSchedule(schedule.id) } }) { Icon(Icons.Outlined.PlayArrow, stringResource(R.string.settings_schedules_run)) }
-                        IconButton(onClick = { removing = schedule }) { Icon(Icons.Outlined.Delete, stringResource(R.string.settings_remove)) }
-                        androidx.compose.material3.Switch(checked = schedule.enabled, onCheckedChange = { isOn -> actions.run(savedText, onSuccess = { loaded.refresh() }) { connection.saveAgentSchedule(scheduleId = schedule.id, isEnabled = isOn) } })
-                    }
-                },
-            )
-        }
-    }
-    removing?.let { schedule ->
-        ConfirmationDialog(
-            title = stringResource(R.string.settings_schedules_remove, schedule.name), confirmLabel = stringResource(R.string.settings_remove), isDestructive = true,
-            onConfirm = { removing = null; actions.run(removedText, onSuccess = { loaded.refresh() }) { connection.deleteAgentSchedule(schedule.id) } }, onDismiss = { removing = null },
-        )
-    }
-    if (isAdding || editing != null) {
-        ScheduleEditorDialog(editing, actions, onDismiss = { isAdding = false; editing = null }, onSaved = { isAdding = false; editing = null; loaded.refresh() })
-    }
-}
-
-/** The days of a weekly timing as chips, Monday first. */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-fun WeekdayChips(dayNumbers: List<Int>, onChange: (List<Int>) -> Unit) {
-    androidx.compose.foundation.layout.FlowRow(androidx.compose.ui.Modifier.padding(horizontal = 16.dp)) {
-        (1..7).forEach { day ->
-            androidx.compose.material3.FilterChip(
-                selected = dayNumbers.contains(day), modifier = androidx.compose.ui.Modifier.padding(end = 6.dp),
-                onClick = { onChange(if (dayNumbers.contains(day)) dayNumbers - day else (dayNumbers + day).sorted()) },
-                label = { Text(java.time.DayOfWeek.of(day).getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())) },
-            )
-        }
-    }
-}
-
-/** Makes or changes a schedule: when (a time on some days, or when mail arrives), what it does, and where the answer goes. */
-@Composable
-private fun ScheduleEditorDialog(edited: AgentSchedule?, actions: ActionRunner, onDismiss: () -> Unit, onSaved: () -> Unit) {
-    val connection = LocalConnection.current
-    val savedText = stringResource(R.string.settings_saved)
-    var name by remember(edited?.id) { mutableStateOf(edited?.name.orEmpty()) }
-    var prompt by remember(edited?.id) { mutableStateOf(edited?.prompt.orEmpty()) }
-    var isByMail by remember(edited?.id) { mutableStateOf(edited?.isDeliveredByMail == true) }
-    var isOnMail by remember(edited?.id) { mutableStateOf(edited?.isTriggeredByMail == true) }
-    val timing = remember(edited?.id) { edited?.cron?.let { cron -> com.teanode.kit.agent.ScheduleTiming.of(cron) } }
-    var hasTiming by remember(edited?.id) { mutableStateOf(edited == null || timing != null || edited.isTriggeredByMail) }
-    var time by remember(edited?.id) { mutableStateOf(timing?.let { found -> UpkeepClock.text(found.hour, found.minute) } ?: "08:00") }
-    var days by remember(edited?.id) { mutableStateOf(timing?.dayNumbers ?: (1..5).toList()) }
-    var rawCron by remember(edited?.id) { mutableStateOf(edited?.cron.orEmpty()) }
-    var conditions by remember(edited?.id) { mutableStateOf(edited?.mailConditions ?: listOf(com.teanode.kit.agent.ScheduleMailCondition("any", value = null))) }
-    val usesRawCron = edited != null && timing == null && !edited.isTriggeredByMail
-    val clock = UpkeepClock.hourAndMinute(time)
-    val cron = if (usesRawCron) rawCron.trim() else clock?.let { (hour, minute) -> com.teanode.kit.agent.ScheduleTiming(hour, minute, days).cron }.orEmpty()
-    val isValid = name.isNotBlank() && prompt.isNotBlank() && days.isNotEmpty() && (if (isOnMail) com.teanode.kit.agent.ScheduleMailTrigger.isComplete(conditions) else cron.isNotEmpty())
-    FormDialog(
-        title = stringResource(if (edited == null) R.string.settings_schedules_new else R.string.settings_schedules_edit), confirmLabel = stringResource(R.string.settings_save), isConfirmEnabled = isValid, isWorking = actions.isWorking,
-        onConfirm = {
-            actions.run(savedText, onSuccess = onSaved) {
-                connection.saveAgentSchedule(
-                    scheduleId = edited?.id, name = name.trim(), cron = if (isOnMail) edited?.cron?.ifEmpty { null } ?: "0 0 * * *" else cron, prompt = prompt.trim(), deliver = if (isByMail) "mail" else "drawer",
-                    mailConditions = if (isOnMail) conditions else if (edited?.isTriggeredByMail == true) emptyList() else null,
-                )
-            }
-        },
-        onDismiss = onDismiss,
-    ) {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            FormField(name, { name = it }, stringResource(R.string.settings_profile_name))
-            ChoiceRow(
-                stringResource(R.string.settings_schedules_when), listOf(false, true), isOnMail,
-                label = { onMail -> stringResource(if (onMail) R.string.settings_schedules_on_mail else R.string.settings_schedules_at_a_time) }, onSelect = { isOnMail = it },
-            )
-            if (isOnMail) {
-                conditions.forEachIndexed { index, condition ->
-                    ChoiceRow(
-                        stringResource(R.string.settings_schedules_field), com.teanode.kit.agent.ScheduleMailTrigger.fields, condition.mailField, label = { field -> mailFieldName(field) },
-                        onSelect = { field -> conditions = conditions.toMutableList().also { list -> list[index] = condition.copy(mailField = field, value = if (field == "any") null else condition.value ?: "") } },
-                    )
-                    if (condition.mailField == "header") FormField(condition.header.orEmpty(), { typed -> conditions = conditions.toMutableList().also { list -> list[index] = condition.copy(header = typed) } }, stringResource(R.string.settings_schedules_header))
-                    if (!condition.isBare) {
-                        ChoiceRow(
-                            stringResource(R.string.settings_schedules_compare), listOf("contains", "equals", "matches"), condition.comparisonOperator.ifEmpty { "contains" },
-                            label = { operator -> stringResource(when (operator) { "equals" -> R.string.settings_schedules_is; "matches" -> R.string.settings_schedules_matches; else -> R.string.settings_schedules_contains }) },
-                            onSelect = { operator -> conditions = conditions.toMutableList().also { list -> list[index] = condition.copy(comparisonOperator = operator) } },
-                        )
-                        FormField(condition.value.orEmpty(), { typed -> conditions = conditions.toMutableList().also { list -> list[index] = condition.copy(value = typed) } }, stringResource(R.string.settings_schedules_value))
-                    }
-                    if (conditions.size > 1) TeaNodeRow(headline = stringResource(R.string.settings_schedules_remove_condition), leadingIcon = Icons.Outlined.Delete, onClick = { conditions = conditions.toMutableList().also { list -> list.removeAt(index) } })
-                }
-                TeaNodeRow(headline = stringResource(R.string.settings_schedules_add_condition), leadingIcon = Icons.Outlined.Add, onClick = { conditions = conditions + com.teanode.kit.agent.ScheduleMailCondition("from") })
-                FooterText(stringResource(R.string.settings_schedules_mail_footer))
-            } else if (usesRawCron) {
-                FormField(rawCron, { rawCron = it }, stringResource(R.string.settings_schedules_cron), supporting = stringResource(R.string.settings_schedules_cron_hint))
-            } else {
-                ClockField(stringResource(R.string.settings_schedules_time), time) { time = it }
-                WeekdayChips(days) { days = it }
-            }
-            ChoiceRow(
-                stringResource(R.string.settings_schedules_deliver), listOf(false, true), isByMail,
-                label = { byMail -> stringResource(if (byMail) R.string.settings_schedules_by_mail else R.string.settings_schedules_into_conversation) }, onSelect = { isByMail = it },
-            )
-            FormField(prompt, { prompt = it }, stringResource(R.string.settings_schedules_prompt), isSingleLine = false, minLines = 3)
-            FooterText(stringResource(R.string.settings_schedules_footer))
-        }
-    }
-}
-
-@Composable
-private fun mailFieldName(field: String): String = stringResource(
-    when (field) {
-        "from" -> R.string.settings_schedules_field_from
-        "to" -> R.string.settings_schedules_field_to
-        "subject" -> R.string.settings_schedules_field_subject
-        "header" -> R.string.settings_schedules_field_header
-        else -> R.string.settings_schedules_field_any
-    },
-)
-
-/** The morning brief: switch it on, choose when, and send one now. */
-@Composable
-private fun DailyBriefCard(schedules: List<AgentSchedule>, actions: ActionRunner, onChanged: () -> Unit) {
-    val connection = LocalConnection.current
-    val brief = com.teanode.kit.agent.DailyBrief.schedule(schedules)
-    var time by remember(brief?.cron) { mutableStateOf(com.teanode.kit.agent.DailyBrief.time(brief?.cron)) }
-    var days by remember(brief?.cron) { mutableStateOf(com.teanode.kit.agent.DailyBrief.dayNumbers(brief?.cron)) }
+    val loaded = rememberLoad { connection.goals() }
     val onText = stringResource(R.string.settings_brief_on)
     val offText = stringResource(R.string.settings_brief_off)
     val sentText = stringResource(R.string.settings_brief_sent)
-    TeaNodeSectionHeader(stringResource(R.string.settings_brief_title))
-    SwitchRow(stringResource(R.string.settings_brief_start), brief?.enabled == true, { isOn -> actions.run(if (isOn) onText else offText, onSuccess = onChanged) { connection.setDailyBrief(isOn, time, days) } })
-    ClockField(stringResource(R.string.settings_schedules_time), time) { time = it }
-    TeaNodeRow(headline = stringResource(R.string.settings_brief_days))
-    WeekdayChips(days) { days = it }
-    if (days.isEmpty()) FooterText(stringResource(R.string.settings_brief_choose_day))
-    if (UpkeepClock.hourAndMinute(time) != null && days.isNotEmpty() && (time != com.teanode.kit.agent.DailyBrief.time(brief?.cron) || days != com.teanode.kit.agent.DailyBrief.dayNumbers(brief?.cron))) {
-        TeaNodeRow(headline = stringResource(R.string.settings_save), onClick = { actions.run(onText, onSuccess = onChanged) { connection.setDailyBrief(brief?.enabled ?: true, time, days) } })
+    LoadedSettingsPage(stringResource(R.string.settings_brief_page_title), onBack, loaded) { goals ->
+        val brief = com.teanode.kit.goals.DailyBrief.goal(goals)
+        val cron = com.teanode.kit.goals.DailyBrief.cron(brief)
+        val isOn = brief != null && brief.isOpen
+        item(key = "brief-form") {
+            var time by remember(cron) { mutableStateOf(com.teanode.kit.goals.DailyBrief.time(cron)) }
+            var days by remember(cron) { mutableStateOf(com.teanode.kit.goals.DailyBrief.dayNumbers(cron)) }
+            Column {
+                SwitchRow(stringResource(R.string.settings_brief_start), isOn, { isChecked -> actions.run(if (isChecked) onText else offText, onSuccess = { loaded.refresh() }) { connection.setDailyBrief(isChecked, time, days) } })
+                ClockField(stringResource(R.string.settings_brief_time), time) { time = it }
+                TeaNodeRow(headline = stringResource(R.string.settings_brief_days))
+                com.teanode.app.goals.WeekdayChips(days) { days = it }
+                if (days.isEmpty()) FooterText(stringResource(R.string.settings_brief_choose_day))
+                if (UpkeepClock.hourAndMinute(time) != null && days.isNotEmpty() && (time != com.teanode.kit.goals.DailyBrief.time(cron) || days != com.teanode.kit.goals.DailyBrief.dayNumbers(cron))) {
+                    TeaNodeRow(headline = stringResource(R.string.settings_save), onClick = { actions.run(onText, onSuccess = { loaded.refresh() }) { connection.setDailyBrief(isOn || brief == null, time, days) } })
+                }
+            }
+        }
+        if (brief != null) {
+            ServerTime.instant(brief.goalNextAt)?.takeIf { isOn }?.let { instant ->
+                item(key = "brief-next") { TeaNodeRow(headline = stringResource(R.string.settings_brief_next, com.teanode.app.goals.GoalWords.nextTimeText(instant))) }
+            }
+            item(key = "brief-open") {
+                TeaNodeNavigationRow(stringResource(R.string.settings_brief_open_goal), { navigator.navigate(com.teanode.app.goals.GoalRoutes.detail(brief.conversationId)) }, leadingIcon = Icons.Outlined.ChatBubbleOutline)
+            }
+        }
+        item(key = "brief-send") {
+            TeaNodeRow(headline = stringResource(R.string.settings_brief_send_now), leadingIcon = Icons.Outlined.PlayArrow, onClick = { actions.run(sentText, onSuccess = { loaded.refresh() }) { connection.runDailyBrief() } })
+        }
+        item(key = "brief-footer") { FooterText(stringResource(if (brief == null) R.string.settings_brief_footer else R.string.settings_brief_footer_on)) }
     }
-    TeaNodeRow(headline = stringResource(R.string.settings_brief_send_now), leadingIcon = Icons.Outlined.PlayArrow, onClick = { actions.run(sentText) { connection.runDailyBrief() } })
-    FooterText(stringResource(if (brief == null) R.string.settings_brief_footer else R.string.settings_brief_footer_on))
-    TeaNodeSectionHeader(stringResource(R.string.settings_schedules_title))
 }
 
 /** Makes or changes a source: its type, name, where it reads, the type's settings, and its secrets, which are sealed on the server and never shown again. */

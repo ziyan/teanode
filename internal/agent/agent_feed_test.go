@@ -215,9 +215,8 @@ func TestALikeIsWrittenToMemory(t *testing.T) {
 	})
 }
 
-// Three news cards from one goal list as one entry with the stack's count, a
-// decision from the same goal stands alone, and a run of a schedule stacks
-// per run with its summary on top.
+// Three news cards from one goal list as one entry with the stack's count, and
+// a decision from the same goal stands alone.
 func TestCardsFromOneGoalStackAndADecisionStandsAlone(t *testing.T) {
 	world := newSpeakFirstWorld(t)
 	for _, title := range []string{"One", "Two", "Three"} {
@@ -245,65 +244,116 @@ func TestCardsFromOneGoalStackAndADecisionStandsAlone(t *testing.T) {
 	})
 }
 
-func TestARunOfAScheduleStacksPerRunWithTheSummaryOnTop(t *testing.T) {
+// Each turn of a goal on set times is a stack of its own, topped by its
+// summary, so this morning's brief is not piled on yesterday's; a turn that
+// names no stack title is titled for the goal.
+func TestEachTurnOfAGoalOnSetTimesIsAStackWithTheSummaryOnTop(t *testing.T) {
 	world := newSpeakFirstWorld(t)
-	zero, one, two := 0, 1, 2
-	runCard := func(runId, title string, position *int, stackTitle string) {
-		world.post(t, &models.AgentFeedItem{
-			Title: title, FeedItemKind: models.FeedItemReport, FeedSourceKind: models.FeedSourceSchedule, FeedSourceID: "schedule-1",
-			RunConversationID: runId, StackPosition: position, FeedStackTitle: stackTitle,
+	var goal *models.AgentConversation
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		goal, err = tx.CreateAgentConversation(&models.AgentConversation{
+			AgentID: world.agent.ID, Kind: models.AgentConversationGoal, LastAt: time.Now(),
+			Goal: "Tell me about the morning", GoalTitle: "Morning brief", GoalState: models.GoalWorking, GoalTimes: []string{"0 8 * * *"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	// A turn is the goal's job while it runs.
+	turn := func() *models.AgentJob {
+		var running *models.AgentJob
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			queued, err := tx.EnqueueAgentJob(&models.AgentJob{AgentID: world.agent.ID, Kind: models.AgentJobGoal, SubjectID: goal.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			claimed, err := tx.ClaimAgentJobs("instance-a", 50, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, job := range claimed {
+				if job.ID == queued.ID {
+					running = job
+				}
+			}
+		})
+		if running == nil {
+			t.Fatal("the goal's turn is not running")
+		}
+		return running
+	}
+	finish := func(job *models.AgentJob) {
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			if _, err := tx.FinishAgentJob(job.ID, job.ClaimID, &db.AgentJobOutcome{JobStatus: models.AgentJobDone, FinishedAt: time.Now()}); err != nil {
+				t.Fatal(err)
+			}
 		})
 	}
-	runCard("run-a", "Section: weather", &one, "")
-	runCard("run-a", "Section: headlines", &two, "Morning brief, Wed Nov 19")
-	runCard("run-a", "Summary", &zero, "")
-	runCard("run-b", "Yesterday's summary", &zero, "Morning brief, Tue Nov 18")
+	zero, one, two := 0, 1, 2
+	card := func(title string, position *int, stackTitle string) {
+		world.post(t, &models.AgentFeedItem{
+			Title: title, FeedItemKind: models.FeedItemReport, FeedSourceKind: models.FeedSourceGoal, FeedSourceID: goal.ID,
+			RunConversationID: goal.ID, StackPosition: position, FeedStackTitle: stackTitle,
+		})
+	}
+	yesterday := turn()
+	card("Yesterday's summary", &zero, "")
+	finish(yesterday)
+	today := turn()
+	card("Section: weather", &one, "")
+	card("Section: headlines", &two, "Morning brief, Wed Nov 19")
+	card("Summary", &zero, "")
+	finish(today)
+	todayKey := "goal:" + goal.ID + ":" + today.ID
+	yesterdayKey := "goal:" + goal.ID + ":" + yesterday.ID
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
 		items, _, err := tx.ListAgentFeedItems(world.owner.ID, nil, 10, false, time.Now())
 		if err != nil || len(items) != 2 {
-			t.Fatalf("two runs are two stacks: %d %v", len(items), err)
+			t.Fatalf("two turns are two stacks: %d %v", len(items), err)
 		}
 		titles := []string{items[0].Title, items[1].Title}
 		if !contains(titles, "Summary") || !contains(titles, "Yesterday's summary") {
 			t.Fatalf("each stack is topped by its summary: %v", titles)
 		}
-		stack, _, err := tx.ListAgentFeedStackItems(world.owner.ID, "schedule:schedule-1:run-a", 0, 10, false, time.Now())
+		stack, _, err := tx.ListAgentFeedStackItems(world.owner.ID, todayKey, 0, 10, false, time.Now())
 		if err != nil || len(stack) != 3 || stack[0].Title != "Summary" || stack[1].Title != "Section: weather" || stack[2].Title != "Section: headlines" {
 			t.Fatalf("by position: %+v %v", stack, err)
 		}
-		counts, _ := tx.CountAgentFeedStacks(world.owner.ID, []string{"schedule:schedule-1:run-a"}, time.Now())
-		if counts["schedule:schedule-1:run-a"].StackTitle != "Morning brief, Wed Nov 19" {
-			t.Fatalf("the stack's title is the first any card gave: %+v", counts)
+		counts, _ := tx.CountAgentFeedStacks(world.owner.ID, []string{todayKey, yesterdayKey}, time.Now())
+		if counts[todayKey].StackTitle != "Morning brief" || counts[yesterdayKey].StackTitle != "Morning brief" {
+			t.Fatalf("a turn's stack is titled for the goal when its first card names no title: %+v %+v", counts[todayKey], counts[yesterdayKey])
 		}
 	})
 }
 
-// A schedule's run that hands its work to a subagent still owns what the
-// subagent posts: the card is credited to the schedule and stacks with the run.
-func TestACardPostedByASubagentIsCreditedToTheScheduleBehindIt(t *testing.T) {
+// A goal's turn that hands its work to a subagent still owns what the
+// subagent posts: the card is credited to the goal.
+func TestACardPostedByASubagentIsCreditedToTheGoalBehindIt(t *testing.T) {
 	world := newSpeakFirstWorld(t)
-	var scheduleRun, subagentRun *models.AgentConversation
+	var goal, subagentRun *models.AgentConversation
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
 		var err error
-		scheduleRun, err = tx.CreateAgentConversation(&models.AgentConversation{
-			AgentID: world.agent.ID, Kind: models.AgentConversationRun, JobKind: string(models.AgentJobSchedule), SubjectID: "schedule-1", LastAt: time.Now(),
+		goal, err = tx.CreateAgentConversation(&models.AgentConversation{
+			AgentID: world.agent.ID, Kind: models.AgentConversationGoal, LastAt: time.Now(),
+			Goal: "Watch the weather", GoalTitle: "Weather", GoalState: models.GoalWorking,
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 		subagentRun, err = tx.CreateAgentConversation(&models.AgentConversation{
-			AgentID: world.agent.ID, Kind: models.AgentConversationRun, JobKind: string(models.AgentJobSubagent), SubjectID: scheduleRun.ID, LastAt: time.Now(),
+			AgentID: world.agent.ID, Kind: models.AgentConversationRun, JobKind: string(models.AgentJobSubagent), SubjectID: goal.ID, LastAt: time.Now(),
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 	})
-	posted := world.post(t, &models.AgentFeedItem{Title: "Weather", FeedItemKind: models.FeedItemReport, RunConversationID: subagentRun.ID})
-	if posted.FeedSourceKind != models.FeedSourceSchedule || posted.FeedSourceID != "schedule-1" {
-		t.Fatalf("credited to the schedule: %s %s", posted.FeedSourceKind, posted.FeedSourceID)
+	posted := world.post(t, &models.AgentFeedItem{Title: "Rain at noon", FeedItemKind: models.FeedItemReport, RunConversationID: subagentRun.ID})
+	if posted.FeedSourceKind != models.FeedSourceGoal || posted.FeedSourceID != goal.ID {
+		t.Fatalf("credited to the goal: %s %s", posted.FeedSourceKind, posted.FeedSourceID)
 	}
-	if posted.RunConversationID != scheduleRun.ID || posted.FeedStackKey != "schedule:schedule-1:"+scheduleRun.ID {
-		t.Fatalf("stacked with the schedule's run: %s %s", posted.RunConversationID, posted.FeedStackKey)
+	if posted.FeedStackKey != "goal:"+goal.ID {
+		t.Fatalf("stacked with the goal's cards: %s", posted.FeedStackKey)
 	}
 }
 

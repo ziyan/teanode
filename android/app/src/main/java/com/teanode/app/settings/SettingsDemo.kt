@@ -145,13 +145,6 @@ val settingsDemoAnswerers: List<DemoAnswerer> = com.teanode.app.settings.manage.
     ),
     graphQLField("AgentDreamState", """{"dreamJobStatus":""}"""),
     graphQLField("AgentReadingProgress", """{"waiting":120,"read":480,"perHour":40,"hoursLeft":3,"bootstrapping":false,"spent":1.2,"costLeft":0.4,"currency":"USD","dreams":3}"""),
-    graphQLField(
-        "ListAgentSchedules",
-        """[
-          {"id":"s1","name":"Morning brief","cron":"0 8 * * 1-5","prompt":"Tell me what is on today.","deliver":"drawer","enabled":true,"lastRunAt":"2030-01-05T08:00:00Z","nextRunAt":"2999-01-06T08:00:00Z"},
-          {"id":"s2","name":"Friday round-up","cron":"0 17 * * 5","prompt":"Summarize the week.","deliver":"mail","enabled":false}
-        ]""",
-    ),
     graphQLFields(
         "ListAgentAlerts" to """[
           {"id":"a1","alertText":"Your flight tomorrow was moved to 9:40.","sentAt":"2030-01-05T07:00:00Z","subjectKey":"flight","isUrgent":true,"covered":[{"mailId":"m1","subject":"Flight change","fromAddress":"airline@example.com"}],"muteChoices":[{"muteScope":"sender","muteTarget":"airline@example.com"}]},

@@ -3,7 +3,6 @@ package apigraph
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
@@ -24,9 +23,6 @@ type AgentMemoryQuery interface {
 	// The corrections recorded from the caller's own actions, newest
 	// first: what the agent will be shown as examples. Needs agent:use.
 	ListAgentCorrections(ctx context.Context, arguments ListAgentCorrectionsArguments) ([]*models.AgentFeedback, error)
-
-	// The caller's schedules. Needs agent:use.
-	ListAgentSchedules(ctx context.Context) ([]*models.AgentSchedule, error)
 }
 
 // AgentMemoryMutation changes them.
@@ -36,16 +32,6 @@ type AgentMemoryMutation interface {
 
 	// Forget one memory. Needs agent:use.
 	DeleteAgentMemory(ctx context.Context, arguments DeleteAgentMemoryArguments) (bool, error)
-
-	// Add a schedule, or change one by id. The cron line is read in the
-	// caller's zone. Needs agent:use.
-	SaveAgentSchedule(ctx context.Context, arguments SaveAgentScheduleArguments) (*models.AgentSchedule, error)
-
-	// Remove a schedule. Needs agent:use.
-	DeleteAgentSchedule(ctx context.Context, arguments DeleteAgentScheduleArguments) (bool, error)
-
-	// Run a schedule now, without waiting for its time. Needs agent:use.
-	RunAgentSchedule(ctx context.Context, arguments DeleteAgentScheduleArguments) (bool, error)
 
 	// Answer a question the agent asked in a turn. Needs agent:use.
 	AnswerAgentQuestion(ctx context.Context, arguments AnswerAgentQuestionArguments) (bool, error)
@@ -76,28 +62,6 @@ type SaveAgentMemoryArguments struct {
 // DeleteAgentMemoryArguments name the memory.
 type DeleteAgentMemoryArguments struct {
 	MemoryID string `json:"memoryId"`
-}
-
-// SaveAgentScheduleArguments are a schedule, new or changed.
-type SaveAgentScheduleArguments struct {
-	ScheduleID string `json:"scheduleId" graphapi:"nullable"`
-	Name       string `json:"name" graphapi:"nullable"`
-	Cron       string `json:"cron" graphapi:"nullable"`
-	// MailConditions make the schedule run on arriving mail instead of at
-	// set times; a cron line makes it run at set times again.
-	MailConditions []models.MailboxRuleCondition `json:"mailConditions" graphapi:"nullable"`
-	Prompt         string                        `json:"prompt" graphapi:"nullable"`
-	Deliver        string                        `json:"deliver" graphapi:"nullable"`
-	Enabled        *bool                         `json:"enabled" graphapi:"nullable"`
-
-	// IsNotifiedWhenPosted: the first card of each run, in the feed, sends
-	// one quiet notification saying the schedule's cards are ready.
-	IsNotifiedWhenPosted *bool `json:"isNotifiedWhenPosted" graphapi:"nullable"`
-}
-
-// DeleteAgentScheduleArguments name the schedule.
-type DeleteAgentScheduleArguments struct {
-	ScheduleID string `json:"scheduleId"`
 }
 
 // AnswerAgentQuestionArguments answer one card.
@@ -133,14 +97,6 @@ func (self *graph) ListAgentCorrections(ctx context.Context, arguments ListAgent
 		limit = 100
 	}
 	return self.transaction(ctx).ListAgentFeedback(found.ID, nil, limit)
-}
-
-func (self *graph) ListAgentSchedules(ctx context.Context) ([]*models.AgentSchedule, error) {
-	_, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return self.transaction(ctx).ListAgentSchedules(found.ID)
 }
 
 func (self *graph) SaveAgentMemory(ctx context.Context, arguments SaveAgentMemoryArguments) (*models.AgentMemory, error) {
@@ -205,150 +161,6 @@ func (self *graph) DeleteAgentMemory(ctx context.Context, arguments DeleteAgentM
 		return false, api.ErrNotFound
 	}
 	return true, tx.DeleteAgentMemory(arguments.MemoryID)
-}
-
-func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentScheduleArguments) (*models.AgentSchedule, error) {
-	if arguments.Deliver == models.AgentDeliverMail || len(arguments.MailConditions) > 0 {
-		if err := self.requireService(models.ServiceMailboxes); err != nil {
-			return nil, err
-		}
-	}
-	principal, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !agent.FeatureAllowed(self.config.Current(), "schedules") {
-		return nil, agent.ErrUnavailable
-	}
-	tx := self.transaction(ctx)
-	// The schedule is the person's, and its runs may use Passwords, only when
-	// the person tapped save on a screen. The command line holds a token the
-	// agent's own shell can use too, so a schedule made from there is
-	// recorded as the agent's.
-	writtenBy := models.WrittenByAgent
-	if principal.IsPersonsTap() {
-		writtenBy = models.WrittenByPerson
-	}
-	if arguments.ScheduleID == "" {
-		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), MailConditions: arguments.MailConditions, Prompt: strings.TrimSpace(arguments.Prompt), WrittenBy: writtenBy, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled, IsNotifiedWhenPosted: arguments.IsNotifiedWhenPosted != nil && *arguments.IsNotifiedWhenPosted}
-		if schedule.Deliver == "" {
-			schedule.Deliver = models.DefaultScheduleDeliver(found)
-		}
-		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
-		if err != nil {
-			return nil, translateError(err)
-		}
-		schedule.NextRunAt = next
-		created, err := tx.CreateAgentSchedule(schedule)
-		if err != nil {
-			return nil, translateError(err)
-		}
-		return created, nil
-	}
-	existing, err := tx.GetAgentSchedule(arguments.ScheduleID)
-	if err != nil {
-		return nil, err
-	}
-	if existing == nil || existing.AgentID != found.ID {
-		return nil, api.ErrNotFound
-	}
-	updated, err := tx.UpdateAgentSchedule(arguments.ScheduleID, func(schedule *models.AgentSchedule) error {
-		if arguments.Name != "" {
-			schedule.Name = strings.TrimSpace(arguments.Name)
-		}
-		switch {
-		case arguments.Cron != "":
-			// At set times again: what mail had set off is no longer waited
-			// for.
-			schedule.Cron = strings.TrimSpace(arguments.Cron)
-			schedule.MailConditions, schedule.MailArrivals = nil, nil
-		case len(arguments.MailConditions) > 0:
-			if !schedule.IsMailTriggered() {
-				schedule.Cron, schedule.NextRunAt = "", nil
-			}
-			schedule.MailConditions = arguments.MailConditions
-		}
-		// A save the person made with a tap on a screen that includes the prompt
-		// is theirs, whether or not the prompt changed: pressing Save in the
-		// editor on the dashboard or in the app is how a person takes over a
-		// schedule the agent wrote. A tap that sends no prompt (the on and off
-		// switch) has not read what the schedule says, so it leaves the writer
-		// as it was. A caller that
-		// is not a tap (the command line holds a token the agent's own shell
-		// can use too) makes the schedule the agent's by changing its words,
-		// when it runs, where its answer goes or whether it runs, as the
-		// agent's own schedule tool does: otherwise the agent could move a
-		// schedule the person wrote and have it keep running with the
-		// person's authority. Saving the same prompt again from there, or
-		// renaming, leaves the writer as it was.
-		if prompt := strings.TrimSpace(arguments.Prompt); prompt != "" && prompt != strings.TrimSpace(schedule.Prompt) {
-			schedule.Prompt = prompt
-			schedule.WrittenBy = writtenBy
-		}
-		if arguments.Deliver != "" {
-			schedule.Deliver = arguments.Deliver
-		}
-		if arguments.Enabled != nil {
-			schedule.Enabled = *arguments.Enabled
-		}
-		if arguments.IsNotifiedWhenPosted != nil {
-			schedule.IsNotifiedWhenPosted = *arguments.IsNotifiedWhenPosted
-		}
-		if principal.IsPersonsTap() {
-			if strings.TrimSpace(arguments.Prompt) != "" {
-				schedule.WrittenBy = models.WrittenByPerson
-			}
-		} else if arguments.Cron != "" || len(arguments.MailConditions) > 0 || arguments.Deliver != "" || arguments.Enabled != nil {
-			schedule.WrittenBy = models.WrittenByAgent
-		}
-		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
-		if err != nil {
-			return err
-		}
-		schedule.NextRunAt = next
-		return nil
-	})
-	if err != nil {
-		return nil, translateError(err)
-	}
-	return updated, nil
-}
-
-func (self *graph) DeleteAgentSchedule(ctx context.Context, arguments DeleteAgentScheduleArguments) (bool, error) {
-	_, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return false, err
-	}
-	tx := self.transaction(ctx)
-	existing, err := tx.GetAgentSchedule(arguments.ScheduleID)
-	if err != nil {
-		return false, err
-	}
-	if existing == nil || existing.AgentID != found.ID {
-		return false, api.ErrNotFound
-	}
-	return true, tx.DeleteAgentSchedule(arguments.ScheduleID)
-}
-
-func (self *graph) RunAgentSchedule(ctx context.Context, arguments DeleteAgentScheduleArguments) (bool, error) {
-	_, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return false, err
-	}
-	worker := self.agentWorker()
-	if worker == nil {
-		return false, agent.ErrUnavailable
-	}
-	tx := self.transaction(ctx)
-	existing, err := tx.GetAgentSchedule(arguments.ScheduleID)
-	if err != nil {
-		return false, err
-	}
-	if existing == nil || existing.AgentID != found.ID {
-		return false, api.ErrNotFound
-	}
-	_, err = worker.Enqueue(tx, models.AgentJobSchedule, found.ID, "", existing.ID)
-	return err == nil, err
 }
 
 func (self *graph) AnswerAgentQuestion(ctx context.Context, arguments AnswerAgentQuestionArguments) (bool, error) {

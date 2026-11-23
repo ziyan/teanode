@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -214,6 +215,37 @@ type AgentConversation struct {
 	// in, when it was asked for in one.
 	GoalOriginConversationID string `json:"goalOriginConversationId,omitempty"`
 
+	// GoalTimes are the times the goal takes its turns at, chosen by the
+	// person or for them: each a cron line in their zone ("30 7 * * 1-5"),
+	// or "@at" and a moment, which is dropped once it has passed. A goal
+	// with times, or with mail it waits for, takes its turns then and not
+	// at a cadence of its own.
+	GoalTimes []string `json:"goalTimes"`
+
+	// GoalMailConditions make the goal take a turn when a message arrives
+	// that passes every one of them, in a mailbox the agent was given. They
+	// are the tests a mailbox rule makes.
+	GoalMailConditions []MailboxRuleCondition `json:"goalMailConditions"`
+
+	// GoalMailArrivals are the messages that passed since the goal's last
+	// turn, for the next one to be told about. Kept off the API: they are
+	// the turn's to read, by the id each carries.
+	GoalMailArrivals []AgentGoalArrival `json:"-"`
+
+	// GoalWrittenBy is who wrote the goal's description: the person, the
+	// agent through a tool, or TeaNode for the goals a switch starts (the
+	// daily brief, the asset estimates). A goal's turn runs with nobody
+	// watching and its description arrives in the turn's own message, the
+	// most trusted thing in a conversation: right for the person's standing
+	// instruction, and wrong for one the agent wrote on the strength of
+	// something it read. Empty is taken to be the agent.
+	GoalWrittenBy string `json:"goalWrittenBy,omitempty"`
+
+	// IsGoalNotifiedWhenPosted makes the first card each turn of the goal
+	// posts send one quiet notification, "<title> is ready", though its
+	// cards are not urgent.
+	IsGoalNotifiedWhenPosted bool `json:"isGoalNotifiedWhenPosted"`
+
 	// BackgroundWakeCount is how many turns ended background commands and
 	// finished background work have woken here since the person last
 	// wrote, which bounds a chain of them.
@@ -233,23 +265,86 @@ type AgentGoalState string
 
 // The states a goal is in. A goal that is working takes turns of the
 // agent's own; one that is waiting takes none until the person writes
-// again, and their next turn puts it back to working; one that is met is
-// done, and its text stays on the conversation until they clear it; one
-// that is dropped is one the person stopped.
+// again, and their next turn puts it back to working; one that is paused
+// is one the person switched off for now, which takes no turns and hears
+// no mail until they switch it on; one that is met is done, and its text
+// stays on the conversation until they clear it; one that is dropped is
+// one the person stopped.
 const (
 	GoalWorking AgentGoalState = "working"
 	GoalWaiting AgentGoalState = "waiting"
+	GoalPaused  AgentGoalState = "paused"
 	GoalMet     AgentGoalState = "met"
 	GoalDropped AgentGoalState = "dropped"
 )
 
-// IsAgentGoalState says whether a state is one of the four.
+// IsAgentGoalState says whether a state is one of the five.
 func IsAgentGoalState(goalState AgentGoalState) bool {
 	switch goalState {
-	case GoalWorking, GoalWaiting, GoalMet, GoalDropped:
+	case GoalWorking, GoalWaiting, GoalPaused, GoalMet, GoalDropped:
 		return true
 	}
 	return false
+}
+
+// IsGoalOnSetTimes is whether the goal takes its turns at times somebody
+// chose, or when mail it waits for arrives, rather than at a cadence the
+// agent keeps for itself.
+func (self *AgentConversation) IsGoalOnSetTimes() bool {
+	return self != nil && (len(self.GoalTimes) > 0 || len(self.GoalMailConditions) > 0)
+}
+
+// AgentGoalArrival is one message that set a goal off: enough for its turn
+// to say what came and to read it, not what it says.
+type AgentGoalArrival struct {
+	MailboxItemID string    `json:"mailboxItemId"`
+	MailboxName   string    `json:"mailboxName,omitempty"`
+	From          string    `json:"from"`
+	Subject       string    `json:"subject"`
+	ReceivedAt    time.Time `json:"receivedAt"`
+	// IsSenderVerified is whether the sender's domain vouched for the
+	// message (DMARC passed), so that a From line anybody can write is not
+	// taken for the sender it names.
+	IsSenderVerified bool `json:"isSenderVerified"`
+}
+
+// MaximumGoalArrivals is how many messages a goal keeps for its next turn;
+// a flood past that is counted by the newest ones alone.
+const MaximumGoalArrivals = 50
+
+// GoalMailFields are the tests a goal's mail conditions may make: those a
+// message can be judged by as it arrives, before the agent has sorted it.
+var GoalMailFields = []string{"from", "to", "subject", "header", "any"}
+
+// ValidateGoalMailConditions reports what is wrong with a goal's mail
+// conditions.
+func ValidateGoalMailConditions(conditions []MailboxRuleCondition) error {
+	var errors ValidationErrors
+	for index, condition := range conditions {
+		if !slices.Contains(GoalMailFields, condition.Field) {
+			errors.add("goalMailConditions", "condition %d: %q is not a field; use from, to, subject, header or any", index, condition.Field)
+			continue
+		}
+		if condition.Field == "any" {
+			continue
+		}
+		switch condition.Operator {
+		case "contains", "equals", "":
+		case "matches":
+			if _, err := regexp.Compile(condition.Value); err != nil {
+				errors.add("goalMailConditions", "condition %d: %q is not a pattern: %s", index, condition.Value, err)
+			}
+		default:
+			errors.add("goalMailConditions", "condition %d: %q is not an operator; use contains, equals or matches", index, condition.Operator)
+		}
+		if strings.TrimSpace(condition.Value) == "" {
+			errors.add("goalMailConditions", "condition %d: needs a value to compare with", index)
+		}
+		if condition.Field == "header" && strings.TrimSpace(condition.Header) == "" {
+			errors.add("goalMailConditions", "condition %d: a header condition names the header", index)
+		}
+	}
+	return errors.ErrOrNil()
 }
 
 // IsChat says whether a conversation is a member's own for a chat.

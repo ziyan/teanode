@@ -453,7 +453,7 @@ func TestStatementImportJob(t *testing.T) {
 	countSaid := func() int {
 		said := 0
 		dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
-			conversation, err := scheduleConversation(tx, fixture.agent.ID, "")
+			conversation, err := personsConversation(tx, fixture.agent.ID, "")
 			if err != nil {
 				t.Fatalf("scheduleConversation: %s", err)
 			}
@@ -500,7 +500,7 @@ func TestStatementImportJobTellsItsOwnImportAfterAnUpload(t *testing.T) {
 		if mail, err = tx.CreateMail(&models.Mail{From: "person@example.com", Kind: models.MailKindIncoming}, nil); err != nil {
 			t.Fatalf("CreateMail: %s", err)
 		}
-		if conversation, err = scheduleConversation(tx, fixture.agent.ID, ""); err != nil {
+		if conversation, err = personsConversation(tx, fixture.agent.ID, ""); err != nil {
 			t.Fatalf("scheduleConversation: %s", err)
 		}
 	})

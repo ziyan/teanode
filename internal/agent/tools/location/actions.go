@@ -251,7 +251,7 @@ var errOthersInChat = errors.New("another person's location is not repeated into
 // agent wrote is steered by content the person did not write, and could have
 // it read out to whoever wrote it.
 var errOthersNotByPerson = errors.New("another person's location is read only in a conversation the person started themselves, " +
-	"or by a program they connected over MCP, not in a run that a mail, a webhook or a schedule of yours began: the person can ask you directly instead")
+	"or by a program they connected over MCP, not in a run that a mail, a webhook or a goal of yours began: the person can ask you directly instead")
 
 // checkOthersAllowed is nil when this run may read somebody else's location:
 // the person or a program they connected over MCP started it, and its words

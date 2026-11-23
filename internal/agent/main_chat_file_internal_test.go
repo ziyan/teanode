@@ -72,7 +72,7 @@ func (self *mainChatFixture) main(test *testing.T) *models.AgentConversation {
 	var conversation *models.AgentConversation
 	dbtest.RunTransactionOn(test, self.database, func(tx db.Transaction) {
 		var err error
-		if conversation, err = scheduleConversation(tx, self.agent.ID, ""); err != nil {
+		if conversation, err = personsConversation(tx, self.agent.ID, ""); err != nil {
 			test.Fatal(err)
 		}
 	})

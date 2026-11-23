@@ -164,8 +164,8 @@ class SettingsScreenshotTest {
     @Test fun `dreams light`() = shoot("settings-dreams-light") { DreamsScreen(onBack = {}) }
     @Test fun `dreams dark`() = shoot("settings-dreams-dark", AppearanceChoice.Dark) { DreamsScreen(onBack = {}) }
     @Test fun `dreams largest text`() = shoot("settings-dreams-largest-text", fontScale = 2f) { DreamsScreen(onBack = {}) }
-    @Test fun `schedules light`() = shoot("settings-schedules-light") { SchedulesScreen(onBack = {}) }
-    @Test fun `schedules dark`() = shoot("settings-schedules-dark", AppearanceChoice.Dark) { SchedulesScreen(onBack = {}) }
+    @Test fun `brief light`() = shoot("settings-brief-light") { DailyBriefScreen(onBack = {}) }
+    @Test fun `brief dark`() = shoot("settings-brief-dark", AppearanceChoice.Dark) { DailyBriefScreen(onBack = {}) }
     @Test fun `alerts light`() = shoot("settings-alerts-light") { MutedAlertsScreen(onBack = {}) }
     @Test fun `alerts dark`() = shoot("settings-alerts-dark", AppearanceChoice.Dark) { MutedAlertsScreen(onBack = {}) }
     @Test fun `connections light`() = shoot("settings-connections-light") { ConnectionsScreen(onBack = {}) }
@@ -195,8 +195,6 @@ class SettingsScreenshotTest {
 
     @Test fun `token dialog light`() = shoot("settings-dialog-token-new-light", before = tap("New token")) { TokensScreen(onBack = {}) }
     @Test fun `source editor light`() = shoot("settings-dialog-source-new-light", before = tap("Add a source")) { KnowledgeSourcesScreen(onBack = {}) }
-    @Test fun `schedule editor light`() = shoot("settings-dialog-schedule-new-light", before = tap("Add a schedule")) { SchedulesScreen(onBack = {}) }
-    @Test fun `schedule editor dark`() = shoot("settings-dialog-schedule-new-dark", AppearanceChoice.Dark, before = tap("Add a schedule")) { SchedulesScreen(onBack = {}) }
     @Test fun `source editor typed light`() = shoot("settings-dialog-source-typed-light", before = { tap("Add a source")(); composeRule.onNodeWithText("Kind of source").performClick(); composeRule.waitForIdle(); composeRule.onNodeWithText("webfeed").performClick() }) { KnowledgeSourcesScreen(onBack = {}) }
     @Test fun `circle new dialog light`() = shoot("settings-dialog-circle-new-light", before = tap("New circle")) { CirclesScreen(onBack = {}, onOpenCircle = {}, onOpenSharing = {}) }
     @Test fun `skill lend dialog light`() = shoot("settings-dialog-skill-lend-light", before = tap("Lend a skill")) { SkillSharingScreen(onBack = {}) }
@@ -204,7 +202,7 @@ class SettingsScreenshotTest {
 
     @Test fun `sources largest text`() = shoot("settings-sources-largest-text", fontScale = 2f) { KnowledgeSourcesScreen(onBack = {}) }
     @Test fun `memory largest text`() = shoot("settings-memory-largest-text", fontScale = 2f) { AgentMemorySettingsScreen(onBack = {}) }
-    @Test fun `schedules largest text`() = shoot("settings-schedules-largest-text", fontScale = 2f) { SchedulesScreen(onBack = {}) }
+    @Test fun `brief largest text`() = shoot("settings-brief-largest-text", fontScale = 2f) { DailyBriefScreen(onBack = {}) }
     @Test fun `connections largest text`() = shoot("settings-connections-largest-text", fontScale = 2f) { ConnectionsScreen(onBack = {}) }
     @Test fun `activity largest text`() = shoot("settings-activity-largest-text", fontScale = 2f) { AgentActivityScreen(onBack = {}) }
     @Test fun `agents-admin largest text`() = shoot("settings-agents-admin-largest-text", fontScale = 2f) { AgentAdminScreen(onBack = {}) }
@@ -225,7 +223,6 @@ class SettingsScreenshotTest {
     @Test fun `people edit dialog dark`() = shoot("settings-dialog-person-new-dark", AppearanceChoice.Dark, before = tap("New user")) { PeopleScreen(onBack = {}) }
     @Test fun `submission dialog light`() = shoot("settings-dialog-submission-light", before = { composeRule.onNodeWithText("Setup").performClick(); composeRule.waitForIdle(); composeRule.onAllNodes(androidx.compose.ui.test.hasScrollAction())[1].performScrollToNode(androidx.compose.ui.test.hasText("What to tell a mail client")); composeRule.onNodeWithText("What to tell a mail client").performClick() }) { ServerSettingsScreen(onBack = {}) }
     @Test fun `mail program dialog dark`() = shoot("settings-dialog-mail-program-dark", AppearanceChoice.Dark, before = { composeRule.onNodeWithText("Setup").performClick(); composeRule.waitForIdle(); composeRule.onAllNodes(androidx.compose.ui.test.hasScrollAction())[1].performScrollToNode(androidx.compose.ui.test.hasText("Reading mail in a mail program")); composeRule.onNodeWithText("Reading mail in a mail program").performClick() }) { ServerSettingsScreen(onBack = {}) }
-    @Test fun `schedule editor largest text`() = shoot("settings-dialog-schedule-new-largest-text", fontScale = 2f, before = tap("Add a schedule")) { SchedulesScreen(onBack = {}) }
     @Test fun `source editor typed dark`() = shoot("settings-dialog-source-typed-dark", AppearanceChoice.Dark, before = { tap("Add a source")(); composeRule.onNodeWithText("Kind of source").performClick(); composeRule.waitForIdle(); composeRule.onNodeWithText("webfeed").performClick() }) { KnowledgeSourcesScreen(onBack = {}) }
     @Test fun `token dialog dark`() = shoot("settings-dialog-token-new-dark", AppearanceChoice.Dark, before = tap("New token")) { TokensScreen(onBack = {}) }
 }

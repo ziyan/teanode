@@ -103,7 +103,7 @@ fun NavGraphBuilder.settingsRoutes(navigator: AppNavigator) {
     settingsPage(SettingsRoutes.SOURCES) { KnowledgeSourcesScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.MEMORY) { AgentMemorySettingsScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.DREAMS) { DreamsScreen(onBack = { navigator.back() }) }
-    settingsPage(SettingsRoutes.SCHEDULES) { SchedulesScreen(onBack = { navigator.back() }) }
+    settingsPage(SettingsRoutes.BRIEF) { DailyBriefScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.ALERTS) { MutedAlertsScreen(onBack = { navigator.back() }) }
     settingsPage(SettingsRoutes.CONNECTIONS) { ConnectionsScreen(onBack = { navigator.back() }, onOpenSkillSharing = { navigator.navigate(SettingsRoutes.SKILLS) }) }
     settingsPage(SettingsRoutes.ACTIVITY) { AgentActivityScreen(onBack = { navigator.back() }) }
@@ -142,7 +142,7 @@ fun settingsPlaces(): List<AppPlace> = listOf(
     place("sources", R.string.settings_sources_title, SettingsRoutes.SOURCES, Icons.Outlined.Tune),
     place("memory", R.string.settings_memory_title, SettingsRoutes.MEMORY, Icons.Outlined.Tune),
     place("dreams", R.string.settings_dreams_title, SettingsRoutes.DREAMS, Icons.Outlined.Tune),
-    place("schedules", R.string.settings_schedules_title, SettingsRoutes.SCHEDULES, Icons.Outlined.Tune),
+    place("brief", R.string.settings_brief_page_title, SettingsRoutes.BRIEF, Icons.Outlined.Tune),
     place("alerts", R.string.settings_alerts_title, SettingsRoutes.ALERTS, Icons.Outlined.Tune),
     place("connections", R.string.settings_connections_title, SettingsRoutes.CONNECTIONS, Icons.Outlined.Tune),
     place("activity", R.string.settings_activity_title, SettingsRoutes.ACTIVITY, Icons.Outlined.Tune),

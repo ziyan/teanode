@@ -59,14 +59,6 @@ class AgentUpkeepTest {
     }
 
     @Test
-    fun aScheduleKnowsWhenItRunsOnMailAndHowItIsDelivered() {
-        val schedule = TeaNodeJson.decodeFromString(AgentSchedule.serializer(), """{"id":"s","name":"Brief","cron":"0 8 * * *","deliver":"mail","mailConditions":[{"field":"from"}]}""")
-        assertTrue(schedule.isDeliveredByMail)
-        assertTrue(schedule.isTriggeredByMail)
-        assertFalse(schedule.copy(mailConditions = null).isTriggeredByMail)
-    }
-
-    @Test
     fun aServerIsPersonalWhenItAsksTheUserToSignIn() {
         assertTrue(AgentConnectedServer("a", auth = "oauth").doesAuthorizeInBrowser)
         assertTrue(AgentConnectedServer("a", auth = "user").isPersonal)

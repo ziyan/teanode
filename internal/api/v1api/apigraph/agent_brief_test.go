@@ -17,12 +17,12 @@ func TestTheBriefsTimeAndDaysAreKeptSeparately(t *testing.T) {
 		t.Fatalf("half past seven on weekdays by default: %q %v", fresh, err)
 	}
 
-	existing := &models.AgentSchedule{Cron: fresh}
+	existing := &models.AgentConversation{GoalTimes: []string{fresh}}
 	later, err := briefCron("08:15", nil, existing)
 	if err != nil || later != "15 8 * * 1-5" {
 		t.Fatalf("a new time keeps the days: %q %v", later, err)
 	}
-	everyDay, err := briefCron("", []int{1, 2, 3, 4, 5, 6, 7}, &models.AgentSchedule{Cron: later})
+	everyDay, err := briefCron("", []int{1, 2, 3, 4, 5, 6, 7}, &models.AgentConversation{GoalTimes: []string{later}})
 	if err != nil || everyDay != "15 8 * * 1,2,3,4,5,6,0" {
 		// Sunday is the seventh day to a person and the zeroth to cron.
 		t.Fatalf("new days keep the time: %q %v", everyDay, err)

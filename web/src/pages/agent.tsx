@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
-import { AgentReply, MailboxRuleCondition, graphql, openAgentConversation } from '../api'
+import { AgentReply, graphql, openAgentConversation } from '../api'
 import {
   CopyIconButton,
   ErrorMessage,
@@ -30,8 +30,8 @@ import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/setti
 import { Tabs, TabItem } from '../components/tabs'
 import { FinanceTab } from './agentFinance'
 import { useFinancePresence } from './finance/financePresence'
-import { dayNumbersFromCronField } from './agentBriefDays'
-import { GoalsTab } from './agentGoals'
+import { dayNumbersFromCronField } from '../components/cronDays'
+import { GOALS, GOAL_FIELDS, Goal, GoalsTab } from './agentGoals'
 import { IdeasTab } from './agentIdeas'
 import { MemoryCheckSection } from '../components/memoryCheck'
 import { Tooltip } from '../components/tooltip'
@@ -45,12 +45,6 @@ import { AGENT_FINANCE_TAB, AGENT_TABS, shownTabs } from '../pageTabs'
 import { useSession } from '../session'
 import { useMailboxes } from '../mailboxes'
 import { Select } from '../components/select'
-import {
-  BARE_FIELDS,
-  MailConditionsEditor,
-  SCHEDULE_MAIL_FIELDS,
-  describeMailSchedule,
-} from '../components/mailConditions'
 import { SpeechVoiceChoice } from '../components/speechVoice'
 import { PolicyTool, ToolPolicyAccordion } from '../components/toolPolicy'
 import { SkillSharesCard } from './agentSkillSharing'
@@ -459,14 +453,9 @@ export function AgentPage() {
       {/* The places it reads: each a source of an installed type. */}
       {tab === 'sources' ? <KnowledgeSourcesCard /> : null}
       {tab === 'finance' ? <FinanceTab /> : null}
-      {/* What it does at set times, of its own: the schedules and the
-          morning brief, which are timetables rather than connections. */}
-      {tab === 'schedules' ? (
-        <>
-          <SchedulesCard />
-          <BriefCard />
-        </>
-      ) : null}
+      {/* The morning brief, a goal the switch starts, which is a timetable
+          rather than a connection. */}
+      {tab === 'brief' ? <BriefCard /> : null}
       {tab === 'ideas' ? <IdeasTab /> : null}
       {tab === 'alerts' ? (
         <>
@@ -1118,30 +1107,11 @@ type DreamState = {
   startedAt: string | null
 }
 
-const SCHEDULES = `
-  query {
-    ListAgentSchedules { id name cron mailConditions { field header operator value } prompt deliver enabled lastRunAt nextRunAt }
-  }`
-
-const SAVE_SCHEDULE = `
-  mutation ($scheduleId: String, $name: String, $cron: String, $mailConditions: [MailboxRuleConditionInput!], $prompt: String, $deliver: String, $enabled: Boolean) {
-    SaveAgentSchedule(scheduleId: $scheduleId, name: $name, cron: $cron, mailConditions: $mailConditions, prompt: $prompt, deliver: $deliver, enabled: $enabled) { id }
-  }`
-
 const SET_BRIEF = `
   mutation ($enabled: Boolean!, $at: String, $days: [Int!]) {
-    SetAgentBrief(enabled: $enabled, at: $at, days: $days) { id name cron prompt deliver enabled nextRunAt }
+    SetAgentBrief(enabled: $enabled, at: $at, days: $days) { ${GOAL_FIELDS} }
   }`
-const RUN_BRIEF = `mutation { RunAgentBriefNow { id name } }`
-const DELETE_SCHEDULE = `
-  mutation ($scheduleId: String!) {
-    DeleteAgentSchedule(scheduleId: $scheduleId)
-  }`
-
-const RUN_SCHEDULE = `
-  mutation ($scheduleId: String!) {
-    RunAgentSchedule(scheduleId: $scheduleId)
-  }`
+const RUN_BRIEF = `mutation { RunAgentBriefNow { conversationId } }`
 
 const SERVERS = `
   query {
@@ -1949,20 +1919,6 @@ function LearnedCard() {
       ) : null}
     </>
   )
-}
-
-interface Schedule {
-  id: string
-  name: string
-  cron: string
-  // Set when the schedule runs on arriving mail rather than on the clock; the
-  // cron line is then empty.
-  mailConditions?: MailboxRuleCondition[] | null
-  prompt: string
-  deliver: string
-  enabled: boolean
-  lastRunAt?: string | null
-  nextRunAt?: string | null
 }
 
 // A shape is what a source is to the person, and what that means to the
@@ -3168,12 +3124,18 @@ function DreamCard({
 export function BriefCard() {
   const { t } = useTranslation()
   const toast = useToast()
-  const { data, error, loading, reload } = useQuery(
-    () => graphql<{ ListAgentSchedules: Schedule[] }>(SCHEDULES, {}),
-    [],
-  )
+  const navigate = useNavigate()
+  const { data, error, loading, reload } = useQuery(() => graphql<{ ListAgentGoals: Goal[] }>(GOALS, {}), [])
   const [busy, setBusy] = useState(false)
-  const brief = (data?.ListAgentSchedules ?? []).find((schedule) => schedule.name === 'Daily brief')
+  // The goal the switch starts: written by the program, called "Daily brief",
+  // and still kept at (a brief that was met or dropped is not the one).
+  const brief = (data?.ListAgentGoals ?? []).find(
+    (goal) =>
+      goal.goalWrittenBy === 'built_in' &&
+      goal.goalTitle === 'Daily brief' &&
+      ['working', 'waiting', 'paused'].includes(goal.goalState),
+  )
+  const isBriefOn = brief !== undefined && brief.goalState !== 'paused'
   const [at, setAt] = useState('')
   // The days the person has chosen, once they have chosen any; until then
   // the days the brief has.
@@ -3181,7 +3143,7 @@ export function BriefCard() {
   const { language } = useTranslation()
 
   // What the cron line says, for the time and the days: "30 7 * * 1-5".
-  const fields = (brief?.cron ?? '30 7 * * 1-5').split(/\s+/)
+  const fields = (brief?.goalTimes[0] ?? '30 7 * * 1-5').split(/\s+/)
   const time = at || `${(fields[1] ?? '7').padStart(2, '0')}:${(fields[0] ?? '30').padStart(2, '0')}`
   const chosenDays = days ?? dayNumbersFromCronField(fields[4] ?? '1-5')
   const hasNoDay = chosenDays.length === 0
@@ -3232,7 +3194,7 @@ export function BriefCard() {
         />
         {hasNoDay ? <p className="muted field-hint">{t('agent.briefNoDays')}</p> : null}
         <div className="page-actions page-actions-end">
-          {brief?.enabled ? (
+          {isBriefOn ? (
             <>
               <button type="button" disabled={busy} onClick={() => void sendNow()}>
                 {t('agent.briefNow')}
@@ -3250,283 +3212,23 @@ export function BriefCard() {
             </button>
           )}
         </div>
-        <p className="muted">{brief ? t('agent.briefWhere') : t('agent.briefNotYet')}</p>
+        {brief && isBriefOn && brief.goalNextAt ? (
+          <p className="muted">{t('agent.briefNext', { when: formatTime(brief.goalNextAt) })}</p>
+        ) : null}
+        {brief ? (
+          <div>
+            <button
+              type="button"
+              onClick={() => navigate(`/settings/agent/goals?goal=${encodeURIComponent(brief.conversationId)}`)}
+            >
+              {t('agent.briefOpen')}
+            </button>
+          </div>
+        ) : (
+          <p className="muted">{t('agent.briefNotYet')}</p>
+        )}
       </div>
     </SettingsSection>
-  )
-}
-
-// A schedule that runs on mail starts with one line, the commonest question
-// of a message: who it is from.
-function newMailConditions(): MailboxRuleCondition[] {
-  return [{ field: 'from', operator: 'contains', value: '' }]
-}
-
-// What the server accepts as a condition: the header name only on a header,
-// and no operator or value where the field is the whole condition.
-function cleanMailConditions(conditions: MailboxRuleCondition[]): MailboxRuleCondition[] {
-  return conditions.map((condition) => ({
-    field: condition.field,
-    header: condition.field === 'header' ? (condition.header ?? '').trim() : '',
-    operator: BARE_FIELDS.includes(condition.field) ? '' : condition.operator,
-    value: BARE_FIELDS.includes(condition.field) ? '' : (condition.value ?? '').trim(),
-  }))
-}
-
-function isMailConditionComplete(condition: MailboxRuleCondition): boolean {
-  if (BARE_FIELDS.includes(condition.field)) return true
-  if (condition.field === 'header' && (condition.header ?? '').trim() === '') return false
-  return (condition.value ?? '').trim() !== ''
-}
-
-export function SchedulesCard() {
-  const session = useSession()
-  const { t } = useTranslation()
-  const toast = useToast()
-  const { data, error, loading, reload } = useQuery(
-    () => graphql<{ ListAgentSchedules: Schedule[] }>(SCHEDULES, {}),
-    [],
-  )
-  const [adding, setAdding] = useState(false)
-  const [editing, setEditing] = useState<string | null>(null)
-  const [name, setName] = useState('')
-  const [cron, setCron] = useState('0 8 * * 1-5')
-  const [runsOnMail, setRunsOnMail] = useState(false)
-  const [mailConditions, setMailConditions] = useState<MailboxRuleCondition[]>(newMailConditions)
-  const [prompt, setPrompt] = useState('')
-  const [deliver, setDeliver] = useState('drawer')
-  const [busy, setBusy] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
-  const failed = (caught: unknown) => toast.failed(messageOf(caught))
-  const open = (schedule?: Schedule) => {
-    setEditing(schedule?.id ?? null)
-    setName(schedule?.name ?? '')
-    setCron(schedule?.cron || '0 8 * * 1-5')
-    setRunsOnMail(Boolean(schedule?.mailConditions?.length))
-    setMailConditions(
-      schedule?.mailConditions?.length
-        ? schedule.mailConditions.map((condition) => ({
-            field: condition.field,
-            header: condition.header ?? '',
-            operator: condition.operator,
-            value: condition.value ?? '',
-          }))
-        : newMailConditions(),
-    )
-    setPrompt(schedule?.prompt ?? '')
-    setDeliver(schedule?.deliver ?? 'drawer')
-    setProblem(null)
-    setAdding(true)
-  }
-  const add = async () => {
-    setBusy(true)
-    setProblem(null)
-    try {
-      await graphql(SAVE_SCHEDULE, {
-        scheduleId: editing ?? undefined,
-        name: name.trim(),
-        // One or the other, never both: the server switches the schedule to
-        // whichever it is given.
-        ...(runsOnMail ? { mailConditions: cleanMailConditions(mailConditions) } : { cron: cron.trim() }),
-        prompt: prompt.trim(),
-        deliver,
-        ...(editing ? {} : { enabled: true }),
-      })
-      setAdding(false)
-      setName('')
-      setPrompt('')
-      await reload()
-    } catch (caught) {
-      setProblem(messageOf(caught))
-    } finally {
-      setBusy(false)
-    }
-  }
-  const toggle = async (schedule: Schedule) => {
-    try {
-      await graphql(SAVE_SCHEDULE, { scheduleId: schedule.id, enabled: !schedule.enabled })
-      await reload()
-    } catch (caught) {
-      failed(caught)
-    }
-  }
-  const remove = async (schedule: Schedule) => {
-    try {
-      await graphql(DELETE_SCHEDULE, { scheduleId: schedule.id })
-      await reload()
-    } catch (caught) {
-      failed(caught)
-    }
-  }
-  const run = async (schedule: Schedule) => {
-    try {
-      await graphql(RUN_SCHEDULE, { scheduleId: schedule.id })
-      toast.done(t('agent.scheduleQueued'))
-    } catch (caught) {
-      failed(caught)
-    }
-  }
-  const schedules = data?.ListAgentSchedules ?? []
-  return (
-    <>
-      <SettingsSection
-        card
-        title={t('agent.schedules')}
-        description={t('agent.schedulesHint')}
-        action={
-          <button type="button" className="primary" onClick={() => open()}>
-            {t('agent.addSchedule')}
-          </button>
-        }
-      >
-        {error ? <ErrorMessage error={error} /> : null}
-        {loading && !data ? <Loading /> : null}
-        {data && schedules.length === 0 ? <SettingsEmpty>{t('agent.noSchedules')}</SettingsEmpty> : null}
-        {schedules.map((schedule) => (
-          <SettingsRow
-            key={schedule.id}
-            title={schedule.name}
-            badge={
-              <>
-                {schedule.mailConditions?.length ? null : <code className="tag">{schedule.cron}</code>}
-                {!schedule.enabled ? <Tag value={t('agent.scheduleOff')} tone="warn" /> : null}
-              </>
-            }
-            subtitle={
-              <>
-                {schedule.prompt}
-                <br />
-                {schedule.mailConditions?.length ? (
-                  <>
-                    {describeMailSchedule(schedule.mailConditions, t)}
-                    <br />
-                  </>
-                ) : null}
-                {schedule.deliver === 'mail' ? t('agent.deliverMail') : t('agent.deliverDrawer')}
-                {schedule.nextRunAt ? ` · ${t('agent.scheduleNext', { time: formatTime(schedule.nextRunAt) })}` : ''}
-              </>
-            }
-            actions={
-              <div className="row-actions">
-                <Tooltip label={t('agent.editSchedule')}>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    aria-label={`${schedule.name}: ${t('agent.editSchedule')}`}
-                    onClick={() => open(schedule)}
-                  >
-                    <PencilIcon size={16} />
-                  </button>
-                </Tooltip>
-                <Tooltip label={t('agent.scheduleRun')}>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    aria-label={`${schedule.name}: ${t('agent.scheduleRun')}`}
-                    onClick={() => void run(schedule)}
-                  >
-                    <RefreshIcon size={16} />
-                  </button>
-                </Tooltip>
-                <Tooltip label={schedule.enabled ? t('agent.scheduleDisable') : t('agent.scheduleEnable')}>
-                  <button
-                    type="button"
-                    className="icon-action"
-                    aria-label={`${schedule.name}: ${schedule.enabled ? t('agent.scheduleDisable') : t('agent.scheduleEnable')}`}
-                    onClick={() => void toggle(schedule)}
-                  >
-                    {schedule.enabled ? <ToggleOnIcon size={16} /> : <ToggleOffIcon size={16} />}
-                  </button>
-                </Tooltip>
-                <Tooltip label={t('common.remove')}>
-                  <button
-                    type="button"
-                    className="icon-action danger"
-                    aria-label={`${schedule.name}: ${t('common.remove')}`}
-                    onClick={() => void remove(schedule)}
-                  >
-                    <TrashIcon size={16} />
-                  </button>
-                </Tooltip>
-              </div>
-            }
-          />
-        ))}
-      </SettingsSection>
-      {adding ? (
-        <FormDialog
-          title={editing ? t('agent.editSchedule') : t('agent.addSchedule')}
-          submitLabel={editing ? t('common.save') : t('agent.scheduleAdd')}
-          busy={busy}
-          error={problem}
-          canSubmit={
-            name.trim() !== '' &&
-            prompt.trim() !== '' &&
-            (runsOnMail ? mailConditions.every(isMailConditionComplete) : cron.trim() !== '')
-          }
-          onClose={() => setAdding(false)}
-          onSubmit={() => void add()}
-        >
-          <label>
-            <span>{t('agent.scheduleName')}</span>
-            <input autoFocus value={name} onChange={(event) => setName(event.target.value)} />
-          </label>
-          <div className="row">
-            <label>
-              <span>{t('agent.scheduleWhen')}</span>
-              <Select
-                block
-                value={runsOnMail ? 'mail' : 'clock'}
-                label={t('agent.scheduleWhen')}
-                options={[
-                  { value: 'clock', label: t('agent.scheduleWhenClock') },
-                  { value: 'mail', label: t('agent.scheduleWhenMail') },
-                ]}
-                onChange={(value) => setRunsOnMail(value === 'mail')}
-              />
-            </label>
-            <label>
-              <span>{t('agent.scheduleDeliver')}</span>
-              <Select
-                block
-                value={deliver}
-                label={t('agent.scheduleDeliver')}
-                options={[
-                  { value: 'drawer', label: t('agent.deliverDrawer') },
-                  ...(session.services?.isMailboxEnabled === false
-                    ? []
-                    : [{ value: 'mail', label: t('agent.deliverMail') }]),
-                ]}
-                onChange={setDeliver}
-              />
-            </label>
-          </div>
-          {runsOnMail ? (
-            <>
-              <div className="field-label">{t('mailboxSettings.conditions')}</div>
-              <MailConditionsEditor
-                conditions={mailConditions}
-                onChange={setMailConditions}
-                fields={SCHEDULE_MAIL_FIELDS}
-              />
-              <p className="muted">{t('agent.scheduleMailHint')}</p>
-            </>
-          ) : (
-            <>
-              <label>
-                <span>{t('agent.scheduleCron')}</span>
-                <input value={cron} placeholder="0 8 * * 1-5" onChange={(event) => setCron(event.target.value)} />
-              </label>
-              <p className="muted">{t('agent.scheduleCronHint')}</p>
-            </>
-          )}
-          <label>
-            <span>{t('agent.schedulePrompt')}</span>
-            <textarea rows={3} value={prompt} onChange={(event) => setPrompt(event.target.value)} />
-          </label>
-        </FormDialog>
-      ) : null}
-    </>
   )
 }
 

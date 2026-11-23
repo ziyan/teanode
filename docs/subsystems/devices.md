@@ -97,8 +97,8 @@ of the shapes that change what runs
 or who may get in: shell startup files, `.ssh`, `.gnupg`, autostart and service
 directories, `/etc`, git hooks, the password files.
 
-Any run reaches the computer, with or without the person there: a scheduled
-turn, a goal, a night. What stands between such a run and the machine is not a
+Any run reaches the computer, with or without the person there: a goal's
+turn, a night. What stands between such a run and the machine is not a
 card, which cannot be shown to an empty room, but the refusal a call gets when
 it needs the person's word: anything the rule above classifies as asking is
 refused with nobody present, and the run is told to say what it would have
