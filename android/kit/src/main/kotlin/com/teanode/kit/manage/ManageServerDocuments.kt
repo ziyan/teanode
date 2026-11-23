@@ -203,6 +203,18 @@ query (${'$'}by: String, ${'$'}since: DateTime, ${'$'}until: DateTime) {
 }
 """.trimEnd()
 
+    val STORAGE_USAGE = """
+query (${'$'}by: String, ${'$'}since: DateTime, ${'$'}until: DateTime) {
+  StorageUsage(by: ${'$'}by, since: ${'$'}since, until: ${'$'}until) {
+    breakdownBy databaseSizeBytes fileSizeBytes totalSizeBytes
+    usageRows { rowKey rowLabel rowSizeBytes rowTableCount rowFileSizes { sizeKey sizeBytes } }
+    historyDays { sampledOn databaseSizeBytes fileSizeBytes totalSizeBytes breakdownSizes { sizeKey sizeBytes } }
+    disks { diskLabel isDiskMeasured diskTotalBytes diskFreeBytes diskUsedBytes projectedFullOn daysUntilFull isProjectedFull }
+    growth { growthSampleCount isGrowthProjectable growthBytesPerDay currentSizeBytes projectedSize30DaysBytes projectedSize90DaysBytes projectedSize365DaysBytes areFilesCounted }
+  }
+}
+""".trimEnd()
+
     val MANAGE_SET_AGENT_LIMIT = """
 mutation (${'$'}agentId: String!, ${'$'}dailyTokens: Int64, ${'$'}dailyCost: Float) {
   SetAgentLimit(agentId: ${'$'}agentId, dailyTokens: ${'$'}dailyTokens, dailyCost: ${'$'}dailyCost) { ${MANAGE_AGENT_SUMMARY_FIELDS} }

@@ -33,6 +33,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ListHealthTypes":                     client.DocumentListHealthTypes,
 		"ReadHealthSummary":                   client.DocumentReadHealthSummary,
 		"ListHealthSamples":                   client.DocumentListHealthSamples,
+		"StorageUsage":                        client.DocumentStorageUsage,
 		"ReadHealthRoute":                     client.DocumentReadHealthRoute,
 		"ReadHealthSettings":                  client.DocumentReadHealthSettings,
 		"the agent reading the Health switch": client.DocumentReadHealthAgentSwitch,

@@ -15,14 +15,16 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "agent_usage", Family: tools.FamilyGeneral, Risk: tools.RiskRead,
-				Description: "What the agent has spent: tokens and money, by day, by kind of work, by model or by mailbox, with the budget left for today. Ask for this person's own, or for every person on the server, which needs the permission to audit agents. Use it before answering a question about cost, or about why something stopped.",
+				Description: "What the agent has spent: tokens and money, by day, by kind of work, by model or by mailbox, with the budget left for today. Ask for this person's own, or for every person on the server, which needs the permission to audit agents. Use it before answering a question about cost, or about why something stopped. With whose storage it answers how much room the database and the files take, which people and kinds of file take it, how fast that grows and when a disk fills.",
 				Parameters: tools.Object(map[string]any{
-					"whose": tools.EnumProperty("this person's own usage, or the whole server's, which needs agent:audit", "mine", "server"),
-					"by":    tools.EnumProperty("how to group the rows; one total when absent", "day", "kind", "model", "mailbox", "agent"),
-					"since": tools.StringProperty("the start, as a date or a moment; thirty days ago by default"),
-					"until": tools.StringProperty("the end; now by default"),
+					"whose":  tools.EnumProperty("this person's own usage, the whole server's, which needs agent:audit, or the server's storage: what the database and the files hold, their growth and when a disk fills, which needs server:manage", "mine", "server", "storage"),
+					"by":     tools.EnumProperty("how to group the rows; one total when absent. For storage: area (the database), kind (the files) or person (the files); area by default", "day", "kind", "model", "mailbox", "agent", "area", "person"),
+					"part":   tools.EnumProperty("for storage: the current sizes (default) or the daily samples for the trend", "now", "history"),
+					"offset": tools.IntegerProperty("for storage: skip this many rows or days, for the next page: the next_offset of the page before"),
+					"since":  tools.StringProperty("the start, as a date or a moment; thirty days ago by default"),
+					"until":  tools.StringProperty("the end; now by default"),
 				}),
-				Guidance: "agent_usage: on the server view, billed is what the provider charged and cost is the estimate from the configured prices; give both when both are present. Money is what the person can act on, so lead with it and give tokens only when asked. Grouping by model is what shows where the cost is; grouping by kind shows which work is spending it.",
+				Guidance: "agent_usage storage: give the sizes as the answer writes them and say which disk fills soonest and when; the files figure is what the rows say, and the database is not measured per person. agent_usage: on the server view, billed is what the provider charged and cost is the estimate from the configured prices; give both when both are present. Money is what the person can act on, so lead with it and give tokens only when asked. Grouping by model is what shows where the cost is; grouping by kind shows which work is spending it.",
 				Run:      runUsage,
 			},
 		}
@@ -30,10 +32,12 @@ func init() {
 }
 
 type usageRequest struct {
-	Whose string `json:"whose"`
-	By    string `json:"by"`
-	Since string `json:"since"`
-	Until string `json:"until"`
+	Whose  string `json:"whose"`
+	By     string `json:"by"`
+	Since  string `json:"since"`
+	Until  string `json:"until"`
+	Part   string `json:"part"`
+	Offset int    `json:"offset"`
 }
 
 const documentMine = `query ($since: DateTime, $until: DateTime, $by: String) {
@@ -62,6 +66,9 @@ func runUsage(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
 		variables[name] = moment.Format(time.RFC3339)
+	}
+	if strings.EqualFold(strings.TrimSpace(arguments.Whose), "storage") {
+		return runStorageUsage(ctx, arguments, variables)
 	}
 	if strings.EqualFold(strings.TrimSpace(arguments.Whose), "server") {
 		var answer struct {

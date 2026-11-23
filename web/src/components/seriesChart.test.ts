@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { axisLabelsFor, axisWidthFor, chartScale, compact, isolatedIndexes, labeledIndexes } from './seriesChart'
+import { axisLabelsFor, axisWidthFor, chartScale, compact, daysBetween, isolatedIndexes, labeledIndexes } from './seriesChart'
 
 // A month of cash flow that went below zero: the scale reaches under the
 // lowest value, so the line is drawn whole, and zero is a gridline.
@@ -110,4 +110,15 @@ it('says the gridlines whole when no shorter form tells them apart', () => {
 it('reaches for every dip when asked', () => {
   expect(chartScale([9000, -300]).floor).toBe(0)
   expect(chartScale([9000, -300], { isEveryDipShown: true }).floor).toBeLessThan(0)
+})
+
+// Every day once, across the autumn day the clocks go back where the test
+// runs (in the northern or the southern half of the world).
+it('lists each day of a range once', () => {
+  for (const [first, last, count] of [['2030-10-01', '2030-11-30', 61], ['2030-03-15', '2030-04-30', 47]] as const) {
+    const days = daysBetween(first, last)
+    expect(new Set(days).size).toBe(days.length)
+    expect(days.length).toBe(count)
+    expect(days[days.length - 1]).toBe(last)
+  }
 })

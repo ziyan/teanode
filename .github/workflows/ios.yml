@@ -675,6 +675,10 @@ jobs:
           shoot agent-usage-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage
           shoot agent-usage-cost-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage-cost
           shoot agent-usage-cost-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage-cost
+          # What the database and the files hold, the disks and the day one fills.
+          shoot storage-usage-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen storage-usage
+          shoot storage-usage-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen storage-usage
+          shoot storage-usage-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen storage-usage
           shoot rules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen rules
           shoot dreams-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dreams
           shoot schedules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules

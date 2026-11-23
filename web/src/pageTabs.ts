@@ -55,6 +55,9 @@ export const INTEGRATION_TABS: PageTab[] = [
 export const SERVER_TABS: PageTab[] = [
   { id: 'about', label: 'server.tabAbout' },
   { id: 'setup', label: 'server.tabSetup' },
+  // What the database and the files hold and when a disk fills. Not the
+  // Storage tab of the integrations, which is where the messages are kept.
+  { id: 'usage', label: 'server.tabStorageUsage' },
   ...INTEGRATION_TABS,
 ]
 

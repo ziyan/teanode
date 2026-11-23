@@ -106,7 +106,9 @@ export function daysBetween(first: string, last: string): string[] {
   const start = new Date(first + 'T00:00:00')
   const end = new Date(last + 'T00:00:00')
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return days
-  for (let day = start; day <= end && days.length < 400; day = new Date(day.getTime() + 86_400_000)) {
+  // A calendar day at a time, not 24 hours: a day the clocks go back is 25
+  // hours long, and stepping by 24 would list it twice.
+  for (let day = start; day <= end && days.length < 400; day = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1)) {
     const month = String(day.getMonth() + 1).padStart(2, '0')
     const date = String(day.getDate()).padStart(2, '0')
     days.push(`${day.getFullYear()}-${month}-${date}`)

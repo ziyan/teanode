@@ -295,7 +295,7 @@ private struct ServerSettingsRows: View {
     ]
 
     var body: some View {
-        if tabs.contains(.about) || tabs.contains(.setup) {
+        if tabs.contains(.about) || tabs.contains(.setup) || tabs.contains(.usage) {
             Section {
                 if tabs.contains(.about) {
                     NavigationLink {
@@ -310,6 +310,14 @@ private struct ServerSettingsRows: View {
                         ServerSetupView(connection: model.connection)
                     } label: {
                         Label("Setup", systemImage: "checklist")
+                            .foregroundStyle(.primary)
+                    }
+                }
+                if tabs.contains(.usage) {
+                    NavigationLink {
+                        StorageUsageView(connection: model.connection)
+                    } label: {
+                        Label("Disk usage", systemImage: "internaldrive")
                             .foregroundStyle(.primary)
                     }
                 }
