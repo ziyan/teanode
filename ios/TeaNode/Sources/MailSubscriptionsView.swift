@@ -111,7 +111,7 @@ struct SubscriptionRow: View {
     private var counts: String {
         var parts = [String(localized: "\(subscription.count) messages")]
         if subscription.unread > 0 { parts.append(String(localized: "\(subscription.unread) unread")) }
-        if subscription.mutedAt != nil { parts.append(String(localized: "Muted")) }
+        if subscription.mutedAt != nil { parts.append(String(localized: "Out of the Inbox")) }
         return parts.joined(separator: " · ")
     }
 
@@ -192,7 +192,7 @@ struct SubscriptionReader: View {
                 Button(subscription.imagesAt == nil ? LocalizedStringKey("Always show pictures") : "Ask before showing pictures", systemImage: "photo") {
                     Task { await showPictures(subscription.imagesAt == nil) }
                 }
-                Button(subscription.mutedAt == nil ? LocalizedStringKey("Mute") : "Unmute", systemImage: subscription.mutedAt == nil ? "bell.slash" : "bell") {
+                Button(subscription.mutedAt == nil ? LocalizedStringKey("Keep out of the Inbox") : "Let back into the Inbox", systemImage: subscription.mutedAt == nil ? "archivebox" : "tray.and.arrow.down") {
                     Task { await mute(subscription.mutedAt == nil) }
                 }
                 if items.allSatisfy({ mail.folder($0.folderId)?.kind == "junk" }) {
@@ -245,7 +245,7 @@ struct SubscriptionReader: View {
             .confirmationDialog(leaveTitle, isPresented: $isConfirmingLeave, titleVisibility: .visible) {
                 if subscription.leaveKind == "none" {
                     if subscription.mutedAt == nil {
-                        Button("Mute instead") { Task { await mute(true) } }
+                        Button("Keep out of the Inbox instead") { Task { await mute(true) } }
                     }
                 } else {
                     Button("Unsubscribe", role: .destructive) { Task { await leave() } }

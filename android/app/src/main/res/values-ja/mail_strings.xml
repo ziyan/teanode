@@ -150,9 +150,9 @@
     <string name="mail_moved_to_trash">ゴミ箱に移動しました</string>
     <string name="mail_move_to">移動…</string>
     <string name="mail_move_up">上へ移動</string>
-    <string name="mail_mute">ミュート</string>
-    <string name="mail_muted">ミュート中</string>
-    <string name="mail_mute_instead">代わりにミュート</string>
+    <string name="mail_keep_out_of_inbox">受信トレイに入れない</string>
+    <string name="mail_out_of_inbox">受信トレイに入れない</string>
+    <string name="mail_keep_out_of_inbox_instead">代わりに受信トレイに入れない</string>
     <string name="mail_name">名前</string>
     <string name="mail_name_and_signature">名前と署名</string>
     <string name="mail_narrow">絞り込み…</string>
@@ -303,7 +303,7 @@
     <string name="mail_undo">取り消す</string>
     <string name="mail_undone">元に戻しました</string>
     <string name="mail_unknown_sender">不明な送信者</string>
-    <string name="mail_unmute">ミュート解除</string>
+    <string name="mail_let_back_into_inbox">受信トレイに戻す</string>
     <string name="mail_unnamed_rule">名前のないルール</string>
     <string name="mail_unpin">固定を解除</string>
     <string name="mail_unpinned_done">固定を解除しました</string>
