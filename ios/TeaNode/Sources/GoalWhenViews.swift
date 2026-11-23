@@ -198,6 +198,8 @@ struct GoalWhenSections: View {
                         let removedId = time.id
                         draft.times.removeAll { $0.id == removedId }
                     }
+                    .tint(.red)
+                    .actionColor(isDestructive: true)
                 }
             }
         }

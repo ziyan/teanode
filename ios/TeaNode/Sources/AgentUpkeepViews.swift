@@ -2060,6 +2060,7 @@ struct DailyBriefView: View {
                     GoalDetail(connection: connection, conversationId: brief.conversationId, doneText: $doneText, problemText: $problemText)
                 } label: {
                     Label("Open the brief's goal", systemImage: "target")
+                        .foregroundStyle(.primary)
                 }
             }
         }
