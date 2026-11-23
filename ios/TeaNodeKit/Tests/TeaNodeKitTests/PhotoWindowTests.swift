@@ -56,8 +56,8 @@ final class PhotoWindowTests: XCTestCase {
     func testPagesFarFromThePlaceOnScreenAreLetGo() throws {
         var window = PhotoWindow(totalCount: 200, pageSize: 10)
         for pageIndex in [0, 1, 7, 8, 9, 10, 11, 19] { window.setPage(try photos(pageIndex * 10, pageIndex * 10 + 10), at: pageIndex) }
-        XCTAssertEqual(window.pagesToRelease(around: 95, keep: 2), [0, 1, 7, 19])
-        XCTAssertEqual(window.pagesToRelease(around: 95, keep: 4), [0, 1, 19])
+        XCTAssertEqual(window.pagesToRelease(around: 95, keep: 1), [0, 1, 7, 11, 19])
+        XCTAssertEqual(window.pagesToRelease(around: 95, keep: 2), [0, 1, 19])
         window.release([0, 1])
         XCTAssertNil(window.photo(at: 5))
         XCTAssertEqual(window.photo(at: 85)?.id, "p85")
