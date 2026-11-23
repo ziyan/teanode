@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.231.0] - 2026-11-23
+
+### Added
+
+- Shopping lists have a check on each item: checking off without shopping buys it now, with no trip and no notice to the others, and unchecking soon after takes it back. (#773)
+- Done shopping shows the cart first, with Snap the receipt and a confirmed Finish without a receipt. (#773)
+- A trip finished by mistake can be resumed for three hours, with what it bought back in the cart. (#773)
+- A shopping list can be searched by the words of its items, their store or aisle, in the apps, the dashboard, the CLI (`teanode shopping show --search`) and the agent. (#773)
+
+### Changed
+
+- On the store screen, items in a cart move to an "In the cart" section at the bottom, and Done shopping shows how many items are in the cart. (#773)
+- A receipt snapped at Done still records prices for what Done just bought. (#773)
+
 ## [0.230.10] - 2026-11-23
 
 ### Fixed
