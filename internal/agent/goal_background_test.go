@@ -236,6 +236,53 @@ func TestAGoalOnSetTimesRunsAtThem(t *testing.T) {
 	}
 }
 
+// A moment given now that has passed, or that is no moment at all, is
+// refused rather than dropped: dropped, it would leave a goal with no times
+// that runs at once. A goal whose one moment passed while it was paused
+// goes on at a pace of its own when taken up again, rather than waiting
+// for a time that never comes.
+func TestAGoalsMomentsAreChecked(t *testing.T) {
+	world := startGoalWorld(t, []string{goalProgressRound}, "")
+	defer world.close()
+	for _, given := range []string{"@at 2020-01-01 09:00", "@at tomorrow 9"} {
+		if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+			return world.worker.StartGoal(tx, world.found, world.owner, &agent.GoalStart{
+				GoalTitle: "Call back", GoalDescription: "Remind them to call back.", GoalTimes: []string{given},
+			})
+		}); err == nil {
+			t.Errorf("a goal was started at %q", given)
+		}
+	}
+	later := time.Now().Add(2 * time.Hour).In(agent.Location(world.owner)).Format("2006-01-02 15:04")
+	goal, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.StartGoal(tx, world.found, world.owner, &agent.GoalStart{
+			GoalTitle: "Call back", GoalDescription: "Remind them to call back.", GoalTimes: []string{"@at " + later},
+		})
+	})
+	if err != nil {
+		t.Fatalf("StartGoal: %s", err)
+	}
+	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.SetGoalState(tx, world.found, world.owner, goal.ID, models.GoalPaused)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return tx.UpdateAgentConversation(goal.ID, func(changing *models.AgentConversation) error {
+			changing.GoalTimes = []string{"@at 2020-01-01 09:00"}
+			return nil
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.SetGoalState(tx, world.found, world.owner, goal.ID, models.GoalWorking)
+	})
+	if err != nil || resumed.GoalNextAt == nil || time.Until(*resumed.GoalNextAt) > time.Minute || len(resumed.GoalTimes) != 0 {
+		t.Fatalf("taken up again with every time passed, it goes on alone from now: %+v %v", resumed, err)
+	}
+}
+
 // waitForGoalJobs waits until the agent has as many goal jobs as wanted, all
 // finished, and fails when it has more.
 func waitForGoalJobs(t *testing.T, world *goalWorld, wanted int) {

@@ -66,6 +66,7 @@ func TestSchedulesBecomeGoals(t *testing.T) {
 			('weekly', now(), now(), '`+agentId+`', 'Look for the bill', '0 9 * * 1', 'Look for the bill in the mail.', 'drawer', true, '`+later+`', 'agent', 'goal-tax', NULL),
 			('reminder', now() + interval '1 second', now(), '`+agentId+`', 'A week before', '@at 2030-12-11 09:00', 'Remind me it is due in a week.', 'drawer', true, '`+soon+`', 'agent', 'goal-tax', NULL),
 			('tax-mail', now() + interval '2 seconds', now(), '`+agentId+`', 'When the bill comes', '', 'Read the bill.', 'drawer', true, NULL, 'agent', 'goal-tax', '[{"field":"from","operator":"contains","value":"tax@city.example"}]'),
+			('tax-old', now() + interval '4 seconds', now(), '`+agentId+`', 'Old reminder', '0 9 1 * *', 'Check the old account.', 'drawer', false, NULL, 'agent', 'goal-tax', NULL),
 			('tax-mail-again', now() + interval '3 seconds', now(), '`+agentId+`', 'When a notice comes', '', 'Read the notice.', 'drawer', true, NULL, 'agent', 'goal-tax', '[{"field":"any"}]'),
 			('morning', now(), now(), '`+agentId+`', 'Morning', '0 8 * * 1-5', 'Tell me what is on today.', 'feed', true, '`+soon+`', 'person', '`+mainId+`', NULL),
 			('brief', now(), now(), '`+agentId+`', 'Daily brief', '30 7 * * 1-5', 'Tell me what today holds.', 'feed', true, '`+soon+`', 'person', '', NULL),
@@ -100,7 +101,7 @@ func TestSchedulesBecomeGoals(t *testing.T) {
 		}
 		for _, words := range []string{"Track the property tax bill.", "Look for the bill (0 9 * * 1): Look for the bill in the mail.",
 			"A week before (@at 2030-12-11 09:00): Remind me it is due in a week.", "When the bill comes (when the mail it waits for arrives): Read the bill.",
-			"When a notice comes (when the mail it waits for arrives): Read the notice."} {
+			"When a notice comes (when the mail it waits for arrives): Read the notice.", "Old reminder (0 9 1 * *, switched off): Check the old account."} {
 			if !strings.Contains(tax.Goal, words) {
 				t.Errorf("the description keeps %q:\n%s", words, tax.Goal)
 			}

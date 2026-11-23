@@ -102,13 +102,19 @@ func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArg
 }
 
 // findGoalByTitle is the agent's goal of that title that is still kept at,
-// working, waiting or paused, or nil.
+// working, waiting or paused, or nil. Only a goal its switch or the person
+// wrote counts: a goal the agent gave the same title stays the agent's,
+// since a switch adopting it would make the agent's words read as the
+// person's.
 func findGoalByTitle(tx db.Transaction, agentId, goalTitle string) (*models.AgentConversation, error) {
 	goals, err := tx.ListAgentGoals(agentId, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting, models.GoalPaused}, 0)
 	if err != nil {
 		return nil, err
 	}
 	for _, goal := range goals {
+		if goal.GoalWrittenBy != models.WrittenByBuiltIn && goal.GoalWrittenBy != models.WrittenByPerson {
+			continue
+		}
 		if strings.EqualFold(strings.TrimSpace(goal.GoalTitle), goalTitle) {
 			return goal, nil
 		}

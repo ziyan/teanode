@@ -78,7 +78,7 @@ func (self *Agent) StartGoal(tx db.Transaction, agent *models.Agent, owner *mode
 		goalTitle = firstWords(goalDescription, goalTitleCharacters)
 	}
 	now := time.Now()
-	goalTimes, next, err := self.settleGoalTiming(owner, start.GoalTimes, start.GoalMailConditions, now)
+	goalTimes, next, err := self.settleGoalTiming(owner, start.GoalTimes, start.GoalMailConditions, now, true)
 	if err != nil {
 		return nil, err
 	}
@@ -142,14 +142,16 @@ func (self *Agent) requireRoomForGoal(tx db.Transaction, agentId string) error {
 
 // settleGoalTiming checks a goal's times and mail conditions, and says when
 // the soonest time is.
-func (self *Agent) settleGoalTiming(owner *models.User, goalTimes []string, goalMailConditions []models.MailboxRuleCondition, now time.Time) ([]string, *time.Time, error) {
+// With isGiven, the times are being given now, and a moment among them that
+// has passed is refused.
+func (self *Agent) settleGoalTiming(owner *models.User, goalTimes []string, goalMailConditions []models.MailboxRuleCondition, now time.Time, isGiven bool) ([]string, *time.Time, error) {
 	if (len(goalTimes) > 0 || len(goalMailConditions) > 0) && !FeatureAllowed(self.settings.Configuration(), "schedules") {
 		return nil, nil, fmt.Errorf("this server does not run goals at set times or on arriving mail")
 	}
 	if err := models.ValidateGoalMailConditions(goalMailConditions); err != nil {
 		return nil, nil, err
 	}
-	return SettleGoalTimes(goalTimes, owner, now)
+	return settleGoalTimes(goalTimes, owner, now, isGiven)
 }
 
 // GoalChange is a change to a goal: only what is not nil changes. Times or
@@ -181,7 +183,7 @@ func (self *Agent) UpdateGoal(tx db.Transaction, agent *models.Agent, owner *mod
 		goalMailConditions = *change.GoalMailConditions
 	}
 	now := time.Now()
-	goalTimes, next, err := self.settleGoalTiming(owner, goalTimes, goalMailConditions, now)
+	goalTimes, next, err := self.settleGoalTiming(owner, goalTimes, goalMailConditions, now, change.GoalTimes != nil)
 	if err != nil {
 		return nil, err
 	}
@@ -336,6 +338,12 @@ func (self *Agent) SetGoalState(tx db.Transaction, agent *models.Agent, owner *m
 						return err
 					}
 					conversation.GoalTimes, conversation.GoalNextAt = settled, next
+					if next == nil && len(conversation.GoalMailConditions) == 0 {
+						// Every time it had has passed while it was off: it
+						// goes on at a pace of its own, from a look now,
+						// rather than waiting for a time that never comes.
+						conversation.GoalNextAt = &now
+					}
 				}
 			}
 			if goalState != models.GoalWorking {

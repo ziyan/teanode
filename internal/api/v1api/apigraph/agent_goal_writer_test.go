@@ -181,3 +181,28 @@ func TestTheBriefSwitchStartsABuiltInGoal(t *testing.T) {
 		}
 	})
 }
+
+// A goal the agent titled like the brief is not the brief: the switch starts
+// a brief of its own and leaves the agent's goal, and its words, the agent's.
+func TestTheBriefSwitchDoesNotAdoptTheAgentsLookalike(t *testing.T) {
+	fixture := newFinanceFixture(t, false)
+	var lookalikeId string
+	fixture.asCredential(t, models.CredentialToken, func(ctx context.Context, tx db.Transaction) {
+		started, err := fixture.resolver.StartAgentGoal(ctx, StartAgentGoalArguments{
+			GoalTitle: BriefName, GoalDescription: "Words the agent wrote.", GoalTimes: []string{"0 6 * * *"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		lookalikeId = started.ConversationID
+	})
+	fixture.asCredential(t, models.CredentialSession, func(ctx context.Context, tx db.Transaction) {
+		brief, err := fixture.resolver.SetAgentBrief(ctx, SetAgentBriefArguments{Enabled: true})
+		if err != nil || brief == nil || brief.ConversationID == lookalikeId || brief.GoalWrittenBy != models.WrittenByBuiltIn {
+			t.Fatalf("the switch adopted the agent's goal: %+v %v", brief, err)
+		}
+		if got := goalWriterOf(t, tx, lookalikeId); got != models.WrittenByAgent {
+			t.Errorf("the agent's lookalike is written by %q", got)
+		}
+	})
+}

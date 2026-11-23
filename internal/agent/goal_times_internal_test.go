@@ -91,8 +91,9 @@ func TestAGoalsCheckInSaysWhoWroteItAndWhenItRuns(t *testing.T) {
 	}
 }
 
-// A turn is for the time of the goal's that came last, and for none when no
-// time has come within the day, as for a turn the person asked for by hand.
+// A turn is for the time of the goal's that has just come, and for none
+// when no time has, as for a turn the person asked for by hand later that
+// day.
 func TestTheTimeATurnIsFor(t *testing.T) {
 	t.Parallel()
 
@@ -104,6 +105,7 @@ func TestTheTimeATurnIsFor(t *testing.T) {
 		time.Date(2026, 12, 11, 9, 1, 0, 0, berlin):  "@at 2026-12-11 09:00",
 		time.Date(2026, 12, 18, 9, 0, 0, 0, berlin):  "@at 2026-12-18 09:00",
 		time.Date(2026, 12, 16, 15, 0, 0, 0, berlin): "",
+		time.Date(2026, 12, 14, 15, 0, 0, 0, berlin): "",
 	} {
 		if got := goalTimeDue(goal, owner, at); got != wanted {
 			t.Errorf("at %s: %q, wanted %q", at, got, wanted)

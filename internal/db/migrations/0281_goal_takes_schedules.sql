@@ -11,13 +11,16 @@ ALTER TABLE "agent_conversation"
 
 -- The schedules a goal owned, the ones made in its conversation, are its
 -- times now. What each said to do is kept in the goal's description under
--- its name and time, and the goal is due when the soonest of them was.
-WITH "owned" AS (
+-- its name and time, and the goal is due when the soonest of them was. One
+-- that was switched off gives the goal no time, but what it said is kept,
+-- marked off, so that nothing it held is lost.
+WITH "owned_all" AS (
     SELECT "schedule".*
     FROM "agent_schedule" AS "schedule"
     JOIN "agent_conversation" AS "goal"
         ON "goal"."id" = "schedule"."conversation_id" AND "goal"."agent_id" = "schedule"."agent_id" AND "goal"."kind" = 'goal'
-    WHERE "schedule"."enabled"
+), "owned" AS (
+    SELECT * FROM "owned_all" WHERE "owned_all"."enabled"
 )
 UPDATE "agent_conversation" AS "goal" SET
     "goal_times" = (
@@ -31,17 +34,19 @@ UPDATE "agent_conversation" AS "goal" SET
         SELECT "owned"."mail_arrivals" FROM "owned"
         WHERE "owned"."conversation_id" = "goal"."id" AND "owned"."mail_conditions" IS NOT NULL
         ORDER BY "owned"."created_at" LIMIT 1),
-    "is_goal_notified_when_posted" = (
+    "is_goal_notified_when_posted" = COALESCE((
         SELECT bool_or("owned"."is_notified_when_posted") FROM "owned" WHERE "owned"."conversation_id" = "goal"."id"),
+        "goal"."is_goal_notified_when_posted"),
     "goal_written_by" = 'agent',
     "goal" = "goal"."goal" || E'\n\n' || (
         SELECT string_agg(
-            "owned"."name" || ' (' || CASE WHEN "owned"."cron" = '' THEN 'when the mail it waits for arrives' ELSE "owned"."cron" END || '): ' || "owned"."prompt",
-            E'\n\n' ORDER BY "owned"."created_at")
-        FROM "owned" WHERE "owned"."conversation_id" = "goal"."id"),
+            "owned_all"."name" || ' (' || CASE WHEN "owned_all"."cron" = '' THEN 'when the mail it waits for arrives' ELSE "owned_all"."cron" END
+                || CASE WHEN "owned_all"."enabled" THEN '' ELSE ', switched off' END || '): ' || "owned_all"."prompt",
+            E'\n\n' ORDER BY "owned_all"."created_at")
+        FROM "owned_all" WHERE "owned_all"."conversation_id" = "goal"."id"),
     "goal_next_at" = CASE WHEN "goal"."goal_state" = 'working' THEN LEAST("goal"."goal_next_at", (
         SELECT min("owned"."next_run_at") FROM "owned" WHERE "owned"."conversation_id" = "goal"."id")) ELSE "goal"."goal_next_at" END
-WHERE EXISTS (SELECT 1 FROM "owned" WHERE "owned"."conversation_id" = "goal"."id");
+WHERE EXISTS (SELECT 1 FROM "owned_all" WHERE "owned_all"."conversation_id" = "goal"."id");
 
 -- Every other schedule is a goal of its own, with the schedule's id, so
 -- that the cards it posted name it. A schedule that was off is a paused

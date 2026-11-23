@@ -42,6 +42,14 @@ const GoalTimesMost = 12
 // stored does not move every time it is read; a moment that has passed is
 // dropped. Nil next means none of them comes again.
 func SettleGoalTimes(times []string, owner *models.User, now time.Time) ([]string, *time.Time, error) {
+	return settleGoalTimes(times, owner, now, false)
+}
+
+// settleGoalTimes is SettleGoalTimes; with isPassedRefused, a moment that
+// has passed is refused rather than dropped, for times somebody is giving
+// now: "remind me" at a moment already gone would otherwise leave a goal
+// with no times, which runs at once at a pace of its own.
+func settleGoalTimes(times []string, owner *models.User, now time.Time, isPassedRefused bool) ([]string, *time.Time, error) {
 	location := Location(owner)
 	var settled []string
 	var next *time.Time
@@ -54,13 +62,21 @@ func SettleGoalTimes(times []string, owner *models.User, now time.Time) ([]strin
 		if err != nil {
 			return nil, nil, err
 		}
+		if tools.IsOneMoment(resolved) {
+			if _, err := tools.ParseMoment(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(resolved), "@at ")), location); err != nil {
+				return nil, nil, fmt.Errorf("%q: %w", written, err)
+			}
+		}
 		at, err := nextCron(resolved, now, location)
 		if err != nil {
-			if tools.IsOneMoment(resolved) {
-				// Passed: it has had its turn.
-				continue
+			if !tools.IsOneMoment(resolved) {
+				return nil, nil, fmt.Errorf("%q: %w", written, err)
 			}
-			return nil, nil, fmt.Errorf("%q: %w", written, err)
+			if isPassedRefused {
+				return nil, nil, fmt.Errorf("%q has passed; give a moment still to come", written)
+			}
+			// Passed: it has had its turn.
+			continue
 		}
 		if slices.Contains(settled, resolved) {
 			continue
@@ -76,18 +92,22 @@ func SettleGoalTimes(times []string, owner *models.User, now time.Time) ([]strin
 	return settled, next, nil
 }
 
+// goalTimeDueWithin is how long after one of its times a turn is still for
+// that time. A turn runs within moments of its time; one later than this
+// was owed for another reason.
+const goalTimeDueWithin = 15 * time.Minute
+
 // goalTimeDue is which of a goal's times its turn now is for: the one whose
-// latest occurrence up to now is the most recent. Empty when none has come
-// yet, which is a turn owed for another reason (the person answered, or it
-// was run by hand).
+// latest occurrence up to now is the most recent, within goalTimeDueWithin.
+// Empty when none has just come, which is a turn owed for another reason
+// (the person answered, mail arrived, or it was run by hand): told it was
+// for the morning's time, a turn run by hand that afternoon would do the
+// morning's work again.
 func goalTimeDue(goal *models.AgentConversation, owner *models.User, now time.Time) string {
 	location := Location(owner)
 	due, dueAt := "", time.Time{}
 	for _, written := range goal.GoalTimes {
-		// The latest occurrence within the last day and a minute: the turn
-		// runs within moments of its time, and a time further back than a
-		// day was not what woke it.
-		from := now.Add(-24*time.Hour - time.Minute)
+		from := now.Add(-goalTimeDueWithin)
 		at, err := nextCron(written, from, location)
 		for err == nil && !at.After(now) {
 			if at.After(dueAt) {
