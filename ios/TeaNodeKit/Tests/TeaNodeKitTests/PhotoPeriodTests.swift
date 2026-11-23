@@ -146,7 +146,8 @@ final class PhotoPeriodTests: XCTestCase {
         }
         let list = PhotoListQuery(collection: .favorites)
         _ = try await connection.photos(in: list, offset: 400, pageSize: 200)
-        XCTAssertEqual(try await connection.countPhotos(in: list), 4321)
+        let count = try await connection.countPhotos(in: list)
+        XCTAssertEqual(count, 4321)
         let variables = try fake.sent.map { request -> [String: Any] in
             let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any])
             return try XCTUnwrap(sent["variables"] as? [String: Any])
