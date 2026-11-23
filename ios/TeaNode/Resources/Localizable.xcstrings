@@ -32287,22 +32287,6 @@
         }
       }
     },
-    "Posted to the feed": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "投稿日時"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发布时间"
-          }
-        }
-      }
-    },
     "Posted to %@": {
       "localizations": {
         "ja": {
@@ -61658,22 +61642,6 @@
         }
       }
     },
-    "Picture from the page": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ページの画像"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "网页图片"
-          }
-        }
-      }
-    },
     "Picture removed": {
       "localizations": {
         "ja": {
@@ -80344,28 +80312,6 @@
         }
       }
     },
-    "Card: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Card: %@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "カード：%@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "卡片：%@"
-          }
-        }
-      }
-    },
     "Card brand": {
       "localizations": {
         "ja": {
@@ -96785,6 +96731,124 @@
           "stringUnit": {
             "state": "translated",
             "value": "新消息"
+          }
+        }
+      }
+    },
+    "Keep out of the Inbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信トレイに入れない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不再进入收件箱"
+          }
+        }
+      }
+    },
+    "Let back into the Inbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信トレイに戻す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复进入收件箱"
+          }
+        }
+      }
+    },
+    "Out of the Inbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信トレイに入れない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不进入收件箱"
+          }
+        }
+      }
+    },
+    "Keep out of the Inbox instead": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代わりに受信トレイに入れない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改为不再进入收件箱"
+          }
+        }
+      }
+    },
+    "Posted to the feed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投稿日時"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布时间"
+          }
+        }
+      }
+    },
+    "Picture from the page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページの画像"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网页图片"
+          }
+        }
+      }
+    },
+    "Card: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Card: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カード：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卡片：%@"
           }
         }
       }

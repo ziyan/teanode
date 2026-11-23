@@ -70,6 +70,7 @@ import {
   PaperclipIcon,
   PencilIcon,
   PeopleIcon,
+  ChatIcon,
   AtIcon,
   BellIcon,
   BellOffIcon,
@@ -5764,7 +5765,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               >
                 {line.inReplyTo ? <div className="agent-in-reply-to">{line.inReplyTo}</div> : null}
                 {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}
-                {line.references && line.references.length > 0 && <ReferenceChips references={line.references} />}
+                {line.references && line.references.length > 0 && (
+                  <ReferenceChips references={line.references} onLeaving={leaving} />
+                )}
                 <LinkedText text={line.text} />
                 {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
                 {reactionsOn(line)}
@@ -6161,7 +6164,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             }
             onClick={toggle}
           >
-            {available ? <SparkIcon size={20} /> : <PeopleIcon size={20} />}
+            <ChatIcon size={20} />
             {unreadChatCount > 0 ? (
               <span className="agent-drawer-badge" aria-hidden="true">
                 {unreadChatCount > 99 ? '99+' : unreadChatCount}
