@@ -94,7 +94,7 @@ func startGoalWorld(t *testing.T, script []string, goal string) *goalWorld {
 		if world.owner, err = tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example", Email: "alice@example.net", Timezone: "Europe/Berlin", TimezoneMode: "fixed"}); err != nil {
 			t.Fatalf("CreateUser: %s", err)
 		}
-		if world.found, err = tx.CreateAgent(&models.Agent{UserID: world.owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+		if world.found, err = tx.CreateAgent(&models.Agent{UserID: world.owner.ID, Enabled: true, Name: "Bertie", FeedDestination: models.FeedDestinationMain}); err != nil {
 			t.Fatalf("CreateAgent: %s", err)
 		}
 		// A granted mailbox with an address, which is what the agent

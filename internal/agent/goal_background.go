@@ -409,11 +409,18 @@ func (self *Agent) surfaceGoal(ctx context.Context, goal *models.AgentConversati
 		checkIn, need, surface = goalDoneCheckIn(goal), goalOutcome(goal), goalDoneSurface
 	}
 	var mainId string
+	var found *models.Agent
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		if found, err = tx.GetAgent(goal.AgentID); err != nil {
+			return err
+		}
 		main, err = personsConversation(tx, goal.AgentID, "")
 		return err
 	}); err != nil {
 		return err
+	}
+	if wantsFeed(found) {
+		return self.surfaceGoalInFeed(ctx, goal)
 	}
 	mainId = main.ID
 	isWritten, err := self.whileNoTurnRuns(mainId, func() error {
@@ -459,6 +466,45 @@ func (self *Agent) surfaceGoal(ctx context.Context, goal *models.AgentConversati
 		event.RunID, event.ConversationID, event.Sequence, event.At = runId, mainId, sequence, at
 		self.publish(event, true)
 	}
+	return nil
+}
+
+// surfaceGoalInFeed says a goal's call for the person, or how it ended, as
+// a card of their feed, for a person whose agent tells them things there:
+// the goal by its title, and the status line its turn wrote. The card is
+// posted before the goal is marked said, and its key is the goal's and the
+// state's, so a sweep that posts it twice replaces the first card rather
+// than adding a second.
+func (self *Agent) surfaceGoalInFeed(ctx context.Context, goal *models.AgentConversation) error {
+	item := &models.AgentFeedItem{
+		FeedItemKind: models.FeedItemDecision, FeedSourceKind: models.FeedSourceGoal, FeedSourceID: goal.ID,
+		Title: goalTitleOf(goal), Body: strings.TrimPrefix(goalNeed(goal), "**"+goalTitleOf(goal)+"**: "),
+		PictureSymbol: "questionmark.circle", CoalesceKey: "goal:" + goal.ID + ":" + string(goal.GoalState),
+		FeedUrgency: models.FeedUrgencyToday,
+		// Answered in the main conversation, with the card beside the
+		// person's words, which names the goal to pass them on to.
+		Choices: []models.FeedChoice{{ChoiceKey: "answer", ChoiceLabel: "Answer", ChoiceRole: models.FeedChoiceDiscuss}},
+	}
+	if goal.GoalState == models.GoalMet {
+		item.FeedItemKind, item.PictureSymbol, item.Choices = models.FeedItemUpdate, "checkmark.circle", nil
+		item.Body = strings.TrimPrefix(goalOutcome(goal), "**"+goalTitleOf(goal)+"**: ")
+	}
+	if _, _, err := self.PostFeedItem(ctx, &FeedPost{AgentID: goal.AgentID, Item: item}); err != nil {
+		return err
+	}
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		_, err := tx.UpdateAgentConversation(goal.ID, func(conversation *models.AgentConversation) error {
+			if conversation.GoalState == goal.GoalState && conversation.GoalSurfacedAt == nil {
+				now := time.Now()
+				conversation.GoalSurfacedAt = &now
+			}
+			return nil
+		})
+		return err
+	}); err != nil {
+		return err
+	}
+	log.Noticef("goal %q told its person it is %s, in the feed", goal.ID, goal.GoalState)
 	return nil
 }
 
