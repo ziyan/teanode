@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.234.1] - 2026-11-23
+
+### Fixed
+
+- The Android app takes back its photo backup password on the server when backup is turned off, when you sign out, or when it has to make a new one, so no unused password stays valid. (#784)
+
 ## [0.234.0] - 2026-11-23
 
 ### Added
