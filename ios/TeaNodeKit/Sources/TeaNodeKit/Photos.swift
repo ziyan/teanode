@@ -964,20 +964,6 @@ extension Documents {
 }
 
 extension Connection {
-    /// One page of a list of photos, newest first. A page after the first
-    /// starts after the last photo of the one before.
-    public func photos(
-        in collection: PhotoCollection, filter: PhotoFilter = PhotoFilter(), beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize
-    ) async throws -> [Photo] {
-        struct Answer: Decodable, Sendable { let ListPhotos: [Photo] }
-        var variables: [String: JSONValue] = ["pageSize": .number(Double(pageSize))]
-        if let beforePhotoId, !beforePhotoId.isEmpty { variables["beforePhotoId"] = .string(beforePhotoId) }
-        if let isFavorite = collection.isFavoriteFilter { variables["isFavorite"] = .bool(isFavorite) }
-        if let isTrashed = collection.isTrashedFilter { variables["isTrashed"] = .bool(isTrashed) }
-        for (name, value) in filter.variables() { variables[name] = value }
-        return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
-    }
-
     /// The photos that match the words, best match first. A search is not
     /// paged: the server answers with at most `PhotoSearch.mostResultCount`.
     public func photos(matching searchText: String) async throws -> [Photo] {
@@ -985,24 +971,6 @@ extension Connection {
         let variables: [String: JSONValue] = [
             "pageSize": .number(Double(PhotoSearch.mostResultCount)), "searchText": .string(PhotoSearch.words(from: searchText) ?? ""),
         ]
-        return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
-    }
-
-    /// One page of the photos of an album, newest first, paged like the
-    /// library's lists.
-    public func photos(inAlbum photoAlbumId: String, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
-        struct Answer: Decodable, Sendable { let ListPhotos: [Photo] }
-        var variables: [String: JSONValue] = ["pageSize": .number(Double(pageSize)), "albumId": .string(photoAlbumId)]
-        if let beforePhotoId, !beforePhotoId.isEmpty { variables["beforePhotoId"] = .string(beforePhotoId) }
-        return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
-    }
-
-    /// One page of the photos with a face in one group of faces, one person,
-    /// newest first, paged like the library's lists.
-    public func photos(inFaceGroup photoFaceGroupId: String, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
-        struct Answer: Decodable, Sendable { let ListPhotos: [Photo] }
-        var variables: [String: JSONValue] = ["pageSize": .number(Double(pageSize)), "faceGroupId": .string(photoFaceGroupId)]
-        if let beforePhotoId, !beforePhotoId.isEmpty { variables["beforePhotoId"] = .string(beforePhotoId) }
         return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
     }
 
@@ -1161,68 +1129,10 @@ public enum PhotoSearch {
     }
 }
 
-/// PhotoPaging is how a list of photos is read a page at a time as the person
-/// scrolls toward the end of what is loaded.
+/// PhotoPaging says how big the pages are that a list of photos is read in.
 public enum PhotoPaging {
     /// How many photos a page holds, as the dashboard's pages do.
     public static let pageSize = 200
-
-    /// How close to the end of the loaded photos a cell comes on screen
-    /// before the next page is asked for.
-    public static let loadAhead = 60
-
-    /// Whether the page just read may be followed by another: a short page
-    /// is the last.
-    public static func hasMore(afterPageOf count: Int, pageSize: Int = PhotoPaging.pageSize) -> Bool {
-        count >= pageSize
-    }
-
-    /// Whether the cell of this photo coming on screen should start the next
-    /// page.
-    public static func shouldLoadMore(whenShowing photoId: String, in photos: [Photo], loadAhead: Int = PhotoPaging.loadAhead) -> Bool {
-        guard let index = photos.lastIndex(where: { $0.id == photoId }) else { return false }
-        return index >= photos.count - loadAhead
-    }
-
-    /// The photos with a page added after them, leaving out any the list
-    /// already holds (a photo moved while the page was read).
-    public static func appending(_ page: [Photo], to photos: [Photo]) -> [Photo] {
-        let known = Set(photos.map(\.id))
-        return photos + page.filter { !known.contains($0.id) }
-    }
-}
-
-/// PhotoPlacement is a list of photos after one of them was given another
-/// date: the photo is in its new place among those held, and the page that
-/// follows is still asked for from the right photo.
-public struct PhotoPlacement: Equatable, Sendable {
-    /// The photos held, with the changed one where its new date puts it.
-    public let photos: [Photo]
-    /// The photo the next page is asked for after, which is not the changed
-    /// photo when that was the one: the server would continue from its new date.
-    public let pageCursorPhotoId: String?
-    /// Whether the photo now comes after every photo held while more are still
-    /// to be read: its true place is among them, so the list is put in order
-    /// again when the next page is added.
-    public let isBeyondHeldPhotos: Bool
-
-    /// Puts a photo, as the server now has it, in its place among `photos`,
-    /// which are the first of a list that has `hasMore` pages to follow.
-    /// `pageCursorPhotoId` is the photo the next page is asked after; nil for
-    /// the last of `photos`. A photo that is not held leaves the list as it was.
-    public static func place(_ photo: Photo, in photos: [Photo], pageCursorPhotoId: String?, hasMore: Bool) -> PhotoPlacement {
-        let cursor = pageCursorPhotoId ?? photos.last?.id
-        guard let oldIndex = photos.firstIndex(where: { $0.id == photo.id }) else {
-            return PhotoPlacement(photos: photos, pageCursorPhotoId: cursor, isBeyondHeldPhotos: false)
-        }
-        var nextCursor = cursor
-        if cursor == photo.id { nextCursor = oldIndex > 0 ? photos[oldIndex - 1].id : nil }
-        var others = photos
-        others.remove(at: oldIndex)
-        let newIndex = others.firstIndex { PhotoTimeline.isListedBefore(photo, $0) } ?? others.count
-        others.insert(photo, at: newIndex)
-        return PhotoPlacement(photos: others, pageCursorPhotoId: nextCursor, isBeyondHeldPhotos: hasMore && others.count > 1 && newIndex == others.count - 1)
-    }
 }
 
 /// PhotoMoment is the time a photo is placed at, with the time zone to read it
@@ -1373,25 +1283,6 @@ public enum PhotoTimeline {
         return order.map { key in
             PhotoDay(id: key, year: parts[key]?.year, month: parts[key]?.month, day: parts[key]?.day, photos: members[key] ?? [])
         }
-    }
-
-    /// Whether the first photo is listed before the second: the later moment
-    /// first, and for the same moment the larger id first, as the server lists.
-    /// A photo with no moment is listed last.
-    public static func isListedBefore(_ first: Photo, _ second: Photo) -> Bool {
-        let firstDate = moment(of: first)?.date
-        let secondDate = moment(of: second)?.date
-        if firstDate != secondDate {
-            guard let firstDate else { return false }
-            guard let secondDate else { return true }
-            return firstDate > secondDate
-        }
-        return first.id > second.id
-    }
-
-    /// The photos in the order the server lists them.
-    public static func sorted(_ photos: [Photo]) -> [Photo] {
-        photos.sorted(by: isListedBefore)
     }
 
     /// The date and time of a photo as the viewer's Info shows them, read in

@@ -101,7 +101,7 @@ final class ContactAccountTests: XCTestCase {
 
     func testPhotosOfAPersonSendTheAccountAndTheDocumentsAskForTheLink() async throws {
         let (connection, fake) = try connection(answering: #"{"data":{"ListPhotos":[]}}"#)
-        let photos = try await connection.photos(in: .library, filter: PhotoFilter(accountUserId: "user-2", accountName: "Sam Placeholder"))
+        let photos = try await connection.photos(in: PhotoListQuery(filter: PhotoFilter(accountUserId: "user-2", accountName: "Sam Placeholder")), offset: 0)
         XCTAssertEqual(photos.count, 0)
         let request = try XCTUnwrap(fake.sent.first)
         XCTAssertEqual(try sentVariables(request)["accountUserId"] as? String, "user-2")
