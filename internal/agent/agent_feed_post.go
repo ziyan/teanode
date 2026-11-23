@@ -183,7 +183,7 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 	var stored *models.AgentFeedItem
 	var change models.FeedChange
 	var found *models.Agent
-	var readySchedule *models.AgentSchedule
+	var readyGoal *models.AgentConversation
 	var removedPictures []string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		var err error
@@ -225,21 +225,12 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 				return feedRefusal("%s is already in an open card, %q; do not post the same page twice, and update that card if it has changed", link.SourceURL, earlier.Title)
 			}
 		}
-		// The first card of a run of a schedule that asks for it says the
-		// cards are ready, once.
-		if item.FeedSourceKind == models.FeedSourceSchedule && item.RunConversationID != "" && item.FeedSourceID != "" {
-			schedule, err := tx.GetAgentSchedule(item.FeedSourceID)
-			if err != nil {
+		// The cards of one turn of a goal on set times are a stack of their
+		// own, so each morning's brief is one; and the first card of a turn
+		// of one that asks for it says the cards are ready, once.
+		if item.FeedSourceKind == models.FeedSourceGoal && item.FeedSourceID != "" {
+			if readyGoal, err = goalTurnStack(tx, found, item, now); err != nil {
 				return err
-			}
-			if schedule != nil && schedule.AgentID == found.ID && schedule.IsNotifiedWhenPosted {
-				postedCount, err := tx.CountAgentFeedItemsInRun(item.RunConversationID)
-				if err != nil {
-					return err
-				}
-				if postedCount == 0 {
-					readySchedule = schedule
-				}
 			}
 		}
 		item.InteractionID = ""
@@ -281,8 +272,8 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 	self.deleteFeedPictures(removedPictures)
 	self.startFeedPictures(stored, postingConversationId)
 	self.notifyFeedPhones(found, stored)
-	if readySchedule != nil {
-		self.notifyScheduleReady(found, readySchedule)
+	if readyGoal != nil {
+		self.notifyGoalReady(found, readyGoal)
 	}
 	return stored, change, nil
 }
@@ -385,21 +376,54 @@ func (self *Agent) UpdateFeedItem(ctx context.Context, agentId, feedItemId, post
 	return updated, nil
 }
 
-// phraseScheduleReady is the quiet notification of a schedule whose cards are
-// posted.
-var phraseScheduleReady = push.Phrase{English: "%s is ready", Chinese: "%s已准备好", Japanese: "%sの準備ができました"}
+// phraseGoalReady is the quiet notification of a goal on set times whose
+// cards are posted.
+var phraseGoalReady = push.Phrase{English: "%s is ready", Chinese: "%s已准备好", Japanese: "%sの準備ができました"}
 
-// notifyScheduleReady tells the phones, quietly, that the first card of a
-// schedule's run is in the feed.
-func (self *Agent) notifyScheduleReady(found *models.Agent, schedule *models.AgentSchedule) {
-	name := schedule.Name
+// notifyGoalReady tells the phones, quietly, that the first card of a turn
+// of a goal on set times is in the feed.
+func (self *Agent) notifyGoalReady(found *models.Agent, goal *models.AgentConversation) {
+	name := goalTitleOf(goal)
 	self.notifyPhones(found.ID, models.NotificationMessage, &push.Content{
 		NotificationKind: "agent_feed",
-		Title:            phraseScheduleReady.In(push.LanguageEnglish, name),
-		ThreadID:         "feed:schedule:" + schedule.ID,
+		Title:            phraseGoalReady.In(push.LanguageEnglish, name),
+		ThreadID:         "feed:goal:" + goal.ID,
 		IsQuiet:          true,
-		Wording:          func(content *push.Content, language string) { content.Title = phraseScheduleReady.In(language, name) },
+		Wording:          func(content *push.Content, language string) { content.Title = phraseGoalReady.In(language, name) },
 	})
+}
+
+// goalTurnStack puts a card of a goal on set times in the stack of the turn
+// posting it, the goal's running job naming the turn, unless the card named
+// a stack of its own; and answers with the goal when the card is the turn's
+// first and the goal asks to be told.
+func goalTurnStack(tx db.Transaction, found *models.Agent, item *models.AgentFeedItem, now time.Time) (*models.AgentConversation, error) {
+	goal, err := tx.GetAgentConversation(item.FeedSourceID)
+	if err != nil || goal == nil || goal.AgentID != found.ID || !goal.IsGoalOnSetTimes() {
+		return nil, err
+	}
+	running, err := tx.ListAgentJobs(&db.AgentJobFilter{
+		AgentID: found.ID, Kinds: []models.AgentJobKind{models.AgentJobGoal},
+		Statuses: []models.AgentJobStatus{models.AgentJobRunning}, SubjectID: goal.ID,
+	}, &db.Options{Limit: 1})
+	if err != nil || len(running) == 0 {
+		return nil, err
+	}
+	turnStackKey := string(models.FeedSourceGoal) + ":" + goal.ID + ":" + running[0].ID
+	if item.CanStack() && (item.FeedStackKey == "" || item.FeedStackKey == item.DefaultFeedStackKey()) {
+		item.FeedStackKey = turnStackKey
+		if item.FeedStackTitle == "" {
+			item.FeedStackTitle = goalTitleOf(goal)
+		}
+	}
+	if !goal.IsGoalNotifiedWhenPosted {
+		return nil, nil
+	}
+	_, postedCount, err := tx.ListAgentFeedStackItems(found.UserID, turnStackKey, 0, 1, true, now)
+	if err != nil || postedCount > 0 {
+		return nil, err
+	}
+	return goal, nil
 }
 
 // feedSourceHopsMost bounds the walk from a subagent's run up to the turn that
@@ -408,7 +432,7 @@ func (self *Agent) notifyScheduleReady(found *models.Agent, schedule *models.Age
 const feedSourceHopsMost = 3
 
 // creditFeedSource credits a card posted from a subagent's run to what started
-// that subagent: a goal, a schedule's run or a run of speaking first. The tool
+// that subagent: a goal or a run of speaking first. The tool
 // credits a card posted in such a run directly; one posted by a subagent the
 // run handed its work to would otherwise be the agent's own, with no link to
 // the schedule, no stack of its run and no "is ready" notification.
@@ -432,9 +456,6 @@ func (self *Agent) creditFeedSource(ctx context.Context, item *models.AgentFeedI
 		switch {
 		case conversation.IsGoal():
 			item.FeedSourceKind, item.FeedSourceID = models.FeedSourceGoal, conversation.ID
-		case conversation.Kind == models.AgentConversationRun && conversation.JobKind == string(models.AgentJobSchedule) && conversation.SubjectID != "":
-			item.FeedSourceKind, item.FeedSourceID = models.FeedSourceSchedule, conversation.SubjectID
-			item.RunConversationID = conversation.ID
 		case conversation.Kind == models.AgentConversationRun && conversation.JobKind == string(models.AgentJobSpeakFirst) && conversation.SubjectID != "":
 			item.FeedSourceKind, item.FeedSourceID = models.FeedSourceSpeakFirst, conversation.SubjectID
 		}

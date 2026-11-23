@@ -181,7 +181,7 @@ func (self *Agent) HerdrWakeConversation(ctx context.Context, agentId, conversat
 			}
 			return nil
 		}
-		found, err = scheduleConversation(tx, agentId, "")
+		found, err = personsConversation(tx, agentId, "")
 		return err
 	})
 	if err != nil {

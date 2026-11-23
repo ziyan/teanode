@@ -208,9 +208,17 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ListAgentRuns":          client.DocumentListAgentRuns,
 		"ListAllAgentRuns":       client.DocumentListAllAgentRuns,
 		"StopAgentRun":           client.DocumentStopAgentRun,
-		"ListAgentSchedules":     client.DocumentListAgentSchedules,
-		"SaveAgentSchedule":      client.DocumentSaveAgentSchedule,
 		"SaveAgentNode":          client.DocumentSaveAgentNode,
+		// Goals, on set times or at their own pace.
+		"ListAgentGoals":    client.DocumentListAgentGoals,
+		"GetAgentGoal":      client.DocumentGetAgentGoal,
+		"StartAgentGoal":    client.DocumentStartAgentGoal,
+		"UpdateAgentGoal":   client.DocumentUpdateAgentGoal,
+		"RunAgentGoal":      client.DocumentRunAgentGoal,
+		"TellAgentGoal":     client.DocumentTellAgentGoal,
+		"SetAgentGoalState": client.DocumentSetAgentGoalState,
+		"SetAgentBrief":     client.DocumentSetAgentBrief,
+		"RunAgentBriefNow":  client.DocumentRunAgentBriefNow,
 		// A page read on its own carries its overview, the night's record
 		// counts the overviews written, and a person can ask for one again.
 		"AgentGraphPage": client.DocumentAgentGraphPage,

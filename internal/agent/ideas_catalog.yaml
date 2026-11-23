@@ -21,7 +21,7 @@
   headline: Every morning, I'll tell you which mail actually needs you.
   body: I read your new mail each morning and send you a short list of what needs an answer, what has a deadline, and what can wait.
   openingRequest: Every morning at 8, tell me which mail needs me today.
-  neededToolNames: [schedule, mail_search]
+  neededToolNames: [goal, mail_search]
   translations:
     ja:
       headline: "毎朝、本当に対応が必要なメールをお知らせします。"
@@ -191,7 +191,7 @@
   headline: Tell me when your documents expire. I'll remind you well ahead.
   body: Give me the expiry dates of a passport, a license or an insurance policy and I remind you months ahead, with what the renewal needs, so nothing lapses by surprise.
   openingRequest: My passport expires next June. Remind me in time to renew it.
-  neededToolNames: [schedule]
+  neededToolNames: [goal]
   translations:
     ja:
       headline: "書類の有効期限を教えてください。早めにお知らせします。"
@@ -310,7 +310,7 @@
   headline: I'll check the price of what you're waiting to buy, each week.
   body: Give me the product page and the price you would pay, and I look each week and tell you when it drops to it. Buying stays with you.
   openingRequest: Watch this product and tell me when it drops under the price I'd pay.
-  neededToolNames: [schedule, web_fetch]
+  neededToolNames: [goal, web_fetch]
   translations:
     ja:
       headline: "買おうか迷っている商品の価格を毎週チェックします。"
@@ -361,7 +361,7 @@
   headline: I'll remind you of the chores that come round every few months.
   body: Tell me the filters, the gutters or the smoke alarm batteries and how often each is due, and I remind you when it comes round.
   openingRequest: Remind me to change the air filters every three months.
-  neededToolNames: [schedule]
+  neededToolNames: [goal]
   translations:
     ja:
       headline: "数か月ごとの家事を忘れないようにお知らせします。"
@@ -378,7 +378,7 @@
   headline: I'll remind you of birthdays a week ahead, with an idea for each.
   body: Tell me whose birthdays matter and I remind you a week before each one, with a gift idea from what I know about them.
   openingRequest: Remind me of my family's birthdays a week ahead.
-  neededToolNames: [schedule, memory]
+  neededToolNames: [goal, memory]
   translations:
     ja:
       headline: "誕生日を1週間前に、贈り物のアイデアと一緒にお知らせします。"
@@ -429,7 +429,7 @@
   headline: I'll remind you to take a medication, and to refill it in time.
   body: Tell me when you take it and how long a refill lasts, and I remind you each time and again a few days before you run out.
   openingRequest: Remind me to take my medication at 9 each evening and to refill it every 30 days.
-  neededToolNames: [schedule]
+  neededToolNames: [goal]
   translations:
     ja:
       headline: "薬の服用と、切れる前の補充をお知らせします。"
@@ -463,7 +463,7 @@
   headline: Before each day's meetings, I'll gather what you'll need.
   body: I look at the next day's meetings, find the recent mail with the people in them, and give you a short brief for each.
   openingRequest: Every evening, brief me on tomorrow's meetings.
-  neededToolNames: [schedule, calendar, mail_search]
+  neededToolNames: [goal, calendar, mail_search]
   translations:
     ja:
       headline: "毎日、翌日の会議に必要な情報をまとめます。"
@@ -480,7 +480,7 @@
   headline: Every Friday, I'll sum up your week from your mail and calendar.
   body: I read the week's meetings and mail and write a short summary of what happened, what was decided, and what is still open for next week.
   openingRequest: Every Friday at 4, sum up my week.
-  neededToolNames: [schedule, calendar, mail_search]
+  neededToolNames: [goal, calendar, mail_search]
   translations:
     ja:
       headline: "毎週金曜、メールとカレンダーから一週間をまとめます。"
@@ -514,7 +514,7 @@
   headline: Give me the artists you like. I'll look for shows near you.
   body: I search each week for new dates near you and tell you when one appears, with where to buy tickets. Buying stays with you.
   openingRequest: Look each week for shows near me by the bands I like.
-  neededToolNames: [schedule, web_search]
+  neededToolNames: [goal, web_search]
   translations:
     ja:
       headline: "好きなアーティストを教えてください。近くの公演を探します。"
@@ -580,18 +580,18 @@
   ideaCategory: work
   emoji: "🗓️"
   headline: Name a time. I'll do a task then, every day if you like.
-  body: Tell me what and when, such as a summary of what needs you every weekday at eight, and I do it at that time and answer here or by mail.
+  body: Tell me what and when, such as a summary of what needs you every weekday at eight, and I do it at that time and post it to your feed.
   openingRequest: Every weekday at 8, tell me what needs me today.
-  neededToolNames: [schedule]
-  usedCheck: schedule
+  neededToolNames: [goal]
+  usedCheck: goal_on_times
   translations:
     ja:
       headline: "時間を決めてください。その時間に、毎日でも作業します。"
-      body: "平日8時に対応が必要なことをまとめる、など何をいつするか教えてください。その時間に実行し、ここかメールでお答えします。"
+      body: "平日8時に対応が必要なことをまとめる、など何をいつするか教えてください。その時間に実行し、フィードに届けます。"
       openingRequest: "平日の朝8時に、今日対応が必要なことを教えて。"
     zh:
       headline: "说个时间，我到时帮你做一件事，愿意的话每天都做。"
-      body: "告诉我做什么、什么时候做，比如每个工作日8点总结需要你处理的事，我会按时执行，并在这里或通过邮件回复你。"
+      body: "告诉我做什么、什么时候做，比如每个工作日8点总结需要你处理的事，我会按时执行，并发到你的动态里。"
       openingRequest: "每个工作日早上8点，告诉我今天需要处理什么。"
 
 - ideaKey: knowledge_source

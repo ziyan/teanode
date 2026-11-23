@@ -157,15 +157,13 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return nil, fmt.Errorf("a card needs a title, the headline")
 		}
 		// Where it came from, read off the turn that posts, so that the card
-		// can say which goal or schedule it is and the info sheet can link there.
+		// can say which goal it is and the info sheet can link there.
 		if here := current.Conversation(); here != nil {
 			variables["runConversationId"] = here.ID
 			if action == "post" {
 				switch {
 				case here.IsGoal():
 					variables["feedSourceKind"], variables["feedSourceId"] = string(models.FeedSourceGoal), here.ID
-				case here.Kind == models.AgentConversationRun && here.JobKind == string(models.AgentJobSchedule) && here.SubjectID != "":
-					variables["feedSourceKind"], variables["feedSourceId"] = string(models.FeedSourceSchedule), here.SubjectID
 				case here.Kind == models.AgentConversationRun && here.JobKind == string(models.AgentJobSpeakFirst) && here.SubjectID != "":
 					variables["feedSourceKind"], variables["feedSourceId"] = string(models.FeedSourceSpeakFirst), here.SubjectID
 				}

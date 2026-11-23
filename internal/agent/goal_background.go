@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -51,18 +50,43 @@ const (
 // in progress (GoalsInProgress) are going.
 var ErrTooManyGoals = errors.New("as many goals as this server allows are already in progress; finish or drop one first")
 
-// StartGoal starts a goal in a conversation of its own and makes it due at
-// once. The title is what it is called in a list, the description what it
-// is for. The origin is the conversation it was asked for in, when there
-// was one, kept in the first activity row.
-func (self *Agent) StartGoal(tx db.Transaction, agent *models.Agent, goalTitle, goalDescription, originConversationId string) (*models.AgentConversation, error) {
-	goalTitle = cutRunes(strings.TrimSpace(strings.ReplaceAll(goalTitle, "\n", " ")), goalTitleCharacters)
-	goalDescription = cutRunes(strings.TrimSpace(goalDescription), goalDescriptionCharacters)
+// GoalStart is what a goal is started with: what it is called and what it
+// is for, the conversation it was asked for in, and, for a goal on set
+// times, its times and the mail it waits for. Who wrote it decides whether
+// its turns read its description as the person's words.
+type GoalStart struct {
+	GoalTitle                string
+	GoalDescription          string
+	OriginConversationID     string
+	GoalTimes                []string
+	GoalMailConditions       []models.MailboxRuleCondition
+	GoalWrittenBy            string
+	IsGoalNotifiedWhenPosted bool
+}
+
+// StartGoal starts a goal in a conversation of its own. One that keeps its
+// own cadence is due at once; one on set times is due at the soonest of
+// them, or when its mail comes. The origin is the conversation it was asked
+// for in, when there was one.
+func (self *Agent) StartGoal(tx db.Transaction, agent *models.Agent, owner *models.User, start *GoalStart) (*models.AgentConversation, error) {
+	goalTitle := cutRunes(strings.TrimSpace(strings.ReplaceAll(start.GoalTitle, "\n", " ")), goalTitleCharacters)
+	goalDescription := cutRunes(strings.TrimSpace(start.GoalDescription), goalDescriptionCharacters)
 	if goalDescription == "" {
 		return nil, fmt.Errorf("a goal needs a description: what it is for and what done looks like")
 	}
 	if goalTitle == "" {
 		goalTitle = firstWords(goalDescription, goalTitleCharacters)
+	}
+	now := time.Now()
+	goalTimes, next, err := self.settleGoalTiming(owner, start.GoalTimes, start.GoalMailConditions, now)
+	if err != nil {
+		return nil, err
+	}
+	if len(goalTimes) > 0 && next == nil && len(start.GoalMailConditions) == 0 {
+		return nil, fmt.Errorf("every time given has passed; give one still to come")
+	}
+	if len(goalTimes) == 0 && len(start.GoalMailConditions) == 0 {
+		next = &now
 	}
 	var started *models.AgentConversation
 	if err := func() error {
@@ -74,11 +98,12 @@ func (self *Agent) StartGoal(tx db.Transaction, agent *models.Agent, goalTitle, 
 		if len(going) >= goalsInProgress {
 			return ErrTooManyGoals
 		}
-		now := time.Now()
 		if started, err = tx.CreateAgentConversation(&models.AgentConversation{
 			AgentID: agent.ID, Kind: models.AgentConversationGoal, Title: goalTitle, TitledBy: "program", Surface: "goal", LastAt: now,
-			Goal: goalDescription, GoalTitle: goalTitle, GoalState: models.GoalWorking, GoalNextAt: &now, GoalSetAt: &now,
-			GoalOriginConversationID: originOf(tx, agent.ID, originConversationId),
+			Goal: goalDescription, GoalTitle: goalTitle, GoalState: models.GoalWorking, GoalNextAt: next, GoalSetAt: &now,
+			GoalOriginConversationID: originOf(tx, agent.ID, start.OriginConversationID),
+			GoalTimes:                goalTimes, GoalMailConditions: start.GoalMailConditions,
+			GoalWrittenBy: models.KnownWriter(start.GoalWrittenBy), IsGoalNotifiedWhenPosted: start.IsGoalNotifiedWhenPosted,
 		}); err != nil {
 			return err
 		}
@@ -92,6 +117,125 @@ func (self *Agent) StartGoal(tx db.Transaction, agent *models.Agent, goalTitle, 
 	}
 	log.Noticef("agent %q started goal %q (%s)", agent.ID, goalTitle, started.ID)
 	return started, nil
+}
+
+// settleGoalTiming checks a goal's times and mail conditions, and says when
+// the soonest time is.
+func (self *Agent) settleGoalTiming(owner *models.User, goalTimes []string, goalMailConditions []models.MailboxRuleCondition, now time.Time) ([]string, *time.Time, error) {
+	if (len(goalTimes) > 0 || len(goalMailConditions) > 0) && !FeatureAllowed(self.settings.Configuration(), "schedules") {
+		return nil, nil, fmt.Errorf("this server does not run goals at set times or on arriving mail")
+	}
+	if err := models.ValidateGoalMailConditions(goalMailConditions); err != nil {
+		return nil, nil, err
+	}
+	return SettleGoalTimes(goalTimes, owner, now)
+}
+
+// GoalChange is a change to a goal: only what is not nil changes. Times or
+// mail conditions given replace the goal's, and an empty list clears them.
+type GoalChange struct {
+	GoalTitle                *string
+	GoalDescription          *string
+	GoalTimes                *[]string
+	GoalMailConditions       *[]models.MailboxRuleCondition
+	GoalWrittenBy            string
+	IsGoalNotifiedWhenPosted *bool
+}
+
+// UpdateGoal changes a goal's title, description, times, mail conditions or
+// notification. Whoever changes what it says or when it runs is who wrote it
+// from then on: the person, with a tap on a screen, makes it theirs; the
+// agent, or the command line, whose token the agent's own shell holds too,
+// makes it the agent's.
+func (self *Agent) UpdateGoal(tx db.Transaction, agent *models.Agent, owner *models.User, conversationId string, change *GoalChange) (*models.AgentConversation, error) {
+	goal, err := ownGoal(tx, agent.ID, conversationId)
+	if err != nil {
+		return nil, err
+	}
+	goalTimes, goalMailConditions := goal.GoalTimes, goal.GoalMailConditions
+	if change.GoalTimes != nil {
+		goalTimes = *change.GoalTimes
+	}
+	if change.GoalMailConditions != nil {
+		goalMailConditions = *change.GoalMailConditions
+	}
+	now := time.Now()
+	goalTimes, next, err := self.settleGoalTiming(owner, goalTimes, goalMailConditions, now)
+	if err != nil {
+		return nil, err
+	}
+	isTimingChanged := change.GoalTimes != nil || change.GoalMailConditions != nil
+	if isTimingChanged && len(goalTimes) > 0 && next == nil && len(goalMailConditions) == 0 {
+		return nil, fmt.Errorf("every time given has passed; give one still to come")
+	}
+	return tx.UpdateAgentConversation(goal.ID, func(changing *models.AgentConversation) error {
+		if change.GoalTitle != nil {
+			if title := cutRunes(strings.TrimSpace(strings.ReplaceAll(*change.GoalTitle, "\n", " ")), goalTitleCharacters); title != "" {
+				changing.GoalTitle, changing.Title = title, title
+			}
+		}
+		if change.GoalDescription != nil {
+			description := cutRunes(strings.TrimSpace(*change.GoalDescription), goalDescriptionCharacters)
+			if description == "" {
+				return fmt.Errorf("a goal needs a description: what it is for and what done looks like")
+			}
+			changing.Goal = description
+		}
+		// The person saving what it says or when it runs makes it theirs
+		// (or the switch's, for the goal a switch started); anything the
+		// agent, or a caller that may be the agent, changes about what it
+		// says, when it runs or how it tells them makes it the agent's.
+		// Renaming it is neither.
+		isWordsOrTimesChanged := change.GoalDescription != nil || change.GoalTimes != nil || change.GoalMailConditions != nil
+		switch writer := models.KnownWriter(change.GoalWrittenBy); writer {
+		case models.WrittenByAgent:
+			if isWordsOrTimesChanged || change.IsGoalNotifiedWhenPosted != nil {
+				changing.GoalWrittenBy = writer
+			}
+		case models.WrittenByPerson, models.WrittenByBuiltIn:
+			if isWordsOrTimesChanged {
+				changing.GoalWrittenBy = writer
+			}
+		}
+		if change.IsGoalNotifiedWhenPosted != nil {
+			changing.IsGoalNotifiedWhenPosted = *change.IsGoalNotifiedWhenPosted
+		}
+		if isTimingChanged {
+			changing.GoalTimes, changing.GoalMailConditions = goalTimes, goalMailConditions
+			if len(goalMailConditions) == 0 {
+				changing.GoalMailArrivals = nil
+			}
+			if changing.GoalState == models.GoalWorking {
+				switch {
+				case next != nil:
+					changing.GoalNextAt = next
+				case len(goalMailConditions) > 0:
+					changing.GoalNextAt = nil
+				default:
+					// Back to a cadence of its own, from a look now.
+					changing.GoalNextAt = &now
+				}
+			}
+		}
+		return nil
+	})
+}
+
+// RunGoalNow gives a working goal a turn now, out of its times: what the
+// person presses to see what it does.
+func (self *Agent) RunGoalNow(tx db.Transaction, agent *models.Agent, conversationId string) (*models.AgentConversation, error) {
+	goal, err := ownGoal(tx, agent.ID, conversationId)
+	if err != nil {
+		return nil, err
+	}
+	if goal.GoalState != models.GoalWorking {
+		return nil, fmt.Errorf("that goal is %s; switch it on before running it", goal.GoalState)
+	}
+	return tx.UpdateAgentConversation(goal.ID, func(changing *models.AgentConversation) error {
+		now := time.Now()
+		changing.GoalNextAt = &now
+		return nil
+	})
 }
 
 // TellGoal passes what the person said to one of their goals: written into
@@ -109,8 +253,8 @@ func (self *Agent) TellGoal(tx db.Transaction, agent *models.Agent, conversation
 		if err != nil {
 			return err
 		}
-		if goal.GoalState == models.GoalMet || goal.GoalState == models.GoalDropped {
-			return fmt.Errorf("that goal is %s; open it again first if there is more to do", goal.GoalState)
+		if goal.GoalState == models.GoalMet || goal.GoalState == models.GoalDropped || goal.GoalState == models.GoalPaused {
+			return fmt.Errorf("that goal is %s; take it up again first if there is more to do", goal.GoalState)
 		}
 		if _, err := tx.AppendAgentMessage(&models.AgentMessage{
 			ConversationID: goal.ID, Role: "user", Content: models.GoalRelayMarker + " " + text,
@@ -135,12 +279,14 @@ func (self *Agent) TellGoal(tx db.Transaction, agent *models.Agent, conversation
 	return after, nil
 }
 
-// SetGoalState is the person marking a goal done, dropping it, or taking
-// it up again: met, dropped, or working. Only the person does this; a turn
-// of the agent's own says note, wait or met through the goal tool.
-func (self *Agent) SetGoalState(tx db.Transaction, agent *models.Agent, conversationId string, goalState models.AgentGoalState) (*models.AgentConversation, error) {
-	if goalState != models.GoalMet && goalState != models.GoalDropped && goalState != models.GoalWorking {
-		return nil, fmt.Errorf("a goal can be marked met, dropped, or working again, not %q", goalState)
+// SetGoalState is the person marking a goal done, dropping it, pausing
+// it, or taking it up again: met, dropped, paused, or working. Only the
+// person does this; a turn of the agent's own says note, wait or met
+// through the goal tool. A goal on set times taken up again is next due at
+// its next time, not now.
+func (self *Agent) SetGoalState(tx db.Transaction, agent *models.Agent, owner *models.User, conversationId string, goalState models.AgentGoalState) (*models.AgentConversation, error) {
+	if goalState != models.GoalMet && goalState != models.GoalDropped && goalState != models.GoalWorking && goalState != models.GoalPaused {
+		return nil, fmt.Errorf("a goal can be marked met, dropped, paused, or working again, not %q", goalState)
 	}
 	var after *models.AgentConversation
 	if err := func() error {
@@ -168,6 +314,18 @@ func (self *Agent) SetGoalState(tx db.Transaction, agent *models.Agent, conversa
 			now := time.Now()
 			if goalState == models.GoalWorking {
 				conversation.GoalNextAt = &now
+				if conversation.IsGoalOnSetTimes() {
+					settled, next, err := SettleGoalTimes(conversation.GoalTimes, owner, now)
+					if err != nil {
+						return err
+					}
+					conversation.GoalTimes, conversation.GoalNextAt = settled, next
+				}
+			}
+			if goalState != models.GoalWorking {
+				// What came while it was off is not for a turn it never
+				// took.
+				conversation.GoalMailArrivals = nil
 			}
 			// They said it is done, so there is nothing to tell them.
 			if goalState == models.GoalMet {
@@ -179,6 +337,8 @@ func (self *Agent) SetGoalState(tx db.Transaction, agent *models.Agent, conversa
 		}
 		activityKind, headline := models.GoalActivityResumed, "Taken up again"
 		switch goalState {
+		case models.GoalPaused:
+			activityKind, headline = models.GoalActivityProgress, "Paused by you"
 		case models.GoalMet:
 			activityKind, headline = models.GoalActivityMet, "Marked done by you"
 		case models.GoalDropped:
@@ -258,7 +418,7 @@ func (self *Agent) surfaceGoal(ctx context.Context, goal *models.AgentConversati
 	}
 	var mainId string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		main, err = scheduleConversation(tx, goal.AgentID, "")
+		main, err = personsConversation(tx, goal.AgentID, "")
 		return err
 	}); err != nil {
 		return err
@@ -356,99 +516,6 @@ func goalTitleOf(goal *models.AgentConversation) string {
 		return title
 	}
 	return firstWords(goal.Goal, goalTitleCharacters)
-}
-
-// goalSchedules is the enabled schedules that belong to a goal: those made
-// in its conversation or moved there. While it has one, the schedule is the
-// goal's clock and the goal takes no turns of its own.
-func goalSchedules(tx db.Transaction, goal *models.AgentConversation) ([]*models.AgentSchedule, error) {
-	schedules, err := tx.ListAgentSchedules(goal.AgentID)
-	if err != nil {
-		return nil, err
-	}
-	var owned []*models.AgentSchedule
-	for _, schedule := range schedules {
-		// Only one that answers in the goal's conversation: a mailed one
-		// runs in a conversation of its own and never says where the
-		// goal stands.
-		if schedule.ConversationID == goal.ID && schedule.Enabled && schedule.Deliver != models.AgentDeliverMail {
-			owned = append(owned, schedule)
-		}
-	}
-	return owned, nil
-}
-
-// MoveScheduleToGoal makes an existing schedule one of a goal's: its runs
-// take place in the goal's conversation, as the goal's turns, and the goal
-// stops taking turns of its own.
-func (self *Agent) MoveScheduleToGoal(tx db.Transaction, agent *models.Agent, scheduleId, conversationId string) (*models.AgentSchedule, error) {
-	var moved *models.AgentSchedule
-	if err := func() error {
-		goal, err := ownGoal(tx, agent.ID, conversationId)
-		if err != nil {
-			return err
-		}
-		schedule, err := tx.GetAgentSchedule(strings.TrimSpace(scheduleId))
-		if err != nil {
-			return err
-		}
-		if schedule == nil || schedule.AgentID != agent.ID {
-			return fmt.Errorf("there is no schedule %q", scheduleId)
-		}
-		if moved, err = tx.UpdateAgentSchedule(schedule.ID, func(changing *models.AgentSchedule) error {
-			// Its answer is read where the goal's turns run; a mailed
-			// schedule would mail the person every run instead.
-			changing.ConversationID, changing.Deliver = goal.ID, models.AgentDeliverDrawer
-			// The agent changed where the schedule answers, so it is the
-			// agent's schedule from now on, as when the schedule tool does it.
-			changing.WrittenBy = models.WrittenByAgent
-			return nil
-		}); err != nil {
-			return err
-		}
-		if _, err := tx.UpdateAgentConversation(goal.ID, func(conversation *models.AgentConversation) error {
-			if conversation.GoalState == models.GoalWorking {
-				conversation.GoalNextAt = nil
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-		return addGoalActivity(tx, goal, models.GoalActivityProgress, "Runs on the schedule "+strconv.Quote(schedule.Name), schedule.Cron)
-	}(); err != nil {
-		return nil, err
-	}
-	return moved, nil
-}
-
-// wakeGoalsWithoutSchedule gives a turn to every working goal that has no
-// next turn of its own and no schedule left to run it: its schedule was
-// switched off or removed, and without this it would wait for ever.
-func (self *Agent) wakeGoalsWithoutSchedule(ctx context.Context, now time.Time) error {
-	return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		idle, err := tx.ListAgentGoalsWithoutNextTurn(goalSurfaceBatch)
-		if err != nil {
-			return err
-		}
-		for _, goal := range idle {
-			schedules, err := goalSchedules(tx, goal)
-			if err != nil {
-				return err
-			}
-			if len(schedules) > 0 {
-				continue
-			}
-			if _, err := tx.UpdateAgentConversation(goal.ID, func(conversation *models.AgentConversation) error {
-				if conversation.GoalState == models.GoalWorking && conversation.GoalNextAt == nil {
-					conversation.GoalNextAt = &now
-				}
-				return nil
-			}); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
 }
 
 // originOf is the conversation a goal was asked for in, when it is one of

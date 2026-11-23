@@ -59,8 +59,8 @@ type AgentMutation interface {
 	// it; called again, it changes the policy. Needs agent:use.
 	GrantAgentMailbox(ctx context.Context, arguments GrantAgentMailboxArguments) (*AgentView, error)
 	GrantAgentSource(ctx context.Context, arguments GrantAgentSourceArguments) (*AgentView, error)
-	SetAgentBrief(ctx context.Context, arguments SetAgentBriefArguments) (*models.AgentSchedule, error)
-	RunAgentBriefNow(ctx context.Context) (*models.AgentSchedule, error)
+	SetAgentBrief(ctx context.Context, arguments SetAgentBriefArguments) (*AgentGoalView, error)
+	RunAgentBriefNow(ctx context.Context) (*AgentGoalView, error)
 
 	// Have the agent write a reply to a message, for the caller to read,
 	// change and send; the text comes back, nothing is saved or sent. The
@@ -785,15 +785,6 @@ func (self *graph) forgetAgent(ctx context.Context, tx db.Transaction, found *mo
 	}
 	if _, err := tx.DeleteAgentConnections(found.ID); err != nil {
 		return err
-	}
-	schedules, err := tx.ListAgentSchedules(found.ID)
-	if err != nil {
-		return err
-	}
-	for _, schedule := range schedules {
-		if err := tx.DeleteAgentSchedule(schedule.ID); err != nil {
-			return err
-		}
 	}
 	if err := agent.ForgetAttachments(ctx, tx, self.storage, found.ID); err != nil {
 		return err

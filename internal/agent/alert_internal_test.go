@@ -173,7 +173,7 @@ func TestAlertJobTellsTheBurstAndDropsTheNewsletter(t *testing.T) {
 	var main *models.AgentConversation
 	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
 		var err error
-		if main, err = scheduleConversation(tx, fixture.agent.ID, ""); err != nil {
+		if main, err = personsConversation(tx, fixture.agent.ID, ""); err != nil {
 			t.Fatalf("scheduleConversation: %s", err)
 		}
 	})
@@ -454,7 +454,7 @@ func TestAlertJobWaitsForTheTurnInFlight(t *testing.T) {
 	var main *models.AgentConversation
 	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
 		var err error
-		if main, err = scheduleConversation(tx, fixture.agent.ID, ""); err != nil {
+		if main, err = personsConversation(tx, fixture.agent.ID, ""); err != nil {
 			t.Fatalf("scheduleConversation: %s", err)
 		}
 	})

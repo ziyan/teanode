@@ -4,31 +4,33 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// estimateSchedules are the owner's schedules the estimate switch wrote.
-func estimateSchedules(test *testing.T, tx db.Transaction, agentId string) []*models.AgentSchedule {
+// estimateGoals are the owner's goals the estimate switch started.
+func estimateGoals(test *testing.T, tx db.Transaction, agentId string) []*models.AgentConversation {
 	test.Helper()
-	schedules, err := tx.ListAgentSchedules(agentId)
+	goals, err := tx.ListAgentGoals(agentId, nil, 0)
 	if err != nil {
-		test.Fatalf("ListAgentSchedules: %s", err)
+		test.Fatalf("ListAgentGoals: %s", err)
 	}
-	var found []*models.AgentSchedule
-	for _, schedule := range schedules {
-		if schedule.Name == AssetEstimateScheduleName {
-			found = append(found, schedule)
+	var found []*models.AgentConversation
+	for _, goal := range goals {
+		if goal.GoalTitle == AssetEstimateGoalName {
+			found = append(found, goal)
 		}
 	}
 	return found
 }
 
-// Allowing the agent to estimate an asset makes the monthly schedule that
-// estimates, once however many assets allow it; an asset estimated by hand,
-// or one whose estimates are not allowed, makes none.
-func TestAllowingAnEstimateMakesTheEstimateSchedule(test *testing.T) {
+// Allowing the agent to estimate an asset starts the monthly goal that
+// estimates, once however many assets allow it, and gives it a turn now; an
+// asset estimated by hand, or one whose estimates are not allowed, starts
+// none.
+func TestAllowingAnEstimateStartsTheEstimateGoal(test *testing.T) {
 	fixture := newFinanceFixture(test, true)
 	isAllowed := true
 	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
@@ -40,8 +42,8 @@ func TestAllowingAnEstimateMakesTheEstimateSchedule(test *testing.T) {
 			ValuationSource: "manual", IsEstimateAllowed: &isAllowed}); err != nil {
 			test.Fatal(err)
 		}
-		if schedules := estimateSchedules(test, tx, fixture.ownerAgent.ID); len(schedules) != 0 {
-			test.Errorf("an asset the agent may not estimate made a schedule: %+v", schedules)
+		if goals := estimateGoals(test, tx, fixture.ownerAgent.ID); len(goals) != 0 {
+			test.Errorf("an asset the agent may not estimate started a goal: %+v", goals)
 		}
 	})
 
@@ -53,10 +55,11 @@ func TestAllowingAnEstimateMakesTheEstimateSchedule(test *testing.T) {
 			test.Fatal(err)
 		}
 		carId = car.ID
-		schedules := estimateSchedules(test, tx, fixture.ownerAgent.ID)
-		if len(schedules) != 1 || !schedules[0].Enabled || schedules[0].WrittenBy != models.WrittenByBuiltIn ||
-			!strings.Contains(schedules[0].Prompt, "estimateDescription") || schedules[0].NextRunAt == nil {
-			test.Fatalf("the estimate schedule is %+v", schedules)
+		goals := estimateGoals(test, tx, fixture.ownerAgent.ID)
+		if len(goals) != 1 || goals[0].GoalState != models.GoalWorking || goals[0].GoalWrittenBy != models.WrittenByBuiltIn ||
+			!strings.Contains(goals[0].Goal, "estimateDescription") || len(goals[0].GoalTimes) != 1 ||
+			goals[0].GoalNextAt == nil || goals[0].GoalNextAt.After(time.Now()) {
+			test.Fatalf("the estimate goal, due now, is %+v", goals)
 		}
 	})
 
@@ -70,8 +73,8 @@ func TestAllowingAnEstimateMakesTheEstimateSchedule(test *testing.T) {
 		if _, err := fixture.resolver.UpdateAsset(ctx, UpdateAssetArguments{AssetID: bike, ValuationSource: &agentEstimate}); err != nil {
 			test.Fatal(err)
 		}
-		if schedules := estimateSchedules(test, tx, fixture.ownerAgent.ID); len(schedules) != 1 {
-			test.Errorf("a second asset the agent estimates made another schedule: %+v", schedules)
+		if goals := estimateGoals(test, tx, fixture.ownerAgent.ID); len(goals) != 1 {
+			test.Errorf("a second asset the agent estimates started another goal: %+v", goals)
 		}
 	})
 }
@@ -92,9 +95,9 @@ func (self *financeFixture) assetNamed(test *testing.T, tx db.Transaction, asset
 	return ""
 }
 
-// A schedule the person switched off stays off: allowing another estimate
-// neither switches it on nor queues it, since they said to stop.
-func TestASwitchedOffEstimateScheduleStaysOff(test *testing.T) {
+// A goal the person paused stays paused: allowing another estimate neither
+// takes it up again nor gives it a turn, since they said to stop.
+func TestAPausedEstimateGoalStaysPaused(test *testing.T) {
 	fixture := newFinanceFixture(test, true)
 	isAllowed := true
 	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
@@ -102,36 +105,24 @@ func TestASwitchedOffEstimateScheduleStaysOff(test *testing.T) {
 			ValuationSource: "agent_estimate", EstimateDescription: "a small hatchback", IsEstimateAllowed: &isAllowed}); err != nil {
 			test.Fatal(err)
 		}
-		schedules := estimateSchedules(test, tx, fixture.ownerAgent.ID)
-		if len(schedules) != 1 {
-			test.Fatalf("the estimate schedule is %+v", schedules)
+		goals := estimateGoals(test, tx, fixture.ownerAgent.ID)
+		if len(goals) != 1 {
+			test.Fatalf("the estimate goal is %+v", goals)
 		}
-		if _, err := tx.UpdateAgentSchedule(schedules[0].ID, func(schedule *models.AgentSchedule) error {
-			schedule.Enabled = false
+		if _, err := tx.UpdateAgentConversation(goals[0].ID, func(goal *models.AgentConversation) error {
+			goal.GoalState, goal.GoalNextAt = models.GoalPaused, nil
 			return nil
 		}); err != nil {
 			test.Fatal(err)
 		}
 	})
-	queued := func(tx db.Transaction) int64 {
-		count, err := tx.CountAgentJobs(&db.AgentJobFilter{AgentID: fixture.ownerAgent.ID, Kinds: []models.AgentJobKind{models.AgentJobSchedule}})
-		if err != nil {
-			test.Fatal(err)
-		}
-		return count
-	}
-	var before int64
 	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
-		before = queued(tx)
 		if _, err := fixture.resolver.CreateAsset(ctx, CreateAssetArguments{AssetName: "the boat", AssetKind: "vehicle", CurrencyCode: "USD",
 			ValuationSource: "agent_estimate", EstimateDescription: "a small sailing boat", IsEstimateAllowed: &isAllowed}); err != nil {
 			test.Fatal(err)
 		}
-		if schedules := estimateSchedules(test, tx, fixture.ownerAgent.ID); len(schedules) != 1 || schedules[0].Enabled {
-			test.Errorf("the switched-off schedule was changed: %+v", schedules)
-		}
-		if after := queued(tx); after != before {
-			test.Errorf("a switched-off schedule was queued: %d jobs, %d before", after, before)
+		if goals := estimateGoals(test, tx, fixture.ownerAgent.ID); len(goals) != 1 || goals[0].GoalState != models.GoalPaused || goals[0].GoalNextAt != nil {
+			test.Errorf("the paused goal was changed: %+v", goals)
 		}
 	})
 }

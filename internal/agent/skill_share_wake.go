@@ -67,7 +67,7 @@ func (self *Agent) wakeForSkillShareCall(answer *skillShareAnswer) {
 		}
 		agentId = conversation.AgentID
 		if conversation.Kind == models.AgentConversationChat {
-			main, err := scheduleConversation(tx, agentId, "")
+			main, err := personsConversation(tx, agentId, "")
 			if err != nil {
 				return err
 			}

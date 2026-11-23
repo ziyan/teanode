@@ -91,17 +91,17 @@ type AskSettings struct {
 	// conversation with agent:act. Such a turn is never the person's own.
 	IsOperatorActingAsPerson bool
 
-	// IsPersonsSchedule says a turn of the schedule surface was woken by a
-	// schedule the person wrote, not one the agent wrote for itself and not a
-	// built-in one (the daily brief), which reads content the person did not
-	// write.
-	IsPersonsSchedule bool
+	// IsPersonsGoal says a turn of the goal surface was woken by a goal the
+	// person wrote, on times they chose, not one the agent wrote for itself,
+	// not a built-in one (the daily brief), which reads content the person
+	// did not write, and not one that waits for mail.
+	IsPersonsGoal bool
 
-	// IsAgentsSchedule says a turn of the schedule surface was woken by a
-	// schedule the agent wrote (or one of unknown origin), not one the person
-	// wrote and not a built-in one. Passwords is closed to it, and says so in
-	// words that tell the person how to open it (IsWokenByAgentsSchedule).
-	IsAgentsSchedule bool
+	// IsAgentsGoal says a turn of the goal surface was woken by a goal the
+	// agent wrote (or one of unknown origin), not one the person wrote and
+	// not a built-in one. Passwords is closed to it, and says so in words
+	// that tell the person how to open it (IsWokenByAgentsGoal).
+	IsAgentsGoal bool
 
 	// IsAnswerToCard says the turn carries on an answer given to a card after
 	// the turn that raised it had ended (see ResumeInteraction), and
@@ -855,8 +855,8 @@ func (self *AskRun) IsStartedByPerson() bool {
 		return false
 	}
 	switch self.settings.Surface {
-	case "schedule", "mail":
-		return self.settings.IsPersonsSchedule
+	case "goal", "mail":
+		return self.settings.IsPersonsGoal
 	case "drawer", "extension", "page", "voice", "ios", "ios_voice", "android", "android_voice", "siri", "phone", "cli", "api":
 		if self.settings.IsAnswerToCard {
 			// The answer to a card starts nothing of its own: the turn is
@@ -886,14 +886,14 @@ func (self *AskRun) IsCalledByPersonsProgram() bool {
 	return self.settings.Surface == "mcp" && !models.IsOwnTurn(self.settings.Message)
 }
 
-// IsWokenByAgentsSchedule says a schedule the agent wrote woke this run, so that
-// Passwords can tell the person to open the schedule and save it themselves.
-// A subagent is its parent's.
-func (self *AskRun) IsWokenByAgentsSchedule() bool {
+// IsWokenByAgentsGoal says a goal the agent wrote woke this run, so that
+// Passwords can tell the person to open the goal and save it themselves. A
+// subagent is its parent's.
+func (self *AskRun) IsWokenByAgentsGoal() bool {
 	if parent := self.settings.confirmVia; parent != nil {
-		return parent.IsWokenByAgentsSchedule()
+		return parent.IsWokenByAgentsGoal()
 	}
-	return self.settings.IsAgentsSchedule && !self.IsStartedByPerson()
+	return self.settings.IsAgentsGoal && !self.IsStartedByPerson()
 }
 
 func (self *AskRun) CanAsk() bool {
@@ -2228,7 +2228,7 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	if self.takePreApproval(tool.Name, call.Arguments) {
 		call.Confirmed = true
 	} else if unattendedRisks := self.confirmationReasons(ctx, configuration, tool, call.Arguments); len(unattendedRisks) > 0 {
-		if !self.CanAsk() || self.settings.Surface == "mail" || self.settings.Surface == "schedule" || self.settings.Surface == "research" {
+		if !self.CanAsk() || self.settings.Surface == "mail" || self.settings.Surface == "goal" || self.settings.Surface == "schedule" || self.settings.Surface == "research" {
 			// Nobody can confirm. What the person allowed the agent to do
 			// when they are not there goes ahead as if they had; the rest
 			// is refused, saying where they allow it.

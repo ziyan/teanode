@@ -5,35 +5,36 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
 // The daily brief.
 //
 // "Every weekday at half past seven, tell me what the day holds and what is
-// waiting for an answer, and send it to me" is three fields in a form that a
-// person has to think up first. This is the same thing behind one switch.
+// waiting for an answer" is a goal with a time that a person has to think up
+// first. This is the same thing behind one switch.
 //
-// No new machinery: it writes an ordinary schedule row. That matters twice
-// over -- it runs through everything schedules already do, and it appears in
-// the Schedules card afterwards, where the prompt can be edited, the time
-// changed, or the whole thing thrown away. The switch is a convenience that
-// writes a row, and the card says so.
+// No new machinery: it starts an ordinary goal. That matters twice over --
+// it runs through everything goals on set times already do, and it appears
+// on the Goals screens afterwards, where its words can be edited, the time
+// changed, or the whole thing dropped. The switch is a convenience that
+// starts a goal, and the screens say so.
 
-// BriefName is what the schedule the switch writes is called. Found by name,
+// BriefName is what the goal the switch starts is called. Found by title,
 // because a person who renames it has made it theirs and the switch should
 // leave it alone.
-const BriefName = agent.BriefScheduleName
+const BriefName = agent.BriefGoalTitle
 
 // SetAgentBriefArguments say when the brief arrives, or that it should not.
 type SetAgentBriefArguments struct {
 	Enabled bool `json:"enabled"`
 
 	// At is the time of day in the person's own zone, as "HH:MM". Empty
-	// keeps the time the schedule already has, or 07:30 for a new one.
+	// keeps the time the goal already has, or 07:30 for a new one.
 	At string `json:"at" graphapi:"nullable"`
 
 	// Days are the days of the week it arrives on, 1 for Monday through 7
@@ -42,7 +43,7 @@ type SetAgentBriefArguments struct {
 }
 
 // SetAgentBrief turns the daily brief on or off, and says when it comes.
-func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArguments) (*models.AgentSchedule, error) {
+func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArguments) (*AgentGoalView, error) {
 	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return nil, err
@@ -50,82 +51,78 @@ func (self *graph) SetAgentBrief(ctx context.Context, arguments SetAgentBriefArg
 	if !agent.FeatureAllowed(self.config.Current(), "schedules") {
 		return nil, agent.ErrUnavailable
 	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
 	tx := self.transaction(ctx)
-	schedules, err := tx.ListAgentSchedules(found.ID)
+	brief, err := findGoalByTitle(tx, found.ID, BriefName)
 	if err != nil {
 		return nil, err
-	}
-	var brief *models.AgentSchedule
-	for _, schedule := range schedules {
-		if strings.EqualFold(schedule.Name, BriefName) {
-			brief = schedule
-			break
-		}
 	}
 	cron, err := briefCron(arguments.At, arguments.Days, brief)
 	if err != nil {
-		return nil, err
+		return nil, translateError(err)
 	}
 	if brief == nil {
 		if !arguments.Enabled {
 			return nil, nil // off, and there was nothing to turn off
 		}
-		deliver := models.AgentDeliverDrawer
-		if self.isServiceEnabled(models.ServiceMailboxes) {
-			deliver = models.AgentDeliverMail
-		}
-		schedule := &models.AgentSchedule{
-			AgentID: found.ID, Name: BriefName, Cron: cron,
-			Prompt: agent.BriefPrompt(found, principal.User),
-			// The person's own words, because the person pressed the
-			// switch: a schedule the agent writes for itself arrives as a
-			// note about what to do rather than as an instruction. Recorded
-			// as built in, not as the person's: the brief reads the inbox,
-			// so a run it wakes does not count as the person asking for
-			// Passwords.
-			WrittenBy: models.WrittenByBuiltIn,
-			Deliver:   deliver, Enabled: true,
-		}
-		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
+		started, err := worker.StartGoal(tx, found, principal.User, &agent.GoalStart{
+			GoalTitle: BriefName, GoalDescription: agent.BriefPrompt(found, principal.User), GoalTimes: []string{cron},
+			// The person's own words, because the person pressed the switch:
+			// a goal the agent writes for itself arrives as a note about what
+			// to do rather than as an instruction. Recorded as built in, not
+			// as the person's: the brief reads the inbox, so a turn it wakes
+			// does not count as the person asking for Passwords.
+			GoalWrittenBy:            models.WrittenByBuiltIn,
+			IsGoalNotifiedWhenPosted: true,
+		})
 		if err != nil {
-			return nil, translateError(err)
-		}
-		schedule.NextRunAt = next
-		created, err := tx.CreateAgentSchedule(schedule)
-		if err != nil {
-			return nil, translateError(err)
+			return nil, translateGoalError(err)
 		}
 		log.Noticef("%s turned the daily brief on", operatorName(ctx))
-		return created, nil
+		return goalView(started), nil
 	}
-	updated, err := tx.UpdateAgentSchedule(brief.ID, func(schedule *models.AgentSchedule) error {
-		schedule.Cron = cron
-		// The brief runs at its hour, whatever it was changed to before.
-		schedule.MailConditions, schedule.MailArrivals = nil, nil
-		schedule.Enabled = arguments.Enabled
-		if strings.TrimSpace(schedule.Prompt) == "" {
-			schedule.Prompt = agent.BriefPrompt(found, principal.User)
-		}
-		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
-		if err != nil {
-			return err
-		}
-		schedule.NextRunAt = next
-		return nil
-	})
+	times := []string{cron}
+	// The brief runs at its hour, whatever it was changed to before.
+	noMail := []models.MailboxRuleCondition{}
+	if _, err := worker.UpdateGoal(tx, found, principal.User, brief.ID, &agent.GoalChange{GoalTimes: &times, GoalMailConditions: &noMail, GoalWrittenBy: models.WrittenByBuiltIn}); err != nil {
+		return nil, translateGoalError(err)
+	}
+	goalState := models.GoalPaused
+	if arguments.Enabled {
+		goalState = models.GoalWorking
+	}
+	changed, err := worker.SetGoalState(tx, found, principal.User, brief.ID, goalState)
 	if err != nil {
-		return nil, translateError(err)
+		return nil, translateGoalError(err)
 	}
-	return updated, nil
+	return goalView(changed), nil
+}
+
+// findGoalByTitle is the agent's goal of that title that is still kept at,
+// working, waiting or paused, or nil.
+func findGoalByTitle(tx db.Transaction, agentId, goalTitle string) (*models.AgentConversation, error) {
+	goals, err := tx.ListAgentGoals(agentId, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting, models.GoalPaused}, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, goal := range goals {
+		if strings.EqualFold(strings.TrimSpace(goal.GoalTitle), goalTitle) {
+			return goal, nil
+		}
+	}
+	return nil, nil
 }
 
 // briefCron is the cron line for a time and a set of days, keeping what the
-// schedule already has where the caller said nothing.
-func briefCron(at string, days []int, existing *models.AgentSchedule) (string, error) {
+// goal already has where the caller said nothing.
+func briefCron(at string, days []int, existing *models.AgentConversation) (string, error) {
 	hour, minute := 7, 30
 	weekdays := "1-5"
-	if existing != nil {
-		if parsedHour, parsedMinute, parsedDays, ok := readBriefCron(existing.Cron); ok {
+	if existing != nil && len(existing.GoalTimes) > 0 {
+		if parsedHour, parsedMinute, parsedDays, ok := readBriefCron(existing.GoalTimes[0]); ok {
 			hour, minute, weekdays = parsedHour, parsedMinute, parsedDays
 		}
 	}
@@ -178,24 +175,26 @@ func readBriefCron(cron string) (hour, minute int, days string, ok bool) {
 
 // RunAgentBriefNow sends the brief immediately, for somebody who has just set
 // it up and would like to see what arrives.
-func (self *graph) RunAgentBriefNow(ctx context.Context) (*models.AgentSchedule, error) {
+func (self *graph) RunAgentBriefNow(ctx context.Context) (*AgentGoalView, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
 	tx := self.transaction(ctx)
-	schedules, err := tx.ListAgentSchedules(found.ID)
+	brief, err := findGoalByTitle(tx, found.ID, BriefName)
 	if err != nil {
 		return nil, err
 	}
-	for _, schedule := range schedules {
-		if !strings.EqualFold(schedule.Name, BriefName) {
-			continue
-		}
-		if _, err := tx.EnqueueAgentJob(&models.AgentJob{AgentID: found.ID, Kind: models.AgentJobSchedule, SubjectID: schedule.ID}); err != nil {
-			return nil, err
-		}
-		return schedule, nil
+	if brief == nil {
+		return nil, fmt.Errorf("%w: the daily brief is not set up yet", api.ErrInvalidArguments)
 	}
-	return nil, fmt.Errorf("the daily brief is not set up yet")
+	ran, err := worker.RunGoalNow(tx, found, brief.ID)
+	if err != nil {
+		return nil, translateGoalError(err)
+	}
+	return goalView(ran), nil
 }

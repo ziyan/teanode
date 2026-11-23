@@ -252,6 +252,15 @@ type agentConversationModel struct {
 
 	GoalOriginConversationID *string `gorm:"column:goal_origin_conversation_id"`
 
+	// The times a goal takes its turns at, the mail it waits for and what
+	// came, who wrote it, and whether a turn's first card notifies. See
+	// migration 0281.
+	GoalTimes                []byte `gorm:"column:goal_times;type:jsonb"`
+	GoalMailConditions       []byte `gorm:"column:goal_mail_conditions;type:jsonb"`
+	GoalMailArrivals         []byte `gorm:"column:goal_mail_arrivals;type:jsonb"`
+	GoalWrittenBy            string `gorm:"column:goal_written_by"`
+	IsGoalNotifiedWhenPosted bool   `gorm:"column:is_goal_notified_when_posted"`
+
 	// How many turns background commands and work have woken since the
 	// person last wrote. See migration 0122.
 	BackgroundWakeCount int `gorm:"column:background_wake_count"`
@@ -576,6 +585,18 @@ func conversationFromModel(model *agentConversationModel) *models.AgentConversat
 	if model.GoalOriginConversationID != nil {
 		conversation.GoalOriginConversationID = *model.GoalOriginConversationID
 	}
+	conversation.GoalWrittenBy, conversation.IsGoalNotifiedWhenPosted = model.GoalWrittenBy, model.IsGoalNotifiedWhenPosted
+	// Read leniently: a conversation whose goal columns cannot be read is
+	// still a conversation, and its goal is then one without times.
+	if err := decodeJSON(model.GoalTimes, &conversation.GoalTimes); err != nil {
+		log.Warningf("cannot read the times of goal %q: %s", model.ID, err)
+	}
+	if err := decodeJSON(model.GoalMailConditions, &conversation.GoalMailConditions); err != nil {
+		log.Warningf("cannot read the mail conditions of goal %q: %s", model.ID, err)
+	}
+	if err := decodeJSON(model.GoalMailArrivals, &conversation.GoalMailArrivals); err != nil {
+		log.Warningf("cannot read the mail arrivals of goal %q: %s", model.ID, err)
+	}
 	if model.RememberedAt != nil {
 		at := model.RememberedAt.In(time.Local)
 		conversation.RememberedAt = &at
@@ -658,9 +679,16 @@ func (self *transaction) CreateAgentConversation(conversation *models.AgentConve
 		GoalSetAt:  conversation.GoalSetAt,
 
 		GoalSurfacedAt: conversation.GoalSurfacedAt,
+
+		GoalWrittenBy:            conversation.GoalWrittenBy,
+		IsGoalNotifiedWhenPosted: conversation.IsGoalNotifiedWhenPosted,
 	}
 	if conversation.GoalOriginConversationID != "" {
 		model.GoalOriginConversationID = &conversation.GoalOriginConversationID
+	}
+	var err error
+	if model.GoalTimes, model.GoalMailConditions, model.GoalMailArrivals, err = goalColumns(conversation); err != nil {
+		return nil, err
 	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err
@@ -719,10 +747,16 @@ func (self *transaction) UpdateAgentConversation(conversationId string, modify f
 	if err := modify(&after); err != nil {
 		return nil, err
 	}
+	goalTimes, goalMailConditions, goalMailArrivals, err := goalColumns(&after)
+	if err != nil {
+		return nil, err
+	}
 	if err := self.tx.Model(&agentConversationModel{}).Where("\"id\" = ?", conversationId).Updates(map[string]any{
 		"modified_at": time.Now(), "kind": string(after.Kind), "title": truncateRunes(after.Title, 200), "summary": truncateRunes(after.Summary, 1000), "titled_by": after.TitledBy, "archived_at": after.ArchivedAt, "described_at": after.DescribedAt,
 		"last_at": after.LastAt, "compacted_through": after.CompactedThrough, "surface": after.Surface,
 		"goal": after.Goal, "goal_title": truncateRunes(after.GoalTitle, 200), "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt, "goal_set_at": after.GoalSetAt, "goal_surfaced_at": after.GoalSurfacedAt,
+		"goal_times": goalTimes, "goal_mail_conditions": goalMailConditions, "goal_mail_arrivals": goalMailArrivals,
+		"goal_written_by": after.GoalWrittenBy, "is_goal_notified_when_posted": after.IsGoalNotifiedWhenPosted,
 	}).Error; err != nil {
 		return nil, err
 	}
@@ -1547,4 +1581,26 @@ func (self *transaction) ListAgentConversationActivityBetween(agentId string, fr
 		})
 	}
 	return activity, nil
+}
+
+// goalColumns encodes a goal's times, mail conditions and arrivals, each
+// NULL when there are none: a goal that keeps its own pace, and every
+// conversation that is not a goal.
+func goalColumns(conversation *models.AgentConversation) (goalTimes, goalMailConditions, goalMailArrivals []byte, err error) {
+	if len(conversation.GoalTimes) > 0 {
+		if goalTimes, err = json.Marshal(conversation.GoalTimes); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	if len(conversation.GoalMailConditions) > 0 {
+		if goalMailConditions, err = json.Marshal(conversation.GoalMailConditions); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	if len(conversation.GoalMailArrivals) > 0 {
+		if goalMailArrivals, err = json.Marshal(conversation.GoalMailArrivals); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	return goalTimes, goalMailConditions, goalMailArrivals, nil
 }

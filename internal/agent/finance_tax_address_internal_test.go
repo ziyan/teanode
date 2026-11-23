@@ -103,7 +103,7 @@ func TestTaxMailJob(t *testing.T) {
 		if reading == 0 {
 			t.Errorf("the upload's reading is queued: %+v", jobs)
 		}
-		conversation, err := scheduleConversation(tx, fixture.agent.ID, "")
+		conversation, err := personsConversation(tx, fixture.agent.ID, "")
 		if err != nil {
 			t.Fatalf("scheduleConversation: %s", err)
 		}

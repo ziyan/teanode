@@ -1459,7 +1459,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 // they are away.
 func isPersonPresent(current tools.Run, call *tools.Call) bool {
 	switch current.Surface() {
-	case "mail", "schedule", "research":
+	case "mail", "goal", "schedule", "research":
 		return false
 	}
 	return current.CanAsk() && !call.IsConfirmedUnattended
