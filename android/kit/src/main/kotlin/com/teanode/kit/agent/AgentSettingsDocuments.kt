@@ -4,7 +4,7 @@ package com.teanode.kit.agent
 object AgentSettingsDocuments {
     val AGENT_SETTINGS_FIELDS = """
 agent { id name enabled instructions language knowledgeLanguage askModel speechVoice operatorDisabledAt confirm unattendedAllowedRisks
-  isMemoryCheckEnabled isIdeasEnabled
+  isSuggestionsEnabled
   voice { tone length greeting signoff }
   categories { name description } }
 sources { mailboxId name addresses policy { granted draftReplies search research
@@ -25,10 +25,10 @@ query { ReadAgent { ${AGENT_SETTINGS_FIELDS} } }
     val UPDATE_AGENT_SETTINGS = """
 mutation (${'$'}enabled: Boolean, ${'$'}name: String, ${'$'}instructions: String, ${'$'}language: String, ${'$'}knowledgeLanguage: String, ${'$'}voice: AgentVoiceInput,
   ${'$'}categories: [AgentCategoryInput!], ${'$'}confirm: [String!], ${'$'}unattendedAllowedRisks: [String!], ${'$'}askModel: String, ${'$'}speechVoice: String,
-  ${'$'}isMemoryCheckEnabled: Boolean, ${'$'}isIdeasEnabled: Boolean, ${'$'}forget: Boolean) {
+  ${'$'}isSuggestionsEnabled: Boolean, ${'$'}forget: Boolean) {
   UpdateAgent(enabled: ${'$'}enabled, name: ${'$'}name, instructions: ${'$'}instructions, language: ${'$'}language, knowledgeLanguage: ${'$'}knowledgeLanguage,
     voice: ${'$'}voice, categories: ${'$'}categories, confirm: ${'$'}confirm, unattendedAllowedRisks: ${'$'}unattendedAllowedRisks, askModel: ${'$'}askModel,
-    speechVoice: ${'$'}speechVoice, isMemoryCheckEnabled: ${'$'}isMemoryCheckEnabled, isIdeasEnabled: ${'$'}isIdeasEnabled, forget: ${'$'}forget) {
+    speechVoice: ${'$'}speechVoice, isSuggestionsEnabled: ${'$'}isSuggestionsEnabled, forget: ${'$'}forget) {
     ${AGENT_SETTINGS_FIELDS}
   }
 }

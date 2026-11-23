@@ -753,10 +753,10 @@ never folded into a note.
 - **A search query is not escaped**, so `%` and `_` in what a person types act
   as wildcards.
 - **Archived conversations are still readable by the tool**; it does not check.
-- **A goal is only as bounded as the budget, the floor and the day's cap.**
+- **A goal is only as bounded as the budget, the floor and the goals' share.**
   Nothing reads what the goal says before the turns start, so a goal that
-  cannot ever be met runs its forty-eight turns a day until somebody clears
-  it.
+  cannot ever be met spends the goals' share of the day, every day, until
+  somebody clears it.
 - **Files attached to a run transcript outlive it.** The sweep removes the
   transcript and its messages, but attachments are not tied to a conversation
   by a foreign key and only unclaimed ones are collected, so artifacts made

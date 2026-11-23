@@ -111,9 +111,8 @@
     <string name="manage_limit_daily_tokens">每人每日 token</string>
     <string name="manage_limit_dream_share">做梦可用的每日预算份额（默认 0.3）</string>
     <string name="manage_limit_embedding_tokens">每日嵌入令牌数（0 为不限）</string>
+    <string name="manage_limit_goal_share">自主推进的目标可用的每日预算份额（默认 0.5）</string>
     <string name="manage_limit_goal_turns_alone">无本人回应的目标轮次 (24)</string>
-    <string name="manage_limit_goal_turns_day">目标每天的轮次 (48)</string>
-    <string name="manage_limit_goals_in_progress">每人进行中的目标 (20)</string>
     <string name="manage_limit_ingest_chunks">每次导入嵌入的段落数</string>
     <string name="manage_limit_monthly_cost">整台服务器每月金额</string>
     <string name="manage_limit_monthly_tokens">整台服务器每月 token（0 = 不限）</string>

@@ -655,7 +655,7 @@ func (self *Agent) ideaReason() speakFirstReason {
 		name:           SpeakFirstIdea,
 		isDailyLimited: true,
 		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
-			if !agent.IsIdeasEnabled || agent.OnboardedAt == nil || idle < ideaIdle {
+			if !agent.IsSuggestionsEnabled || agent.OnboardedAt == nil || idle < ideaIdle {
 				return false, nil
 			}
 			offered, err := tx.CountAgentJobs(&db.AgentJobFilter{
@@ -724,7 +724,7 @@ func (self *Agent) ideaReason() speakFirstReason {
 				"",
 				"Two sentences at most, in your own words: the offer, tied to them where you can. No greeting, no list, and do not start on it: they choose. End with the suggestions line offering exactly "+string(replies)+".",
 				"",
-				"If they take it up, call idea with start and idea_id "+idea.ID+" before you begin. If they say they do not want ideas at all, call agent_profile with no_more_ideas; if not now, agent_profile with not_now; if not this one, idea with dismiss.",
+				"If they take it up, call idea with start and idea_id "+idea.ID+" before you begin. If they say they do not want ideas or suggestions at all, call agent_profile with no_more_suggestions; if not now, agent_profile with not_now; if not this one, idea with dismiss.",
 			)
 			return speakFirstMessage(owner, now, "An idea.", prepared) + strings.Join(lines, "\n"), nil
 		},

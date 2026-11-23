@@ -111,9 +111,8 @@
     <string name="manage_limit_daily_tokens">Tokens per person per day</string>
     <string name="manage_limit_dream_share">Share of the day dreams may spend (0.3 by default)</string>
     <string name="manage_limit_embedding_tokens">Embedding tokens per day (0 for no cap)</string>
+    <string name="manage_limit_goal_share">Share of the day goals at their own pace may spend (0.5 by default)</string>
     <string name="manage_limit_goal_turns_alone">Goal turns without the person (24)</string>
-    <string name="manage_limit_goal_turns_day">Goal turns a day (48)</string>
-    <string name="manage_limit_goals_in_progress">Goals in progress per person (20)</string>
     <string name="manage_limit_ingest_chunks">Passages embedded per ingest run</string>
     <string name="manage_limit_monthly_cost">Monthly cost, whole server</string>
     <string name="manage_limit_monthly_tokens">Tokens per month, whole server (0 = no cap)</string>

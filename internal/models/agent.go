@@ -113,13 +113,13 @@ type Agent struct {
 
 	// SpokeFirstAt is when the agent last started a conversation on its
 	// own, and OnboardedAt when its introduction ended, answered or not.
-	// IsMemoryCheckEnabled and IsIdeasEnabled are the person's switches for
-	// two of the reasons it may, and SpeakFirstSnoozedUntil is how long
-	// they asked it to keep quiet. See internal/agent/speak_first.go.
+	// IsSuggestionsEnabled is the person's switch for what it suggests on
+	// its own (ideas to try, checks of what it remembers), and
+	// SpeakFirstSnoozedUntil is how long they asked it to keep quiet. See
+	// internal/agent/speak_first.go.
 	SpokeFirstAt           *time.Time `json:"spokeFirstAt,omitempty" graphapi:"nullable"`
 	OnboardedAt            *time.Time `json:"onboardedAt,omitempty" graphapi:"nullable"`
-	IsMemoryCheckEnabled   bool       `json:"isMemoryCheckEnabled"`
-	IsIdeasEnabled         bool       `json:"isIdeasEnabled"`
+	IsSuggestionsEnabled   bool       `json:"isSuggestionsEnabled"`
 	SpeakFirstSnoozedUntil *time.Time `json:"speakFirstSnoozedUntil,omitempty" graphapi:"nullable"`
 
 	// IsAlertsEnabled is the person's switch for alerts: the agent telling

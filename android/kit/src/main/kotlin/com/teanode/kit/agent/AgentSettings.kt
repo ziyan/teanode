@@ -61,8 +61,7 @@ data class AgentRecord(
     val confirm: List<String> = emptyList(),
     /** The kinds of action needing the person's word that the agent may take when they are not there. */
     val unattendedAllowedRisks: List<String>? = null,
-    val isMemoryCheckEnabled: Boolean = false,
-    val isIdeasEnabled: Boolean = false,
+    val isSuggestionsEnabled: Boolean = false,
     val voice: AgentVoice? = null,
     val categories: List<AgentCategory> = emptyList(),
 ) {
@@ -315,8 +314,7 @@ data class AgentChange(
     val unattendedAllowedRisks: List<String>? = null,
     val askModel: String? = null,
     val speechVoice: String? = null,
-    val isMemoryCheckEnabled: Boolean? = null,
-    val isIdeasEnabled: Boolean? = null,
+    val isSuggestionsEnabled: Boolean? = null,
 ) {
     /** As the server takes it, as the dashboard sends it: the name and the languages trimmed, every part of the voice said, and categories without a name left out. */
     val variables: Map<String, JsonElement>
@@ -343,8 +341,7 @@ data class AgentChange(
             unattendedAllowedRisks?.let { variables["unattendedAllowedRisks"] = JsonArray(it.map { entry -> JsonPrimitive(entry) }) }
             askModel?.let { variables["askModel"] = JsonPrimitive(it) }
             speechVoice?.let { variables["speechVoice"] = JsonPrimitive(it) }
-            isMemoryCheckEnabled?.let { variables["isMemoryCheckEnabled"] = JsonPrimitive(it) }
-            isIdeasEnabled?.let { variables["isIdeasEnabled"] = JsonPrimitive(it) }
+            isSuggestionsEnabled?.let { variables["isSuggestionsEnabled"] = JsonPrimitive(it) }
             return variables
         }
 }

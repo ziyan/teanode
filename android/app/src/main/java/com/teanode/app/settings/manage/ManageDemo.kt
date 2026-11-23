@@ -23,7 +23,7 @@ private const val AGENT_SETTINGS = """{
     "chatApps":true,"skills":true,"subagents":true,"remember":true,"knowledge":true,"dreaming":true},
   "limits":{"maxBodyCharacters":20000,"dailyTokensPerAgent":1000000,"monthlyTokensPerServer":0,"dailyCostPerAgent":2.5,"monthlyCostPerServer":0,"maxRoundsPerAsk":20,"maxRoundsPerResearch":10,
     "maxRoundsPerReply":5,"maxRoundsPerDream":30,"maxToolCallsPerRun":50,"requestTimeout":"2m","concurrency":4,"scanConcurrency":2,"rewriteConcurrency":2,"dreamShare":0.3,"ingestChunksPerRun":500,
-    "embeddingTokensPerDay":0,"maxRoundsPerSubagent":0,"goalTurnsPerDay":0,"goalTurnsAlone":0,"goalsInProgress":0,"backgroundWakesAlone":0,"maxRecordingMediaBytes":"2 GB","maxRecordingAccountBytes":"64 GB"},
+    "embeddingTokensPerDay":0,"maxRoundsPerSubagent":0,"goalShare":0,"goalTurnsAlone":0,"backgroundWakesAlone":0,"maxRecordingMediaBytes":"2 GB","maxRecordingAccountBytes":"64 GB"},
   "retention":{"runs":"720h","corrections":"2160h"},"currency":"USD","search":{"kind":"brave","hasApiKey":true},
   "tools":{"disabled":["shell"],"confirm":["mail"],"catalog":[
     {"name":"mail_send","family":"mail","risk":"outward","description":"Sends mail.","confirms":true,"core":true,"actions":null},

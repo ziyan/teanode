@@ -43,7 +43,7 @@ func (self *Agent) memoryCheckReason() speakFirstReason {
 		},
 		nudge: "You ended the memory check's turn without putting a question. Call memory_check with draft if you have not, and put the first one to them now with ask_user, as the check-in above says. Say nothing else first.",
 		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
-			if !agent.IsMemoryCheckEnabled || agent.OnboardedAt == nil {
+			if !agent.IsSuggestionsEnabled || agent.OnboardedAt == nil {
 				return false, nil
 			}
 			return memoryCheckDue(tx, agent, now)
@@ -58,7 +58,7 @@ func (self *Agent) memoryCheckReason() speakFirstReason {
 				"",
 				"Then: record each reply with memory_check record (confirmed when they say you are right, corrected with their answer, dropped when they would rather not keep it, unsure when they do not know) and put the next, one at a time. When they do not know either, do not press: record unsure and move on. After three or four, ask what has changed in their life lately, and add each change they mention with memory_check add, with what used to be true as the outdated answer. Stop at about five questions, or as soon as they want to, and when you stop, say so without being asked: one line that the check is done, how many you asked, and what you got wrong. When they correct you, or tell you something new, ask whether they want you to remember it; file it with memory only if they say yes, then call memory_check filed on that question.",
 				"",
-				"\"Stop for now\", or stop, ends this check: record that question as dropped, and end with one line saying the check is over, how many you asked, what you had wrong, and that you will pick it up another time. If they say not now before it starts, call agent_profile with not_now. Only if they say they never want memory checks, call agent_profile with no_more_memory_checks; when it is not clear which they mean, ask.",
+				"\"Stop for now\", or stop, ends this check: record that question as dropped, and end with one line saying the check is over, how many you asked, what you had wrong, and that you will pick it up another time. If they say not now before it starts, call agent_profile with not_now. Only if they say they never want memory checks or suggestions, call agent_profile with no_more_suggestions; when it is not clear which they mean, ask.",
 			}, "\n"), nil
 		},
 	}

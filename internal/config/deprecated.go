@@ -58,12 +58,42 @@ func (self *deprecatedAcme) empty() bool {
 	return self.AccountKeyFile == "" && self.CertificateFile == "" && self.PrivateKeyFile == ""
 }
 
+// deprecatedLimits covers the goal caps the spending share replaced.
+type deprecatedLimits struct {
+	// A goal's turns a day: goals now spend at most agent.limits.goalShare
+	// of the day between them.
+	RetiredGoalTurnsPerDay int `yaml:"goalTurnsPerDay,omitempty"`
+
+	// Goals at once: the same share bounds what they cost, however many
+	// there are.
+	RetiredGoalsInProgress int `yaml:"goalsInProgress,omitempty"`
+}
+
+func (self *deprecatedLimits) empty() bool {
+	return self.RetiredGoalTurnsPerDay == 0 && self.RetiredGoalsInProgress == 0
+}
+
 // migrateDeprecated adopts what it can from the older layout and says what it
 // did, so an operator is not left wondering where a setting went.
 func (self *Configuration) migrateDeprecated() {
 	self.migrateSession()
 	self.migrateDomainKey()
 	self.migrateAcme()
+	self.migrateGoalLimits()
+}
+
+func (self *Configuration) migrateGoalLimits() {
+	outdated := &self.Agent.Limits.deprecatedLimits
+	if outdated.empty() {
+		return
+	}
+	if outdated.RetiredGoalTurnsPerDay > 0 {
+		log.Warningf("agent.limits.goalTurnsPerDay is no longer used; goals at their own pace spend at most agent.limits.goalShare of the day between them")
+	}
+	if outdated.RetiredGoalsInProgress > 0 {
+		log.Warningf("agent.limits.goalsInProgress is no longer used; agent.limits.goalShare bounds what goals cost, however many there are")
+	}
+	self.Agent.Limits.deprecatedLimits = deprecatedLimits{}
 }
 
 func (self *Configuration) migrateSession() {

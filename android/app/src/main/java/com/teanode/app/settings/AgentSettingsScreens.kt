@@ -414,10 +414,8 @@ private fun AgentSpeakingFirstPage(model: AgentSettingsModel, onBack: () -> Unit
     val savedText = stringResource(R.string.settings_saved)
     AgentPage(stringResource(R.string.settings_agent_speaking_first), onBack, model) { _, agent ->
         item {
-            SwitchRow(stringResource(R.string.settings_agent_memory_checks), agent.isMemoryCheckEnabled, { isOn -> model.update(AgentChange(isMemoryCheckEnabled = isOn), savedText) })
-            FooterText(stringResource(R.string.settings_agent_memory_checks_footer))
-            SwitchRow(stringResource(R.string.settings_agent_offer_ideas), agent.isIdeasEnabled, { isOn -> model.update(AgentChange(isIdeasEnabled = isOn), savedText) })
-            FooterText(stringResource(R.string.settings_agent_offer_ideas_footer))
+            SwitchRow(stringResource(R.string.settings_agent_suggestions), agent.isSuggestionsEnabled, { isOn -> model.update(AgentChange(isSuggestionsEnabled = isOn), savedText) })
+            FooterText(stringResource(R.string.settings_agent_suggestions_footer))
             FooterText(stringResource(R.string.settings_agent_speaking_first_footer))
         }
     }
