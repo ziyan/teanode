@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.8] - 2026-11-23
+
+### Fixed
+
+- iPhone: at the largest text sizes, the agenda in a brief card shows each time whole instead of breaking it across lines. (#776)
+
 ## [0.230.7] - 2026-11-23
 
 ### Changed
