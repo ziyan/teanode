@@ -803,6 +803,10 @@ func (self *transaction) SetSpendingRulePriorities(agentId string, rulePrioritie
 	for spendingRuleId := range rulePriorities {
 		spendingRuleIds = append(spendingRuleIds, spendingRuleId)
 	}
+	orderBefore, err := self.spendingRuleOrder(agentId)
+	if err != nil {
+		return err
+	}
 	// In a fixed order, so two of these never wait on each other's locks.
 	slices.Sort(spendingRuleIds)
 	for _, spendingRuleId := range spendingRuleIds {
@@ -814,21 +818,37 @@ func (self *transaction) SetSpendingRulePriorities(agentId string, rulePrioritie
 		if len(found) == 0 {
 			return ErrNotFound
 		}
-		before := found[0].toModel()
-		if before.RulePriority == rulePriorities[spendingRuleId] {
+		if found[0].toModel().RulePriority == rulePriorities[spendingRuleId] {
 			continue
 		}
-		after := *before
-		after.RulePriority = rulePriorities[spendingRuleId]
-		after.ModifiedAt = time.Now()
-		if err := self.applyMutation(models.AuditResourceSpendingRule, spendingRuleId, models.AuditActionUpdate, before, &after, func(tx *gorm.DB) error {
-			return tx.Model(&agentSpendingRuleModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, spendingRuleId).
-				Updates(map[string]any{"rule_priority": after.RulePriority, "modified_at": after.ModifiedAt}).Error
-		}); err != nil {
+		if err := self.tx.Model(&agentSpendingRuleModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, spendingRuleId).
+			Updates(map[string]any{"rule_priority": rulePriorities[spendingRuleId], "modified_at": time.Now()}).Error; err != nil {
 			return err
 		}
 	}
-	return nil
+	orderAfter, err := self.spendingRuleOrder(agentId)
+	if err != nil {
+		return err
+	}
+	// A reorder is one change, not one per rule it moved: the rows are
+	// already written, and the agent's rule order is recorded once.
+	return self.applyMutation(models.AuditResourceAgent, agentId, models.AuditActionUpdate,
+		map[string]any{"spendingRuleOrder": orderBefore}, map[string]any{"spendingRuleOrder": orderAfter},
+		func(*gorm.DB) error { return nil })
+}
+
+// spendingRuleOrder is the ids of the agent's spending rules, first to be
+// tried first.
+func (self *transaction) spendingRuleOrder(agentId string) ([]string, error) {
+	spendingRules, err := self.ListSpendingRules(agentId)
+	if err != nil {
+		return nil, err
+	}
+	spendingRuleIds := make([]string, 0, len(spendingRules))
+	for _, spendingRule := range spendingRules {
+		spendingRuleIds = append(spendingRuleIds, spendingRule.ID)
+	}
+	return spendingRuleIds, nil
 }
 
 func (self *transaction) FirstMatchingSpendingRules(agentId string, financeTransactionIds []string) (map[string]string, error) {
