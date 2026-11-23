@@ -134,6 +134,11 @@ type Agent struct {
 	AlertQuietEnd   string `json:"alertQuietEnd,omitempty" graphapi:"nullable"`
 	AlertDailyMost  int    `json:"alertDailyMost"`
 
+	// FeedDestination is where what the agent says unasked goes: feed, the
+	// default, or main, the main conversation as before the feed. See
+	// docs/subsystems/feed.md.
+	FeedDestination string `json:"feedDestination"`
+
 	// LookAroundWeekday and LookAroundTime are when the agent looks around
 	// the person's town each week for what is on: a lower-case English day
 	// name such as "thursday", and "17:00" in their own zone. Empty means

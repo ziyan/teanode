@@ -27,6 +27,12 @@ type LinkPreviewOperation interface {
 	// would send that to whoever runs the site.
 	HasLinkNotWrittenByAgent(conversation *models.AgentConversation, texts ...string) (bool, error)
 
+	// HasLinkInToolAnswer says whether any of the texts appears, exactly, in
+	// what a tool answered in the conversation. It decides which pages the
+	// server may fetch a picture from for a card the agent posts, on the same
+	// grounds as HasLinkNotWrittenByAgent.
+	HasLinkInToolAnswer(conversationId string, texts ...string) (bool, error)
+
 	// GetLinkPreviewByImageFile is the row whose picture is stored under the
 	// file, or nil when no row names it.
 	GetLinkPreviewByImageFile(imageFileId string) (*LinkPreview, error)
@@ -161,6 +167,22 @@ func (self *transaction) HasLinkNotWrittenByAgent(conversation *models.AgentConv
 		}
 		var found bool
 		if err := self.tx.Raw(query, append(arguments, text)...).Scan(&found).Error; err != nil {
+			return false, err
+		}
+		if found {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (self *transaction) HasLinkInToolAnswer(conversationId string, texts ...string) (bool, error) {
+	for _, text := range texts {
+		if text == "" {
+			continue
+		}
+		var found bool
+		if err := self.tx.Raw(`SELECT EXISTS (SELECT 1 FROM "agent_message" WHERE "conversation_id" = ? AND "role" = 'tool' AND strpos("content", ?) > 0)`, conversationId, text).Scan(&found).Error; err != nil {
 			return false, err
 		}
 		if found {

@@ -89,7 +89,7 @@ func newAlertFixtureWith(t *testing.T, providerURL, zone string) *alertFixture {
 		if fixture.owner, err = tx.CreateUser(&models.User{Username: "robin", Name: "Robin Example", Timezone: zone}); err != nil {
 			t.Fatalf("CreateUser: %s", err)
 		}
-		if fixture.agent, err = tx.CreateAgent(&models.Agent{UserID: fixture.owner.ID, Enabled: true}); err != nil {
+		if fixture.agent, err = tx.CreateAgent(&models.Agent{UserID: fixture.owner.ID, Enabled: true, FeedDestination: models.FeedDestinationMain}); err != nil {
 			t.Fatalf("CreateAgent: %s", err)
 		}
 		if fixture.mailbox, err = tx.CreateMailbox(&models.Mailbox{UserID: fixture.owner.ID, Name: "Personal", Agent: &models.AgentMailbox{Granted: true, Triage: &models.AgentTriage{Enabled: true}}}); err != nil {
@@ -100,6 +100,22 @@ func newAlertFixtureWith(t *testing.T, providerURL, zone string) *alertFixture {
 		}
 	})
 	return fixture
+}
+
+// useFeed sends what the agent says unasked to the feed, which is where it
+// goes for a new agent; the fixtures of the older tests say it in the main
+// conversation, which is what they are about.
+func (self *alertFixture) useFeed(t *testing.T) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		var err error
+		if self.agent, err = tx.UpdateAgent(self.agent.ID, func(found *models.Agent) error {
+			found.FeedDestination = models.FeedDestinationFeed
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateAgent: %s", err)
+		}
+	})
 }
 
 func (self *alertFixture) run() *Run {
