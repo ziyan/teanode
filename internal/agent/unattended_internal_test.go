@@ -108,12 +108,12 @@ func TestUnattendedAllowedRisksAreValidated(t *testing.T) {
 // default.
 func TestUnattendedLimitsResolveTheirDefaults(t *testing.T) {
 	limits := &config.AgentLimits{}
-	if limits.EffectiveGoalTurnsPerDay() != 48 || limits.EffectiveGoalTurnsAlone() != 24 || limits.EffectiveGoalsInProgress() != 20 ||
+	if limits.EffectiveGoalShare() != 0.5 || limits.EffectiveGoalTurnsAlone() != 24 ||
 		limits.EffectiveBackgroundWakesAlone() != 20 || limits.EffectiveMaxRoundsPerSubagent() != 20 {
 		t.Fatalf("the defaults: %+v", limits)
 	}
-	limits = &config.AgentLimits{GoalTurnsPerDay: 200, GoalTurnsAlone: 500, GoalsInProgress: 100, BackgroundWakesAlone: 80, MaxRoundsPerSubagent: 60}
-	if limits.EffectiveGoalTurnsPerDay() != 200 || limits.EffectiveGoalTurnsAlone() != 500 || limits.EffectiveGoalsInProgress() != 100 ||
+	limits = &config.AgentLimits{GoalShare: 0.2, GoalTurnsAlone: 500, BackgroundWakesAlone: 80, MaxRoundsPerSubagent: 60}
+	if limits.EffectiveGoalShare() != 0.2 || limits.EffectiveGoalTurnsAlone() != 500 ||
 		limits.EffectiveBackgroundWakesAlone() != 80 || limits.EffectiveMaxRoundsPerSubagent() != 60 {
 		t.Fatalf("what the operator set: %+v", limits)
 	}

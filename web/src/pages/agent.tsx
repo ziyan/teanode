@@ -124,8 +124,7 @@ export type Agent = {
   dreamUntil?: string
   dailyTokens: number
   operatorDisabledAt?: string | null
-  isMemoryCheckEnabled: boolean
-  isIdeasEnabled: boolean
+  isSuggestionsEnabled: boolean
   isAlertsEnabled: boolean
   alertQuietStart?: string
   alertQuietEnd?: string
@@ -157,7 +156,7 @@ export type AgentView = {
 
 const VIEW = `{
   agent { id name enabled instructions language knowledgeLanguage askModel speechVoice dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm unattendedAllowedRisks
-    isMemoryCheckEnabled isIdeasEnabled isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost lookAroundWeekday lookAroundTime
+    isSuggestionsEnabled isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost lookAroundWeekday lookAroundTime
     voice { tone length greeting signoff }
     categories { name description }
     notifications { heldReply highPriority runFailed } }
@@ -177,13 +176,13 @@ const UPDATE_AGENT = `
   mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
     $voice: AgentVoiceInput,
     $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $unattendedAllowedRisks: [String!], $askModel: String, $speechVoice: String,
-    $dreamFrom: String, $dreamUntil: String, $isMemoryCheckEnabled: Boolean, $isIdeasEnabled: Boolean,
+    $dreamFrom: String, $dreamUntil: String, $isSuggestionsEnabled: Boolean,
     $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $lookAroundWeekday: String, $lookAroundTime: String, $forget: Boolean) {
     UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
       voice: $voice,
       categories: $categories, notifications: $notifications, confirm: $confirm, unattendedAllowedRisks: $unattendedAllowedRisks, askModel: $askModel, speechVoice: $speechVoice,
-      dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isMemoryCheckEnabled: $isMemoryCheckEnabled,
-      isIdeasEnabled: $isIdeasEnabled, isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart,
+      dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isSuggestionsEnabled: $isSuggestionsEnabled,
+      isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart,
       alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost,
       lookAroundWeekday: $lookAroundWeekday, lookAroundTime: $lookAroundTime, forget: $forget) ${VIEW}
   }`
@@ -371,42 +370,26 @@ export function AgentPage() {
                 </label>
               ) : null}
             </div>
-            {/* The two things the agent says without being asked, beyond
-                its introduction. Each is a switch of its own because a
-                person may welcome one and not the other. */}
+            {/* What the agent says without being asked, beyond its
+                introduction: one switch for ideas and memory checks. */}
             <div className="settings-subform">
               <h4>{t('agent.speakFirst')}</h4>
               <p className="muted">{t('agent.speakFirstHint')}</p>
               <label className="checkbox">
                 <input
                   type="checkbox"
-                  checked={agent.isMemoryCheckEnabled}
+                  checked={agent.isSuggestionsEnabled}
                   disabled={busy}
                   onChange={(event) =>
                     void update(
-                      { isMemoryCheckEnabled: event.target.checked },
-                      event.target.checked ? t('agent.memoryChecksOn') : t('agent.memoryChecksOff'),
+                      { isSuggestionsEnabled: event.target.checked },
+                      event.target.checked ? t('agent.suggestionsOn') : t('agent.suggestionsOff'),
                     )
                   }
                 />
-                {t('agent.memoryChecks')}
+                {t('agent.suggestions')}
               </label>
-              <p className="muted field-hint">{t('agent.memoryChecksHint')}</p>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={agent.isIdeasEnabled}
-                  disabled={busy}
-                  onChange={(event) =>
-                    void update(
-                      { isIdeasEnabled: event.target.checked },
-                      event.target.checked ? t('agent.ideasOn') : t('agent.ideasOff'),
-                    )
-                  }
-                />
-                {t('agent.ideas')}
-              </label>
-              <p className="muted field-hint">{t('agent.ideasHint')}</p>
+              <p className="muted field-hint">{t('agent.suggestionsHint')}</p>
             </div>
             <ConfirmForm agent={agent} busy={busy} onSave={update} />
             <UnattendedForm agent={agent} busy={busy} onSave={update} />

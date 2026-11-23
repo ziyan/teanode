@@ -137,9 +137,8 @@ export type Agent = {
     ingestChunksPerRun: number
     embeddingTokensPerDay: number
     maxRoundsPerSubagent: number
-    goalTurnsPerDay: number
+    goalShare: number
     goalTurnsAlone: number
-    goalsInProgress: number
     backgroundWakesAlone: number
   }
   retention: { runs: string; corrections: string }
@@ -185,7 +184,7 @@ export const AGENT_SELECTION = `agent {
   providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast quick transcription embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-  limits { maxRecordingMediaBytes maxRecordingAccountBytes maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
+  limits { maxRecordingMediaBytes maxRecordingAccountBytes maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalShare goalTurnsAlone backgroundWakesAlone }
   retention { runs corrections }
   currency
   search { kind hasApiKey }
@@ -1320,9 +1319,8 @@ function limitFields(settings: Agent) {
     ingestChunksPerRun: String(settings.limits.ingestChunksPerRun),
     embeddingTokensPerDay: String(settings.limits.embeddingTokensPerDay),
     maxRoundsPerSubagent: String(settings.limits.maxRoundsPerSubagent),
-    goalTurnsPerDay: String(settings.limits.goalTurnsPerDay),
+    goalShare: String(settings.limits.goalShare),
     goalTurnsAlone: String(settings.limits.goalTurnsAlone),
-    goalsInProgress: String(settings.limits.goalsInProgress),
     backgroundWakesAlone: String(settings.limits.backgroundWakesAlone),
   }
 }
@@ -1384,9 +1382,8 @@ function LimitsForm({ settings, onSaved }: Props) {
               ingestChunksPerRun: number(limits.ingestChunksPerRun),
               embeddingTokensPerDay: number(limits.embeddingTokensPerDay),
               maxRoundsPerSubagent: number(limits.maxRoundsPerSubagent),
-              goalTurnsPerDay: number(limits.goalTurnsPerDay),
+              goalShare: Number(limits.goalShare) || 0,
               goalTurnsAlone: number(limits.goalTurnsAlone),
-              goalsInProgress: number(limits.goalsInProgress),
               backgroundWakesAlone: number(limits.backgroundWakesAlone),
             },
             retention,
@@ -1426,8 +1423,8 @@ function LimitsForm({ settings, onSaved }: Props) {
       {/* What work nobody is watching may take before it stops: zero is
           each one's default. */}
       <p className="muted">{t('agentSettings.limitsUnattended')}</p>
-      <div className="row">{(['maxRoundsPerSubagent', 'goalTurnsPerDay', 'goalTurnsAlone'] as const).map(numeric)}</div>
-      <div className="row">{(['goalsInProgress', 'backgroundWakesAlone'] as const).map(numeric)}</div>
+      <div className="row">{(['maxRoundsPerSubagent', 'goalShare', 'goalTurnsAlone'] as const).map(numeric)}</div>
+      <div className="row">{(['backgroundWakesAlone'] as const).map(numeric)}</div>
       <div className="row">
         {(['requestTimeout', 'concurrency'] as const).map(numeric)}
         <label className="shrink">

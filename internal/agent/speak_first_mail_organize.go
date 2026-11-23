@@ -51,7 +51,7 @@ func (self *Agent) mailOrganizeReason() speakFirstReason {
 		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
 			// A card in the feed: for a person whose agent speaks in the main
 			// conversation it would only be another interruption.
-			if !agent.IsIdeasEnabled || agent.OnboardedAt == nil || idle < ideaIdle || !wantsFeed(agent) {
+			if !agent.IsSuggestionsEnabled || agent.OnboardedAt == nil || idle < ideaIdle || !wantsFeed(agent) {
 				return false, nil
 			}
 			looked, err := tx.CountAgentJobs(&db.AgentJobFilter{

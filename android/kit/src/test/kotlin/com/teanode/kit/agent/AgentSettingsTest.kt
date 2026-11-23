@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test
 
 class AgentSettingsTest {
     private val page = """{"agent":{"id":"agent-1","name":"Juniper","enabled":true,"instructions":"Sign as R.","language":"","knowledgeLanguage":"en","askModel":"","speechVoice":"",
-      "operatorDisabledAt":null,"confirm":["calendar","mail_send"],"unattendedAllowedRisks":["money"],"isMemoryCheckEnabled":true,"isIdeasEnabled":false,
+      "operatorDisabledAt":null,"confirm":["calendar","mail_send"],"unattendedAllowedRisks":["money"],"isSuggestionsEnabled":true,
       "voice":{"tone":"formal","length":null,"greeting":"Hello","signoff":null},"categories":[{"name":"club","description":"The sailing club"}]},
       "sources":[{"mailboxId":"mailbox-1","name":"Robin","addresses":["robin@example.com"],"policy":{"granted":true,"draftReplies":true,"search":false,"research":false,
         "triage":{"enabled":true,"backfill":"","replyExpectation":"any"},"summaries":null,"autoReply":{"enabled":false,"guidance":null},"alerts":null}},

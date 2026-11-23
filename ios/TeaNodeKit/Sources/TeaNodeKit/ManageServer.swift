@@ -1471,9 +1471,8 @@ public struct AgentLimits: Codable, Hashable, Sendable {
     public let ingestChunksPerRun: Int
     public let embeddingTokensPerDay: Int
     public let maxRoundsPerSubagent: Int
-    public let goalTurnsPerDay: Int
+    public let goalShare: Double
     public let goalTurnsAlone: Int
-    public let goalsInProgress: Int
     public let backgroundWakesAlone: Int
 }
 
@@ -1826,7 +1825,7 @@ public struct AgentLimitsDraft: Hashable, Sendable {
         ["maxRoundsPerAsk", "maxRoundsPerResearch", "maxRoundsPerReply", "maxToolCallsPerRun"],
         ["maxRoundsPerDream", "scanConcurrency", "rewriteConcurrency", "dreamShare"],
         ["ingestChunksPerRun", "embeddingTokensPerDay"],
-        ["maxRoundsPerSubagent", "goalTurnsPerDay", "goalTurnsAlone", "goalsInProgress", "backgroundWakesAlone"],
+        ["maxRoundsPerSubagent", "goalShare", "goalTurnsAlone", "backgroundWakesAlone"],
         ["requestTimeout", "concurrency"],
         ["maxRecordingMediaBytes", "maxRecordingAccountBytes"],
     ]
@@ -1846,8 +1845,8 @@ public struct AgentLimitsDraft: Hashable, Sendable {
             "maxRoundsPerDream": Double(limits.maxRoundsPerDream), "scanConcurrency": Double(limits.scanConcurrency),
             "rewriteConcurrency": Double(limits.rewriteConcurrency), "dreamShare": limits.dreamShare,
             "ingestChunksPerRun": Double(limits.ingestChunksPerRun), "embeddingTokensPerDay": Double(limits.embeddingTokensPerDay),
-            "maxRoundsPerSubagent": Double(limits.maxRoundsPerSubagent), "goalTurnsPerDay": Double(limits.goalTurnsPerDay),
-            "goalTurnsAlone": Double(limits.goalTurnsAlone), "goalsInProgress": Double(limits.goalsInProgress),
+            "maxRoundsPerSubagent": Double(limits.maxRoundsPerSubagent), "goalShare": limits.goalShare,
+            "goalTurnsAlone": Double(limits.goalTurnsAlone),
             "backgroundWakesAlone": Double(limits.backgroundWakesAlone),
         ]
         // Zero is said as 0, as the dashboard's form shows a stored limit.
@@ -2635,7 +2634,7 @@ extension Documents {
           providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
           models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize transcription embeddingDimensions choices }
           features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-          limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone maxRecordingMediaBytes maxRecordingAccountBytes }
+          limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalShare goalTurnsAlone backgroundWakesAlone maxRecordingMediaBytes maxRecordingAccountBytes }
           retention { runs corrections }
           currency
           search { kind hasApiKey }

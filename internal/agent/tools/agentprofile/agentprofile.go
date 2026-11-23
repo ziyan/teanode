@@ -2,8 +2,8 @@
 // in conversation: what it is called, which language it talks in, and the
 // lines the person wants added to its standing instructions. It is also
 // where the person's word about the agent starting conversations on its
-// own is kept: its introduction done, not now, no more ideas, no more
-// memory checks, no alerts, and "don't tell me about these". It is also where
+// own is kept: its introduction done, not now, no more suggestions, no
+// alerts, and "don't tell me about these". It is also where
 // the person asks to see, add or stop what the agent follows: a bill, a
 // parcel, a deadline, a coming event.
 package agentprofile
@@ -36,9 +36,9 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "agent_profile", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, the voice your answers are read aloud in on a voice call (speech_voice; warm and calm: marin, cedar; bright: coral, nova, shimmer; deeper: ash, onyx, echo; empty for the server's), or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_ideas` and `no_more_memory_checks` switch those off, only when they say they never want them; stopping one check or dismissing one idea is not that. `ideas_on` and `memory_checks_on` switch them back on. `no_alerts` stops you telling them unasked what their mail says they should know, only when they want none at all; `alerts_on` starts it again. When they say not to be told about something like an alert again, `mute_alert`: by default what the alert was about (the burst, or the sender of a single message), or by mute_scope its subject, its sender, the sender's domain or its kind; the alert whose id they answered (each alert's line names it), else the latest; or give mute_target to name the address, domain, subject or kind (burst, budget, or a category such as notification) yourself, whose scope is read from it when left out. A budget alert mutes by default its spending category (mute_scope spendingCategory, mute_target the spending category's id); kind budget mutes every budget and savings target alert. `unmute_alert` takes one back, by mute_scope and mute_target. `unattended` says what you may do without their word when they are not there (outward: speak for them, such as sending mail; money: spend or move their money; destructive: what cannot be undone; granting: giving somebody access; listed: tools on their ask-me-first list); `set_unattended` replaces that list with unattended_allowed_risks, only when they ask, and they confirm it. `list_follow_ups` shows what you are following for them (bills, parcels, deadlines and coming events you read out of their mail; is_open_only false adds what is over); use it when they ask what is due, on its way or coming up, and to find an id. `add_follow_up` when they ask you to keep track of something (\"track this parcel\", \"remind me when the water bill is due\"): follow_up_kind bill, parcel, deadline or event, follow_up_title, and due_on as YYYY-MM-DD (a parcel may leave it out; a bill also needs amount, with payee and currency_code if known; a parcel its tracking_number and carrier; an event its place); work out the day from what they said, ask if you cannot. `stop_follow_up` when they say to stop following something (\"stop following that bill\", \"I already dealt with it\"): by follow_up_id from list_follow_ups, or by words of its follow_up_title. Stopping keeps it on record and nothing more is said about it; to stop being told about a whole kind (\"no more parcel alerts\"), mute_alert with mute_scope kind and mute_target bill, parcel, deadline or event, or follow_up for all of them; nearby stops the weekly look around their town for what is on, and leaves what you read out of their mail. For the person's own name use account_update.",
+				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, the voice your answers are read aloud in on a voice call (speech_voice; warm and calm: marin, cedar; bright: coral, nova, shimmer; deeper: ash, onyx, echo; empty for the server's), or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_suggestions` switches off what you suggest on your own (ideas to try, checks of what you remember), only when they say they never want them; stopping one check or dismissing one idea is not that. `suggestions_on` switches them back on. `no_alerts` stops you telling them unasked what their mail says they should know, only when they want none at all; `alerts_on` starts it again. When they say not to be told about something like an alert again, `mute_alert`: by default what the alert was about (the burst, or the sender of a single message), or by mute_scope its subject, its sender, the sender's domain or its kind; the alert whose id they answered (each alert's line names it), else the latest; or give mute_target to name the address, domain, subject or kind (burst, budget, or a category such as notification) yourself, whose scope is read from it when left out. A budget alert mutes by default its spending category (mute_scope spendingCategory, mute_target the spending category's id); kind budget mutes every budget and savings target alert. `unmute_alert` takes one back, by mute_scope and mute_target. `unattended` says what you may do without their word when they are not there (outward: speak for them, such as sending mail; money: spend or move their money; destructive: what cannot be undone; granting: giving somebody access; listed: tools on their ask-me-first list); `set_unattended` replaces that list with unattended_allowed_risks, only when they ask, and they confirm it. `list_follow_ups` shows what you are following for them (bills, parcels, deadlines and coming events you read out of their mail; is_open_only false adds what is over); use it when they ask what is due, on its way or coming up, and to find an id. `add_follow_up` when they ask you to keep track of something (\"track this parcel\", \"remind me when the water bill is due\"): follow_up_kind bill, parcel, deadline or event, follow_up_title, and due_on as YYYY-MM-DD (a parcel may leave it out; a bill also needs amount, with payee and currency_code if known; a parcel its tracking_number and carrier; an event its place); work out the day from what they said, ask if you cannot. `stop_follow_up` when they say to stop following something (\"stop following that bill\", \"I already dealt with it\"): by follow_up_id from list_follow_ups, or by words of its follow_up_title. Stopping keeps it on record and nothing more is said about it; to stop being told about a whole kind (\"no more parcel alerts\"), mute_alert with mute_scope kind and mute_target bill, parcel, deadline or event, or follow_up for all of them; nearby stops the weekly look around their town for what is on, and leaves what you read out of their mail. For the person's own name use account_update.",
 				Parameters: tools.Object(map[string]any{
-					"action":          tools.EnumProperty("what to do", "set", "onboarding_done", "not_now", "no_more_ideas", "no_more_memory_checks", "ideas_on", "memory_checks_on", "no_alerts", "alerts_on", "mute_alert", "unmute_alert", "list_follow_ups", "add_follow_up", "stop_follow_up", "unattended", "set_unattended"),
+					"action":          tools.EnumProperty("what to do", "set", "onboarding_done", "not_now", "no_more_suggestions", "suggestions_on", "no_alerts", "alerts_on", "mute_alert", "unmute_alert", "list_follow_ups", "add_follow_up", "stop_follow_up", "unattended", "set_unattended"),
 					"agent_name":      tools.StringProperty("for set: what they want to call you"),
 					"language":        tools.StringProperty("for set: the language to talk to them in, as a tag: en, ja, zh"),
 					"speech_voice":    tools.StringProperty("for set: the voice to read your answers aloud in on a voice call, one of " + strings.Join(config.VoiceSpeechVoices, ", ") + "; \"default\" for the server's"),
@@ -103,14 +103,10 @@ func init() {
 						return "End the agent's introduction"
 					case "not_now":
 						return "Keep the agent from starting conversations for a day"
-					case "no_more_ideas":
-						return "Switch the agent's ideas off"
-					case "no_more_memory_checks":
-						return "Switch the agent's memory checks off"
-					case "ideas_on":
-						return "Switch the agent's ideas on"
-					case "memory_checks_on":
-						return "Switch the agent's memory checks on"
+					case "no_more_suggestions":
+						return "Switch the agent's suggestions off"
+					case "suggestions_on":
+						return "Switch the agent's suggestions on"
 					case "no_alerts":
 						return "Switch the agent's alerts off"
 					case "alerts_on":
@@ -224,26 +220,16 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return nil, err
 		}
 		return noted("saved: what you may do when they are not there is now " + strings.Join(asked.UnattendedAllowedRisks, ", ") + "; nothing else that needs their word"), nil
-	case "no_more_ideas":
-		if _, err := operator.Execute(ctx, `mutation { UpdateAgent(isIdeasEnabled: false) { agent { id } } }`, nil); err != nil {
+	case "no_more_suggestions":
+		if _, err := operator.Execute(ctx, `mutation { UpdateAgent(isSuggestionsEnabled: false) { agent { id } } }`, nil); err != nil {
 			return nil, err
 		}
-		return noted("ideas are off: you will not offer one on your own; the person can switch them on again in the agent's settings"), nil
-	case "no_more_memory_checks":
-		if _, err := operator.Execute(ctx, `mutation { UpdateAgent(isMemoryCheckEnabled: false) { agent { id } } }`, nil); err != nil {
+		return noted("suggestions are off: you will not offer an idea or check what you remember on your own; the person can switch them on again in the agent's settings"), nil
+	case "suggestions_on":
+		if _, err := operator.Execute(ctx, `mutation { UpdateAgent(isSuggestionsEnabled: true) { agent { id } } }`, nil); err != nil {
 			return nil, err
 		}
-		return noted("memory checks are off; the person can switch them on again in the agent's settings"), nil
-	case "ideas_on":
-		if _, err := operator.Execute(ctx, `mutation { UpdateAgent(isIdeasEnabled: true) { agent { id } } }`, nil); err != nil {
-			return nil, err
-		}
-		return noted("ideas are on"), nil
-	case "memory_checks_on":
-		if _, err := operator.Execute(ctx, `mutation { UpdateAgent(isMemoryCheckEnabled: true) { agent { id } } }`, nil); err != nil {
-			return nil, err
-		}
-		return noted("memory checks are on"), nil
+		return noted("suggestions are on"), nil
 	case "no_alerts":
 		if _, err := operator.Execute(ctx, `mutation { UpdateAgent(isAlertsEnabled: false) { agent { id } } }`, nil); err != nil {
 			return nil, err
@@ -265,7 +251,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	case "stop_follow_up":
 		return stopFollowUp(ctx, asked)
 	default:
-		return nil, fmt.Errorf("%q is not set, onboarding_done, not_now, no_more_ideas, no_more_memory_checks, ideas_on, memory_checks_on, no_alerts, alerts_on, mute_alert, unmute_alert, list_follow_ups, add_follow_up or stop_follow_up", action)
+		return nil, fmt.Errorf("%q is not set, onboarding_done, not_now, no_more_suggestions, suggestions_on, no_alerts, alerts_on, mute_alert, unmute_alert, list_follow_ups, add_follow_up or stop_follow_up", action)
 	}
 }
 

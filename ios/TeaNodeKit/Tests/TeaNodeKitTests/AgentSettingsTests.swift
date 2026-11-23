@@ -36,7 +36,7 @@ final class AgentSettingsTests: XCTestCase {
         {"data":{"ReadAgent":{
           "agent":{"id":"agent-1","name":"Juniper","enabled":true,"instructions":"Sign as R.","language":"","knowledgeLanguage":"en",
             "askModel":"","speechVoice":"","operatorDisabledAt":null,"confirm":["calendar","mail_send"],"unattendedAllowedRisks":["money"],
-            "isMemoryCheckEnabled":true,"isIdeasEnabled":false,
+            "isSuggestionsEnabled":true,
             "voice":{"tone":"formal","length":null,"greeting":"Hello","signoff":null},
             "categories":[{"name":"club","description":"The sailing club"}]},
           "sources":[

@@ -229,10 +229,9 @@ type UpdateAgentArguments struct {
 	DreamFrom  *string `json:"dreamFrom"`
 	DreamUntil *string `json:"dreamUntil"`
 
-	// IsMemoryCheckEnabled and IsIdeasEnabled say whether the agent may
-	// start a conversation to check what it remembers, or to offer an idea.
-	IsMemoryCheckEnabled *bool `json:"isMemoryCheckEnabled"`
-	IsIdeasEnabled       *bool `json:"isIdeasEnabled"`
+	// IsSuggestionsEnabled says whether the agent may suggest things on its
+	// own: an idea to try, or a check of what it remembers.
+	IsSuggestionsEnabled *bool `json:"isSuggestionsEnabled"`
 
 	// IsAlertsEnabled says whether the agent may tell the person, unasked,
 	// what their mail says they should know now. AlertQuietStart and
@@ -680,11 +679,8 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 			}
 			agent.DreamUntil = until
 		}
-		if arguments.IsMemoryCheckEnabled != nil {
-			agent.IsMemoryCheckEnabled = *arguments.IsMemoryCheckEnabled
-		}
-		if arguments.IsIdeasEnabled != nil {
-			agent.IsIdeasEnabled = *arguments.IsIdeasEnabled
+		if arguments.IsSuggestionsEnabled != nil {
+			agent.IsSuggestionsEnabled = *arguments.IsSuggestionsEnabled
 		}
 		if arguments.IsAlertsEnabled != nil {
 			agent.IsAlertsEnabled = *arguments.IsAlertsEnabled

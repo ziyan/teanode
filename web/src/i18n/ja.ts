@@ -1887,9 +1887,8 @@ export const ja: Catalog = {
   'agentSettings.limit.maxBodyCharacters': 'モデルに渡すメッセージの文字数',
   'agentSettings.limitsUnattended': '誰も見ていない処理の上限。0 はかっこ内の既定値です。',
   'agentSettings.limit.maxRoundsPerSubagent': 'サブエージェントのラウンド数 (20)',
-  'agentSettings.limit.goalTurnsPerDay': '目標の1日のターン数 (48)',
+  'agentSettings.limit.goalShare': '自分のペースで進む目標が使える 1 日の予算の割合（既定 0.5）',
   'agentSettings.limit.goalTurnsAlone': '本人の返事なしの目標ターン数 (24)',
-  'agentSettings.limit.goalsInProgress': '1人あたりの進行中の目標 (20)',
   'agentSettings.limit.backgroundWakesAlone': '本人なしでバックグラウンド処理が起こす回数 (20)',
   'agentSettings.limit.maxRoundsPerAsk': '会話 1 ターンあたりのラウンド',
   'agentSettings.limit.maxRoundsPerResearch': '調査 1 回あたりのラウンド',
@@ -3753,17 +3752,11 @@ export const ja: Catalog = {
   'agent.myContactSaved': '保存しました',
   'agent.speakFirst': '自分から話す',
   'agent.speakFirstHint':
-    '自己紹介のほかに、エージェントが自分から会話を始めることが二つあります。ダッシュボードを開いている間だけで、多くても一日に一度です。',
-  'agent.memoryChecks': '記憶の確認',
-  'agent.memoryChecksHint':
-    'エージェントがときどき、あなたについて覚えていることをいくつか確かめさせてほしいと尋ね、その答えを自分の採点に使います。',
-  'agent.memoryChecksOn': '記憶の確認をオンにしました。',
-  'agent.memoryChecksOff': '記憶の確認をオフにしました。',
-  'agent.ideas': 'アイデアを提案する',
-  'agent.ideasHint':
-    '操作していない間に、エージェントがときどき、あなたのためにできることを一つ提案します。一覧は「アイデア」にあります。',
-  'agent.ideasOn': 'アイデアを提案するようにしました。',
-  'agent.ideasOff': 'アイデアを自分から提案しないようにしました。',
+    '自己紹介のほかに、エージェントが自分から会話を始めることがあります。多くても一日に一度です。',
+  'agent.suggestions': '提案',
+  'agent.suggestionsHint': '試せるアイデアや、覚えていることの確認を、エージェントが自分から提案します。',
+  'agent.suggestionsOn': 'エージェントが自分から提案するようにしました。',
+  'agent.suggestionsOff': 'エージェントが自分から提案しないようにしました。',
   'memoryCheck.title': '記憶の確認',
   'memoryCheck.hint':
     'あなたが答えた、あなた自身についての質問と、エージェントが記憶から、ソースから、その両方からどれだけ正しく答えられるか。',

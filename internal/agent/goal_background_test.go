@@ -130,6 +130,52 @@ func TestABackgroundGoalThatWaitsIsSaidOnceAndAnswered(t *testing.T) {
 	}
 }
 
+// For a person whose agent tells them things in the feed, a goal that came
+// to need them is a card of the feed, with a way to answer, and not a message
+// in the main conversation; posted once however many sweeps find it.
+func TestAGoalThatWaitsIsACardOfTheFeed(t *testing.T) {
+	world, goal := startBackgroundGoal(t, []string{goalWaitRound, answerRound})
+	defer world.close()
+	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.Agent, error) {
+		return tx.UpdateAgent(world.found.ID, func(changing *models.Agent) error {
+			changing.FeedDestination = models.FeedDestinationFeed
+			return nil
+		})
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	world.runGoalTurn(t, 1)
+	for range 3 {
+		if err := world.worker.Tick(context.Background()); err != nil {
+			t.Fatalf("Tick: %s", err)
+		}
+		world.worker.Wait()
+	}
+	if main := messagesOf(t, world, world.conversation.ID); len(main) != 0 {
+		t.Fatalf("the main conversation hears nothing when the feed is where things are told: %+v", main)
+	}
+	var cards []*models.AgentFeedItem
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		all, _, err := tx.ListAgentFeedItems(world.owner.ID, nil, 50, false, time.Now())
+		if err != nil {
+			t.Fatalf("ListAgentFeedItems: %s", err)
+		}
+		for _, card := range all {
+			if card.FeedSourceID == goal.ID && card.CoalesceKey == "goal:"+goal.ID+":waiting" {
+				cards = append(cards, card)
+			}
+		}
+	})
+	if len(cards) != 1 || cards[0].FeedItemKind != models.FeedItemDecision || cards[0].Title != "Invoices filed" ||
+		!strings.Contains(cards[0].Body, "two drafts are ready") || !cards[0].HasChoiceRole(models.FeedChoiceDiscuss) {
+		t.Fatalf("the goal's call should be one card with a way to answer: %+v", cards)
+	}
+	if waiting, _ := readGoal(t, world, goal.ID); waiting.GoalSurfacedAt == nil {
+		t.Fatalf("the goal is marked said: %+v", waiting)
+	}
+}
+
 // The person drops a goal and takes it up again; a dropped goal takes no
 // turns and cannot be told anything.
 func TestAPersonDropsAndReopensAGoal(t *testing.T) {

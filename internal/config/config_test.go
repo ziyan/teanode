@@ -398,3 +398,39 @@ func TestSecretIsAdoptedFromTheLegacyFile(t *testing.T) {
 // TestUpdateThatReadsBeforeWriting guards a bug that made a domain created
 // through the dashboard invisible until the process restarted.
 //
+
+// A configuration an older release wrote with the goal caps the spending
+// share replaced still loads, and the caps are gone the next time it is
+// written.
+func TestTheRetiredGoalCapsStillLoad(t *testing.T) {
+	filename, _ := writeValidConfiguration(t, nil)
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	agentAt := strings.Index(text, "\nagent:\n")
+	limitsAt := strings.Index(text[max(agentAt, 0):], "\n  limits:\n")
+	if agentAt < 0 || limitsAt < 0 {
+		t.Fatalf("the saved file has no agent limits to add to:\n%s", text)
+	}
+	limitsAt += agentAt + len("\n  limits:\n")
+	text = text[:limitsAt] + "    goalTurnsPerDay: 30\n    goalsInProgress: 5\n" + text[limitsAt:]
+	if err := os.WriteFile(filename, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(filename)
+	if err != nil {
+		t.Fatalf("a configuration with the retired goal caps is refused: %s", err)
+	}
+	if err := config.Save(filename, loaded); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(saved), "goalTurnsPerDay") || strings.Contains(string(saved), "goalsInProgress") {
+		t.Error("the retired goal caps are written again")
+	}
+}

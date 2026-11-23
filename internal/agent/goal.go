@@ -9,6 +9,7 @@ import (
 	"time"
 
 	goaltool "github.com/ziyan/teanode/internal/agent/tools/goal"
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -48,11 +49,12 @@ const (
 	// most often the person's.
 	goalAfterOtherTurn = time.Minute
 
-	// How many turns of its own a goal takes in a day, and alone before it
-	// stops and asks the person, are the operator's limits
-	// (GoalTurnsPerDay and GoalTurnsAlone): the day's cap bounds a day, and
-	// the other bounds the goal nobody can meet, which would otherwise
-	// cost the cap every day until somebody noticed the bill.
+	// How much of the day the goals at their own pace may spend, and how
+	// many turns a goal takes alone before it stops and asks the person,
+	// are the operator's limits (GoalShare and GoalTurnsAlone): the share
+	// bounds a day, and the other bounds the goal nobody can meet, which
+	// would otherwise cost the share every day until somebody noticed the
+	// bill.
 )
 
 // dueGoals queues a turn for every conversation whose goal is working and
@@ -108,15 +110,11 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	local := now.In(Location(run.Owner))
 	midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
 	// A goal on set times takes its turns when somebody chose, not when the
-	// agent asked, so neither cap below is its: a daily brief would
+	// agent asked, so neither bound below is its: a daily brief would
 	// otherwise stall on its twenty-fifth day.
 	isOnSetTimes := conversation.IsGoalOnSetTimes()
 
-	// The day's cap, counted from the job rows. A goal that reads every
-	// check-in as "look again in five minutes" would otherwise cost the
-	// person a turn every five minutes for ever; this is what makes the
-	// worst case a number they can see in the usage page rather than a
-	// surprise in the bill.
+	// Today's turns of this goal, which its check-in counts.
 	var today int64
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		today, err = tx.CountAgentJobs(&db.AgentJobFilter{
@@ -130,17 +128,32 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	}); err != nil {
 		return err
 	}
-	goalTurnsPerDay := run.Configuration().Agent.Limits.EffectiveGoalTurnsPerDay()
-	if !isOnSetTimes && today >= int64(goalTurnsPerDay) {
-		tomorrow := midnight.AddDate(0, 0, 1)
-		return self.moveGoalOn(ctx, conversation.ID, tomorrow, fmt.Sprintf("%d turns today; it goes on tomorrow, or when you write", goalTurnsPerDay))
+
+	// The goals' share of the day. Work nobody is watching never eats the
+	// day the person talks to the agent in: the goals at their own pace
+	// spend at most a share of the daily budget between them, and one that
+	// finds it gone goes on tomorrow, or as soon as the person writes. A
+	// goal that reads every check-in as "look again in five minutes" is
+	// bounded by what it costs, however many goals there are.
+	if !isOnSetTimes {
+		var isShareSpent bool
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			isShareSpent, err = goalShareSpent(tx, configuration, run.Agent, midnight)
+			return err
+		}); err != nil {
+			return err
+		}
+		if isShareSpent {
+			tomorrow := midnight.AddDate(0, 0, 1)
+			return self.moveGoalOn(ctx, conversation.ID, tomorrow, "the goals have spent their share of today; it goes on tomorrow, or when you write")
+		}
 	}
 
 	// The run without the person, counted the same way from the later of
 	// the goal's setting and their last word. A goal the agent cannot
 	// meet -- a build that never goes green, a reply that never comes --
-	// answers "look again" for ever, and the day's cap only makes that
-	// forty-eight turns a day rather than more. At the bound it stops and
+	// answers "look again" for ever, and the goals' share only makes that
+	// cost no more than part of a day. At the bound it stops and
 	// waits for the person, who resumes it by writing, which is also what
 	// starts the count again.
 	var alone int64
@@ -594,4 +607,23 @@ func (self *AskRun) isGoalWaiting() bool {
 		return true
 	}
 	return conversation.IsGoal() && conversation.Goal != "" && conversation.GoalState == models.GoalWaiting
+}
+
+// goalShareSpent says whether the goals at their own pace have spent their
+// share of the agent's day: the tokens of every goal turn since the
+// person's midnight against agent.limits.goalShare of the daily budget. A
+// day with no budget has no share to spend.
+func goalShareSpent(tx db.Transaction, configuration *config.Configuration, agent *models.Agent, midnight time.Time) (bool, error) {
+	daily := agent.DailyTokens
+	if daily <= 0 {
+		daily = configuration.Agent.Limits.DailyTokensPerAgent
+	}
+	if daily <= 0 {
+		return false, nil
+	}
+	spent, err := SumSpendOfKind(tx, agent.ID, string(models.AgentJobGoal), midnight)
+	if err != nil {
+		return false, err
+	}
+	return float64(spent) >= float64(daily)*configuration.Agent.Limits.EffectiveGoalShare(), nil
 }

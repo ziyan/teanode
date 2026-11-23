@@ -2786,7 +2786,7 @@ func (self *AskRun) goalLines(ctx context.Context) []string {
 		if conversation.Kind != models.AgentConversationMain {
 			return nil
 		}
-		going, err := tx.ListAgentGoals(conversation.AgentID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, self.agent.settings.Configuration().Agent.Limits.EffectiveGoalsInProgress())
+		going, err := tx.ListAgentGoals(conversation.AgentID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, goalsInPromptMost)
 		for _, goal := range going {
 			if goal.GoalState == models.GoalWaiting {
 				waiting = append(waiting, goal)

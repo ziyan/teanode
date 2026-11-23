@@ -34,7 +34,7 @@ import (
 // given a share of its own; the reading that follows sees what it spent.
 // Nothing is looked for while enough ideas are waiting.
 func (self *Agent) dreamIdeas(ctx context.Context, run *Run, budget *dreamBudget) {
-	if !run.Agent.IsIdeasEnabled || ctx.Err() != nil {
+	if !run.Agent.IsSuggestionsEnabled || ctx.Err() != nil {
 		return
 	}
 	var isDue bool

@@ -968,7 +968,7 @@
             {"data":{"ReadAgent":{
               "agent":{"id":"agent","name":"","enabled":true,"instructions":"Keep replies short. Ask before booking anything that costs money.",
                 "language":"","knowledgeLanguage":"","askModel":"","speechVoice":"","operatorDisabledAt":null,
-                "confirm":["mail_send","calendar"],"unattendedAllowedRisks":["outward"],"isMemoryCheckEnabled":true,"isIdeasEnabled":true,
+                "confirm":["mail_send","calendar"],"unattendedAllowedRisks":["outward"],"isSuggestionsEnabled":true,
                 "voice":{"tone":"casual","length":"short","greeting":"Hi","signoff":"Robin"},
                 "categories":[{"name":"home","description":"The house, the garden and the people who fix things."},{"name":"travel","description":"Tickets, bookings and plans for trips."}],
                 "dreamFrom":"01:00","dreamUntil":"06:00","dreamBootstrap":false,"isAlertsEnabled":true,"alertQuietStart":"22:00","alertQuietEnd":"07:00","alertDailyMost":5,"lookAroundWeekday":"thursday","lookAroundTime":"17:00"},

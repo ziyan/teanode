@@ -220,8 +220,8 @@ data class AgentLimits(
     val monthlyTokensPerServer: Double = 0.0, val maxRoundsPerAsk: Double = 0.0, val maxRoundsPerResearch: Double = 0.0, val maxRoundsPerReply: Double = 0.0,
     val maxToolCallsPerRun: Double = 0.0, val requestTimeout: String = "", val maxRecordingMediaBytes: String? = null, val maxRecordingAccountBytes: String? = null,
     val concurrency: Double = 0.0, val maxRoundsPerDream: Double = 0.0, val scanConcurrency: Double = 0.0, val rewriteConcurrency: Double = 0.0, val dreamShare: Double = 0.0,
-    val ingestChunksPerRun: Double = 0.0, val embeddingTokensPerDay: Double = 0.0, val maxRoundsPerSubagent: Double = 0.0, val goalTurnsPerDay: Double = 0.0,
-    val goalTurnsAlone: Double = 0.0, val goalsInProgress: Double = 0.0, val backgroundWakesAlone: Double = 0.0,
+    val ingestChunksPerRun: Double = 0.0, val embeddingTokensPerDay: Double = 0.0, val maxRoundsPerSubagent: Double = 0.0, val goalShare: Double = 0.0,
+    val goalTurnsAlone: Double = 0.0, val backgroundWakesAlone: Double = 0.0,
 )
 
 /** How long run transcripts and corrections are kept. */
@@ -434,7 +434,7 @@ data class AgentLimitsDraft(val limitTexts: Map<String, String>, val retention: 
             listOf("maxRoundsPerAsk", "maxRoundsPerResearch", "maxRoundsPerReply", "maxToolCallsPerRun"),
             listOf("maxRoundsPerDream", "scanConcurrency", "rewriteConcurrency", "dreamShare"),
             listOf("ingestChunksPerRun", "embeddingTokensPerDay"),
-            listOf("maxRoundsPerSubagent", "goalTurnsPerDay", "goalTurnsAlone", "goalsInProgress", "backgroundWakesAlone"),
+            listOf("maxRoundsPerSubagent", "goalShare", "goalTurnsAlone", "backgroundWakesAlone"),
             listOf("requestTimeout", "concurrency"),
             listOf("maxRecordingMediaBytes", "maxRecordingAccountBytes"),
         )
@@ -449,8 +449,8 @@ data class AgentLimitsDraft(val limitTexts: Map<String, String>, val retention: 
                 "maxRoundsPerResearch" to limits.maxRoundsPerResearch, "maxRoundsPerReply" to limits.maxRoundsPerReply, "maxToolCallsPerRun" to limits.maxToolCallsPerRun,
                 "concurrency" to limits.concurrency, "maxRoundsPerDream" to limits.maxRoundsPerDream, "scanConcurrency" to limits.scanConcurrency,
                 "rewriteConcurrency" to limits.rewriteConcurrency, "dreamShare" to limits.dreamShare, "ingestChunksPerRun" to limits.ingestChunksPerRun,
-                "embeddingTokensPerDay" to limits.embeddingTokensPerDay, "maxRoundsPerSubagent" to limits.maxRoundsPerSubagent, "goalTurnsPerDay" to limits.goalTurnsPerDay,
-                "goalTurnsAlone" to limits.goalTurnsAlone, "goalsInProgress" to limits.goalsInProgress, "backgroundWakesAlone" to limits.backgroundWakesAlone,
+                "embeddingTokensPerDay" to limits.embeddingTokensPerDay, "maxRoundsPerSubagent" to limits.maxRoundsPerSubagent, "goalShare" to limits.goalShare,
+                "goalTurnsAlone" to limits.goalTurnsAlone, "backgroundWakesAlone" to limits.backgroundWakesAlone,
             )
             // Zero is said as 0, as the dashboard's form shows a stored limit.
             val texts = numbers.mapValues { entry -> if (entry.value == 0.0) "0" else SettingsList.text(entry.value) } +
