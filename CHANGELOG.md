@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.2] - 2026-11-23
+
+### Fixed
+
+- Android testers can install every new build: build numbers only grow. (#760)
+
 ## [0.230.1] - 2026-11-23
 
 ### Changed
