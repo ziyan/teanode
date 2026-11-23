@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.5] - 2026-11-23
+
+### Fixed
+
+- The agent's nightly look for ideas reads your mail and calendar again when it also remembers things from recorded meetings. (#769)
+
 ## [0.230.4] - 2026-11-23
 
 ### Changed
