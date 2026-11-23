@@ -63,7 +63,7 @@ Android: `android/app/src/main/java/com/teanode/app/photos/PhotoList.kt` (the li
 ## Validation and Acceptance
 
 - Kit tests for the window and the overview on both platforms.
-- iPhone: the app builds and TeaNodeKit's tests pass on the Mac (`teanode-build.sh <commit> build|kit`); the demo screenshots of the library, Years and Months still look right.
+- iPhone: the app builds and TeaNodeKit's tests pass on a Mac; the demo screenshots of the library, Years and Months still look right.
 - Android: `:kit:test :app:testDebugUnitTest :app:compileDebugKotlin`.
 - On a phone with a library of several years: Years opens with tiles at once; choosing an early year shows its photos within a second; scrolling the grid quickly to the bottom stays smooth and shows placeholders that fill in.
 
