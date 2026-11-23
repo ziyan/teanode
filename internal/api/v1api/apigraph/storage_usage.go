@@ -163,7 +163,7 @@ func (self *graph) StorageUsage(ctx context.Context, arguments StorageUsageArgum
 
 	tx := self.transaction(ctx)
 	now := time.Now()
-	snapshot, err := storageusage.Measure(tx)
+	snapshot, err := storageusage.Measure(tx, breakdownBy == StorageBreakdownPerson)
 	if err != nil {
 		return nil, err
 	}

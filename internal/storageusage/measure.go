@@ -40,10 +40,12 @@ type Snapshot struct {
 	People            []PersonFiles
 }
 
-// Measure reads the sizes the database keeps. It scans no row of a large
-// table: table sizes come from the catalog, and each file kind is a sum over
-// the size column of a table that has one row per file.
-func Measure(tx db.Transaction) (*Snapshot, error) {
+// Measure reads the sizes the database keeps. Table sizes come from the
+// catalog, and each file kind is a sum over the size column of a table that
+// has one row per file. Sizes by person join mail to the mailboxes it is
+// filed in, which reads every message, so they are read only when
+// isByPersonMeasured is set.
+func Measure(tx db.Transaction, isByPersonMeasured bool) (*Snapshot, error) {
 	snapshot := &Snapshot{}
 	var err error
 	if snapshot.DatabaseSizeBytes, err = tx.MeasureDatabaseSizeBytes(); err != nil {
@@ -64,6 +66,9 @@ func Measure(tx db.Transaction) (*Snapshot, error) {
 		snapshot.FileSizeBytes += size.SizeBytes
 	}
 
+	if !isByPersonMeasured {
+		return snapshot, nil
+	}
 	personSizes, err := tx.MeasurePersonFileSizes()
 	if err != nil {
 		return nil, err

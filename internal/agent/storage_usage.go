@@ -69,7 +69,7 @@ func (self *Agent) SampleStorage(ctx context.Context, now time.Time) error {
 			return err
 		}
 		if !hasSample {
-			snapshot, err := storageusage.Measure(tx)
+			snapshot, err := storageusage.Measure(tx, false)
 			if err != nil {
 				return err
 			}
