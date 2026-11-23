@@ -9,7 +9,7 @@ Android differences, in one place:
 
 - No visit monitor: Android has no `CLVisit`. The recorder detects a stay itself (`LocationDwellDetector` in the kit) and
   reports it as a "visit" the same way, and watches the person's named places with geofences (reported as "region" visits).
-- The place provider and the maps are the server's and OpenStreetMap's (osmdroid, no key); the screenshots draw a stand-in map.
+- The place provider is the server's. The maps are MapLibre drawing the style the server serves at `/api/v1/map/style`, with every file fetched through the server and any other address refused on the phone; the screenshots draw a stand-in map.
 - Health reads Health Connect, not HealthKit. The server's table is HealthKit-named, so Health Connect records are sent under
   the same names for the kinds both have (steps, heart rate, sleep, workouts, weight and the like).
 - Charts are drawn with Compose canvas (no Swift Charts), and are shared in `com.teanode.app.charts` (`ChartParts`).

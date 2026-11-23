@@ -209,6 +209,11 @@ func (self *exchange) authenticateIncoming(ctx context.Context, envelope *mailpa
 
 	// wait for all
 	authenticationResults, results, err := authenticator.wait()
+	if err == nil {
+		if err = fromMailServersVerdict(authenticationResults); err != nil {
+			authenticationResults.Errors = append(authenticationResults.Errors, err.Error())
+		}
+	}
 	mail.AuthenticationResults = authenticationResults
 	if err != nil {
 		return err

@@ -8080,6 +8080,11 @@ button.agent-reaction:focus-visible {
   text-overflow: ellipsis;
 }
 
+/* A chip on a sent message opens what it names. */
+a.agent-reference-chip:hover {
+  border-color: currentColor;
+}
+
 .agent-reference-photo {
   display: block;
   flex: none;

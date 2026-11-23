@@ -17,7 +17,9 @@ class ChatFilesCacheTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Test fun `old files and old voice messages are removed and new ones stay`() {
-        val now = 1_000_000_000_000L
+        // The real clock: the application also cleans this directory on a thread of its own when it starts, and with an
+        // invented clock that thread would see the fresh file as old and remove it.
+        val now = System.currentTimeMillis()
         val old = File(ChatFilesCache.directory(context), "old.pdf").also { file -> file.writeText("x"); file.setLastModified(now - ChatFilesCache.MOST_AGE_MS - 1) }
         val fresh = File(ChatFilesCache.directory(context), "fresh.pdf").also { file -> file.writeText("x"); file.setLastModified(now - 1000) }
         val voice = File(context.cacheDir, "Voice message 1.m4a").also { file -> file.writeText("x"); file.setLastModified(now - ChatFilesCache.MOST_AGE_MS - 1) }

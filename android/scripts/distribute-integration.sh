@@ -34,4 +34,4 @@ if (( ${#LEFT_OUT[@]} > 0 )); then
     echo "integration: left out, they do not merge cleanly: ${LEFT_OUT[*]}" >&2
 fi
 android/scripts/distribute.sh "${RELEASE_NOTES}"
-echo "integration: build $(git rev-list --count HEAD) from integration $(git rev-parse --short HEAD)"
+echo "integration: sent from integration $(git rev-parse --short HEAD)"

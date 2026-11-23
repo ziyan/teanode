@@ -230,6 +230,9 @@ struct FinanceScreen: View {
             .navigationDestination(for: TransactionLink.self) { link in
                 TransactionsView(filter: link.filter)
             }
+            .navigationDestination(for: OpenedFinanceTransaction.self) { opened in
+                TransactionDetail(transactionId: opened.transactionId).environment(finance)
+            }
             .overlay {
                 if finance.isShown == false, finance.hasReadShared, part != .setup, shownSharer == nil {
                     ContentUnavailableView("Finance is not set up", systemImage: "building.columns", description: Text("Link a bank from your dashboard: Settings, then Agent, then Finance."))
@@ -244,6 +247,15 @@ struct FinanceScreen: View {
             // The words a search carried in are for that look at the
             // transactions; choosing another part ends it.
             if part != .transactions { transactionFilter = FinanceTransactionFilter() }
+        }
+        // A transaction another screen opened, a chip above a message or a
+        // link on a page of memory: its details, on top of the part shown,
+        // which stays as it was so its own list is a step back.
+        .onChange(of: app.openedFinanceTransactionId, initial: true) { _, transactionId in
+            guard let transactionId else { return }
+            app.openedFinanceTransactionId = nil
+            path = NavigationPath()
+            path.append(OpenedFinanceTransaction(transactionId: transactionId))
         }
         // The words the Search tab's Show all in Finance carries: the transactions, narrowed to them.
         .onChange(of: app.openedPartSearch, initial: true) { _, search in
@@ -277,6 +289,11 @@ struct FinanceScreen: View {
         #endif
         .toast(done: Bindable(finance).doneText, problem: Bindable(finance).problemText)
     }
+}
+
+/// OpenedFinanceTransaction opens one transaction's details by its id.
+struct OpenedFinanceTransaction: Hashable {
+    let transactionId: String
 }
 
 /// TransactionLink opens the transactions narrowed to what was tapped.

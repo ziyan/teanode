@@ -109,12 +109,19 @@ func UnparseTime(value time.Time) string {
 	return fmt.Sprintf("%d", value.Unix())
 }
 
+// headerPicker hands out a message's header fields as a signature's list of
+// names asks for them, the last instance of a name first (RFC 6376 §5.4.2).
+// picked counts what each name has been asked for so far, by its lower-case
+// spelling: names are case-insensitive, and a signer that lists a name twice
+// in different cases ("Feedback-ID" then "Feedback-Id") means the next
+// instance, or none, never the same header again.
 type headerPicker struct {
 	headers []string
 	picked  map[string]int
 }
 
 func (self *headerPicker) pick(key string) string {
+	key = strings.ToLower(key)
 	at := self.picked[key]
 	for index := len(self.headers) - 1; index >= 0; index-- {
 		header := self.headers[index]

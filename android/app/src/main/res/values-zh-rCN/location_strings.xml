@@ -14,6 +14,7 @@
     <string name="location_more">更多</string>
     <string name="location_close">关闭</string>
     <string name="location_open_street_map_credit">© OpenStreetMap 贡献者</string>
+    <string name="location_map_failed">无法加载地图。</string>
     <string name="location_no_visits_yet">还没有到访记录</string>
     <string name="location_visit_shows_up_after_a_while">您在某处停留一段时间后，到访记录会显示在这里。</string>
     <string name="location_turn_on_record_where_i_go">在设置中打开“记录我去过的地方”，您的到访记录就会显示在这里。</string>
