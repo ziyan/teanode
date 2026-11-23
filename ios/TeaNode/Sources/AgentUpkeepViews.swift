@@ -133,11 +133,10 @@ enum UpkeepWords {
         }
     }
 
-    /// When a schedule comes round, in a person's words, "Weekdays at 7:30
-    /// AM", with the time and the days' names as the locale writes them; nil
-    /// for a line of any other kind, which is shown as it is written.
-    static func scheduleTimingText(_ cron: String) -> String? {
-        guard let timing = ScheduleTiming(cron: cron) else { return nil }
+    /// When a plain weekly time comes round, in a person's words, "Weekdays
+    /// at 7:30 AM", with the time and the days' names as the locale writes
+    /// them.
+    static func weeklyText(_ timing: ScheduleTiming) -> String {
         let timeText = timing.timeText()
         switch timing.dayPattern {
         case .everyDay:
@@ -148,22 +147,80 @@ enum UpkeepWords {
             return String(localized: "Weekends at \(timeText)")
         case .oneDay(let dayNumber):
             let dayName = ScheduleWeekday.name(dayNumber)
-            return String(localized: "\(dayName)s at \(timeText)", comment: "A weekly schedule on one day, as \"Fridays at 5:00 PM\": the day's name, then the time.")
+            return String(localized: "\(dayName)s at \(timeText)", comment: "A weekly time on one day, as \"Fridays at 5:00 PM\": the day's name, then the time.")
         case .someDays(let dayNumbers):
             let dayNames = ScheduleWeekday.shortNamesText(dayNumbers)
-            return String(localized: "Every \(dayNames) at \(timeText)", comment: "A weekly schedule on a few days, as \"Every Mon, Wed, and Fri at 9:00 AM\".")
+            return String(localized: "Every \(dayNames) at \(timeText)", comment: "A weekly time on a few days, as \"Every Mon, Wed, and Fri at 9:00 AM\".")
         }
     }
 
-    /// When a schedule that runs on mail comes round, in a person's words,
-    /// "When mail arrives: From contains news@school.example", with the
-    /// conditions as a mailbox rule's line words them.
-    static func scheduleMailText(_ conditions: [MailRule.Condition]) -> String {
+    /// One moment, "On Dec 11 at 9:00 AM", with the year when it is not this
+    /// year; written "on ..." when it follows other times in a sentence.
+    static func momentText(_ moment: GoalMoment, follows isFollowing: Bool) -> String {
+        let thisYear = Calendar.current.component(.year, from: .now)
+        let dayText = moment.dayText(includesYear: moment.year != thisYear)
+        let timeText = moment.timeText()
+        if isFollowing { return String(localized: "on \(dayText) at \(timeText)", comment: "A single moment that follows other times in a sentence, as \"and on Dec 11 at 9:00 AM\".") }
+        return String(localized: "On \(dayText) at \(timeText)", comment: "A single moment that starts a sentence, as \"On Dec 11 at 9:00 AM\".")
+    }
+
+    /// A goal's times in a person's words: "Weekdays at 7:30 AM", or
+    /// "Mondays at 9:00 AM and on Dec 11 at 9:00 AM"; nil for none, a goal
+    /// at its own pace. Weekly times come first, then single moments.
+    static func goalTimesText(_ goalTimes: [String]) -> String? {
+        var weeklyTexts: [String] = []
+        var moments: [GoalMoment] = []
+        for goalTime in goalTimes.map({ GoalTime($0) }) {
+            switch goalTime {
+            case .weekly(let timing): weeklyTexts.append(weeklyText(timing))
+            case .moment(let moment): moments.append(moment)
+            case .other(let line): weeklyTexts.append(line)
+            }
+        }
+        var parts = weeklyTexts
+        for moment in moments {
+            parts.append(momentText(moment, follows: !parts.isEmpty))
+        }
+        if parts.isEmpty { return nil }
+        return parts.formatted(.list(type: .and))
+    }
+
+    /// When a goal that takes a turn for mail comes round, in a person's
+    /// words, "When mail arrives: From contains news@school.example", with
+    /// the conditions as a mailbox rule's line words them.
+    static func goalMailText(_ conditions: [MailRule.Condition]) -> String {
         let words = MailRuleWords(folders: [])
         let conditionTexts = conditions.filter { !$0.isBare }.map { words.describe($0) }
         if conditionTexts.isEmpty { return String(localized: "When any mail arrives") }
         let conditionsText = conditionTexts.joined(separator: ", ")
         return String(localized: "When mail arrives: \(conditionsText)")
+    }
+
+    /// When a goal runs, one line for its times and one for its mail; none
+    /// for a goal at its own pace.
+    static func goalWhenLines(_ goal: AgentGoal) -> [String] {
+        var lines: [String] = []
+        if let timesText = goalTimesText(goal.goalTimes) { lines.append(timesText) }
+        if !goal.goalMailConditions.isEmpty { lines.append(goalMailText(goal.goalMailConditions)) }
+        return lines
+    }
+
+    /// Some days in a few words: "Weekdays", or "Mon, Wed, and Fri".
+    static func dayPatternText(_ dayNumbers: [Int]) -> String {
+        switch ScheduleTiming.dayPattern(for: dayNumbers.sorted()) {
+        case .everyDay: String(localized: "Every day")
+        case .weekdays: String(localized: "Weekdays")
+        case .weekends: String(localized: "Weekends")
+        case .oneDay(let dayNumber): ScheduleWeekday.name(dayNumber)
+        case .someDays(let someDayNumbers): someDayNumbers.isEmpty ? String(localized: "No days") : ScheduleWeekday.shortNamesText(someDayNumbers)
+        }
+    }
+
+    /// When a goal comes round next, "Tue 7:30 AM" within the week and the
+    /// date and time beyond it.
+    static func nextText(_ next: Date) -> String {
+        if next.timeIntervalSinceNow < 6 * 24 * 3600 { return next.formatted(.dateTime.weekday(.abbreviated).hour().minute()) }
+        return next.formatted(date: .abbreviated, time: .shortened)
     }
 
     static func readingSpan(_ span: ReadingProgress.ReadingSpan) -> String {
@@ -1954,103 +2011,55 @@ struct AgentDreamRow: View {
     }
 }
 
-// MARK: - Schedules
+// MARK: - Daily brief
 
-/// SchedulesView is the dashboard's Schedules tab: the morning brief, set
-/// by a time and days and sent now on asking, and every schedule, each
-/// added, changed, run now, turned off or removed.
-struct SchedulesView: View {
+/// DailyBriefView is the settings page of the morning brief: a switch, a
+/// time and days (the server keeps them on the goal called "Daily brief"),
+/// sending one now, and the goal's page.
+struct DailyBriefView: View {
     let connection: Connection
-    @State private var schedules: [AgentSchedule]?
+    @State private var brief: AgentGoal?
+    @State private var isLoaded = false
     @State private var briefTime = "07:30"
     @State private var briefDayNumbers: Set<Int> = Set(1...5)
-    @State private var editing: ScheduleEditing?
-    @State private var removing: AgentSchedule?
     @State private var isBusy = false
     @State private var doneText: String?
     @State private var problemText: String?
 
-    /// ScheduleEditing is the editor open on a schedule, or on a new one.
-    struct ScheduleEditing: Identifiable {
-        let id = UUID()
-        let schedule: AgentSchedule?
-    }
+    /// Whether the brief is on: its goal exists and is not paused.
+    private var isBriefOn: Bool { brief?.isOpen == true }
 
-    private var brief: AgentSchedule? { DailyBrief.schedule(in: schedules ?? []) }
+    private var briefCron: String? { brief?.goalTimes.first }
 
     /// Whether the time or the days differ from what the brief has.
     private var hasBriefChanged: Bool {
-        briefTime != DailyBrief.time(fromCron: brief?.cron) || briefDayNumbers != Set(DailyBrief.dayNumbers(fromCron: brief?.cron))
+        briefTime != DailyBrief.time(fromCron: briefCron) || briefDayNumbers != Set(DailyBrief.dayNumbers(fromCron: briefCron))
     }
 
     var body: some View {
         List {
             briefSection
-            Section {
-                if let schedules, schedules.isEmpty {
-                    Text("Nothing scheduled.").foregroundStyle(.secondary)
-                }
-                ForEach(schedules ?? []) { schedule in
-                    Button {
-                        editing = ScheduleEditing(schedule: schedule)
-                    } label: {
-                        AgentScheduleRow(schedule: schedule)
-                    }
-                    .confirmationDialog(
-                        "Remove", isPresented: Binding(get: { removing?.id == schedule.id }, set: { if !$0 { removing = nil } }), titleVisibility: .hidden, presenting: removing
-                    ) { schedule in
-                        Button("Remove", role: .destructive) {
-                            Task { await act(saying: nil) { try await connection.deleteAgentSchedule(schedule.id) } }
-                        }
-                    } message: { schedule in
-                        Text(verbatim: schedule.name)
-                    }
-                    .swipeActions {
-                        Button("Remove", systemImage: "trash", role: .destructive) { removing = schedule }
-                            .tint(.red)
-                        Button(schedule.enabled ? LocalizedStringKey("Turn off") : "Turn on", systemImage: schedule.enabled ? "pause" : "play") {
-                            Task {
-                                await act(saying: nil) { try await connection.saveAgentSchedule(scheduleId: schedule.id, isEnabled: !schedule.enabled) }
-                            }
-                        }
-                        .tint(.orange)
-                    }
-                    .contextMenu {
-                        Button("Edit", systemImage: "pencil") { editing = ScheduleEditing(schedule: schedule) }
-                        runButton(schedule)
-                        Button("Remove", systemImage: "trash", role: .destructive) { removing = schedule }
-                            .tint(.red)
-                    }
-                }
-            } header: {
-                Text("On its own time")
-            } footer: {
-                Text("Things your agent does at set times, in your zone: a morning brief, a Friday round-up. A scheduled run can confirm nothing, so it only does what needs no confirmation.")
-            }
+            goalSection
         }
-        .navigationTitle("Schedules")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Add a schedule", systemImage: "plus") { editing = ScheduleEditing(schedule: nil) }
-            }
-        }
-        .overlay { if schedules == nil { ProgressView() } }
+        .navigationTitle("Daily brief")
+        .overlay { if !isLoaded { ProgressView() } }
         .disabled(isBusy)
         .refreshable { await load() }
         .task { await load() }
-        .sheet(item: $editing) { edited in
-            AgentScheduleEditor(connection: connection, schedule: edited.schedule) {
-                Task { await load() }
-            }
-        }
         .toast(done: $doneText, problem: $problemText)
     }
 
-    private func runButton(_ schedule: AgentSchedule) -> some View {
-        Button("Run now", systemImage: "play.circle") {
-            Task {
-                await act(saying: String(localized: "Queued; the answer arrives where the schedule says.")) {
-                    try await connection.runAgentSchedule(schedule.id)
+    @ViewBuilder
+    private var goalSection: some View {
+        if let brief {
+            Section {
+                if isBriefOn, let next = ServerTime.date(brief.goalNextAt) {
+                    LabeledContent("Next", value: UpkeepWords.nextText(next))
+                }
+                NavigationLink {
+                    GoalDetail(connection: connection, conversationId: brief.conversationId, doneText: $doneText, problemText: $problemText)
+                } label: {
+                    Label("Open the brief's goal", systemImage: "target")
                 }
             }
         }
@@ -2065,9 +2074,9 @@ struct SchedulesView: View {
             NavigationLink {
                 BriefDaysScreen(dayNumbers: $briefDayNumbers)
             } label: {
-                LabeledContent("On days", value: briefDaysText)
+                LabeledContent("On days", value: UpkeepWords.dayPatternText(briefDayNumbers.sorted()))
             }
-            if brief?.enabled == true {
+            if isBriefOn {
                 if hasBriefChanged {
                     Button("Save the new time and days", systemImage: "checkmark.circle") { Task { await saveBrief(isEnabled: true) } }
                         .actionColor()
@@ -2090,43 +2099,29 @@ struct SchedulesView: View {
         } footer: {
             if briefDayNumbers.isEmpty {
                 Text("Choose at least one day.")
+            } else if brief == nil {
+                Text("What the day holds and what is waiting for you, in your feed. Turning it on adds a goal called \u{201C}Daily brief\u{201D}, where you can change what it asks for.")
             } else {
-                Text(
-                    brief == nil
-                        ? LocalizedStringKey("What the day holds and what is waiting for you, sent to you as mail. Turning it on adds an ordinary schedule called “Daily brief” below, where you can change what it asks for.")
-                        : "What the day holds and what is waiting for you, sent to you as mail. It is the schedule called “Daily brief” below, where you can change what it asks for."
-                )
+                Text("What the day holds and what is waiting for you, in your feed. It is the goal called \u{201C}Daily brief\u{201D}, where you can change what it asks for.")
             }
-        }
-    }
-
-    /// The chosen days in a few words: "Weekdays", or "Mon, Wed, and Fri".
-    private var briefDaysText: String {
-        switch ScheduleTiming.dayPattern(for: briefDayNumbers.sorted()) {
-        case .everyDay: String(localized: "Every day")
-        case .weekdays: String(localized: "Weekdays")
-        case .weekends: String(localized: "Weekends")
-        case .oneDay(let dayNumber): ScheduleWeekday.name(dayNumber)
-        case .someDays(let dayNumbers): dayNumbers.isEmpty ? String(localized: "No days") : ScheduleWeekday.shortNamesText(dayNumbers)
         }
     }
 
     private func load() async {
         do {
-            let read = try await connection.agentSchedules()
-            schedules = read
-            let brief = DailyBrief.schedule(in: read)
-            briefTime = DailyBrief.time(fromCron: brief?.cron)
-            briefDayNumbers = Set(DailyBrief.dayNumbers(fromCron: brief?.cron))
+            let read = try await connection.goals()
+            brief = DailyBrief.goal(in: read)
+            briefTime = DailyBrief.time(fromCron: briefCron)
+            briefDayNumbers = Set(DailyBrief.dayNumbers(fromCron: briefCron))
         } catch {
             problemText = error.localizedDescription
-            if schedules == nil { schedules = [] }
         }
+        isLoaded = true
     }
 
     private func saveBrief(isEnabled: Bool) async {
         let days = briefDayNumbers.sorted()
-        await act(saying: isEnabled ? String(localized: "The brief is on.") : String(localized: "The brief is off. The schedule is still there.")) {
+        await act(saying: isEnabled ? String(localized: "The brief is on.") : String(localized: "The brief is off. Its goal is paused.")) {
             try await connection.setDailyBrief(isEnabled: isEnabled, at: briefTime, days: days)
         }
     }
@@ -2144,40 +2139,9 @@ struct SchedulesView: View {
     }
 }
 
-/// AgentScheduleRow is a schedule: its name, whether it is off, when it
-/// comes round in a person's words, what it asks, where the answer goes and
-/// when it runs next.
-struct AgentScheduleRow: View {
-    let schedule: AgentSchedule
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
-                Text(verbatim: schedule.name).foregroundStyle(schedule.enabled ? Color(.label) : Color(.secondaryLabel))
-                if !schedule.enabled { UpkeepTag(text: String(localized: "off"), tone: .warning) }
-            }
-            if schedule.isTriggeredByMail {
-                Text(verbatim: UpkeepWords.scheduleMailText(schedule.mailConditions ?? [])).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
-            } else if let timingText = UpkeepWords.scheduleTimingText(schedule.cron) {
-                Text(verbatim: timingText).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
-            } else {
-                Text(verbatim: schedule.cron).font(.subheadline.monospaced()).foregroundStyle(Color(.secondaryLabel))
-            }
-            Text(verbatim: schedule.prompt).font(.footnote).foregroundStyle(Color(.secondaryLabel)).lineLimit(3)
-            Text(verbatim: whereAndWhen).font(.caption).foregroundStyle(Color(.secondaryLabel))
-        }
-    }
-
-    private var whereAndWhen: String {
-        let deliverText = schedule.isDeliveredByMail ? String(localized: "By mail") : String(localized: "Into the conversation")
-        guard let next = schedule.nextRunAt, ServerTime.date(next) != nil else { return deliverText }
-        return deliverText + " · " + String(localized: "next \(UpkeepWords.when(next))")
-    }
-}
-
-/// BriefDaysScreen is the days the morning brief comes on: the seven days as
-/// rows with a checkmark, in the order the person's calendar starts its week,
-/// the same rows a weekly custom repeat in the calendar uses.
+/// BriefDaysScreen is the days a goal's weekly time comes on: the seven days
+/// as rows with a checkmark, in the order the person's calendar starts its
+/// week, the same rows a weekly custom repeat in the calendar uses.
 struct BriefDaysScreen: View {
     @Binding var dayNumbers: Set<Int>
 
@@ -2197,8 +2161,8 @@ struct BriefDaysScreen: View {
 }
 
 #if DEBUG
-    /// The screen `-TeaNodeScreen schedules-brief-days` photographs, with
-    /// Monday to Friday chosen, and `schedules-brief-days-none` with no day.
+    /// The screen `-TeaNodeScreen daily-brief-days` photographs, with
+    /// Monday to Friday chosen, and `daily-brief-days-none` with no day.
     struct BriefDaysDemoScreen: View {
         @State private var dayNumbers: Set<Int>
 
@@ -2210,165 +2174,7 @@ struct BriefDaysScreen: View {
             BriefDaysScreen(dayNumbers: $dayNumbers)
         }
     }
-
-    /// The screen `-TeaNodeScreen schedules-mail-editor` photographs: the
-    /// editor open on a schedule that runs when mail arrives.
-    struct ScheduleEditorDemoScreen: View {
-        let connection: Connection
-        @State private var isEditing = true
-
-        private let schedule = AgentSchedule(
-            id: "pictures", name: "School pictures", cron: "", prompt: "Save the pictures and videos it links to the photo library.",
-            mailConditions: [MailRule.Condition(field: "from", comparisonOperator: "contains", value: "news@school.example")])
-
-        var body: some View {
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
-                .sheet(isPresented: $isEditing) {
-                    AgentScheduleEditor(connection: connection, schedule: schedule) {}
-                }
-        }
-    }
 #endif
-
-/// AgentScheduleEditor adds a schedule or changes one: its name, when it
-/// runs (a cron line, or when a message that passes its conditions
-/// arrives), where the answer goes, and what to do. A new one starts on.
-struct AgentScheduleEditor: View {
-    let connection: Connection
-    let schedule: AgentSchedule?
-    let onSaved: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var name: String
-    @State private var trigger: Trigger
-    @State private var cron: String
-    @State private var conditions: [MailRuleEditor.Edited<MailRule.Condition>]
-    @State private var prompt: String
-    @State private var deliver: String
-    @State private var isSaving = false
-    @State private var doneText: String?
-    @State private var problemText: String?
-
-    /// Trigger is what makes the schedule run.
-    enum Trigger: Hashable {
-        case clock, mail
-    }
-
-    init(connection: Connection, schedule: AgentSchedule?, onSaved: @escaping () -> Void) {
-        self.connection = connection
-        self.schedule = schedule
-        self.onSaved = onSaved
-        let savedConditions = schedule?.mailConditions ?? []
-        let startingConditions: [MailRule.Condition] = savedConditions.isEmpty ? [MailRule.Condition()] : savedConditions
-        // A schedule that runs on mail has no cron line; one switched to the clock starts on a usual one.
-        let savedCron = schedule?.cron ?? ""
-        _name = State(initialValue: schedule?.name ?? "")
-        _trigger = State(initialValue: savedConditions.isEmpty ? Trigger.clock : Trigger.mail)
-        _cron = State(initialValue: savedCron.isEmpty ? "0 8 * * 1-5" : savedCron)
-        _conditions = State(initialValue: startingConditions.map { MailRuleEditor.Edited<MailRule.Condition>(value: $0) })
-        _prompt = State(initialValue: schedule?.prompt ?? "")
-        _deliver = State(initialValue: schedule?.deliver ?? "drawer")
-    }
-
-    /// The conditions as they are saved: what they look for and the header's name without the spaces round them.
-    private var trimmedConditions: [MailRule.Condition] {
-        conditions.map { edited in
-            var condition = edited.value
-            condition.value = condition.value?.trimmed
-            condition.header = condition.header?.trimmed
-            return condition
-        }
-    }
-
-    private var isWhenComplete: Bool {
-        if trigger == .mail { return ScheduleMailTrigger.isComplete(trimmedConditions) }
-        return !cron.trimmed.isEmpty
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Name") {
-                    TextField("Name", text: $name)
-                }
-                Section {
-                    Picker("When", selection: $trigger) {
-                        Text("At set times").tag(Trigger.clock)
-                        Text("When mail arrives").tag(Trigger.mail)
-                    }
-                }
-                if trigger == .mail {
-                    Section {
-                        ForEach($conditions) { $condition in
-                            MailConditionEditor(condition: $condition.value, fields: ScheduleMailTrigger.fields, words: MailRuleWords(folders: []))
-                        }
-                        .onDelete { offsets in conditions.remove(atOffsets: offsets) }
-                        Button("Add a condition", systemImage: "plus") {
-                            conditions.append(MailRuleEditor.Edited(value: MailRule.Condition()))
-                        }
-                        .actionColor()
-                    } header: {
-                        Text("When all of these match")
-                    } footer: {
-                        Text("The schedule runs for each new message that matches all of these. To run it for every new message, choose Any message.")
-                    }
-                } else {
-                    Section {
-                        TextField("When, as a cron line", text: $cron, prompt: Text(verbatim: "0 8 * * 1-5"))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .fontDesign(.monospaced)
-                        if let timingText = UpkeepWords.scheduleTimingText(cron) {
-                            Text(verbatim: timingText).font(.footnote).foregroundStyle(Color(.secondaryLabel))
-                        }
-                    } header: {
-                        Text("When, as a cron line")
-                    } footer: {
-                        Text("Five fields (minute hour day month weekday) in your zone. 0 8 * * 1-5 is weekdays at eight; @at 2030-09-12 09:00 is once, at that moment; @in 20m is once, twenty minutes from now.")
-                    }
-                }
-                Section {
-                    Picker("Where the answer goes", selection: $deliver) {
-                        Text("Into the conversation").tag("drawer")
-                        Text("By mail").tag("mail")
-                    }
-                }
-                Section("What to do, as you would say it") {
-                    TextField("What to do, as you would say it", text: $prompt, axis: .vertical).lineLimit(3...)
-                }
-            }
-            .navigationTitle(schedule == nil ? LocalizedStringKey("Add a schedule") : "Edit")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(schedule == nil ? LocalizedStringKey("Add") : "Save") { Task { await save() } }
-                        .disabled(name.trimmed.isEmpty || !isWhenComplete || prompt.trimmed.isEmpty || isSaving)
-                }
-            }
-            .toast(done: $doneText, problem: $problemText)
-        }
-    }
-
-    private func save() async {
-        isSaving = true
-        defer { isSaving = false }
-        do {
-            // Conditions or a cron line, never both: each one switches the schedule to its kind.
-            let savedCron: String? = trigger == .clock ? cron.trimmed : nil
-            let savedConditions: [MailRule.Condition]? = trigger == .mail ? trimmedConditions : nil
-            try await connection.saveAgentSchedule(
-                scheduleId: schedule?.id, name: name.trimmed, cron: savedCron, mailConditions: savedConditions, prompt: prompt.trimmed,
-                deliver: deliver, isEnabled: schedule == nil ? true : nil)
-            onSaved()
-            dismiss()
-        } catch {
-            problemText = error.localizedDescription
-        }
-    }
-}
 
 // MARK: - Alerts
 
