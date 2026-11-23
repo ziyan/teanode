@@ -18,6 +18,13 @@ func TestTheScheduleMailMigrationAddsTheConditionsAndReverses(t *testing.T) {
 	if err := database.Migrate(); err != nil {
 		t.Fatalf("failed to migrate: %s", err)
 	}
+	// Schedules became goals later; their table is back once that is
+	// reversed.
+	goals, err := os.ReadFile("0281_goal_takes_schedules.reverse.sql")
+	if err != nil {
+		t.Fatalf("ReadFile: %s", err)
+	}
+	dbtest.Exec(t, database, string(goals))
 	userId := dbtest.CreateUser(t, database, "reverse-schedule-mail-user")
 	for _, statement := range []string{
 		`INSERT INTO "agent" ("id", "created_at", "modified_at", "user_id", "name") VALUES ('reverse-schedule-mail-agent', now(), now(), '` + userId + `', 'Agent')`,
