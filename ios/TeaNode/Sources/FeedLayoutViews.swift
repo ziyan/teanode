@@ -319,7 +319,9 @@ struct FeedAgendaLine: View {
             rail
             VStack(alignment: .leading, spacing: 2) {
                 if dynamicTypeSize.isAccessibilitySize {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    // One under the other: side by side, two times at this
+                    // size are wider than the screen.
+                    VStack(alignment: .leading, spacing: 0) {
                         startText
                         endText
                     }
