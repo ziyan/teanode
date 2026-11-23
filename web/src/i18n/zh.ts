@@ -2162,7 +2162,6 @@ export const zh: Catalog = {
   'nav.refreshTooltip': '本服务器已升级。请刷新页面以使用新版界面。',
   'nav.upgradeAvailable': '有新版本可用',
   'server.tabSetup': '初始设置',
-  'server.tabStorageUsage': '磁盘用量',
   'storage.title': '磁盘用量',
   'storage.disks': '磁盘',
   'storage.noDisks': '无法测量任何磁盘。',

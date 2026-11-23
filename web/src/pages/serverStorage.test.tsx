@@ -77,7 +77,7 @@ function answer(overrides: object = {}) {
   }
 }
 
-function renderPage(address = '/manage/server/usage') {
+function renderPage(address = '/manage/server/storage') {
   render(
     <MemoryRouter initialEntries={[address]}>
       <Routes>
@@ -121,7 +121,7 @@ it('takes the breakdown from the address and asks the server for it', async () =
       ],
     }),
   )
-  renderPage('/manage/server/usage?by=person')
+  renderPage('/manage/server/storage?by=person')
   expect(await screen.findByText('Alice Example')).toBeTruthy()
   expect(screen.getByText('storage.unowned')).toBeTruthy()
   expect(execute.mock.calls[0][1]).toMatchObject({ by: 'person' })

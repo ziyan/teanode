@@ -2234,7 +2234,6 @@ export const ja: Catalog = {
   'nav.refreshTooltip': 'このサーバーは更新されました。ページを再読み込みして新しい画面を使ってください。',
   'nav.upgradeAvailable': '新しいバージョンがあります',
   'server.tabSetup': 'セットアップ',
-  'server.tabStorageUsage': 'ディスク使用量',
   'storage.title': 'ディスク使用量',
   'storage.disks': 'ディスク',
   'storage.noDisks': '測定できるディスクがありません。',

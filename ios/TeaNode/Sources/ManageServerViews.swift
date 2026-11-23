@@ -295,7 +295,7 @@ private struct ServerSettingsRows: View {
     ]
 
     var body: some View {
-        if tabs.contains(.about) || tabs.contains(.setup) || tabs.contains(.usage) {
+        if tabs.contains(.about) || tabs.contains(.setup) {
             Section {
                 if tabs.contains(.about) {
                     NavigationLink {
@@ -313,22 +313,26 @@ private struct ServerSettingsRows: View {
                             .foregroundStyle(.primary)
                     }
                 }
-                if tabs.contains(.usage) {
-                    NavigationLink {
-                        StorageUsageView(connection: model.connection)
-                    } label: {
-                        Label("Disk usage", systemImage: "internaldrive")
-                            .foregroundStyle(.primary)
-                    }
-                }
             } footer: {
                 Text("Setting this server up, what it talks to, and which version it is running.")
             }
         }
         ForEach(Self.groups) { group in
             let shownRows = group.rows.filter { tabs.contains($0.tab) }
-            if !shownRows.isEmpty {
+            // What is used and when a disk fills sits first under Storage,
+            // beside where the messages and files are kept, as on the
+            // dashboard's Storage tab.
+            let isUsageShown = group.rows.contains(.messageStorage) && tabs.contains(.usage)
+            if !shownRows.isEmpty || isUsageShown {
                 Section {
+                    if isUsageShown {
+                        NavigationLink {
+                            StorageUsageView(connection: model.connection)
+                        } label: {
+                            Label("Disk usage", systemImage: "internaldrive")
+                                .foregroundStyle(.primary)
+                        }
+                    }
                     ForEach(shownRows, id: \.self) { settingsRow in
                         row(settingsRow)
                     }

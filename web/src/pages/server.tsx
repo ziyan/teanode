@@ -51,6 +51,12 @@ export function ServerPage() {
     return <Navigate to="/manage/access" replace />
   }
 
+  // Disk usage was a tab of its own; it is the top of the Storage tab now, and
+  // a link to the old tab still lands there.
+  if (tab === 'usage') {
+    return <Navigate to={`/manage/server/storage${window.location.search}`} replace />
+  }
+
   // A tab nobody has, or none named at all, is the first one. A path somebody
   // typed is not a tab.
   if (!TABS.some((candidate) => candidate.id === tab)) {
@@ -63,7 +69,8 @@ export function ServerPage() {
 
       {tab === 'setup' && <SetupPage />}
       {tab === 'about' && <ServerAboutPage />}
-      {tab === 'usage' && <ServerStoragePage />}
+      {/* What is used and when a disk fills, then where it is kept. */}
+      {tab === 'storage' && <ServerStoragePage />}
       {INTEGRATION_TABS.some((candidate) => candidate.id === tab) &&
         hasPermission(session.permissions, 'server:manage') && <IntegrationsSection section={tab as Section} />}
     </>

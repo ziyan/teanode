@@ -2239,7 +2239,6 @@ export const en = {
   'nav.refreshTooltip': 'This server has been upgraded. Reload the page to use the new dashboard.',
   'nav.upgradeAvailable': 'A new version is available',
   'server.tabSetup': 'Setup',
-  'server.tabStorageUsage': 'Disk usage',
   'storage.title': 'Disk usage',
   'storage.disks': 'Disks',
   'storage.noDisks': 'No disk could be measured.',
