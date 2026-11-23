@@ -20519,22 +20519,6 @@
         }
       }
     },
-    "Goal turns a day (48)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "目標の1日のターン数 (48)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "目标每天的轮次 (48)"
-          }
-        }
-      }
-    },
     "Goal turns without the person (24)": {
       "localizations": {
         "ja": {
@@ -20563,22 +20547,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "目标"
-          }
-        }
-      }
-    },
-    "Goals in progress per person (20)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1人あたりの進行中の目標 (20)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每人进行中的目标 (20)"
           }
         }
       }
@@ -38229,6 +38197,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "做梦可用的每日预算份额（默认 0.3）"
+          }
+        }
+      }
+    },
+    "Share of the day goals at their own pace may spend (0.5 by default)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のペースで進む目標が使える 1 日の予算の割合（既定 0.5）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自主推进的目标可用的每日预算份额（默认 0.5）"
           }
         }
       }

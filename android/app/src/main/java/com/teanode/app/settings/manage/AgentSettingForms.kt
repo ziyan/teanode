@@ -274,9 +274,8 @@ private fun limitLabel(limitName: String): String = stringResource(
         "monthlyTokensPerServer" -> R.string.manage_limit_monthly_tokens
         "maxBodyCharacters" -> R.string.manage_limit_body_characters
         "maxRoundsPerSubagent" -> R.string.manage_limit_rounds_subagent
-        "goalTurnsPerDay" -> R.string.manage_limit_goal_turns_day
+        "goalShare" -> R.string.manage_limit_goal_share
         "goalTurnsAlone" -> R.string.manage_limit_goal_turns_alone
-        "goalsInProgress" -> R.string.manage_limit_goals_in_progress
         "backgroundWakesAlone" -> R.string.manage_limit_background_wakes
         "maxRoundsPerAsk" -> R.string.manage_limit_rounds_ask
         "maxRoundsPerResearch" -> R.string.manage_limit_rounds_research

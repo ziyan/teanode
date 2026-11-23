@@ -1656,16 +1656,12 @@ errand on the person's computer ran out of.
 **`maxRoundsPerSubagent`** — How many rounds one subagent may take. Zero
 resolves to `20`.
 
-**`goalTurnsPerDay`** — How many turns of its own one goal takes in a day, for a
-goal at its own pace; a goal on set times is bounded by its times. Zero
-resolves to `48`, a turn every half hour.
+**`goalShare`** — How much of the daily budget the goals at their own pace
+may spend between them, as a fraction, so that goals never eat the day. Goals
+on set times are bounded by their times. Zero resolves to `0.5`.
 
-**`goalTurnsAlone`** — How many of those turns a goal takes without a word
+**`goalTurnsAlone`** — How many turns a goal takes without a word
 from the person before it stops and asks them. Zero resolves to `24`.
-
-**`goalsInProgress`** — How many goals at their own pace one person may have
-working or waiting at once; goals on set times are not counted. Zero resolves
-to `20`.
 
 **`backgroundWakesAlone`** — How many turns finished background commands and
 work may wake in one conversation before the person writes there again; past

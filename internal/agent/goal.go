@@ -49,11 +49,12 @@ const (
 	// most often the person's.
 	goalAfterOtherTurn = time.Minute
 
-	// How many turns of its own a goal takes in a day, and alone before it
-	// stops and asks the person, are the operator's limits
-	// (GoalTurnsPerDay and GoalTurnsAlone): the day's cap bounds a day, and
-	// the other bounds the goal nobody can meet, which would otherwise
-	// cost the cap every day until somebody noticed the bill.
+	// How much of the day the goals at their own pace may spend, and how
+	// many turns a goal takes alone before it stops and asks the person,
+	// are the operator's limits (GoalShare and GoalTurnsAlone): the share
+	// bounds a day, and the other bounds the goal nobody can meet, which
+	// would otherwise cost the share every day until somebody noticed the
+	// bill.
 )
 
 // dueGoals queues a turn for every conversation whose goal is working and

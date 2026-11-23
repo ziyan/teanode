@@ -172,13 +172,13 @@ moves the time on, since only it knows what the turn decided. A goal that is
 time.
 
 `runGoal` then, in order: reads the conversation and stops if the goal is no
-longer working; for a goal at its own pace counts the goal jobs finished for
-this conversation since the person's own midnight and, at **forty-eight**,
-puts the next turn at tomorrow's midnight with a note saying so, and counts
-them again since the later of the goal's setting and the person's last word
+longer working; for a goal at its own pace adds up the tokens of every goal turn since
+the person's own midnight and, once they reach `agent.limits.goalShare` of
+the daily budget (default half), puts the next turn at tomorrow's midnight
+with a note saying so, and counts this conversation's goal jobs since the later of the goal's setting and the person's last word
 and, at **twenty-four**, sets the goal `waiting` with the note "Goal stalled:
 …", writes that line into the transcript and lets the sweep call the person,
-so a goal nobody can meet stops rather than costing the day's cap every day;
+so a goal nobody can meet stops rather than costing the goals' share every day;
 checks the budget and, when it is spent, puts the next turn at the reset with
 the budget's reason as the note; and otherwise runs one headless turn in the
 conversation with the check-in as its message.
@@ -226,10 +226,10 @@ dropped and the turn is told more may have come.
 
 ## Caveats
 
-- **The day's cap counts jobs, not turns.** A goal job that did nothing but
-  postpone itself for the budget still counts toward the forty-eight, and one
-  the retention sweep removed no longer does. A goal on set times is outside
-  both caps, and is bounded only by its times and the budget.
+- **The goals' share counts tokens, not turns.** Goals at their own pace spend
+  at most `agent.limits.goalShare` of the day's budget between them; a goal
+  that finds it spent waits for tomorrow. A goal on set times is outside the
+  share, and is bounded only by its times and the budget.
 - **A goal turn cannot confirm anything**, being headless, so a goal that needs
   something sent or deleted can only prepare it and call `goal` with `wait`.
 - **Day and weekday are ANDed**, not ORed as in classic cron: a line naming both
