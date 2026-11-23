@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.3] - 2026-11-23
+
+### Fixed
+
+- Mail forwarded from Gmail is no longer refused when its sender signs from a subdomain, lists signed headers twice, or sends from a no-reply domain with no mail servers. (#766)
+
 ## [0.230.2] - 2026-11-23
 
 ### Fixed
