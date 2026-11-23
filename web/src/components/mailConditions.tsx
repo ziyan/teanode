@@ -5,7 +5,7 @@ import { Combobox, Select } from './select'
 import { Tooltip } from './tooltip'
 
 // The conditions a message has to meet, edited as a list of lines: a mailbox
-// rule is made of them, and so is a schedule that runs when mail arrives.
+// rule is made of them, and so is a goal that takes a turn when mail arrives.
 // Every condition has to pass.
 
 export const MAIL_FIELDS = [
@@ -21,9 +21,9 @@ export const MAIL_FIELDS = [
   'any',
 ] as const
 
-// The fields a schedule can wait on: what is written on the message, which
+// The fields a goal can wait on: what is written on the message, which
 // is all it has to go on when the message arrives.
-export const SCHEDULE_MAIL_FIELDS = ['from', 'to', 'subject', 'header', 'any'] as const
+export const GOAL_MAIL_FIELDS = ['from', 'to', 'subject', 'header', 'any'] as const
 
 // The fields that need no value: the condition is the field.
 export const BARE_FIELDS = ['sender-known', 'needs-reply', 'any']
@@ -103,28 +103,43 @@ export function describeMailCondition(
   return `${field}${name} ${operator} ${value}`.trim()
 }
 
-// describeMailSchedule is how a schedule that runs on mail says when: the
+// newMailConditions is the line a goal that waits for mail starts with, the
+// commonest question of a message: who it is from.
+export function newMailConditions(): MailboxRuleCondition[] {
+  return [{ field: 'from', operator: 'contains', value: '' }]
+}
+
+// cleanMailConditions is what the server accepts as a condition: the header
+// name only on a header, and no operator or value where the field is the
+// whole condition.
+export function cleanMailConditions(conditions: MailboxRuleCondition[]): MailboxRuleCondition[] {
+  return conditions.map((condition) => ({
+    field: condition.field,
+    header: condition.field === 'header' ? (condition.header ?? '').trim() : '',
+    operator: BARE_FIELDS.includes(condition.field) ? '' : condition.operator,
+    value: BARE_FIELDS.includes(condition.field) ? '' : (condition.value ?? '').trim(),
+  }))
+}
+
+export function isMailConditionComplete(condition: MailboxRuleCondition): boolean {
+  if (BARE_FIELDS.includes(condition.field)) return true
+  if (condition.field === 'header' && (condition.header ?? '').trim() === '') return false
+  return (condition.value ?? '').trim() !== ''
+}
+
+// describeMailWhen is how a goal that waits for mail says when: the
 // conditions, in words, after "When mail arrives".
-export function describeMailSchedule(
+export function describeMailWhen(
   conditions: MailboxRuleCondition[],
   t: (key: Key, values?: Record<string, string | number>) => string,
 ): string {
-  return t('agent.scheduleOnMail', {
+  return t('goals.whenMail', {
     conditions: conditions.map((condition) => describeMailCondition(condition, t)).join(', '),
   })
 }
 
-// describeScheduleTiming is when a schedule runs, for a list: its mail
-// conditions in words, or its cron line when it runs on the clock.
-export function describeScheduleTiming(
-  schedule: { cron: string; mailConditions?: MailboxRuleCondition[] | null },
-  t: (key: Key, values?: Record<string, string | number>) => string,
-): string {
-  return schedule.mailConditions?.length ? describeMailSchedule(schedule.mailConditions, t) : schedule.cron
-}
-
 // MailConditionsEditor is a line for each condition and a button to add
-// another. The last condition cannot be removed: a rule or a schedule with
+// another. The last condition cannot be removed: a rule or a goal with
 // none would match every message.
 export function MailConditionsEditor({
   conditions,
