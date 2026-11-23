@@ -15,18 +15,20 @@ To see it working: ask in the main conversation "every weekday at 7:30, tell me 
 ## Progress
 
 - [x] (2026-11-22) Surveyed schedules and goals end to end (`internal/agent/schedule.go`, `schedule_mail.go`, `goal.go`, `goal_background.go`, the goal and schedule tools, the operations, the command line and the three apps) and wrote this plan.
-- [ ] Milestone 1: storage. Migration moves every schedule onto a goal and drops `agent_schedule`.
-- [ ] Milestone 2: the worker. Goals repeat, wait for mail, run once; the schedule sweep and job kind are removed.
-- [ ] Milestone 3: the goal tool, the operations, the client and the command line.
-- [ ] Milestone 4: the dashboard.
-- [ ] Milestone 5: the iPhone app.
-- [ ] Milestone 6: the Android app.
-- [ ] Milestone 7: docs, review, deploy, tester builds.
+- [x] (2026-11-22) Milestone 1: storage. Migration moves every schedule onto a goal and drops `agent_schedule`.
+- [x] (2026-11-22) Milestone 2: the worker. Goals repeat, wait for mail, run once; the schedule sweep and job kind are removed.
+- [x] (2026-11-22) Milestone 3: the goal tool, the operations, the client and the command line.
+- [x] (2026-11-22) Milestone 4: the dashboard.
+- [x] (2026-11-22) Milestone 5: the iPhone app.
+- [x] (2026-11-22) Milestone 6: the Android app.
+- [x] (2026-11-23) Milestone 7: docs, review, deploy, tester builds. The review found a past or malformed `@at` dropped silently, a resumed goal whose times had all passed left without a next turn, the brief switch adopting a goal the agent had titled like it, and a switched-off schedule of a goal lost by the migration; all fixed with tests.
+- [x] (2026-11-23) The steps after this plan, decided in `docs/decisions/20261123-goals-spend-a-share-of-the-day.md`: the goal caps became the goals' share of the day, ideas and memory checks share one Suggestions switch, and a goal that needs the person or is done is a card of the feed. Skill watches, ideas, the speak-first conversations and the feed's columns stay as they are, for the reasons given there.
 
 
 ## Surprises & Discoveries
 
-(none yet)
+- Skill watches looked unused from the repository, where no skill defines one, but on a working server installed skills watch chat mentions and mail and send hundreds of alerts a week; they stay.
+- Goal turns already stopped at the daily budget, shared with the person's own conversations; the caps on turns and goals bounded something the budget did not, which was the share of the day work nobody watches may take.
 
 
 ## Decision Log
