@@ -33,6 +33,10 @@ func TestChangedAuditFields(t *testing.T) {
 			`{"receiptMatches":[]}`, `{"receiptMatches":[{"matchedAmount":"1.00"}]}`, false, "", ""},
 		{"a person's receipt matches are kept", models.AuditResourceFinanceReceipt, models.AuditActorUser,
 			`{"receiptMatches":[]}`, `{"receiptMatches":[{"matchedAmount":"1.00"}]}`, true, `{}`, `{"receiptMatches":[{"matchedAmount":"1.00"}]}`},
+		{"the event naming a change stays beside what changed", models.AuditResourcePasswordItem, models.AuditActorUser,
+			`{"event":"deleted","revision":1}`, `{"event":"deleted","revision":2}`, true, `{"event":"deleted","revision":1}`, `{"event":"deleted","revision":2}`},
+		{"an event alone is no change", models.AuditResourcePasswordItem, models.AuditActorUser,
+			`{"event":"saved"}`, `{"event":"saved"}`, false, "", ""},
 		{"an encrypted item's revision is kept", models.AuditResourcePasswordItem, models.AuditActorSystem,
 			`{"revision":1}`, `{"revision":2}`, true, `{"revision":1}`, `{"revision":2}`},
 	} {

@@ -265,6 +265,11 @@ var auditSystemBookkeepingFields = map[models.AuditResourceType][]string{
 	models.AuditResourceFinanceReceipt: {"receiptMatches"},
 }
 
+// auditContextFields are fields that name the change itself, such as the
+// event a password item's row was written for. They are kept beside the
+// changed fields of an update, and never make one by themselves.
+var auditContextFields = []string{"event"}
+
 // changedAuditFields reduces an update to what changed. Both sides are read
 // as objects and a field that is absent, null, an empty list or an empty
 // object counts as unset, so a nil slice on one side and an empty slice on
@@ -302,6 +307,16 @@ func changedAuditFields(resourceType models.AuditResourceType, actorKind models.
 	}
 	if len(changedBefore) == 0 && len(changedAfter) == 0 {
 		return nil, nil, false, nil
+	}
+	// What the change was called says what happened even when it is the same
+	// word on both sides, so it stays with whatever else changed.
+	for _, field := range auditContextFields {
+		if _, isKept := beforeFields[field]; isKept && changedBefore[field] == nil {
+			changedBefore[field] = beforeFields[field]
+		}
+		if _, isKept := afterFields[field]; isKept && changedAfter[field] == nil {
+			changedAfter[field] = afterFields[field]
+		}
 	}
 	reducedBefore, err := json.Marshal(changedBefore)
 	if err != nil {
