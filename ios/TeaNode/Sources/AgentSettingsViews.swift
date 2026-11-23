@@ -736,8 +736,8 @@ struct AgentModelView: View {
     }
 }
 
-/// AgentSpeakFirstView is the two ways the agent may start a conversation
-/// of its own, each a switch saved as it is flipped.
+/// AgentSpeakFirstView is the one switch for what the agent says on its
+/// own, saved as it is flipped.
 struct AgentSpeakFirstView: View {
     let model: AgentSettingsModel
 
@@ -746,25 +746,16 @@ struct AgentSpeakFirstView: View {
             if let agent = model.agent {
                 Section {
                     AgentSwitch(
-                        model: model, isOn: agent.isMemoryCheckEnabled, change: { AgentChange(isMemoryCheckEnabled: $0) },
-                        saying: { $0 ? String(localized: "Memory checks are on.") : String(localized: "Memory checks are off.") }
+                        model: model, isOn: agent.isSuggestionsEnabled, change: { AgentChange(isSuggestionsEnabled: $0) },
+                        saying: { $0 ? String(localized: "Your agent will make suggestions.") : String(localized: "Your agent will not make suggestions on its own.") }
                     ) {
-                        Text("Memory checks")
-                    }
-                } footer: {
-                    Text("Now and then your agent asks to check a few things it remembers about you, and keeps your answers to grade itself against.")
-                }
-                Section {
-                    AgentSwitch(
-                        model: model, isOn: agent.isIdeasEnabled, change: { AgentChange(isIdeasEnabled: $0) },
-                        saying: { $0 ? String(localized: "Your agent will offer ideas.") : String(localized: "Your agent will not offer ideas on its own.") }
-                    ) {
-                        Text("Offer ideas")
+                        // Its own key: "Suggestions" elsewhere means candidates.
+                        Text("Agent suggestions")
                     }
                 } footer: {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("While you are idle, your agent now and then offers one of its ideas: something it could do for you. The whole list is under Ideas.")
-                        Text("Besides introducing itself, your agent can start a conversation in two ways. It only does so while you have the dashboard open, and at most once a day.")
+                        Text("Ideas to try, and checks of what it remembers, offered on its own.")
+                        Text("Besides introducing itself, your agent may start a conversation on its own, at most once a day.")
                     }
                 }
             }

@@ -9065,6 +9065,28 @@
         }
       }
     },
+    "Agent suggestions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggestions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提案"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建议"
+          }
+        }
+      }
+    },
     "Agents": {
       "localizations": {
         "ja": {
@@ -11651,18 +11673,18 @@
         }
       }
     },
-    "Besides introducing itself, your agent can start a conversation in two ways. It only does so while you have the dashboard open, and at most once a day.": {
+    "Besides introducing itself, your agent may start a conversation on its own, at most once a day.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "自己紹介のほかに、エージェントが自分から会話を始めることが二つあります。ダッシュボードを開いている間だけで、多くても一日に一度です。"
+            "value": "自己紹介のほかに、エージェントが自分から会話を始めることがあります。多くても一日に一度です。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "除了自我介绍，你的助手还可以通过两种方式主动开启对话。只在你打开面板时才会这样做，每天最多一次。"
+            "value": "除了自我介绍，你的助手还可以主动开启对话，每天最多一次。"
           }
         }
       }
@@ -21655,6 +21677,22 @@
         }
       }
     },
+    "Ideas to try, and checks of what it remembers, offered on its own.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "試せるアイデアや、覚えていることの確認を、エージェントが自分から提案します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手会主动提出可以尝试的想法，以及对它所记内容的核对。"
+          }
+        }
+      }
+    },
     "Identity": {
       "localizations": {
         "ja": {
@@ -25325,54 +25363,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "记忆检查"
-          }
-        }
-      }
-    },
-    "Memory checks": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "記憶の確認"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "记忆检查"
-          }
-        }
-      }
-    },
-    "Memory checks are off.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "記憶の確認をオフにしました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "记忆检查已关闭。"
-          }
-        }
-      }
-    },
-    "Memory checks are on.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "記憶の確認をオンにしました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "记忆检查已开启。"
           }
         }
       }
@@ -29557,22 +29547,6 @@
         }
       }
     },
-    "Now and then your agent asks to check a few things it remembers about you, and keeps your answers to grade itself against.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "エージェントがときどき、あなたについて覚えていることをいくつか確かめさせてほしいと尋ね、その答えを自分の採点に使います。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你的助手会不时请你核对几件它记得的关于你的事，并保留你的回答用来给自己打分。"
-          }
-        }
-      }
-    },
     "OAuth": {
       "localizations": {
         "ja": {
@@ -29745,22 +29719,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "关闭后，本服务器只使用下面指定的证书和私钥，续期由你自己负责。"
-          }
-        }
-      }
-    },
-    "Offer ideas": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アイデアを提案する"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "主动提出想法"
           }
         }
       }
@@ -48878,22 +48836,6 @@
         }
       }
     },
-    "While you are idle, your agent now and then offers one of its ideas: something it could do for you. The whole list is under Ideas.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "操作していない間に、エージェントがときどき、あなたのためにできることを一つ提案します。一覧は「アイデア」にあります。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在你空闲时，你的助手会不时提出一个它能为你做的事。完整列表在“想法”中。"
-          }
-        }
-      }
-    },
     "Who": {
       "localizations": {
         "ja": {
@@ -49838,18 +49780,18 @@
         }
       }
     },
-    "Your agent will not offer ideas on its own.": {
+    "Your agent will not make suggestions on its own.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アイデアを自分から提案しないようにしました。"
+            "value": "エージェントが自分から提案しないようにしました。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "助手不会主动提出想法。"
+            "value": "助手不会主动提出建议。"
           }
         }
       }
@@ -49870,18 +49812,18 @@
         }
       }
     },
-    "Your agent will offer ideas.": {
+    "Your agent will make suggestions.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アイデアを提案するようにしました。"
+            "value": "エージェントが自分から提案するようにしました。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "助手会主动提出想法。"
+            "value": "助手会主动提出建议。"
           }
         }
       }

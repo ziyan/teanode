@@ -3743,17 +3743,11 @@ export const en = {
   // The memory check on the Memory tab, and the switches for what the agent says unprompted.
   'agent.speakFirst': 'Speaking first',
   'agent.speakFirstHint':
-    'Besides introducing itself, your agent can start a conversation in two ways. It only does so while you have the dashboard open, and at most once a day.',
-  'agent.memoryChecks': 'Memory checks',
-  'agent.memoryChecksHint':
-    'Now and then your agent asks to check a few things it remembers about you, and keeps your answers to grade itself against.',
-  'agent.memoryChecksOn': 'Memory checks are on.',
-  'agent.memoryChecksOff': 'Memory checks are off.',
-  'agent.ideas': 'Offer ideas',
-  'agent.ideasHint':
-    'While you are idle, your agent now and then offers one of its ideas: something it could do for you. The whole list is under Ideas.',
-  'agent.ideasOn': 'Your agent will offer ideas.',
-  'agent.ideasOff': 'Your agent will not offer ideas on its own.',
+    'Besides introducing itself, your agent may start a conversation on its own, at most once a day.',
+  'agent.suggestions': 'Suggestions',
+  'agent.suggestionsHint': 'Ideas to try, and checks of what it remembers, offered on its own.',
+  'agent.suggestionsOn': 'Your agent will make suggestions.',
+  'agent.suggestionsOff': 'Your agent will not make suggestions on its own.',
   'memoryCheck.title': 'Memory check',
   'memoryCheck.hint':
     'Questions about you that you have answered, and how well your agent answers them from what it remembers, from your sources, and from both.',

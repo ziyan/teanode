@@ -32,8 +32,7 @@ public struct AgentSettings: Codable, Equatable, Sendable {
         /// The kinds of action needing the person's word that the agent may
         /// take when they are not there.
         public let unattendedAllowedRisks: [String]?
-        public let isMemoryCheckEnabled: Bool
-        public let isIdeasEnabled: Bool
+        public let isSuggestionsEnabled: Bool
         public let voice: Voice?
         public let categories: [Category]
 
@@ -410,14 +409,12 @@ public struct AgentChange: Hashable, Sendable {
     public var unattendedAllowedRisks: [String]?
     public var askModel: String?
     public var speechVoice: String?
-    public var isMemoryCheckEnabled: Bool?
-    public var isIdeasEnabled: Bool?
+    public var isSuggestionsEnabled: Bool?
 
     public init(
         enabled: Bool? = nil, name: String? = nil, instructions: String? = nil, language: String? = nil, knowledgeLanguage: String? = nil,
         voice: AgentSettings.Voice? = nil, categories: [AgentSettings.Category]? = nil, confirm: [String]? = nil,
-        unattendedAllowedRisks: [String]? = nil, askModel: String? = nil, speechVoice: String? = nil, isMemoryCheckEnabled: Bool? = nil,
-        isIdeasEnabled: Bool? = nil
+        unattendedAllowedRisks: [String]? = nil, askModel: String? = nil, speechVoice: String? = nil, isSuggestionsEnabled: Bool? = nil
     ) {
         self.enabled = enabled
         self.name = name
@@ -430,8 +427,7 @@ public struct AgentChange: Hashable, Sendable {
         self.unattendedAllowedRisks = unattendedAllowedRisks
         self.askModel = askModel
         self.speechVoice = speechVoice
-        self.isMemoryCheckEnabled = isMemoryCheckEnabled
-        self.isIdeasEnabled = isIdeasEnabled
+        self.isSuggestionsEnabled = isSuggestionsEnabled
     }
 
     /// As the server takes it, as the dashboard sends it: the name and the
@@ -460,8 +456,7 @@ public struct AgentChange: Hashable, Sendable {
         if let unattendedAllowedRisks { variables["unattendedAllowedRisks"] = .array(unattendedAllowedRisks.map { .string($0) }) }
         if let askModel { variables["askModel"] = .string(askModel) }
         if let speechVoice { variables["speechVoice"] = .string(speechVoice) }
-        if let isMemoryCheckEnabled { variables["isMemoryCheckEnabled"] = .bool(isMemoryCheckEnabled) }
-        if let isIdeasEnabled { variables["isIdeasEnabled"] = .bool(isIdeasEnabled) }
+        if let isSuggestionsEnabled { variables["isSuggestionsEnabled"] = .bool(isSuggestionsEnabled) }
         return variables
     }
 }
@@ -572,7 +567,7 @@ extension Documents {
     /// What every read and change of the agent answers with.
     static let agentSettingsFields = """
         agent { id name enabled instructions language knowledgeLanguage askModel speechVoice operatorDisabledAt confirm unattendedAllowedRisks
-          isMemoryCheckEnabled isIdeasEnabled
+          isSuggestionsEnabled
           voice { tone length greeting signoff }
           categories { name description } }
         sources { mailboxId name addresses policy { granted draftReplies search research
@@ -591,10 +586,10 @@ extension Documents {
     public static let updateAgentSettings = """
         mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String, $voice: AgentVoiceInput,
           $categories: [AgentCategoryInput!], $confirm: [String!], $unattendedAllowedRisks: [String!], $askModel: String, $speechVoice: String,
-          $isMemoryCheckEnabled: Boolean, $isIdeasEnabled: Boolean, $forget: Boolean) {
+          $isSuggestionsEnabled: Boolean, $forget: Boolean) {
           UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
             voice: $voice, categories: $categories, confirm: $confirm, unattendedAllowedRisks: $unattendedAllowedRisks, askModel: $askModel,
-            speechVoice: $speechVoice, isMemoryCheckEnabled: $isMemoryCheckEnabled, isIdeasEnabled: $isIdeasEnabled, forget: $forget) {
+            speechVoice: $speechVoice, isSuggestionsEnabled: $isSuggestionsEnabled, forget: $forget) {
             \(agentSettingsFields)
           }
         }

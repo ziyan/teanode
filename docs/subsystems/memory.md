@@ -554,7 +554,7 @@ that run is also how the next dream knows when the agent last looked.
 It comes first because a dream working through a backlog spends its whole
 share on the reading, and placed after it the look for ideas never ran; it
 is the one call let past a spent share, stopped only by a provider that
-will not bill the account. It does not run while the Ideas switch is off
+will not bill the account. It does not run while the Suggestions switch is off
 or eight personal ideas are already waiting.
 
 **Read what arrived.** Documents, by priority rather than by order: what
