@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.0] - 2026-11-23
+
+### Added
+
+- A feed of cards from the agent on the dashboard, iPhone and Android: alerts, ideas, scheduled briefs, goal news and coding session questions, with buttons to answer, a heart, Discuss, and stacks that open to show the rest. (#765)
+
+### Changed
+
+- What the agent says without being asked goes to the feed instead of the main conversation; a setting sends it back. (#765)
+
 ## [0.229.1] - 2026-11-19
 
 ### Fixed
