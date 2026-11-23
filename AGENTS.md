@@ -66,7 +66,7 @@ and a person turns it on. See `docs/subsystems/` for how it works.
                             picks a model per kind of work, structured output
       agent/                the personal agent: the job queue and worker, the
                             runs (sorting, summaries, research, replies and
-                            sending them, embeddings, schedules) and the
+                            sending them, embeddings, goals) and the
                             Ask loop. Knows mail, not HTTP
       agent/tools/          the tool kit, and one package per tool beside it;
                             a new tool is a new directory, imported in tools/all
