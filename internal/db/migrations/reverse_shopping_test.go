@@ -56,11 +56,14 @@ func TestTheShoppingMigrationRefusesBadRowsAndReverses(t *testing.T) {
 		t.Errorf("%s items and shares are left after their list went", got)
 	}
 
-	reverse, err := os.ReadFile("0260_shopping.reverse.sql")
-	if err != nil {
-		t.Fatalf("ReadFile: %s", err)
+	// Later migrations on these tables go first, as reversing runs.
+	for _, name := range []string{"0280_shopping_item_bought_by_trip.reverse.sql", "0260_shopping.reverse.sql"} {
+		reverse, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("ReadFile: %s", err)
+		}
+		dbtest.Exec(t, database, string(reverse))
 	}
-	dbtest.Exec(t, database, string(reverse))
 	for _, table := range []string{"shopping_list", "shopping_list_share", "shopping_list_reminder_mute", "shopping_store_mute", "shopping_item",
 		"shopping_item_price", "shopping_receipt_match", "shopping_trip", "shopping_trip_list"} {
 		if got := dbtest.QueryString(t, database, `SELECT coalesce(to_regclass('"`+table+`"')::text, '')`); got != "" {

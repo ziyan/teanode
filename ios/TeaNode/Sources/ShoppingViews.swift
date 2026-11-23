@@ -47,7 +47,10 @@ struct ShoppingScreen: View {
                     Text("Give the list a name, such as Groceries.")
                 }
                 .refreshable { await model.load() }
-                .task {
+                // Read again once the session says who the person is: their
+                // own trip is told apart from the others' by it.
+                .task(id: app.ownUserId) {
+                    model.ownUserId = app.ownUserId
                     await model.load()
                     #if DEBUG
                         openDemoScreen()
@@ -65,6 +68,19 @@ struct ShoppingScreen: View {
 
     private var lists: some View {
         List {
+            if let ownTrip = model.ownTrip {
+                Section {
+                    NavigationLink(value: ShoppingPlace.store(ownTrip.storeName, listIds: [])) {
+                        ShoppingNowRow(trip: ownTrip, cartCount: model.ownCartCount)
+                    }
+                }
+            } else if let resumableTrip = model.resumableTrip {
+                Section {
+                    ShoppingResumeRow(trip: resumableTrip) {
+                        if await model.resume(resumableTrip) { path = [.store(resumableTrip.storeName, listIds: [])] }
+                    }
+                }
+            }
             if !model.ownLists.isEmpty {
                 Section("Your lists") {
                     ForEach(model.ownLists) { list in
@@ -125,12 +141,13 @@ struct ShoppingScreen: View {
         /// `-TeaNodeScreen shopping-list`, `shopping-item` and `shopping-import` open the
         /// first list (the last two with the item or the import sheet over it), and
         /// `shopping-store` the store screen; `shopping-list-pictures` and
-        /// `shopping-store-pictures` show those two as pictures.
+        /// `shopping-store-pictures` show those two as pictures, and
+        /// `shopping-list-search` the list searched for its produce.
         private func openDemoScreen() {
             guard DemoServer.isRequested, path.isEmpty, let screen = DemoServer.screen else { return }
             if screen.hasPrefix("shopping-list") || screen == "shopping-item" || screen == "shopping-import" || screen.hasPrefix("shopping-add-") {
                 path = [.list(ShoppingDemo.groceriesListId)]
-            } else if screen.hasPrefix("shopping-store") {
+            } else if screen.hasPrefix("shopping-store") || screen == "shopping-cart" {
                 path = [.store(ShoppingDemo.exampleMarket, listIds: [])]
             }
         }
@@ -292,10 +309,14 @@ struct ShoppingListScreen: View {
     @State private var newName = ""
     @State private var isConfirmingDelete = false
     @State private var isChoosingStore = false
+    @State private var isShowingCart = false
     @State private var pickedReceiptItems: [PhotosPickerItem] = []
     @State private var isTakingReceiptPicture = false
+    /// What the person searches the list for; empty shows every item.
+    @State private var searchText = ""
     @AppStorage(ShoppingLayoutChoice.storageKey) private var layoutName = ShoppingLayoutChoice.list.rawValue
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(connection: Connection, listId: String, path: Binding<[ShoppingPlace]>) {
         self.connection = connection
@@ -313,16 +334,31 @@ struct ShoppingListScreen: View {
                 #if DEBUG
                     ShoppingLayoutChoice.applyDemo(to: &layoutName)
                 #endif
+                model.ownUserId = app.ownUserId
                 await model.load()
                 #if DEBUG
                     openDemoSheet()
                 #endif
+            }
+            .onChange(of: app.ownUserId) { _, ownUserId in
+                model.ownUserId = ownUserId
+                Task { await model.load() }
             }
             .task { await model.follow() }
             .onChange(of: model.isDeleted) { _, isDeleted in
                 if isDeleted { dismiss() }
             }
             .modifier(sheets)
+            .sheet(isPresented: $isShowingCart) {
+                ShoppingCartSheet(
+                    connection: connection, storeName: model.ownTrip?.storeName ?? "", ownUserId: app.ownUserId, shownItems: model.items
+                ) { text in
+                    Task {
+                        await model.load()
+                        model.doneText = text
+                    }
+                }
+            }
             .shoppingReceiptSource(pickedItems: $pickedReceiptItems, isTakingPicture: $isTakingReceiptPicture) { file in
                 Task { await model.receipts.scan(file) }
             }
@@ -331,6 +367,7 @@ struct ShoppingListScreen: View {
 
     private var screen: some View {
         content
+            .animation(reduceMotion ? nil : .default, value: model.notNeeded.count)
             .navigationTitle(model.list?.listName ?? "")
             .navigationSubtitle(subtitle)
             .navigationBarTitleDisplayMode(.large)
@@ -338,12 +375,22 @@ struct ShoppingListScreen: View {
             .safeAreaInset(edge: .bottom) { floatingControls }
             .toolbarVisibility(.hidden, for: .tabBar)
             .overlay { stateOverlay }
+            // Under the title, always: at the bottom it would sit behind
+            // Done shopping and the add button.
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search this list"))
     }
+
+    private var isSearching: Bool { !searchText.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// The items to buy that match the search.
+    private var shownToBuy: [ShoppingItem] { ShoppingSearch.filter(model.toBuy, searchText: searchText) }
+
+    /// The checked-off items that match the search.
+    private var shownNotNeeded: [ShoppingItem] { ShoppingSearch.filter(model.notNeeded, searchText: searchText) }
 
     private var subtitle: String {
         guard model.hasLoaded else { return "" }
-        return ShoppingWords.listSubtitle(
-            model.list, granteeNames: model.granteeNames, toBuyCount: model.neededCount, total: model.estimatedTotal)
+        return ShoppingWords.listSubtitle(toBuyCount: model.neededCount, total: model.estimatedTotal)
     }
 
     // MARK: Items
@@ -353,12 +400,23 @@ struct ShoppingListScreen: View {
             // The shoppers line and the picker share one section, so the
             // list does not put a section's spacing between them.
             let shoppersLine = ShoppingWords.listShoppersLine(model.trips.openTrips(ofListId: listId, excludingUserId: app.ownUserId))
-            if shoppersLine != nil || !model.items.isEmpty {
+            let sharingLine = model.hasLoaded ? ShoppingWords.listSharingLine(model.list, granteeNames: model.granteeNames) : nil
+            if let resumableTrip = model.resumableTrip {
                 Section {
-                    if let shoppersLine {
-                        Text(verbatim: shoppersLine)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    ShoppingResumeRow(trip: resumableTrip) { _ = await model.resume(resumableTrip) }
+                }
+            }
+            if shoppersLine != nil || sharingLine != nil || !model.items.isEmpty {
+                Section {
+                    if shoppersLine != nil || sharingLine != nil {
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let sharingLine { Text(verbatim: sharingLine) }
+                            if let shoppersLine { Text(verbatim: shoppersLine) }
+                        }
+                        // A letter's overhang is not cut by the row's edge.
+                        .padding(.leading, 1)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                     }
                     if !model.items.isEmpty {
                         Picker("Group by", selection: $grouping) {
@@ -384,8 +442,8 @@ struct ShoppingListScreen: View {
                         tileGrid(placedToBuy)
                     }
                 }
-                if !model.notNeeded.isEmpty {
-                    Section("Not needed") {
+                if !shownNotNeeded.isEmpty {
+                    Section("Checked off") {
                         tileGrid(placedNotNeeded)
                     }
                 }
@@ -397,9 +455,9 @@ struct ShoppingListScreen: View {
                         groupHeader(group)
                     }
                 }
-                if !model.notNeeded.isEmpty {
-                    Section("Not needed") {
-                        ForEach(model.notNeeded) { item in row(item) }
+                if !shownNotNeeded.isEmpty {
+                    Section("Checked off") {
+                        ForEach(shownNotNeeded) { item in row(item) }
                     }
                 }
             }
@@ -440,8 +498,8 @@ struct ShoppingListScreen: View {
 
     private var groups: [ShoppingGroup] {
         switch grouping {
-        case .store: ShoppingGrouping.byStore(model.toBuy)
-        case .aisle: ShoppingGrouping.byAisle(model.toBuy)
+        case .store: ShoppingGrouping.byStore(shownToBuy)
+        case .aisle: ShoppingGrouping.byAisle(shownToBuy)
         }
     }
 
@@ -464,7 +522,7 @@ struct ShoppingListScreen: View {
 
     /// The items not needed now, each with its store and aisle.
     private var placedNotNeeded: [ShoppingPlacedItem] {
-        model.notNeeded.map { item in ShoppingPlacedItem(item: item, groupName: ShoppingWords.listItemPlace(item)) }
+        shownNotNeeded.map { item in ShoppingPlacedItem(item: item, groupName: ShoppingWords.listItemPlace(item)) }
     }
 
     /// Tiles in a grid that fills a section's one row, each with the store or
@@ -479,7 +537,7 @@ struct ShoppingListScreen: View {
 
     /// A tile has no swipe: Need again and Remove are in its menu.
     private func tile(_ item: ShoppingItem, groupName: String) -> some View {
-        ShoppingListItemTile(item: item, groupName: groupName) { editing = item }
+        ShoppingListItemTile(item: item, groupName: groupName, check: check(item)) { editing = item }
             .contextMenu {
                 if item.isNotNeeded {
                     Button("Need again", systemImage: "arrow.uturn.backward") { needingAgain = item }
@@ -498,7 +556,7 @@ struct ShoppingListScreen: View {
     }
 
     private func row(_ item: ShoppingItem) -> some View {
-        ShoppingListItemRow(item: item) { editing = item }
+        ShoppingListItemRow(item: item, check: check(item)) { editing = item }
             .swipeActions(edge: .leading) {
                 if item.isNotNeeded {
                     Button {
@@ -527,6 +585,16 @@ struct ShoppingListScreen: View {
             }
     }
 
+    /// An item's check: it moves to Checked off, or back, once the server
+    /// has it.
+    private func check(_ item: ShoppingItem) -> ShoppingRowCheck {
+        ShoppingRowCheck(isChecked: model.isChecked(item), isEnabled: model.canCheck(item)) {
+            Task {
+                await model.toggle(item)
+            }
+        }
+    }
+
     @ViewBuilder
     private var stateOverlay: some View {
         if let loadFailedText = model.loadFailedText, !model.hasLoaded {
@@ -537,6 +605,8 @@ struct ShoppingListScreen: View {
             ContentUnavailableView(
                 "Nothing on this list", systemImage: AppSection.shopping.systemImage,
                 description: Text("Add an item, or import a list from text or a picture."))
+        } else if isSearching && shownToBuy.isEmpty && shownNotNeeded.isEmpty {
+            ContentUnavailableView.search(text: searchText.trimmingCharacters(in: .whitespaces))
         }
     }
 
@@ -561,7 +631,7 @@ struct ShoppingListScreen: View {
     private var menu: some View {
         Menu {
             ShoppingLayoutPicker(layoutName: $layoutName)
-            if model.isShopping(ownUserId: app.ownUserId) {
+            if model.isShopping {
                 Button("Shop at a store", systemImage: "cart") { chooseStore() }
             }
             Button("Import", systemImage: "square.and.arrow.down") { isImporting = true }
@@ -594,17 +664,18 @@ struct ShoppingListScreen: View {
     private var floatingControls: some View {
         HStack(spacing: 12) {
             // There is no starting: the first item put in the cart starts the
-            // person's trip. Done shows once there is something to buy.
+            // person's trip. While they shop, Done opens their cart.
             Button {
-                if model.isShopping(ownUserId: app.ownUserId) {
-                    Task { await model.finish() }
+                if model.isShopping {
+                    isShowingCart = true
                 } else {
                     chooseStore()
                 }
             } label: {
                 Group {
-                    if model.isShopping(ownUserId: app.ownUserId) {
-                        Text("Done shopping")
+                    if model.isShopping {
+                        Text(verbatim: ShoppingWords.doneShoppingTitle(cartCount: model.ownCart.count))
+                            .contentTransition(.numericText())
                     } else {
                         Text("Shop at a store")
                     }
@@ -614,7 +685,7 @@ struct ShoppingListScreen: View {
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
             .controlSize(.large)
-            .disabled(model.neededCount == 0 && !model.isShopping(ownUserId: app.ownUserId))
+            .disabled(model.neededCount == 0 && !model.isShopping)
             .confirmationDialog("Where are you shopping?", isPresented: $isChoosingStore, titleVisibility: .visible) {
                 ForEach(model.storeChoices, id: \.self) { storeName in
                     Button(storeName) { open(storeName: storeName) }
@@ -677,6 +748,8 @@ struct ShoppingListScreen: View {
                 editing = model.items.first { $0.itemDescription == "Apples" }
             } else if DemoServer.screen == "shopping-import" {
                 isImporting = true
+            } else if DemoServer.screen == "shopping-list-search" {
+                searchText = "produce"
             } else if DemoServer.screen?.hasPrefix("shopping-add-") == true {
                 isAdding = true
             }

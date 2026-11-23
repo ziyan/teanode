@@ -20,6 +20,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** How long cards are on screen before they are reported read together, so scrolling past a screenful is one call (ios FeedModel.noteAppeared). */
 const val FEED_READ_DELAY_MS = 1_500L
@@ -106,6 +108,7 @@ class FeedModel(
     private val pendingReadFeedItemIds = LinkedHashSet<String>()
     private var readJob: Job? = null
     private var isLoading = false
+    private val loadMutex = Mutex()
 
     val hasLoaded: Boolean get() = list != null
 
@@ -115,7 +118,19 @@ class FeedModel(
 
     /** Reads the newest page again. What was shown stays when it cannot be read, and the cards past the first page are dropped. */
     suspend fun load() {
-        if (isLoading) return
+        if (loadMutex.isLocked) return
+        loadMutex.withLock { readNewestPage() }
+    }
+
+    /**
+     * The person pulled the list down: a read under way may have started before what they expect to see, so it is waited
+     * for and the feed is read once more, rather than the pull ending at once with nothing new.
+     */
+    suspend fun refresh() {
+        loadMutex.withLock { readNewestPage() }
+    }
+
+    private suspend fun readNewestPage() {
         isLoading = true
         try {
             show(AgentFeedList.first(readPage(null)))

@@ -111,6 +111,8 @@ class ShoppingTest {
             "shoppingLists" to "ListShoppingLists", "shoppingList" to "GetShoppingList", "shoppingItem" to "GetShoppingItem",
             "shoppingListShares" to "ListShoppingListShares", "shoppingStores" to "ListShoppingStores",
             "shoppingStoreItems" to "ListShoppingStoreItems", "openShoppingTrips" to "ListOpenShoppingTrips",
+            "resumableShoppingTrip" to "GetResumableShoppingTrip", "checkOffShoppingItem" to "CheckOffShoppingItem",
+            "resumeShopping" to "ResumeShopping",
             "shoppingItemPrices" to "ListShoppingItemPrices", "similarShoppingItems" to "ListSimilarShoppingItems",
             "shoppingReceiptMatches" to "ListShoppingReceiptMatches", "previewShoppingImport" to "PreviewShoppingImport",
             "createShoppingList" to "CreateShoppingList", "renameShoppingList" to "RenameShoppingList",
@@ -549,6 +551,27 @@ class ShoppingTest {
     }
 
     @Test
+    fun checkingOffResumingAndAskingForTheResumableTripSendTheirArguments() = runBlocking {
+        val answer = itemJson("item-1", "Pears")
+        val (checkingOff, checkOffFake) = connection("""{"data":{"CheckOffShoppingItem":$answer}}""")
+        assertEquals("item-1", checkingOff.checkOffShoppingItem("item-1", true).id)
+        assertEquals(text("item-1"), sentVariables(checkOffFake.sent[0])["shoppingItemId"])
+        assertEquals(JsonPrimitive(true), sentVariables(checkOffFake.sent[0])["isCheckedOff"])
+        assertTrue(sentQuery(checkOffFake.sent[0]).contains("CheckOffShoppingItem"))
+        val trip = """{"id":"trip-1","userId":"user-1","shopperName":"Robin","storeName":"Example Market","storeKey":"examplemarket","shoppingListIds":["list-1"],"startedAt":"2030-01-02T09:00:00Z","finishedAt":"2030-01-02T10:00:00Z","boughtItemCount":3}"""
+        val (resuming, resumeFake) = connection("""{"data":{"ResumeShopping":$trip}}""")
+        val resumed = resuming.resumeShopping("trip-1")
+        assertEquals(3, resumed.boughtItemCount)
+        assertEquals(text("trip-1"), sentVariables(resumeFake.sent[0])["shoppingTripId"])
+        val (asking, askFake) = connection("""{"data":{"GetResumableShoppingTrip":$trip}}""")
+        assertEquals("trip-1", asking.resumableShoppingTrip()?.id)
+        assertTrue(sentQuery(askFake.sent[0]).contains("GetResumableShoppingTrip"))
+        // None to resume is null, not a failure.
+        val (none, _) = connection("""{"data":{"GetResumableShoppingTrip":null}}""")
+        assertNull(none.resumableShoppingTrip())
+    }
+
+    @Test
     fun theStoreScreenAsksForTheListsIncludedAndAnyStore() = runBlocking {
         val (connection, fake) = connection(
             """{"data":{"ListShoppingStoreItems":{"storeName":"Example Market","isReminded":true,"shoppingItems":[],"shoppingLists":[],"shoppingTrips":[]}}}""",
@@ -632,4 +655,34 @@ class ShoppingTest {
         assertEquals(listOf("Example Market Express"), ShoppingStoreSuggestions.names("example market", stores))
         assertEquals(emptyList<String>(), ShoppingStoreSuggestions.names("zzz", stores))
     }
+
+    private fun searchItem(description: String, details: String = "", storeName: String = "", aisleName: String = "") =
+        ShoppingItem(id = "item", itemDescription = description, itemDetails = details, storeName = storeName, aisleName = aisleName)
+
+    @Test
+    fun blankSearchTextMatchesEverything() {
+        val item = searchItem("Apples")
+        assertTrue(ShoppingSearch.matches(item, ""))
+        assertTrue(ShoppingSearch.matches(item, "  \t "))
+    }
+
+    @Test
+    fun searchIgnoresCaseAndLooksInEveryField() {
+        val item = searchItem("Oat Milk", details = "unsweetened, barista", storeName = "Example Market", aisleName = "Dairy")
+        assertTrue(ShoppingSearch.matches(item, "OAT"))
+        assertTrue(ShoppingSearch.matches(item, "barista"))
+        assertTrue(ShoppingSearch.matches(item, "example mar"))
+        assertTrue(ShoppingSearch.matches(item, "dairy"))
+        assertFalse(ShoppingSearch.matches(item, "bread"))
+    }
+
+    @Test
+    fun searchNeedsEveryWordButNotInTheSameField() {
+        val item = searchItem("Oat Milk", storeName = "Example Market", aisleName = "Dairy")
+        assertTrue(ShoppingSearch.matches(item, "  milk   market "))
+        assertTrue(ShoppingSearch.matches(item, "dairy oat"))
+        assertFalse(ShoppingSearch.matches(item, "milk bakery"))
+        assertFalse(ShoppingSearch.matches(item, "mlik"))
+    }
 }
+

@@ -71,6 +71,9 @@ export interface ShoppingTrip {
   shoppingListIds: string[]
   startedAt: string
   finishedAt: string | null
+  // How many items the trip bought are still bought: what resuming it puts
+  // back in the cart.
+  boughtItemCount: number
 }
 
 export interface ShoppingStore {
@@ -186,7 +189,7 @@ export const SHOPPING_ITEM_FIELDS = `id shoppingListId listName itemDescription 
   lastBoughtAt picturePath pictureSource picturePageUrl pictureSearchedAt updatedAt`
 
 export const SHOPPING_TRIP_FIELDS = `id userId shopperName shopperUsername storeName storeKey shoppingListIds
-  startedAt finishedAt`
+  startedAt finishedAt boughtItemCount`
 
 // The most items one read of a list answers; a longer list is read in parts.
 export const SHOPPING_PAGE_SIZE = 500
@@ -315,6 +318,29 @@ export async function listShoppingStoreItems(
     shoppingLists: view.shoppingLists ?? [],
     shoppingTrips: view.shoppingTrips ?? [],
   }
+}
+
+// listOpenShoppingTrips is the trips open now on the lists the person
+// reaches, theirs and the others'.
+export async function listOpenShoppingTrips(signal?: AbortSignal): Promise<ShoppingTrip[]> {
+  const answer = await graphql<{ ListOpenShoppingTrips: ShoppingTrip[] | null }>(
+    `query { ListOpenShoppingTrips { ${SHOPPING_TRIP_FIELDS} } }`,
+    {},
+    signal,
+  )
+  return answer.ListOpenShoppingTrips ?? []
+}
+
+// getResumableShoppingTrip is the person's latest trip when it finished in
+// the last few hours and can be opened again; null when there is none, or
+// they are shopping now.
+export async function getResumableShoppingTrip(signal?: AbortSignal): Promise<ShoppingTrip | null> {
+  const answer = await graphql<{ GetResumableShoppingTrip: ShoppingTrip | null }>(
+    `query { GetResumableShoppingTrip { ${SHOPPING_TRIP_FIELDS} } }`,
+    {},
+    signal,
+  )
+  return answer.GetResumableShoppingTrip ?? null
 }
 
 // The items that read like what is about to be added, on this list and the
@@ -570,6 +596,23 @@ export async function checkShoppingItem(shoppingItemId: string, isChecked: boole
   )
 }
 
+// checkOffShoppingItem is the check on a list for somebody who is not
+// shopping: with true the item is bought now, with no trip started and
+// nobody told; with false it is needed again, and a purchase made a moment
+// ago is taken back.
+export async function checkOffShoppingItem(shoppingItemId: string, isCheckedOff: boolean): Promise<void> {
+  await graphql(
+    `
+      mutation ($shoppingItemId: String!, $isCheckedOff: Boolean!) {
+        CheckOffShoppingItem(shoppingItemId: $shoppingItemId, isCheckedOff: $isCheckedOff) {
+          id
+        }
+      }
+    `,
+    { shoppingItemId, isCheckedOff },
+  )
+}
+
 export async function setShoppingItemNeed(
   shoppingItemId: string,
   isNeeded: boolean,
@@ -666,6 +709,21 @@ export async function finishShopping(shoppingTripId?: string): Promise<void> {
       }
     `,
     { shoppingTripId: shoppingTripId || null },
+  )
+}
+
+// resumeShopping opens a trip finished by mistake again, with what it bought
+// back in the person's cart.
+export async function resumeShopping(shoppingTripId: string): Promise<void> {
+  await graphql(
+    `
+      mutation ($shoppingTripId: String!) {
+        ResumeShopping(shoppingTripId: $shoppingTripId) {
+          id
+        }
+      }
+    `,
+    { shoppingTripId },
   )
 }
 

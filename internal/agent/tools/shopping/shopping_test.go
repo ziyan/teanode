@@ -120,12 +120,12 @@ func TestTheRiskOfEachAction(t *testing.T) {
 		t.Errorf("the tool needs shopping:use and nothing else: %v", merged.Permissions)
 	}
 	risks := map[string]tools.Risk{}
-	for _, action := range []string{"lists", "list", "item", "similar_items", "shares", "stores", "store", "trips", "watched_stores", "prices", "receipt", "import_preview"} {
+	for _, action := range []string{"lists", "list", "item", "similar_items", "shares", "stores", "store", "trips", "resumable_trip", "watched_stores", "prices", "receipt", "import_preview"} {
 		risks[action] = tools.RiskRead
 	}
 	for _, action := range []string{
-		"create_list", "rename_list", "remind", "store_remind", "add_items", "update_item", "check", "uncheck", "need", "not_needed", "out_of_stock",
-		"price", "find_picture", "start_shopping", "finish_shopping", "match_receipt", "decide_match", "match_line", "undo_receipt", "add_from_receipt",
+		"create_list", "rename_list", "remind", "store_remind", "add_items", "update_item", "check", "uncheck", "check_off", "undo_check_off", "need", "not_needed", "out_of_stock",
+		"price", "find_picture", "start_shopping", "finish_shopping", "resume_shopping", "match_receipt", "decide_match", "match_line", "undo_receipt", "add_from_receipt",
 	} {
 		risks[action] = tools.RiskWrite
 	}

@@ -1012,10 +1012,10 @@ the provider is busy instead. Photon is for a server you run yourself. The
 address must be https; plain http is accepted only for localhost and private
 addresses.
 
-**`mapStyleUrl`**: The address of the map style the dashboard draws its maps
-from, fetched through the server so that a viewer's browser talks to nothing
-else; the map host sees this server's address and the tiles it asks for, never
-a person. The default is OpenFreeMap's `liberty` style. The same address rules
+**`mapStyleUrl`**: The address of the map style the dashboard and the Android
+app draw their maps from, fetched through the server so that a viewer's browser
+or phone talks to nothing else; the map host sees this server's address and the
+tiles it asks for, never a person. The default is OpenFreeMap's `liberty` style. The same address rules
 apply. Only accounts that may use Location are served, up to 600 files a minute
 each.
 

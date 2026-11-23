@@ -11,6 +11,16 @@ final class ConversationSendTests: XCTestCase {
         XCTAssertEqual(transcript.lines.map(\.id), [secondLineId])
     }
 
+    func testAPendingMessageShowsWhatItAsksAboutAndWhatItReplies() {
+        var transcript = Transcript(messages: [])
+        let mail = AgentReference(itemId: "item-1", threadId: "thread-1", subject: "A notice", from: "sender@example.com")
+        let reply = AgentReference(agentMessageId: "message-1", quotedRole: "assistant", quotedText: "An earlier answer")
+        transcript.addSent("Why is this here?", references: [reply, mail])
+        XCTAssertEqual(transcript.lines.first?.references, [mail])
+        XCTAssertEqual(transcript.lines.first?.quotedText, "An earlier answer")
+        XCTAssertEqual(transcript.lines.first?.quotedRole, "assistant")
+    }
+
     func testAFeedConfirmationKeepsOtherPendingMessages() {
         var transcript = Transcript(messages: [])
         let firstLineId = transcript.addSent("First request")

@@ -97,10 +97,11 @@ dependencies {
     implementation(libs.androidx.camera.view)
     implementation(libs.zxing.core)
     implementation(libs.kotlinx.coroutines.android)
-    // Location and Health: the fused location provider and geofences, Health Connect, an API-key-free map.
+    // Location and Health: the fused location provider and geofences, Health Connect, and the map, drawn from the files
+    // the person's own server serves.
     implementation(libs.play.services.location)
     implementation(libs.health.connect.client)
-    implementation(libs.osmdroid.android)
+    implementation(libs.maplibre.android)
 
     implementation(libs.androidx.core)
     implementation(libs.androidx.core.telecom)

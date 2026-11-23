@@ -37,6 +37,9 @@ final class FeedModel {
 
     private var nextCursor: String?
     private var isLoading = false
+    /// The read of the newest page under way, which a second caller waits
+    /// for instead of starting another.
+    private var loadTask: Task<Void, Never>?
     /// The hearts the person just pressed, shown before the server answers.
     private var likedOverrides: [String: Bool] = [:]
     /// The cards the server has been told were read, so they are not sent
@@ -69,9 +72,31 @@ final class FeedModel {
 
     /// Reads the newest page again. What was shown stays when it cannot be
     /// read, and the cards past the first page are dropped: the person
-    /// scrolls to them again.
+    /// scrolls to them again. A call while a read is under way waits for
+    /// that read rather than returning at once: the live stream reads the
+    /// feed again every few seconds while a coding session works, and a
+    /// pull to refresh that returned at once left the page stuck pulled
+    /// down.
     func load() async {
-        guard !isLoading else { return }
+        if let loadTask {
+            await loadTask.value
+            return
+        }
+        let task = Task { await readNewestPage() }
+        loadTask = task
+        await task.value
+        loadTask = nil
+    }
+
+    /// The person pulled the page down: a read under way may have started
+    /// before what they expect to see, so it is waited for and the feed is
+    /// read once more.
+    func refresh() async {
+        if let loadTask { await loadTask.value }
+        await load()
+    }
+
+    private func readNewestPage() async {
         isLoading = true
         defer { isLoading = false }
         do {
@@ -453,7 +478,7 @@ struct FeedList: View {
         }
         .scrollBounceBehavior(.always)
         .overlay { placeholder }
-        .refreshable { await model.load() }
+        .refreshable { await model.refresh() }
         .task { await model.loadFirstIfNeeded() }
         // While a card waits for the agent to say how its answer went, the
         // feed is read every few seconds; the live stream says the same

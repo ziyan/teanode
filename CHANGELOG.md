@@ -6,6 +6,84 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.231.0] - 2026-11-23
+
+### Added
+
+- Shopping lists have a check on each item: checking off without shopping buys it now, with no trip and no notice to the others, and unchecking soon after takes it back. (#773)
+- Done shopping shows the cart first, with Snap the receipt and a confirmed Finish without a receipt. (#773)
+- A trip finished by mistake can be resumed for three hours, with what it bought back in the cart. (#773)
+- A shopping list can be searched by the words of its items, their store or aisle, in the apps, the dashboard, the CLI (`teanode shopping show --search`) and the agent. (#773)
+
+### Changed
+
+- On the store screen, items in a cart move to an "In the cart" section at the bottom, and Done shopping shows how many items are in the cart. (#773)
+- A receipt snapped at Done still records prices for what Done just bought. (#773)
+
+## [0.230.10] - 2026-11-23
+
+### Fixed
+
+- iPhone and Android: a message that asks about a mail, file, photo, recording or transaction shows it above the message while the agent is still answering. (#767)
+
+## [0.230.9] - 2026-11-23
+
+### Fixed
+
+- Pulling the Feed down to refresh no longer leaves the page stuck pulled down on the iPhone. (#780)
+
+## [0.230.8] - 2026-11-23
+
+### Fixed
+
+- iPhone: at the largest text sizes, the agenda in a brief card shows each time whole instead of breaking it across lines. (#776)
+
+## [0.230.7] - 2026-11-23
+
+### Changed
+
+- A mail, memory page, transaction, recording or photo shown above a message you sent opens when you tap it, on the dashboard, iPhone and Android. (#771)
+
+### Fixed
+
+- On the iPhone and Android, the setting that keeps a subscription's mail out of the Inbox is called "Keep out of the Inbox" instead of "Mute". (#770)
+
+## [0.230.6] - 2026-11-23
+
+### Security
+
+- The server is built with Go 1.26.11, which fixes a flaw in its HTTP handling. (#759)
+
+## [0.230.5] - 2026-11-23
+
+### Fixed
+
+- The agent's nightly look for ideas reads your mail and calendar again when it also remembers things from recorded meetings. (#769)
+
+## [0.230.4] - 2026-11-23
+
+### Changed
+
+- The dashboard's button that opens the chat drawer shows a chat bubble. (#768)
+
+## [0.230.3] - 2026-11-23
+
+### Fixed
+
+- Mail forwarded from Gmail is no longer refused when its sender signs from a subdomain, lists signed headers twice, or sends from a no-reply domain with no mail servers. (#766)
+
+## [0.230.2] - 2026-11-23
+
+### Fixed
+
+- Android testers can install every new build: build numbers only grow. (#760)
+
+## [0.230.1] - 2026-11-23
+
+### Changed
+
+- The Android app draws its maps from your TeaNode server, like the dashboard, using the map style in the server's places settings. The phone no longer asks OpenStreetMap for map tiles itself. (#774)
+
 ## [0.230.0] - 2026-11-23
 
 ### Added

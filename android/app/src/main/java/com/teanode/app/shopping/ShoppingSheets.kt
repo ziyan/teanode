@@ -93,18 +93,24 @@ internal fun ShoppingSheet(
     confirmLabel: String? = null,
     isConfirmEnabled: Boolean = true,
     onConfirm: (() -> Unit)? = null,
+    dismissLabel: String = stringResource(R.string.shopping_cancel),
+    footer: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val body: @Composable () -> Unit = {
         Column(modifier.fillMaxWidth().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.shopping_cancel)) }
+                TextButton(onClick = onDismiss) { Text(dismissLabel) }
                 Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 if (confirmLabel != null && onConfirm != null) TextButton(onClick = onConfirm, enabled = isConfirmEnabled) { Text(confirmLabel) }
                 else Spacer(Modifier.padding(horizontal = 24.dp))
             }
             HorizontalDivider()
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
+            if (footer != null) {
+                HorizontalDivider()
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { footer() }
+            }
         }
     }
     if (LocalShoppingSheetsInline.current) {

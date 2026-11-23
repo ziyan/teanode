@@ -263,6 +263,10 @@ type ShoppingTrip struct {
 	// Who is shopping, for the others.
 	ShopperUsername string `json:"shopperUsername"`
 	ShopperName     string `json:"shopperName"`
+
+	// How many items the trip bought are still bought: what resuming it puts
+	// back in the cart. Zero while it is open.
+	BoughtItemCount int `json:"boughtItemCount"`
 }
 
 // ShoppingStore is a store some of the reader's items are for, with how many
@@ -278,3 +282,16 @@ type ShoppingStore struct {
 // taken as over: a new trip on one of its lists finishes it, and what it had
 // in the cart is bought.
 const ShoppingTripStaleAfter = 6 * time.Hour
+
+// ShoppingPurchaseUndoableFor is how long after a purchase it can be taken
+// back: a finished trip resumed (what it bought goes back in the cart), or an
+// item checked off on its list unchecked (it is needed again, last bought
+// when it was before). Later, a trip is over, and an item unchecked is needed
+// again having been bought.
+const ShoppingPurchaseUndoableFor = 3 * time.Hour
+
+// ShoppingReceiptBoughtWithin is how recently an item bought must have been
+// bought for a receipt to still be matched to it: a receipt snapped as the
+// shopper finishes is read after their Done has bought the cart, and its
+// prices still belong to those items.
+const ShoppingReceiptBoughtWithin = 12 * time.Hour

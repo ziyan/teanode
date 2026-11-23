@@ -29,6 +29,7 @@ Logic is in `android/kit` (`com.teanode.kit.finance`, `com.teanode.kit.shopping`
 | ShoppingViews.swift: add item sheet (similar items, store suggestions, "is it one of these"), need again | ShoppingSheets | done |
 | ShoppingStoreViews.swift: store screen, lists switches, cart progress, out of stock, reminder, receipt scan, Done | ShoppingStoreScreen | done (long press on a row opens the out of stock menu) |
 | ShoppingItemViews.swift: rows, tiles, picture, item sheet, price chart, prices | ShoppingComponents, ShoppingItemSheet | done (tap a picture) |
+| Shopping flow: a check on every list row (bought now when not shopping), Your cart sheet at Done (snap the receipt or finish without), Resume row on home, list and store, "In the cart" section and Done count at the store, "Shopping at" row on home | ShoppingListScreen, ShoppingCartSheet, ShoppingStoreScreen, ShoppingSection, ShoppingComponents | done |
 | ShoppingReceiptViews.swift | ShoppingReceiptSheet | done (swipes became buttons) |
 | ShoppingImportViews.swift | ShoppingImportSheet | done |
 | ShoppingShareViews.swift | ShoppingShareSheet | done (no link to the circles screen, which is Settings') |

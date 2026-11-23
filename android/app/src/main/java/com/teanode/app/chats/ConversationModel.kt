@@ -570,7 +570,6 @@ class ConversationModel(
         isSending = true
         uploadingFileIds = sendingIds
         uploadedFileIds = emptySet()
-        val reply = replyingTo
         val referring = references
         // In a chat, which agents the message is for: those chosen from the @ whose names are still in it, and the agent of a message it replies to.
         val addressed = addressedAgentIds(text)
@@ -592,7 +591,7 @@ class ConversationModel(
             pendingFiles = pendingFiles.filter { file -> file.id !in sendingIds }
             // A chat takes files with no words; a turn with the agent needs something to read.
             val message = if (text.isEmpty() && !isChat) "(files)" else text
-            sentLineId = current.addSent(message, attachments, reply, ownAuthor())
+            sentLineId = current.addSent(message, attachments, referring, ownAuthor())
             publish()
             val asked = connection.ask(
                 message, conversationId, environment.drawerId, attachmentIds = attachments.map { attachment -> attachment.id }, references = referring,
@@ -678,7 +677,6 @@ class ConversationModel(
         failedRecording = null
         voiceProblemText = null
         isSending = true
-        val reply = replyingTo
         val referring = references
         var sentLineId: String? = null
         try {
@@ -686,7 +684,7 @@ class ConversationModel(
             val id = connection.upload(VOICE_MESSAGE_NAME, "audio/mp4", data, isVoiceMessage = true)
             val attachment = AgentAttachment(id, VOICE_MESSAGE_NAME, "audio/mp4", data.size, audioDurationMS = (recording.durationSeconds * 1000).toLong())
             references = emptyList()
-            sentLineId = current.addSent("", listOf(attachment), reply, ownAuthor(), isVoiceMessage = true)
+            sentLineId = current.addSent("", listOf(attachment), referring, ownAuthor(), isVoiceMessage = true)
             publish()
             val asked = connection.ask("", conversationId, environment.drawerId, references = referring, voiceMessageAttachmentId = id)
             confirmSoon(sentLineId)

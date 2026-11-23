@@ -56,7 +56,9 @@ it('groups the store screen by aisle, with the items for any store last', () => 
     shoppingItem({ id: '2', storeName: '', storeKey: '', aisleName: 'Frozen' }),
     shoppingItem({ id: '3', aisleName: 'Snacks' }),
   ])
-  expect(groups.map((group) => [group.aisleName, group.isAnyStore, group.shoppingItems.map((item) => item.id)])).toEqual([
+  expect(
+    groups.map((group) => [group.aisleName, group.isAnyStore, group.shoppingItems.map((item) => item.id)]),
+  ).toEqual([
     ['Frozen', false, ['1']],
     ['Snacks', false, ['3']],
     ['', true, ['2']],

@@ -2,7 +2,9 @@ import { initialOf } from '../../components/avatar'
 import { Tag } from '../../components/common'
 import { ZoomablePicture } from '../../components/lightbox'
 import { useTranslation } from '../../i18n/i18n'
+import { useSession } from '../../session'
 import { ShoppingItem } from './shoppingApi'
+import { isInOtherCart } from './shoppingItems'
 
 // The pieces of an item that more than one part of the Shopping page draws.
 
@@ -48,6 +50,7 @@ const PICTURE_CLASS_NAMES = {
 // muted text, and the tags that say what is special about it.
 export function ShoppingItemName({ item, listName }: { item: ShoppingItem; listName?: string }) {
   const { t } = useTranslation()
+  const session = useSession()
   return (
     <div className="shopping-item-name">
       <div className="shopping-item-description">
@@ -57,6 +60,37 @@ export function ShoppingItemName({ item, listName }: { item: ShoppingItem; listN
       </div>
       {item.itemDetails ? <div className="muted">{item.itemDetails}</div> : null}
       {listName ? <div className="muted">{listName}</div> : null}
+      {isInOtherCart(item, session.userId) ? (
+        <div className="muted">{t('shopping.inCartOf', { shopperName: item.cartedByName })}</div>
+      ) : null}
     </div>
+  )
+}
+
+// ShoppingCheck is the round check at the start of an item's row. The whole
+// label is the tap target (44 pixels), the circle is drawn inside it, and a
+// checked one is filled. It stays a real checkbox, for the keyboard and for
+// screen readers.
+export function ShoppingCheck({
+  isChecked,
+  isDisabled = false,
+  label,
+  onChange,
+}: {
+  isChecked: boolean
+  isDisabled?: boolean
+  label: string
+  onChange: (isChecked: boolean) => void
+}) {
+  return (
+    <label className="shopping-check">
+      <input
+        type="checkbox"
+        checked={isChecked}
+        disabled={isDisabled}
+        aria-label={label}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+    </label>
   )
 }

@@ -150,6 +150,6 @@ The release key is the project's own and is never committed (`*.jks` is ignored)
 google-services plugin is applied only when `app/google-services.json` exists (also ignored), so a clean checkout builds
 and runs with push off. Testers get signed builds through Firebase App Distribution, sent from a person's machine
 (it holds the key) with `android/scripts/distribute.sh "release notes"`, or `distribute-integration.sh` for the
-integration branch; the build number is the commit count, passed as `-PteanodeVersionCode`. CI
+integration branch; the build number is the minutes since 2026-01-01 (UTC), so it only grows whatever the history does, passed as `-PteanodeVersionCode`. CI
 (`.github/workflows/android.yml`) runs the tests and the screenshots on every pull request that touches `android/` and
 keeps the pictures as the `android-screenshots` artifact.
