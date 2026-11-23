@@ -374,12 +374,18 @@
                 json = #"{"data":{"\#(name)":\#((variables["photoIds"] as? [Any])?.count ?? 0)}}"#
             } else if body.contains("RetryPhotoProcessing") {
                 json = #"{"data":{"RetryPhotoProcessing":1}}"#
-            } else if body.contains("ListPhotos") {
+            } else if body.contains("ListPhotos") || body.contains("CountPhotos") {
                 let isTrashed = variables["isTrashed"] as? Bool == true
                 let isFavorite = variables["isFavorite"] as? Bool == true
                 // Photos of other people are seen only through the album that shares them.
                 let isAlbumAsked = variables["albumId"] is String
-                let isWindowAsked = variables["takenAfter"] is String || variables["takenBefore"] is String
+                // A visit's photos are seen only through the visit's own short window, not through a month or a year.
+                var isWindowAsked = false
+                if let after = (variables["takenAfter"] as? String).flatMap({ ServerTime.date($0) }),
+                    let before = (variables["takenBefore"] as? String).flatMap({ ServerTime.date($0) })
+                {
+                    isWindowAsked = before.timeIntervalSince(after) < 86_400
+                }
                 var chosen = demoPhotos.filter { $0.isTrashed == isTrashed && (isAlbumAsked || !$0.isForeign) && (isWindowAsked || !$0.isVisitOnly) }
                 if isFavorite { chosen = chosen.filter(\.isFavorite) }
                 if let photoKind = variables["photoKind"] as? String { chosen = chosen.filter { $0.kind == photoKind } }
@@ -414,9 +420,16 @@
                 if let words = variables["searchText"] as? String, !words.isEmpty {
                     chosen = demoPhotos.filter { !$0.isTrashed && !$0.isForeign && !$0.isVisitOnly && ($0.placeName.localizedCaseInsensitiveContains(words) || $0.id.localizedCaseInsensitiveContains(words)) }
                 }
-                // Everything fits in one page, so a page after it is empty.
-                if isEmpty || variables["beforePhotoId"] is String { chosen = [] }
-                json = #"{"data":{"ListPhotos":["# + chosen.map { photoJSON($0) }.joined(separator: ",") + "]}}"
+                if isEmpty { chosen = [] }
+                if body.contains("CountPhotos") {
+                    json = #"{"data":{"CountPhotos":\#(chosen.count)}}"#
+                } else {
+                    // A page starts `offset` photos from the newest, as the server's does.
+                    let offset = variables["offset"] as? Int ?? 0
+                    let pageSize = variables["pageSize"] as? Int ?? 200
+                    chosen = Array(chosen.dropFirst(offset).prefix(pageSize))
+                    json = #"{"data":{"ListPhotos":["# + chosen.map { photoJSON($0) }.joined(separator: ",") + "]}}"
+                }
             } else if body.contains("ReadPhotoPlace") {
                 json = #"{"data":{"ReadPhotoPlace":\#(photoPositionPlaceJSON(photoId: variables["photoId"] as? String ?? ""))}}"#
             } else if body.contains("ReadPhoto") {

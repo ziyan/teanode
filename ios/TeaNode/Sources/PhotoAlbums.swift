@@ -592,7 +592,7 @@ struct PhotoAlbumScreen: View {
     private var key: PhotoListKey { .album(albumId) }
     private var album: PhotoAlbum? { model.albums?.first { $0.id == albumId } }
     private var photos: [Photo] { model.photos(in: key) }
-    private var selectedPhotos: [Photo] { photos.filter { selectedPhotoIds.contains($0.id) } }
+    private var selectedPhotos: [Photo] { model.photos(withIds: selectedPhotoIds, in: key) }
 
     var body: some View {
         content
@@ -647,6 +647,7 @@ struct PhotoAlbumScreen: View {
     private func endSelection() {
         isSelecting = false
         selectedPhotoIds = []
+        model.forgetChosenPhotos()
     }
 
     @ToolbarContentBuilder
@@ -659,7 +660,7 @@ struct PhotoAlbumScreen: View {
                 model: model, selectedPhotos: selectedPhotos, listKey: key, scope: .album, album: album, isConfirmingTrash: $isConfirmingTrashOfSelection,
                 onEnd: endSelection)
         } else {
-            if !photos.isEmpty {
+            if model.listing(key)?.isEmpty == false {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Select", systemImage: "checkmark.circle") { isSelecting = true }
                 }
@@ -705,7 +706,7 @@ struct PhotoAlbumScreen: View {
     @ViewBuilder
     private var content: some View {
         if let listing = model.listing(key) {
-            if listing.photos.isEmpty {
+            if listing.isEmpty {
                 ScrollView {
                     ContentUnavailableView {
                         Label("No photos in this album", systemImage: "rectangle.stack")

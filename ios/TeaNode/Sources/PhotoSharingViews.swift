@@ -633,7 +633,7 @@ struct PhotoPickerSheet: View {
 
     private let key = PhotoListKey.library
 
-    private var selectedPhotos: [Photo] { model.photos(in: key).filter { selectedPhotoIds.contains($0.id) } }
+    private var selectedPhotos: [Photo] { model.photos(withIds: selectedPhotoIds, in: key) }
 
     var body: some View {
         NavigationStack {
@@ -660,7 +660,7 @@ struct PhotoPickerSheet: View {
     @ViewBuilder
     private var content: some View {
         if let listing = model.listing(key) {
-            if listing.photos.isEmpty {
+            if listing.isEmpty {
                 ScrollView {
                     ContentUnavailableView {
                         Label("No photos yet", systemImage: "photo.on.rectangle")

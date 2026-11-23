@@ -448,7 +448,7 @@ struct PhotoPersonScreen: View {
 
     private var key: PhotoListKey { .faceGroup(photoFaceGroupId) }
     private var photos: [Photo] { model.photos(in: key) }
-    private var selectedPhotos: [Photo] { photos.filter { selectedPhotoIds.contains($0.id) } }
+    private var selectedPhotos: [Photo] { model.photos(withIds: selectedPhotoIds, in: key) }
     /// The group as the model has it, which is newer than the one read here
     /// once the person has changed something from another screen.
     private var current: PhotoFaceGroup? { model.faceGroups?.first { $0.id == photoFaceGroupId } ?? group }
@@ -505,6 +505,7 @@ struct PhotoPersonScreen: View {
     private func endSelection() {
         isSelecting = false
         selectedPhotoIds = []
+        model.forgetChosenPhotos()
     }
 
     /// Reads the person. The photos below have their own failure text; this is
@@ -532,7 +533,7 @@ struct PhotoPersonScreen: View {
             PhotoSelectionToolbar(
                 model: model, selectedPhotos: selectedPhotos, listKey: key, scope: .album, isConfirmingTrash: $isConfirmingTrashOfSelection, onEnd: endSelection)
         } else {
-            if !photos.isEmpty {
+            if model.listing(key)?.isEmpty == false {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Select", systemImage: "checkmark.circle") { isSelecting = true }
                 }
@@ -564,7 +565,7 @@ struct PhotoPersonScreen: View {
     @ViewBuilder
     private var content: some View {
         if let listing = model.listing(key) {
-            if listing.photos.isEmpty {
+            if listing.isEmpty {
                 ScrollView {
                     ContentUnavailableView {
                         Label("No photos of this person", systemImage: "person.crop.circle")

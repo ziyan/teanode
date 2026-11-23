@@ -102,91 +102,93 @@ enum PhotoListKey: Hashable {
         if case .search = self { return true }
         return false
     }
+
+    /// The list as the server reads it by place; nil for a search, which is
+    /// answered whole and ranked.
+    var listQuery: PhotoListQuery? {
+        switch self {
+        case .collection(let collection): PhotoListQuery(collection: collection)
+        case .filtered(let collection, let filter): PhotoListQuery(collection: collection, filter: filter)
+        case .album(let albumId): PhotoListQuery(albumId: albumId)
+        case .faceGroup(let photoFaceGroupId): PhotoListQuery(photoFaceGroupId: photoFaceGroupId)
+        case .search: nil
+        }
+    }
+
+    /// Whether the whole list is read at once and held: a search is ranked and
+    /// the Trash is laid out in days, and both layouts need every photo. Every
+    /// other list is read a page at a time as it is scrolled.
+    var isReadWhole: Bool { isSearch || photoCollection == .trash }
 }
 
-/// PhotoListing is one list of the library as far as it has been read, with
-/// its photos grouped in days.
+/// PageRead is one page of one list, for telling the pages being read apart.
+private struct PageRead: Hashable {
+    let key: PhotoListKey
+    let pageIndex: Int
+}
+
+/// PhotoMove is a photo whose date was changed, and the place in its list that
+/// the new date gave it.
+struct PhotoMove: Equatable {
+    let listKey: PhotoListKey
+    let photoId: String
+    let place: Int
+}
+
+/// PhotoListing is one list of the library as far as it has been read: how many
+/// photos it has, and the pages of them near what is on screen (see
+/// PhotoWindow). A search and the Trash are read whole.
 struct PhotoListing {
-    private(set) var photos: [Photo]
-    private(set) var days: [PhotoDay]
-    /// Whether another page may follow what has been read.
-    private(set) var hasMore: Bool
+    private(set) var window: PhotoWindow
     /// Whether the photos are ranked by how well they match a search, and so
     /// are laid out in that order in one group, not in days.
     let isRanked: Bool
-    var isLoadingPage = false
-    /// The photo the next page is asked for after. It is the last photo of the
-    /// page read last, which is not the last of `photos` once a photo has been
-    /// given another date (see `place`).
-    private(set) var pageCursorPhotoId: String?
-    /// Whether a photo was placed after every photo held while more are still
-    /// to be read, so the photos are put in order again when the next page
-    /// is added.
-    private var isOutOfOrder = false
+    /// Counts each change that moves photos to other places, so that a page
+    /// read before the change is not put in after it.
+    private(set) var changeCount = 0
 
-    init(photos: [Photo], hasMore: Bool, isRanked: Bool = false) {
-        self.photos = photos
+    init(window: PhotoWindow, isRanked: Bool = false) {
+        self.window = window
         self.isRanked = isRanked
-        self.days = isRanked ? PhotoTimeline.rankedDay(photos) : PhotoTimeline.days(photos)
-        self.hasMore = hasMore
-        self.pageCursorPhotoId = photos.last?.id
     }
 
-    private mutating func layOut() {
-        days = isRanked ? PhotoTimeline.rankedDay(photos) : PhotoTimeline.days(photos)
+    /// A list of just these photos, all of it held.
+    init(photos: [Photo], isRanked: Bool = false) {
+        self.init(window: PhotoWindow(whole: photos), isRanked: isRanked)
     }
 
-    mutating func append(_ page: [Photo]) {
-        photos = PhotoPaging.appending(page, to: photos)
-        if isOutOfOrder {
-            photos = PhotoTimeline.sorted(photos)
-            isOutOfOrder = false
-        }
-        if let last = page.last { pageCursorPhotoId = last.id }
-        layOut()
-        hasMore = PhotoPaging.hasMore(afterPageOf: page.count)
+    var totalCount: Int { window.totalCount }
+    var isEmpty: Bool { window.totalCount == 0 }
+
+    /// The photos held, newest first: all of them for a list read whole, the
+    /// ones on the pages near the screen for any other.
+    var photos: [Photo] { window.heldPhotos }
+
+    func photo(at place: Int) -> Photo? { window.photo(at: place) }
+
+    mutating func setPage(_ photos: [Photo], at pageIndex: Int) { window.setPage(photos, at: pageIndex) }
+
+    mutating func release(_ pageIndexes: [Int]) { window.release(pageIndexes) }
+
+    mutating func markStale(_ pageIndexes: [Int]) { window.markStale(pageIndexes) }
+
+    /// Takes the count the server gave, and says that what is held may be out
+    /// of date.
+    mutating func setTotalCount(_ count: Int) {
+        window.setTotalCount(count)
+        window.markAllStale()
+        changeCount += 1
     }
 
     /// Puts a photo as the server now has it in place of the one held.
-    mutating func replace(_ photo: Photo) {
-        guard let index = photos.firstIndex(where: { $0.id == photo.id }) else { return }
-        photos[index] = photo
-        layOut()
-    }
+    mutating func replace(_ photo: Photo) { window.replace(photo) }
 
-    /// Puts a photo whose date was changed, as the server now has it, where
-    /// that date puts it among the photos held, and regroups the days. The
-    /// list is not read again: that would lose the photo from the page it was
-    /// on, and the viewer paging through it with it.
-    mutating func place(_ photo: Photo) {
-        guard !isRanked else {
-            replace(photo)
-            return
-        }
-        let placement = PhotoPlacement.place(photo, in: photos, pageCursorPhotoId: pageCursorPhotoId, hasMore: hasMore)
-        photos = placement.photos
-        pageCursorPhotoId = placement.pageCursorPhotoId
-        if placement.isBeyondHeldPhotos { isOutOfOrder = true }
-        layOut()
-    }
-
-    /// Puts the photos of a page just read in place of the ones held, for
-    /// those that are held, and leaves the rest.
-    mutating func replaceHeld(by page: [Photo]) {
-        let newest = Dictionary(page.map { ($0.id, $0) }, uniquingKeysWith: { _, second in second })
-        photos = photos.map { newest[$0.id] ?? $0 }
-        layOut()
-    }
+    /// Says that every page held may be out of date.
+    mutating func markAllStale() { window.markAllStale() }
 
     mutating func remove(_ photoIds: Set<String>) {
-        // The next page cannot be asked for after a photo that is gone: it
-        // follows the last photo before it that is left.
-        if let cursor = pageCursorPhotoId, photoIds.contains(cursor) {
-            let cursorIndex = photos.firstIndex { $0.id == cursor } ?? photos.count
-            pageCursorPhotoId = photos[..<cursorIndex].last { !photoIds.contains($0.id) }?.id
-        }
-        photos.removeAll { photoIds.contains($0.id) }
-        layOut()
+        window.remove(photoIds)
+        changeCount += 1
     }
 }
 
@@ -240,6 +242,25 @@ final class PhotosModel {
     private var doneButtonsText: String?
     /// The title being asked for, by an alert on whichever screen raised it.
     var albumTitleRequest: AlbumTitleRequest?
+    /// The photo whose date was changed and the place in its list where the new
+    /// date put it, for a viewer paging through that list to follow it. The
+    /// viewer clears it once it has gone there.
+    var movedPhoto: PhotoMove?
+    /// Changes whenever what the Years and Months have read may be out of date,
+    /// for them to read again.
+    private(set) var overviewVersion = 0
+    /// The place in each list that was last on screen, which the pages to read
+    /// and to let go of are counted from.
+    @ObservationIgnored private var focusPlaces: [PhotoListKey: Int] = [:]
+    /// The pages being read now, so that no page is read twice at once.
+    @ObservationIgnored private var pageReadsInFlight: Set<PageRead> = []
+    /// The lists being counted again after a page came back with other photos
+    /// than the count said.
+    @ObservationIgnored private var recountingKeys: Set<PhotoListKey> = []
+    /// The photos chosen in Select mode, by id: a chosen photo may be on a page
+    /// that was let go of since, and the action still needs it.
+    @ObservationIgnored private var chosenPhotos: [String: Photo] = [:]
+    @ObservationIgnored private var overviewReaders: [PhotoListKey: PhotoOverviewReader] = [:]
 
     init(connection: Connection) {
         self.connection = connection
@@ -260,7 +281,7 @@ final class PhotosModel {
     /// Makes a list of just these photos, for a viewer opened on photos the
     /// lists were not read for, such as one the agent showed in a conversation.
     func hold(_ photos: [Photo], as key: PhotoListKey) {
-        listings[key] = PhotoListing(photos: photos, hasMore: false)
+        listings[key] = PhotoListing(photos: photos)
     }
 
     func listing(_ key: PhotoListKey) -> PhotoListing? { listings[key] }
@@ -293,15 +314,38 @@ final class PhotosModel {
 
     /// Forgets a list that has been read, so that it is read again when it is
     /// next shown.
-    func forgetListing(_ key: PhotoListKey) { listings[key] = nil }
+    func forgetListing(_ key: PhotoListKey) {
+        listings[key] = nil
+        forgetOverviews()
+    }
 
     /// Forgets every list that has been read and matches.
     func forgetListings(where matches: (PhotoListKey) -> Bool) {
-        for key in Array(listings.keys) where matches(key) { listings[key] = nil }
+        let keys = listings.keys.filter(matches)
+        for key in keys { listings[key] = nil }
+        if !keys.isEmpty { forgetOverviews() }
     }
+
+    /// The photos of a list that are held, newest first.
     func photos(in key: PhotoListKey) -> [Photo] { listings[key]?.photos ?? [] }
     func failureText(_ key: PhotoListKey) -> String? { failureTexts[key] }
-    func hasWaitingPhotos(in key: PhotoListKey) -> Bool { photos(in: key).contains { $0.isWaiting } }
+    func hasWaitingPhotos(in key: PhotoListKey) -> Bool { listings[key]?.window.pageIndexesWithWaitingPhotos.isEmpty == false }
+
+    /// Remembers a photo chosen in Select mode.
+    func choose(_ photo: Photo) { chosenPhotos[photo.id] = photo }
+
+    /// Lets go of the photos remembered when Select mode ends.
+    func forgetChosenPhotos() { chosenPhotos = [:] }
+
+    /// The photos with these ids: as the list holds them when it does, else as
+    /// they were when chosen.
+    func photos(withIds photoIds: Set<String>, in key: PhotoListKey) -> [Photo] {
+        guard !photoIds.isEmpty else { return [] }
+        var found = (listings[key]?.photos ?? []).filter { photoIds.contains($0.id) }
+        let foundIds = Set(found.map(\.id))
+        found += photoIds.subtracting(foundIds).compactMap { chosenPhotos[$0] }
+        return found
+    }
 
     func loadLibrary() async {
         library = try? await connection.photoLibrary()
@@ -320,33 +364,65 @@ final class PhotosModel {
         library?.isFaceRecognitionAvailable == true || !(faceGroups ?? []).isEmpty || hasHiddenPeople
     }
 
-    private func fetchPage(_ key: PhotoListKey, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
-        switch key {
-        case .collection(let collection):
-            return try await connection.photos(in: collection, beforePhotoId: beforePhotoId, pageSize: pageSize)
-        case .filtered(let collection, let filter):
-            return try await connection.photos(in: collection, filter: filter, beforePhotoId: beforePhotoId, pageSize: pageSize)
-        case .album(let albumId):
-            return try await connection.photos(inAlbum: albumId, beforePhotoId: beforePhotoId, pageSize: pageSize)
-        case .faceGroup(let photoFaceGroupId):
-            return try await connection.photos(inFaceGroup: photoFaceGroupId, beforePhotoId: beforePhotoId, pageSize: pageSize)
-        case .search(let words):
-            // A search is answered whole, best match first, and not in pages.
-            return try await connection.photos(matching: words)
+    // MARK: Reading a list
+
+    /// The most photos the server gives in one page.
+    private static let wholeListPageSize = 500
+
+    /// Reads a list as far as the screen first needs: its count and its first
+    /// page, or all of it for a list that is read whole.
+    private func readListing(_ key: PhotoListKey) async throws -> PhotoListing {
+        guard let query = key.listQuery else {
+            // A search is answered whole, best match first.
+            guard case .search(let words) = key else { return PhotoListing(photos: []) }
+            return PhotoListing(photos: try await connection.photos(matching: words), isRanked: true)
+        }
+        if key.isReadWhole {
+            let totalCount = try await connection.countPhotos(in: query)
+            var photos: [Photo] = []
+            while photos.count < totalCount {
+                let page = try await connection.photos(in: query, offset: photos.count, pageSize: Self.wholeListPageSize)
+                if page.isEmpty { break }
+                photos += page
+            }
+            return PhotoListing(photos: photos)
+        }
+        async let totalCount = try await connection.countPhotos(in: query)
+        async let firstPage = try await connection.photos(in: query, offset: 0, pageSize: PhotoPaging.pageSize)
+        var window = PhotoWindow(totalCount: try await totalCount)
+        window.setPage(try await firstPage, at: 0)
+        return PhotoListing(window: window)
+    }
+
+    /// Reads the count and first page of a list, unless it has been read.
+    func load(_ key: PhotoListKey) async {
+        guard listings[key] == nil else { return }
+        await readFresh(key)
+    }
+
+    /// Reads a list again. One that is shown keeps its place: the count is read
+    /// again and the pages near the screen are read anew, the rest when they
+    /// come near. A list read whole is read whole again.
+    func reload(_ key: PhotoListKey) async {
+        forgetOverviews()
+        guard listings[key] != nil, !key.isReadWhole, let query = key.listQuery else {
+            await readFresh(key)
+            return
+        }
+        do {
+            let totalCount = try await connection.countPhotos(in: query)
+            listings[key]?.setTotalCount(totalCount)
+            await readPagesNearFocus(of: key)
+        } catch {
+            guard !Task.isCancelled else { return }
+            problemText = describe(error)
         }
     }
 
-    /// Reads the first page of a list, unless it has been read.
-    func load(_ key: PhotoListKey) async {
-        guard listings[key] == nil else { return }
-        await reload(key)
-    }
-
-    /// Reads the first page of a list again, which drops any further pages read.
-    func reload(_ key: PhotoListKey) async {
+    private func readFresh(_ key: PhotoListKey) async {
         do {
-            let page = try await fetchPage(key)
-            listings[key] = PhotoListing(photos: page, hasMore: key.isSearch ? false : PhotoPaging.hasMore(afterPageOf: page.count), isRanked: key.isSearch)
+            listings[key] = try await readListing(key)
+            focusPlaces[key] = 0
             failureTexts[key] = nil
         } catch {
             guard !Task.isCancelled else { return }
@@ -355,45 +431,126 @@ final class PhotosModel {
         }
     }
 
-    /// Reads the next page when a cell near the end of what is loaded comes
-    /// on screen.
-    func loadMoreIfNeeded(showing photoId: String, in key: PhotoListKey) async {
-        guard let listing = listings[key], listing.hasMore, !listing.isLoadingPage,
-            PhotoPaging.shouldLoadMore(whenShowing: photoId, in: listing.photos)
-        else { return }
-        let cursorPhotoId = listing.pageCursorPhotoId
-        listings[key]?.isLoadingPage = true
-        defer { listings[key]?.isLoadingPage = false }
-        do {
-            let page = try await fetchPage(key, beforePhotoId: cursorPhotoId)
-            // The list may have been read again meanwhile; this page then
-            // follows something that is no longer its end.
-            guard listings[key]?.pageCursorPhotoId == cursorPhotoId else { return }
-            listings[key]?.append(page)
-        } catch {
-            if Task.isCancelled { return }
-            // The photo the page was to follow left the list meanwhile (restored
-            // from the Trash, or deleted forever): read the list again from the top.
-            if error.isNotFoundRefusal {
-                await reload(key)
-                return
-            }
-            problemText = describe(error)
+    /// Says which place of a list is on screen, which reads the pages round it
+    /// that are missing and lets go of the ones far from it. The grid calls it
+    /// for each square that comes on screen, and the viewer for each photo.
+    func showWindow(around place: Int, in key: PhotoListKey) {
+        focusPlaces[key] = place
+        guard let listing = listings[key], !key.isReadWhole else { return }
+        let released = listing.window.pagesToRelease(around: place)
+        if !released.isEmpty { listings[key]?.release(released) }
+        for pageIndex in listing.window.missingPages(around: place) {
+            Task { await readPage(pageIndex, in: key) }
         }
     }
 
-    /// While a photo of the list is still being made ready, asks for the list
-    /// again now and then, a little less often each time, so its picture
-    /// appears without the person pulling to refresh.
+    private func readPagesNearFocus(of key: PhotoListKey) async {
+        guard let listing = listings[key] else { return }
+        let pageIndexes = listing.window.missingPages(around: focusPlaces[key] ?? 0)
+        await withTaskGroup(of: Void.self) { group in
+            for pageIndex in pageIndexes { group.addTask { await self.readPage(pageIndex, in: key) } }
+        }
+    }
+
+    /// Reads one page of a list, unless it is being read, and counts the list
+    /// again when the page did not come as the count said it would.
+    private func readPage(_ pageIndex: Int, in key: PhotoListKey) async {
+        guard await readPageOnce(pageIndex, in: key), !recountingKeys.contains(key) else { return }
+        recountingKeys.insert(key)
+        await reload(key)
+        recountingKeys.remove(key)
+    }
+
+    /// Reads one page, keeping it only when the screen is still near it and no
+    /// photo moved to another place while it was on its way. True when the
+    /// page held other photos than the count says the list has there, which
+    /// means the list changed on the server.
+    private func readPageOnce(_ pageIndex: Int, in key: PhotoListKey) async -> Bool {
+        let read = PageRead(key: key, pageIndex: pageIndex)
+        guard let query = key.listQuery, let listing = listings[key], !pageReadsInFlight.contains(read) else { return false }
+        pageReadsInFlight.insert(read)
+        defer { pageReadsInFlight.remove(read) }
+        let pageSize = listing.window.pageSize
+        let changeCount = listing.changeCount
+        do {
+            let page = try await connection.photos(in: query, offset: pageIndex * pageSize, pageSize: pageSize)
+            guard let current = listings[key] else { return false }
+            guard current.changeCount == changeCount else {
+                // Photos moved while the page was on its way: it is read again.
+                Task { showWindow(around: focusPlaces[key] ?? 0, in: key) }
+                return false
+            }
+            let focusPageIndex = current.window.pageIndex(of: focusPlaces[key] ?? 0)
+            guard abs(pageIndex - focusPageIndex) <= PhotoWindow.defaultKeep else { return false }
+            listings[key]?.setPage(page, at: pageIndex)
+            return page.count != min(pageSize, current.totalCount - pageIndex * pageSize)
+        } catch {
+            if !Task.isCancelled { problemText = describe(error) }
+            return false
+        }
+    }
+
+    /// While a photo of the list is still being made ready, reads the pages
+    /// that have one again now and then, a little less often each time, so its
+    /// picture appears without the person pulling to refresh.
     func followWaitingPhotos(in key: PhotoListKey) async {
         var attempt = 1
         while !Task.isCancelled, hasWaitingPhotos(in: key) {
             try? await Task.sleep(for: .seconds(min(30, 5 * attempt)))
             attempt += 1
             guard !Task.isCancelled, let held = listings[key] else { return }
-            if let page = try? await fetchPage(key, pageSize: min(max(held.photos.count, 1), 500)) {
-                listings[key]?.replaceHeld(by: page)
+            if key.isReadWhole {
+                if let fresh = try? await readListing(key) {
+                    for photo in fresh.photos { listings[key]?.replace(photo) }
+                }
+            } else {
+                let pageIndexes = held.window.pageIndexesWithWaitingPhotos
+                listings[key]?.markStale(pageIndexes)
+                await withTaskGroup(of: Void.self) { group in
+                    for pageIndex in pageIndexes { group.addTask { await self.readPage(pageIndex, in: key) } }
+                }
             }
+        }
+    }
+
+    /// Takes photos out of a list. Photos that are not held cannot be told to
+    /// be in it, so the list is counted again, as it is when a page does not
+    /// match its count.
+    private func takeOut(_ photoIds: Set<String>, from key: PhotoListKey) {
+        guard let listing = listings[key] else { return }
+        let isAnyNotHeld = !photoIds.isSubset(of: listing.window.heldPhotoIds)
+        listings[key]?.remove(photoIds)
+        forgetOverviews()
+        if isAnyNotHeld, !key.isReadWhole { Task { await reload(key) } }
+    }
+
+    // MARK: Years and Months
+
+    /// What the Years and Months of a list have read, kept until the list
+    /// changes. Nil for a list that has no Years and Months.
+    func overviewReader(for key: PhotoListKey) -> PhotoOverviewReader? {
+        if let reader = overviewReaders[key] { return reader }
+        guard let query = key.listQuery else { return nil }
+        let reader = PhotoOverviewReader(connection: connection, list: query)
+        overviewReaders[key] = reader
+        return reader
+    }
+
+    /// Drops what the Years and Months have read, since photos came, went or moved.
+    private func forgetOverviews() {
+        overviewReaders = [:]
+        overviewVersion += 1
+    }
+
+    /// The place in a list of the newest photo of a period, counted from 0,
+    /// which is how many photos of the list are newer than the period.
+    func place(of period: PhotoPeriod, in key: PhotoListKey) async -> Int? {
+        guard let query = key.listQuery else { return nil }
+        do {
+            return try await connection.countPhotos(in: query, newerThan: period)
+        } catch {
+            problemText = describe(error)
+            return nil
         }
     }
 
@@ -424,7 +581,7 @@ final class PhotosModel {
         for key in Array(listings.keys) where key.photoCollection == .favorites {
             guard let favorites = listings[key] else { continue }
             let dropped = Set(favorites.photos.filter { !$0.isFavorite }.map(\.id))
-            if !dropped.isEmpty { listings[key]?.remove(dropped) }
+            if !dropped.isEmpty { takeOut(dropped, from: key) }
         }
     }
 
@@ -437,7 +594,7 @@ final class PhotosModel {
             try await connection.trashPhotos(photoIds)
             // A photo in the Trash is in no list but the Trash, and no album
             // counts it.
-            for key in Array(listings.keys) where key.photoCollection != .trash { listings[key]?.remove(Set(photoIds)) }
+            for key in Array(listings.keys) where key.photoCollection != .trash { takeOut(Set(photoIds), from: key) }
             forgetListings { $0.photoCollection == .trash }
             library = nil
             doneText = String(localized: "Moved to Trash")
@@ -461,7 +618,7 @@ final class PhotosModel {
         let photoIds = photos.map(\.id)
         do {
             try await connection.restorePhotos(photoIds)
-            for key in Array(listings.keys) where key.photoCollection == .trash { listings[key]?.remove(Set(photoIds)) }
+            for key in Array(listings.keys) where key.photoCollection == .trash { takeOut(Set(photoIds), from: key) }
             forgetListings { $0.photoCollection != .trash }
             doneText = String(localized: "Restored to your library")
             await loadLibrary()
@@ -484,7 +641,7 @@ final class PhotosModel {
         let photoIds = photos.map(\.id)
         do {
             try await connection.deletePhotos(photoIds)
-            for key in Array(listings.keys) where key.photoCollection == .trash { listings[key]?.remove(Set(photoIds)) }
+            for key in Array(listings.keys) where key.photoCollection == .trash { takeOut(Set(photoIds), from: key) }
             doneText = String(localized: "Deleted forever")
             await loadLibrary()
             return true
@@ -503,7 +660,7 @@ final class PhotosModel {
         do {
             try await connection.emptyPhotoTrash()
             forgetListings { $0.photoCollection == .trash && $0 != .trash }
-            listings[.trash] = PhotoListing(photos: [], hasMore: false)
+            listings[.trash] = PhotoListing(photos: [])
             doneText = String(localized: "The Trash is empty")
             await loadLibrary()
         } catch {
@@ -589,15 +746,18 @@ final class PhotosModel {
     }
 
     /// Places a photo at another date. In the list the viewer is paging
-    /// through the photo is moved to its new place and the days are grouped
-    /// again, so the viewer stays on the photo even when the new date puts it
-    /// far from where it was; the other lists are forgotten and read again
-    /// when next shown.
+    /// through, the pages held are read again and the photo is looked for
+    /// where its new date puts it (see `movedPhoto`), so the viewer stays on
+    /// the photo even when the new date puts it far from where it was; the
+    /// other lists are forgotten and read again when next shown.
     func changeDate(of photo: Photo, to date: Date, in key: PhotoListKey) async -> Bool {
         do {
             let text = PhotoDateChange.takenAtText(for: date, photo: photo)
             let changed = try await connection.changePhotoDate(photo.id, takenAtText: text)
-            listings[key]?.place(changed)
+            listings[key]?.replace(changed)
+            if let query = key.listQuery, !key.isReadWhole, let moment = PhotoTimeline.timelineMoment(of: changed) {
+                await followMove(of: changed, to: moment, in: key, query: query)
+            }
             for listKey in Array(listings.keys) where listKey != key { forgetListing(listKey) }
             if albums != nil { await reloadAlbums() }
             doneText = String(localized: "Changed the date")
@@ -605,6 +765,18 @@ final class PhotosModel {
         } catch {
             problemText = describe(error)
             return false
+        }
+    }
+
+    /// Reads the pages round the place the new date of a photo puts it at, which
+    /// is counted from the photos newer than it, and says where it is held.
+    private func followMove(of photo: Photo, to moment: Date, in key: PhotoListKey, query: PhotoListQuery) async {
+        let countedPlace = try? await connection.countPhotos(in: query, newerThanMoment: moment)
+        listings[key]?.markAllStale()
+        focusPlaces[key] = countedPlace ?? focusPlaces[key] ?? 0
+        await readPagesNearFocus(of: key)
+        if let place = listings[key]?.window.place(of: photo.id) {
+            movedPhoto = PhotoMove(listKey: key, photoId: photo.id, place: place)
         }
     }
 
@@ -644,9 +816,9 @@ final class PhotosModel {
     }
 
     /// Reads photos whose place changed anew into every list that holds them.
-    /// A few are read one by one; for more, each list is read again from its
-    /// top, as far as the photos it holds (at most 500). A search keeps the
-    /// photos it holds, so a viewer open over it does not lose its place.
+    /// A few are read one by one; for more, each list is read again, the pages
+    /// near the screen now and the others when they come near. A list read whole
+    /// keeps its photos, so a viewer open over it does not lose its place.
     private func refreshHeldPhotos(changed photos: [Photo]) async {
         if photos.count <= 20 {
             for photo in photos {
@@ -656,9 +828,14 @@ final class PhotosModel {
             }
         } else {
             for key in Array(listings.keys) {
-                guard let held = listings[key] else { continue }
-                if let page = try? await fetchPage(key, pageSize: min(max(held.photos.count, 1), 500)) {
-                    listings[key]?.replaceHeld(by: page)
+                guard listings[key] != nil else { continue }
+                if key.isReadWhole {
+                    if let fresh = try? await readListing(key) {
+                        for photo in fresh.photos { listings[key]?.replace(photo) }
+                    }
+                } else {
+                    listings[key]?.markAllStale()
+                    await readPagesNearFocus(of: key)
                 }
             }
         }
@@ -777,7 +954,7 @@ final class PhotosModel {
     func remove(_ photos: [Photo], fromAlbum albumId: String) async -> Bool {
         do {
             try await connection.removePhotos(photos.map(\.id), fromAlbum: albumId)
-            listings[.album(albumId)]?.remove(Set(photos.map(\.id)))
+            takeOut(Set(photos.map(\.id)), from: .album(albumId))
             doneText = String(localized: "Removed from the album")
             await albumsChanged()
             return true
@@ -912,9 +1089,9 @@ struct PhotosScreen: View {
     /// The days the photos on screen were taken on, as "Oct 3 to 6, 2026": kept up
     /// as the grid scrolls. Empty until the grid has said what is on screen.
     @State private var dateRangeText = ""
-    /// The photo the grid is to scroll to once it is on screen: the first of the
-    /// month or year that was pressed in Months or Years.
-    @State private var pendingJumpPhotoId: String?
+    /// The place in the list the grid is to scroll to once it is on screen: where
+    /// the month or year that was pressed in Months or Years begins.
+    @State private var pendingJumpPlace: Int?
     @Environment(AppModel.self) private var app
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// The person (group of faces) pushed on People, so Back lands there.
@@ -956,9 +1133,10 @@ struct PhotosScreen: View {
         guard let collection = model.section.collection else { return nil }
         return model.photoFilter.isActive ? .filtered(collection, model.photoFilter) : .collection(collection)
     }
-    private var photos: [Photo] { key.map { model.photos(in: $0) } ?? [] }
-    private var selectedPhotos: [Photo] { photos.filter { selectedPhotoIds.contains($0.id) } }
-    private var canSelect: Bool { (model.section == .library || model.section == .favorites || model.section == .trash) && !photos.isEmpty }
+    private var listing: PhotoListing? { key.flatMap { model.listing($0) } }
+    private var isListEmpty: Bool { listing?.isEmpty ?? true }
+    private var selectedPhotos: [Photo] { key.map { model.photos(withIds: selectedPhotoIds, in: $0) } ?? [] }
+    private var canSelect: Bool { (model.section == .library || model.section == .favorites || model.section == .trash) && !isListEmpty }
 
     /// Whether the switch of Years, Months and All is offered: for the library
     /// and the favorites, not while words are searched for or photos are chosen.
@@ -994,14 +1172,13 @@ struct PhotosScreen: View {
     private var subtitleText: String {
         guard activeScale == .all, !isSelecting, searchWords == nil, model.section != .trash, key != nil else { return "" }
         if !dateRangeText.isEmpty { return dateRangeText }
-        return PhotoOverview.dateRangeText(of: Array(photos.prefix(Self.firstScreenPhotoCount))) ?? ""
+        return PhotoOverview.dateRangeText(of: Array((listing?.photos ?? []).prefix(Self.firstScreenPhotoCount))) ?? ""
     }
 
     /// Keeps the range under the title to the photos the grid has on screen.
-    private func updateDateRange(visiblePhotoIds: [String]) {
-        guard activeScale == .all else { return }
-        let visibleIds = Set(visiblePhotoIds)
-        let visiblePhotos = photos.filter { visibleIds.contains($0.id) }
+    private func updateDateRange(visiblePlaces: [Int]) {
+        guard activeScale == .all, let listing else { return }
+        let visiblePhotos = visiblePlaces.compactMap { listing.photo(at: $0) }
         guard !visiblePhotos.isEmpty, let text = PhotoOverview.dateRangeText(of: visiblePhotos), text != dateRangeText else { return }
         dateRangeText = text
     }
@@ -1252,6 +1429,7 @@ struct PhotosScreen: View {
     private func endSelection() {
         isSelecting = false
         selectedPhotoIds = []
+        model.forgetChosenPhotos()
     }
 
     @ToolbarContentBuilder
@@ -1311,7 +1489,7 @@ struct PhotosScreen: View {
                 // while the switch is on, so that it can be turned off again.
                 Toggle("Show hidden", systemImage: "eye.slash", isOn: Bindable(model).isHiddenPeopleShown)
             }
-            if model.section == .trash, !photos.isEmpty {
+            if model.section == .trash, !isListEmpty {
                 Button("Empty Trash", systemImage: "trash", role: .destructive) { isConfirmingEmptyTrash = true }
                     .tint(.red)
             }
@@ -1334,7 +1512,7 @@ struct PhotosScreen: View {
     private var hasOwnMoreItems: Bool {
         switch model.section {
         case .people: model.hasHiddenPeople || model.isHiddenPeopleShown
-        case .trash: !photos.isEmpty
+        case .trash: !isListEmpty
         default: false
         }
     }
@@ -1343,7 +1521,7 @@ struct PhotosScreen: View {
     private var content: some View {
         if let key {
             if let listing = model.listing(key) {
-                if listing.photos.isEmpty {
+                if listing.isEmpty {
                     ScrollView {
                         if let searchWords {
                             ContentUnavailableView.search(text: searchWords)
@@ -1389,7 +1567,7 @@ struct PhotosScreen: View {
 extension PhotosScreen {
     /// The photos of a list, as the grid of every photo or as a picture for each
     /// month or year. A press on a month or a year goes to the grid, scrolled to
-    /// its first photo.
+    /// where it begins.
     @ViewBuilder
     fileprivate func photosScroll(listing: PhotoListing, key: PhotoListKey) -> some View {
         ScrollViewReader { proxy in
@@ -1412,23 +1590,18 @@ extension PhotosScreen {
                     }
                     .onAppear {
                         // Coming from a month or a year: scroll to where it begins.
-                        guard let photoId = pendingJumpPhotoId else { return }
-                        proxy.scrollTo(photoId, anchor: .top)
-                        pendingJumpPhotoId = nil
+                        guard let place = pendingJumpPlace else { return }
+                        pendingJumpPlace = nil
+                        model.showWindow(around: place, in: key)
+                        proxy.scrollTo(place, anchor: .top)
                     }
                 case .months:
-                    PhotoOverviewList(
-                        items: PhotoOverview.months(listing.photos).map { PhotoOverviewItem(month: $0) }, aspectRatio: 1.6, titleFont: .title2.bold(), listing: listing,
-                        listKey: key, model: model
-                    ) { item in
-                        jump(to: item)
+                    PhotoOverviewList(kind: .months, listKey: key, model: model) { period in
+                        jump(to: period, in: key)
                     }
                 case .years:
-                    PhotoOverviewList(
-                        items: PhotoOverview.years(listing.photos).map { PhotoOverviewItem(year: $0) }, aspectRatio: 1, titleFont: .largeTitle.bold(), listing: listing,
-                        listKey: key, model: model
-                    ) { item in
-                        jump(to: item)
+                    PhotoOverviewList(kind: .years, listKey: key, model: model) { period in
+                        jump(to: period, in: key)
                     }
                 }
                 // What the library holds, under the last photo, as the dashboard counts it.
@@ -1436,17 +1609,21 @@ extension PhotosScreen {
                     PhotoLibrarySummary(library: library)
                 }
             }
-            // The grid says which photos are on screen; the first and last of them are the days under the title.
-            .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.4) { visiblePhotoIds in
-                updateDateRange(visiblePhotoIds: visiblePhotoIds)
+            // The grid says which squares are on screen; the first and last photos of them are the days under the title.
+            .onScrollTargetVisibilityChange(idType: Int.self, threshold: 0.4) { visiblePlaces in
+                updateDateRange(visiblePlaces: visiblePlaces)
             }
         }
     }
 
-    /// Shows the grid of every photo, scrolled to where a month or a year begins.
-    fileprivate func jump(to item: PhotoOverviewItem) {
-        pendingJumpPhotoId = item.newestPhotoId
-        scale = .all
+    /// Shows the grid of every photo, scrolled to where a month or a year begins:
+    /// the place of its newest photo is how many photos of the list are newer.
+    fileprivate func jump(to period: PhotoPeriod, in key: PhotoListKey) {
+        Task {
+            guard let place = await model.place(of: period, in: key) else { return }
+            pendingJumpPlace = place
+            scale = .all
+        }
     }
 }
 
@@ -1582,15 +1759,29 @@ struct PhotoGrid: View {
                 // groups are the days they were moved on, each with when it goes.
                 ForEach(PhotoTimeline.trashDays(listing.photos, retentionDays: trashRetentionDays ?? 0)) { day in
                     Section {
-                        cells(of: day.photos)
+                        ForEach(day.photos) { photo in
+                            cell(of: photo)
+                                .id(photo.id)
+                        }
                     } header: {
                         PhotoTrashDayHeader(day: day)
                     }
                 }
             } else {
-                // One run of squares, newest first, with no heading for each day: the days
-                // under the title say what is on screen. A search lists the best match first.
-                cells(of: listing.photos)
+                // One square for every place in the list, newest first, with no heading for each
+                // day: the days under the title say what is on screen. A place whose page is not
+                // held shows a plain square, and coming on screen reads the pages round it. A
+                // search lists the best match first.
+                ForEach(0..<listing.totalCount, id: \.self) { place in
+                    Group {
+                        if let photo = listing.photo(at: place) {
+                            cell(of: photo)
+                        } else {
+                            PhotoPlaceholderCell()
+                        }
+                    }
+                    .onAppear { model.showWindow(around: place, in: listKey) }
+                }
             }
         }
         // The squares are what the screen asks which of them are on show.
@@ -1604,27 +1795,34 @@ struct PhotoGrid: View {
             @unknown default: break
             }
         }
-        if listing.isLoadingPage {
-            ProgressView()
-                .padding()
-        }
     }
 
-    @ViewBuilder
-    private func cells(of photos: [Photo]) -> some View {
-        ForEach(photos) { photo in
-            PhotoCell(
-                photo: photo, model: model, listKey: listKey, scope: scope, isSelecting: isSelecting, isSelected: selectedPhotoIds.contains(photo.id),
-                isMenuAvailable: isMenuAvailable
-            ) {
-                if isSelecting {
-                    if selectedPhotoIds.contains(photo.id) { selectedPhotoIds.remove(photo.id) } else { selectedPhotoIds.insert(photo.id) }
+    private func cell(of photo: Photo) -> some View {
+        PhotoCell(
+            photo: photo, model: model, listKey: listKey, scope: scope, isSelecting: isSelecting, isSelected: selectedPhotoIds.contains(photo.id),
+            isMenuAvailable: isMenuAvailable
+        ) {
+            if isSelecting {
+                if selectedPhotoIds.contains(photo.id) {
+                    selectedPhotoIds.remove(photo.id)
                 } else {
-                    onOpen(photo)
+                    selectedPhotoIds.insert(photo.id)
+                    model.choose(photo)
                 }
+            } else {
+                onOpen(photo)
             }
-            .id(photo.id)
         }
+    }
+}
+
+/// PhotoPlaceholderCell is the square of a place in a list whose photo has not
+/// been read yet: the same size as a photo's, with nothing in it.
+struct PhotoPlaceholderCell: View {
+    var body: some View {
+        Color(.secondarySystemBackground)
+            .aspectRatio(1, contentMode: .fit)
+            .accessibilityHidden(true)
     }
 }
 
@@ -1739,9 +1937,6 @@ struct PhotoCell: View {
                 return
             }
             if let loaded = await PhotoImages.picture(path: path, connection: model.connection) { picture = loaded }
-        }
-        .onAppear {
-            Task { await model.loadMoreIfNeeded(showing: photo.id, in: listKey) }
         }
     }
 
