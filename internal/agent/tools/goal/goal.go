@@ -9,6 +9,7 @@ package goal
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -156,7 +157,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if asked.Times != nil && len(*asked.Times) > 0 || asked.OnMail != nil && len(*asked.OnMail) > 0 {
 			note = "the goal is started; its turns run at its times, in its own conversation"
 		}
-		return operate(ctx, client.DocumentStartAgentGoal, variables, "StartAgentGoal", note)
+		return operate(ctx, client.DocumentStartAgentGoal, variables, "StartAgentGoal", note+passwordsNoticeFor(text))
 	case "tell", "set", "run", "done", "drop", "pause", "resume":
 		// The person's words and the person's decisions: from a turn
 		// they are in, never one of the agent's own.
@@ -176,7 +177,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 				variables["goalDescription"] = text
 			}
 			variables["conversationId"] = goalId
-			return operate(ctx, client.DocumentUpdateAgentGoal, variables, "UpdateAgentGoal", "the goal is changed")
+			return operate(ctx, client.DocumentUpdateAgentGoal, variables, "UpdateAgentGoal", "the goal is changed"+passwordsNoticeFor(text))
 		case "run":
 			return operate(ctx, client.DocumentRunAgentGoal, map[string]any{"conversationId": goalId}, "RunAgentGoal", "the goal takes a turn now, in its own conversation")
 		}
@@ -280,6 +281,24 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	result.Note = note
 	return result, nil
+}
+
+// passwordsNotice is said to the model when it starts or rewords a goal about
+// signing in, so that it tells the person. A goal the agent wrote cannot use
+// Passwords; one the person saves themselves, on times they chose, can.
+const passwordsNotice = "This goal was written by you, the agent, so its turns cannot use Passwords. Tell the person: they can open the goal on the dashboard or in the app (Goals) and save it themselves, with the times it runs at, to let its turns use Passwords."
+
+// signingInWords matches words about signing in, a password, a passkey, a
+// login or a one-time code.
+var signingInWords = regexp.MustCompile(`(?i)\b(sign(s|ed|ing)?[ -]?in(to)?|log(s|ged|ging)?[ -]?(ins?|into)|passwords?|passkeys?|one-time codes?)\b`)
+
+// passwordsNoticeFor is the notice, after a separator, when the words are
+// about signing in, and nothing otherwise.
+func passwordsNoticeFor(text string) string {
+	if signingInWords.MatchString(text) {
+		return ". " + passwordsNotice
+	}
+	return ""
 }
 
 // goalVariables is what start and set send of what the model gave: only what

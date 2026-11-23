@@ -967,16 +967,16 @@ subtracting; a value carries forward until a newer one replaces it. A
 liability's value is the size of what is owed: providers disagree on its sign,
 so the sync stores its absolute value.
 
-Accounts reachable only through a connected server are read by the agent on a
-daily schedule the person creates, which records the value with the `finance`
-tool. Houses and cars are estimated from the web only where the person allowed
-it for that asset, with a range and the pages used. Setting an asset to
-`agent_estimate` with estimates allowed makes the schedule "Estimate asset
-values" (the first of each month, the person's own words, delivered to the
-drawer) when there is none, and runs it at once, so the asset has a value the
-same day. The schedule is found by name, like the daily brief's: renamed, it is
-the person's, and a new one is made beside it; switched off, it stays off
-and nothing is estimated until the person switches it on again. Its prompt searches with each asset's estimate description
+Accounts reachable only through a connected server are read by the agent in a
+daily goal the person starts, which records the value with the `finance` tool.
+Houses and cars are estimated from the web only where the person allowed it for
+that asset, with a range and the pages used. Setting an asset to
+`agent_estimate` with estimates allowed starts the goal "Estimate asset values"
+(the first of each month, the person's own words, recorded as built in) when
+there is none, and gives it a turn at once, so the asset has a value the same
+day. The goal is found by title, like the daily brief's: renamed, it is the
+person's, and a new one is started beside it; paused, it stays paused and
+nothing is estimated until the person takes it up again. Its prompt searches with each asset's estimate description
 and nothing else.
 
 ## Credit usage

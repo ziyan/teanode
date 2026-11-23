@@ -223,42 +223,39 @@ conversations: "watch for the landlord's reply about the boiler and tell me if
 none comes by Friday". Each runs in a conversation of its own, of the kind
 `goal`, where the agent takes turns **on its own** that the person does not read
 unless they open it, so the conversations they chat in stay theirs. Its turns
-see the ones before them, which is the whole difference from a schedule, whose
-run is a fresh transcript on a clock with no memory of the one before and no
-way to say it is done.
+see the ones before them, and each says where it stands. A goal may also run at
+times the person chose ("every weekday at 7:30") or when mail it waits for
+arrives; `jobs-and-schedules.md` has when its turns are.
 
 The goal is columns on its conversation (migrations 0083, 0087 and 0148): a
 title of a few words (`goal_title`), the description of what it is for and
 what done looks like (`goal`), its state, the agent's one-line status
 (`goal_note`), when the next turn is due, when it was set, and when it was last
-said in the main conversation (`goal_surfaced_at`). The states are `working`
-(turns are running), `waiting` (it needs the person), `met` and `dropped` (the
-person stopped it).
+said in the main conversation (`goal_surfaced_at`), and, since migration 0281,
+the times it runs at (`goal_times`), the mail it waits for and what came, who
+wrote it (`goal_written_by`) and whether a turn's first card notifies. The
+states are `working` (turns are running), `waiting` (it needs the person),
+`paused` (the person switched it off for now), `met` and `dropped` (the person
+stopped it).
 
 Every turn of the agent's own ends with one call to the `goal` tool: `note`
 with the status in one line and the minutes until the next turn, and
 `activity` when something happened worth the person reading later; `wait` with
-what it needs from the person, in a sentence they can answer; or `met`. The
-tool also starts goals (`start`, with a title and what it is for), lists and
-shows them, passes the person's words to one (`tell`), and lets the person
-close or reopen one (`done`, `drop`, `reopen`). A goal's own turn starts no
-goals and cannot tell, close or reopen one.
-
-Work on a clock belongs in a **schedule the goal owns**: one made in the goal's
-conversation, given to `start` as `schedule_ids`, or moved to it with the
-tool's `take_schedule` (`MoveAgentScheduleToGoal`, `teanode agent goal
-take-schedule`). Its runs take place in the goal's conversation and are the
-goal's turns: each ends with the goal tool, and only a `wait` reaches the
-person. While a goal has an enabled schedule it takes no turns of its own; when
-the schedule is switched off or removed, the worker gives the goal a turn
-again. A goal remembers the conversation it was asked for in, which its page
-links to (migration 0149).
+what it needs from the person, in a sentence they can answer; or `met`. For a
+goal on set times the minutes are not used: its times are its cadence. The
+tool also starts goals (`start`, with a title, what it is for, and `times` or
+`on_mail` when it runs at set times), lists and shows them, changes one
+(`set`), gives one a turn now (`run`), passes the person's words to one
+(`tell`), and lets the person close, pause or take one up again (`done`,
+`drop`, `pause`, `resume`). A goal's own turn starts no goals and cannot tell,
+change, close or pause one. A goal remembers the conversation it was asked for
+in, which its page links to (migration 0149).
 
 What happened on a goal is its **activity**, rows in `agent_goal_activity`:
 started, progress (only when a turn said something happened; a turn that only
 looked writes none), waiting, resumed, met, dropped, stalled and failed. What it
-made is its **artifacts**: the schedules and background work made in its
-conversation, found by that conversation, and the mail rules, reminders and
+made is its **artifacts**: the background work made in its conversation, found
+by that conversation, and the mail rules, reminders and
 alert mutes its turns made, which the tools note in `agent_goal_artifact`. A
 goal's turn may start background work; it wakes the goal's conversation, never
 the main one.

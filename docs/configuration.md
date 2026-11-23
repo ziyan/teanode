@@ -1482,7 +1482,8 @@ connected servers.
 
 **`ask`** — Talking to the agent.
 
-**`schedules`** — Reminders and scheduled runs.
+**`schedules`** — Goals that run at set times or when mail arrives, and the
+reminders they keep; off, a goal keeps its own pace only.
 
 **`browser`** — The browser. Needs one configured.
 
@@ -1655,8 +1656,8 @@ errand on the person's computer ran out of.
 **`maxRoundsPerSubagent`** — How many rounds one subagent may take. Zero
 resolves to `20`.
 
-**`goalTurnsPerDay`** — How many turns of its own one goal takes in a day,
-counting its own check-ins, not the runs of a schedule it keeps. Zero
+**`goalTurnsPerDay`** — How many turns of its own one goal takes in a day, for a
+goal at its own pace; a goal on set times is bounded by its times. Zero
 resolves to `48`, a turn every half hour.
 
 **`goalTurnsAlone`** — How many of those turns a goal takes without a word

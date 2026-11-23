@@ -229,7 +229,8 @@ What stands between an item and a page:
   in a run the person started (`tools.IsStartedByPerson`): a turn they typed or
   spoke **with their own tap** (a dashboard session or the iPhone app's token,
   `Principal.IsPersonsTap`, never the surface name the client sends), or a
-  schedule they wrote themselves, which is what a scheduled sign-in uses. The
+  goal they wrote themselves on times they chose, which is what a sign-in at a
+  set time uses. The
   server carries into the run whether the request was a tap and whether an
   operator made it as the person (`AskSettings.IsPersonsTap` and
   `IsOperatorActingAsPerson`). A command line token, an app password, an OAuth
@@ -238,14 +239,13 @@ What stands between an item and a page:
   `drawer` still cannot list or read anything, and the refusal says "Ask in the
   TeaNode app or on the dashboard". A run that content started is refused too: an inbound mail (research), a chat
   app, a webhook, a goal, a dream, a command left running, a restart resumed, a
-  program that speaks MCP (another program, not the person), a schedule the
-  agent wrote for itself, one of the built-in schedules (the daily brief and the
-  asset estimates, recorded as written by `built_in`: they read the inbox and the
-  web, so mail could steer them, though their prompt is still handed to the run
-  as the person's words), or any surface not known to be the person's. A
-  schedule made before that was recorded counts as built in too when it still has
-  the built-in name and prompt. A schedule saved with no writer, and one from
-  before the writer was recorded at all, counts as the person's. A subagent is
+  program that speaks MCP (another program, not the person), a goal the agent
+  wrote for itself, a goal that keeps its own pace or waits for mail, one of the
+  built-in goals (the daily brief and the asset estimates, recorded as written by
+  `built_in`: they read the inbox and the web, so mail could steer them, though
+  their description is still handed to the turn as the person's words), or any
+  surface not known to be the person's. A goal with no writer recorded counts as
+  the agent's. A subagent is
   its parent's, but it is given no Passwords answer worth keeping: `list`,
   `read_note` and `generate` are refused in a subagent, since what it finds comes
   back to its parent as a tool result that is kept like any other. The passwords
@@ -264,16 +264,16 @@ What stands between an item and a page:
   theirs. A message written while the person's turn runs is handed to that turn
   only when it is itself one the person wrote (`AskRun.IsStartedByPerson`); a
   message from MCP or a chat app that names the same conversation waits for its
-  own turn. And a schedule made or reworded from the command line is recorded as
-  the agent's, since the agent's shell holds the same token: only a tap on the
-  dashboard or in the phone app (`Principal.IsPersonsTap`) writes `person`, and
-  only a tap's save that includes the schedule's prompt takes a schedule over.
+  own turn. And a goal started, reworded, retimed or paused from the command line
+  is recorded as the agent's, since the agent's shell holds the same token: only
+  a tap on the dashboard or in the phone app (`Principal.IsPersonsTap`) writes
+  `person`, and only a tap's save of the goal's words or times takes it over.
 - **The rest of the browser tool's rules.** None of the three is a reading
   action, so a tab the person has taken over refuses them like a click. Each is
   a write for the approval setting. In a run with nobody present, the person's
   tab refuses them as it refuses a click, unless the person lets the agent act
-  for them there; the headless browser accepts them in a schedule the person
-  wrote. They are refused in a chat with other people and over Telegram or
+  for them there; the headless browser accepts them in a goal the person
+  wrote on times they chose. They are refused in a chat with other people and over Telegram or
   Discord.
 - **The use is recorded** on the item, with the host, before any value is put
   anywhere (the same `last_used_by_agent_at` and `password_item` "used by the
@@ -501,11 +501,11 @@ would; it does not give it the password.
   and over Telegram or Discord every action answers in one sentence that
   Passwords is not used there, because what was read would reach the room. Unlike
   Health, a run nobody is watching is allowed when the person started it: a
-  schedule they wrote themselves, since signing in on a schedule is why a person
-  turns an item on. `list`, `read_note` and the three sign-in actions are refused
-  in a run that content started (an inbound mail, a webhook, a goal, a dream, an
-  MCP client, a built-in schedule such as the daily brief, a schedule the agent
-  wrote for itself), because what such a run does is steered
+  goal they wrote themselves on times they chose, since signing in at a set time
+  is why a person turns an item on. `list`, `read_note` and the three sign-in
+  actions are refused in a run that content started (an inbound mail, a webhook,
+  a dream, an MCP client, a built-in goal such as the daily brief, a goal the
+  agent wrote for itself), because what such a run does is steered
   by content the person did not write. A note is not read in a subagent, whose
   answer comes back as a tool result that filing into memory cannot tell from any
   other.
@@ -529,14 +529,14 @@ would; it does not give it the password.
   filed into memory, what the agent said and its tools answered in a private turn
   is left out, and the conversation's title and summary are not refreshed from it.
   The `conversation` tool's `read` shows the same messages as "[hidden: from a
-  turn that used Health or Passwords]", so a goal, a schedule the agent wrote or
-  a run a mail steered cannot read a note or a made-up password out of the
+  turn that used Health or Passwords]", so a goal the agent wrote or a run a
+  mail steered cannot read a note or a made-up password out of the
   person's chat. What the person wrote stays. It does not reach text the person
   or the agent repeats later; the tool's guidance tells the agent not to copy
   Passwords into notes, memory or messages.
 
   The same filter applies wherever else the conversation is read. A run the
-  person did not start (a chat app, a mail, a goal, a schedule the agent wrote,
+  person did not start (a chat app, a mail, a goal the agent wrote,
   a command left running, a program speaking MCP, a card answered after one of
   those, the agent speaking first) is given the marker where a private turn was
   when its history is loaded (`historyForRun`), and the person's own runs get the
@@ -784,18 +784,18 @@ an earlier migration had marked).
   answer that quotes a note right after the cut is still hidden from a run the
   person did not start and from the next compaction note.
 - **The phone push of the agent's own turns.** The answer of a turn that called
-  a private tool (a schedule the person wrote that reads a note) is sent as
+  a private tool (a goal the person wrote that reads a note) is sent as
   "Your answer is ready", judged over the whole conversation like the above.
 - **The agent's shell.** The command line sends the surface `agent_command`
   instead of `cli` when `TEANODE_AGENT_COMMAND` is set. The server keeps it as
   given and it is not on the list of surfaces that count as the person's, so a
   turn the agent starts from its own shell cannot use Passwords.
-- **A schedule the agent wrote.** A run it wakes is refused with words that say
-  the schedule was written by the agent and that the person can open it on the
-  dashboard or in the app (Agent, Schedules) and save it themselves to let its
-  runs use Passwords. Only a tap's save that includes the prompt makes it theirs. The schedule tool says the same when the agent adds or rewords a
-  schedule whose prompt is about signing in, a login or a password, so that the
-  agent tells the person.
+- **A goal the agent wrote.** A turn it wakes is refused with words that say the
+  goal was written by the agent and that the person can open it on the dashboard
+  or in the app (Goals) and save it themselves, with the times it runs at, to let
+  its turns use Passwords. Only a tap's save of its words or times makes it
+  theirs. The goal tool says the same when the agent starts or rewords a goal
+  about signing in, a login or a password, so that the agent tells the person.
 
 ## A script the agent ran keeps a site from being filled
 
