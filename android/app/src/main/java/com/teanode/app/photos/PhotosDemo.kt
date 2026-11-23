@@ -13,7 +13,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import java.io.ByteArrayOutputStream
+import java.time.Instant
 
 /** One invented photo of the demo library. */
 internal class DemoPhoto(
@@ -54,6 +56,24 @@ internal object PhotosDemoData {
         DemoPhoto("s01", "2026-09-10T10:00:00Z", isOwnedByCaller = false, albumIds = listOf("a3"), hue = 140f),
         DemoPhoto("s02", "2026-09-10T10:05:00Z", isOwnedByCaller = false, albumIds = listOf("a3"), hue = 100f),
     )
+
+    /** The photos ListPhotos and CountPhotos find for the arguments they share, newest first. */
+    fun matching(variables: JsonObject): List<DemoPhoto> {
+        var photos = PhotosDemoData.photos
+        val search = variables.text("searchText")
+        photos = when {
+            variables.flag("isTrashed") == true -> photos.filter { photo -> photo.isTrashed }
+            else -> photos.filter { photo -> !photo.isTrashed }
+        }
+        if (variables.flag("isFavorite") == true) photos = photos.filter { photo -> photo.isFavorite }
+        variables.text("albumId")?.let { albumId -> photos = PhotosDemoData.photos.filter { photo -> albumId in photo.albumIds } }
+        variables.text("faceGroupId")?.let { groupId -> photos = PhotosDemoData.photos.filter { photo -> groupId in photo.faceGroupIds } }
+        variables.text("photoKind")?.let { kind -> photos = photos.filter { photo -> photo.kind == kind } }
+        variables.text("takenAfter")?.let { moment -> val after = Instant.parse(moment); photos = photos.filter { photo -> Instant.parse(photo.takenAt) >= after } }
+        variables.text("takenBefore")?.let { moment -> val before = Instant.parse(moment); photos = photos.filter { photo -> Instant.parse(photo.takenAt) < before } }
+        if (!search.isNullOrEmpty()) photos = photos.filter { photo -> photo.placeName.contains(search, ignoreCase = true) || photo.description.contains(search, ignoreCase = true) }
+        return photos.sortedByDescending { photo -> photo.takenAt }
+    }
 
     fun photoJson(photo: DemoPhoto, withDescription: Boolean = false): String {
         val state = when { photo.isFailed -> "failed"; photo.isWaiting -> "waiting"; else -> "ready" }
@@ -104,6 +124,8 @@ internal object PhotosDemoData {
 
 private fun JsonObject.text(name: String): String? = (this[name] as? JsonPrimitive)?.contentOrNull
 
+private fun JsonObject.number(name: String): Int? = (this[name] as? JsonPrimitive)?.intOrNull
+
 private fun JsonObject.flag(name: String): Boolean? = (this[name] as? JsonPrimitive)?.booleanOrNull
 
 /**
@@ -125,19 +147,13 @@ val photosDemoAnswerers: List<DemoAnswerer> = listOf(
         }
     },
     graphQLField("ListPhotos") { variables ->
-        var photos = PhotosDemoData.photos
-        val search = variables.text("searchText")
-        photos = when {
-            variables.flag("isTrashed") == true -> photos.filter { photo -> photo.isTrashed }
-            else -> photos.filter { photo -> !photo.isTrashed }
-        }
-        if (variables.flag("isFavorite") == true) photos = photos.filter { photo -> photo.isFavorite }
-        variables.text("albumId")?.let { albumId -> photos = PhotosDemoData.photos.filter { photo -> albumId in photo.albumIds } }
-        variables.text("faceGroupId")?.let { groupId -> photos = PhotosDemoData.photos.filter { photo -> groupId in photo.faceGroupIds } }
-        variables.text("photoKind")?.let { kind -> photos = photos.filter { photo -> photo.kind == kind } }
-        if (!search.isNullOrEmpty()) photos = photos.filter { photo -> photo.placeName.contains(search, ignoreCase = true) || photo.description.contains(search, ignoreCase = true) }
-        photos.sortedByDescending { photo -> photo.takenAt }.joinToString(",", "[", "]") { photo -> PhotosDemoData.photoJson(photo) }
+        val matching = PhotosDemoData.matching(variables)
+        // A page by its place, as the app reads the library: pageSize photos from offset on.
+        val offset = variables.number("offset") ?: 0
+        val pageSize = variables.number("pageSize") ?: matching.size
+        matching.drop(offset).take(pageSize).joinToString(",", "[", "]") { photo -> PhotosDemoData.photoJson(photo) }
     },
+    graphQLField("CountPhotos") { variables -> PhotosDemoData.matching(variables).size.toString() },
     graphQLField("ReadPhotoLibrary", """{"photoCount":12,"videoCount":1,"favoriteCount":2,"trashedCount":2,"usedBytes":5400000000,"maximumFileBytes":4294967296,"maximumAccountBytes":107374182400,"trashRetentionDays":30,
         "isDescriptionAvailable":true,"descriptionUnavailableMessage":"","isFaceRecognitionAvailable":true,"faceRecognitionUnavailableMessage":"","isPhotoFaceRecognitionEnabled":true,"isPhotoReadingEnabled":true}""".replace("\n", " ")),
     graphQLField("ReadPhotoPlace", """{"locationPlace":null,"addressText":"1 Pier Road, Lakeside"}"""),

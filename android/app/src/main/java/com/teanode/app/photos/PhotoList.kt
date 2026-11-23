@@ -7,51 +7,48 @@ import androidx.compose.runtime.setValue
 import com.teanode.kit.Connection
 import com.teanode.kit.photos.Photo
 import com.teanode.kit.photos.PhotoCollection
-import com.teanode.kit.photos.PhotoFilter
 import com.teanode.kit.photos.PhotoPaging
 import com.teanode.kit.photos.PhotoPlacement
 import com.teanode.kit.photos.photos
-import com.teanode.kit.photos.photosInAlbum
-import com.teanode.kit.photos.photosInFaceGroup
+import com.teanode.kit.photos.PhotoListQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-/** Which photos a list holds: a part of the library, the results of a search, an album, or the photos of one person. */
+/**
+ * Which photos a held list holds: the Trash, laid out in days with their time left, or the results of a search, which
+ * are ranked and answered whole. Both are small and need every photo; the rest of the lists are windows.
+ */
 sealed class PhotoListSource {
-    data class Collection(val photoCollection: PhotoCollection, val filter: PhotoFilter = PhotoFilter()) : PhotoListSource()
+    data object Trash : PhotoListSource()
 
     data class Search(val words: String) : PhotoListSource()
 
-    data class Album(val photoAlbumId: String) : PhotoListSource()
-
-    data class FaceGroup(val photoFaceGroupId: String) : PhotoListSource()
-
-    /** A search lists by relevance and is read in one go; the others page by the oldest photo held. */
+    /** A search lists by relevance and is read in one go; the Trash pages by the oldest photo held. */
     val isPaged: Boolean get() = this !is Search
 }
 
 /**
- * PhotoListController reads a list of photos a page at a time, as the iPhone app's PhotosModel does: the first page
- * shows loading, a failure of it shows "try again", a failure of a later page leaves what was read and is told in a
- * snackbar by the screen, and photos a change moved are put back where the server would list them.
+ * PhotoListController holds a whole list of photos, for the Trash and for a search: the first page shows loading, a
+ * failure of it shows "try again", a failure of a later page leaves what was read and is told in a snackbar by the
+ * screen, and photos a change moved are put back where the server would list them.
  */
 @Stable
-class PhotoListController(private val scope: CoroutineScope, private val connection: Connection, val source: PhotoListSource) {
+class PhotoListController(private val scope: CoroutineScope, private val connection: Connection, val source: PhotoListSource) : PhotoListHandle {
     var photos: List<Photo> by mutableStateOf(emptyList())
         private set
-    var isLoading: Boolean by mutableStateOf(false)
+    override var isLoading: Boolean by mutableStateOf(false)
         private set
     var isLoadingMore: Boolean by mutableStateOf(false)
         private set
-    var isRefreshing: Boolean by mutableStateOf(false)
+    override var isRefreshing: Boolean by mutableStateOf(false)
         private set
-    var error: Throwable? by mutableStateOf(null)
+    override var error: Throwable? by mutableStateOf(null)
         private set
-    var moreError: Throwable? by mutableStateOf(null)
+    override var moreError: Throwable? by mutableStateOf(null)
         private set
-    var isLoaded: Boolean by mutableStateOf(false)
+    override var isLoaded: Boolean by mutableStateOf(false)
         private set
     var hasMore: Boolean by mutableStateOf(false)
         private set
@@ -59,13 +56,17 @@ class PhotoListController(private val scope: CoroutineScope, private val connect
     private var pageCursorPhotoId: String? = null
     private var job: Job? = null
 
-    fun start() {
+    override val totalCount: Int get() = photos.size
+
+    override val heldPhotos: List<Photo> get() = photos
+
+    override fun start() {
         if (!isLoaded && !isLoading) reload(isRefresh = false)
     }
 
-    fun retry() = reload(isRefresh = false)
+    override fun retry() = reload(isRefresh = false)
 
-    fun refresh() = reload(isRefresh = isLoaded)
+    override fun refresh() = reload(isRefresh = isLoaded)
 
     private fun reload(isRefresh: Boolean) {
         job?.cancel()
@@ -116,19 +117,17 @@ class PhotoListController(private val scope: CoroutineScope, private val connect
         }
     }
 
-    fun clearMoreError() {
+    override fun clearMoreError() {
         moreError = null
     }
 
     private suspend fun readPage(beforePhotoId: String?): List<Photo> = when (source) {
-        is PhotoListSource.Collection -> connection.photos(source.photoCollection, source.filter, beforePhotoId)
+        is PhotoListSource.Trash -> connection.photos(PhotoListQuery(PhotoCollection.Trash), beforePhotoId)
         is PhotoListSource.Search -> connection.photos(source.words)
-        is PhotoListSource.Album -> connection.photosInAlbum(source.photoAlbumId, beforePhotoId)
-        is PhotoListSource.FaceGroup -> connection.photosInFaceGroup(source.photoFaceGroupId, beforePhotoId)
     }
 
     /** Puts a photo the person changed (a favorite, a date) where the server would now list it. */
-    fun replace(photo: Photo) {
+    override fun replace(photo: Photo) {
         val placement = PhotoPlacement.place(photo, photos, pageCursorPhotoId, hasMore)
         photos = placement.photos
         pageCursorPhotoId = placement.pageCursorPhotoId
@@ -136,8 +135,39 @@ class PhotoListController(private val scope: CoroutineScope, private val connect
     }
 
     /** Takes photos out of the list (trashed, restored, removed from the album) without asking the server again. */
-    fun remove(photoIds: Collection<String>) {
+    override fun remove(photoIds: Collection<String>) {
         val gone = photoIds.toSet()
         photos = photos.filter { photo -> photo.id !in gone }
     }
+}
+
+/** What a screen needs of a list of photos, whether the list is held whole or read a window at a time. */
+interface PhotoListHandle {
+    val isLoading: Boolean
+    val isRefreshing: Boolean
+    val isLoaded: Boolean
+    val error: Throwable?
+
+    /** A failure of a read after the first, told in a snackbar by the screen. */
+    val moreError: Throwable?
+
+    /** How many photos the list holds. */
+    val totalCount: Int
+
+    /** The photos held now, in the order of the list. */
+    val heldPhotos: List<Photo>
+
+    fun start()
+
+    fun retry()
+
+    fun refresh()
+
+    fun clearMoreError()
+
+    /** Puts a photo the person changed where the list holds it. */
+    fun replace(photo: Photo)
+
+    /** Takes photos out of the list (trashed, restored, removed from the album) without asking the server again. */
+    fun remove(photoIds: Collection<String>)
 }
