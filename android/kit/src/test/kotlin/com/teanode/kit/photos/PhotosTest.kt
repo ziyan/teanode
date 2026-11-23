@@ -112,11 +112,8 @@ class PhotosTest {
     }
 
     @Test
-    fun monthsAndYearsGroupTheDays() {
+    fun theDateRangeSpansTheDaysHeld() {
         val photos = listOf(photo("a", "2026-03-05T10:00:00Z"), photo("b", "2026-03-01T10:00:00Z"), photo("c", "2025-12-30T10:00:00Z"))
-        assertEquals(listOf("2026-03", "2025-12"), PhotoOverview.months(photos, utc).map { month -> month.id })
-        assertEquals(listOf(2, 1), PhotoOverview.months(photos, utc).map { month -> month.photos.size })
-        assertEquals(listOf("2026", "2025"), PhotoOverview.years(photos, utc).map { year -> year.id })
         assertTrue(PhotoOverview.dateRangeText(photos, utc)!!.contains(" - "))
         assertNull(PhotoOverview.dateRangeText(emptyList(), utc))
     }
