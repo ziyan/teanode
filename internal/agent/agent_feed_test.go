@@ -367,7 +367,7 @@ func firstFieldOf(layout models.FeedCardLayout) string {
 func TestACodingSessionCardSettlesWhenTheQuestionIsAnswered(t *testing.T) {
 	world := newSpeakFirstWorld(t)
 	card := world.post(t, &models.AgentFeedItem{
-		Title: "api-pane on laptop asks", FeedSourceKind: models.FeedSourceCodingSession, FeedSourceID: "laptop/7", CoalesceKey: "laptop/7/abc123",
+		Title: "api-pane on laptop asks", FeedSourceKind: models.FeedSourceCodingSession, FeedSourceID: "laptop/7", CoalesceKey: "laptop/7/question-one",
 		Choices: []models.FeedChoice{{ChoiceKey: "option:1", ChoiceLabel: "Yes", ChoiceRole: models.FeedChoiceAction}, {ChoiceKey: "option:2", ChoiceLabel: "No", ChoiceRole: models.FeedChoiceAction}},
 	})
 	if !strings.HasPrefix(card.FeedStackKey, "coding:") || !strings.HasPrefix(card.FeedStackTitle, "Coding sessions, ") {

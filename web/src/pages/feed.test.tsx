@@ -678,9 +678,13 @@ it('plays a video in place and puts a list row thumbnail at the row start', asyn
   const { container } = drawFeed()
   fireEvent.click(await screen.findByRole('button', { name: 'Play video' }))
   expect(container.querySelector('video')?.getAttribute('src')).toBe('/video')
-  const thumbnails = container.querySelectorAll('.feed-row-thumbnail')
+  // A row without a picture keeps an empty space, so its words line up.
+  const thumbnails = container.querySelectorAll('.feed-row-thumbnail:not(.feed-row-thumbnail-empty)')
   expect(thumbnails).toHaveLength(1)
   expect(thumbnails[0].closest('li')?.textContent).toContain('Second row')
+  const empty = container.querySelectorAll('.feed-row-thumbnail-empty')
+  expect(empty).toHaveLength(1)
+  expect(empty[0].closest('li')?.textContent).toContain('First row')
 })
 
 it('draws a weather card on the gradient of its condition', async () => {
