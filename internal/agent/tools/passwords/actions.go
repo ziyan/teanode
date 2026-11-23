@@ -41,7 +41,7 @@ const elsewhereWords = "Passwords is used only in the TeaNode app and on the das
 // agent wrote for itself. What such a run does is steered by content the
 // person did not write or by a program that holds a token, and a login is the
 // last thing to hand to that. It says where to ask instead.
-const notTheirsWords = "Passwords is used only in a conversation the person starts in the TeaNode app or on the dashboard, or in a schedule the person wrote themselves, not in a run that a mail, a message, a webhook, a goal, a dream, the command line or any other program or content started. Ask in the TeaNode app or on the dashboard."
+const notTheirsWords = "Passwords is used only in a conversation the person starts in the TeaNode app or on the dashboard, or in a goal the person wrote themselves on times they chose, not in a run that a mail, a message, a webhook, another goal, a dream, the command line or any other program or content started. Ask in the TeaNode app or on the dashboard."
 
 // agentsGoalWords is the answer in place of notTheirsWords for a run that a
 // goal the agent wrote woke. It says what the person can do about it, so the

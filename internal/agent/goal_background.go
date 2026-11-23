@@ -90,14 +90,13 @@ func (self *Agent) StartGoal(tx db.Transaction, agent *models.Agent, owner *mode
 	}
 	var started *models.AgentConversation
 	if err := func() error {
-		goalsInProgress := self.settings.Configuration().Agent.Limits.EffectiveGoalsInProgress()
-		going, err := tx.ListAgentGoals(agent.ID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, goalsInProgress+1)
-		if err != nil {
-			return err
+		isOnSetTimes := len(goalTimes) > 0 || len(start.GoalMailConditions) > 0
+		if !isOnSetTimes {
+			if err := self.requireRoomForGoal(tx, agent.ID); err != nil {
+				return err
+			}
 		}
-		if len(going) >= goalsInProgress {
-			return ErrTooManyGoals
-		}
+		var err error
 		if started, err = tx.CreateAgentConversation(&models.AgentConversation{
 			AgentID: agent.ID, Kind: models.AgentConversationGoal, Title: goalTitle, TitledBy: "program", Surface: "goal", LastAt: now,
 			Goal: goalDescription, GoalTitle: goalTitle, GoalState: models.GoalWorking, GoalNextAt: next, GoalSetAt: &now,
@@ -117,6 +116,28 @@ func (self *Agent) StartGoal(tx db.Transaction, agent *models.Agent, owner *mode
 	}
 	log.Noticef("agent %q started goal %q (%s)", agent.ID, goalTitle, started.ID)
 	return started, nil
+}
+
+// requireRoomForGoal refuses one more goal at its own pace when the operator's
+// limit of them is in progress. A goal on set times is not counted: its turns
+// are bounded by its times, as a schedule's were, and the limit is there to
+// bound the turns the agent paces for itself.
+func (self *Agent) requireRoomForGoal(tx db.Transaction, agentId string) error {
+	goalsInProgress := self.settings.Configuration().Agent.Limits.EffectiveGoalsInProgress()
+	going, err := tx.ListAgentGoals(agentId, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, 0)
+	if err != nil {
+		return err
+	}
+	ownPace := 0
+	for _, goal := range going {
+		if !goal.IsGoalOnSetTimes() {
+			ownPace++
+		}
+	}
+	if ownPace >= goalsInProgress {
+		return ErrTooManyGoals
+	}
+	return nil
 }
 
 // settleGoalTiming checks a goal's times and mail conditions, and says when
@@ -298,14 +319,9 @@ func (self *Agent) SetGoalState(tx db.Transaction, agent *models.Agent, owner *m
 			after = goal
 			return nil
 		}
-		if goalState == models.GoalWorking {
-			goalsInProgress := self.settings.Configuration().Agent.Limits.EffectiveGoalsInProgress()
-			going, err := tx.ListAgentGoals(agent.ID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, goalsInProgress+1)
-			if err != nil {
+		if goalState == models.GoalWorking && goal.GoalState != models.GoalWaiting && !goal.IsGoalOnSetTimes() {
+			if err := self.requireRoomForGoal(tx, agent.ID); err != nil {
 				return err
-			}
-			if len(going) >= goalsInProgress && goal.GoalState != models.GoalWaiting {
-				return ErrTooManyGoals
 			}
 		}
 		if after, err = tx.UpdateAgentConversation(goal.ID, func(conversation *models.AgentConversation) error {

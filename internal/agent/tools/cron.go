@@ -28,7 +28,7 @@ func parseCron(expression string) ([5]cronField, error) {
 	var fields [5]cronField
 	parts := strings.Fields(strings.TrimSpace(expression))
 	if len(parts) != 5 {
-		return fields, fmt.Errorf("a schedule is five fields: minute hour day month weekday")
+		return fields, fmt.Errorf("a time is five fields: minute hour day month weekday")
 	}
 	bounds := [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 7}}
 	for index, part := range parts {
@@ -123,7 +123,7 @@ func NextCron(expression string, after time.Time, location *time.Location) (time
 		}
 		return candidate, nil
 	}
-	return time.Time{}, fmt.Errorf("the schedule never comes round")
+	return time.Time{}, fmt.Errorf("the time never comes round")
 }
 
 // relativePattern is "@in 5m", "@in 2 hours", "@in 1 day": a moment said

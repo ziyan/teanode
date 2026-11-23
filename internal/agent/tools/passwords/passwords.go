@@ -90,7 +90,7 @@ func init() {
 					"list, read_note and generate are refused in a subagent, since what they give would come back in its answer; do them in this conversation. " +
 					"To sign in to a site with a login, take its item_id from list and use the browser tool: fill_login (item_id, user_name_ref, password_ref) puts the user name and password into the page's fields, fill_one_time_code (item_id, ref) puts in the current one-time code, and passkey_sign_in (item_id, in the headless browser only) makes the passkey ready so that you click the site's sign-in button; " +
 					"they work only on a page whose host is one of the item's sites, and you never see the values. " +
-					"It works in a conversation with the person in the TeaNode app or on the dashboard, and in a schedule the person wrote themselves, " +
+					"It works in a conversation with the person in the TeaNode app or on the dashboard, and in a goal the person wrote themselves on times they chose, " +
 					"but never over Telegram or Discord nor in a chat with other people, since what you read would reach them, and never in a run that a mail, a message, a webhook, a goal, the command line or other content or a program started: then tell the person to ask in the TeaNode app or on the dashboard. " +
 					"If list shows nothing, tell the person to open the item in Passwords and turn on \"Let the agent use this\", then ask again.",
 				Guidance: "A note in Passwords is among the most private text the person has. Read one only when the person asked for it or it plainly answers what they asked, say plainly that you used it, " +

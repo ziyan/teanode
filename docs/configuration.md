@@ -1663,8 +1663,9 @@ resolves to `48`, a turn every half hour.
 **`goalTurnsAlone`** — How many of those turns a goal takes without a word
 from the person before it stops and asks them. Zero resolves to `24`.
 
-**`goalsInProgress`** — How many goals one person may have working or waiting
-at once. Zero resolves to `20`.
+**`goalsInProgress`** — How many goals at their own pace one person may have
+working or waiting at once; goals on set times are not counted. Zero resolves
+to `20`.
 
 **`backgroundWakesAlone`** — How many turns finished background commands and
 work may wake in one conversation before the person writes there again; past
