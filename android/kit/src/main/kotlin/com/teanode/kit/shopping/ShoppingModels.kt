@@ -125,6 +125,8 @@ data class ShoppingTrip(
     val shoppingListIds: List<String> = emptyList(),
     val startedAt: String = "",
     val finishedAt: String? = null,
+    /** How many items the trip bought are still bought: what resuming it puts back in the cart. */
+    val boughtItemCount: Int = 0,
 ) {
     /** Who is shopping: their name, or their username when they have no name. */
     val shownShopper: String get() = shopperName.ifEmpty { shopperUsername }

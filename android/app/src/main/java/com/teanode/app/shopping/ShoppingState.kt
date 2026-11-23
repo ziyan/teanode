@@ -24,7 +24,11 @@ import com.teanode.kit.shopping.ShoppingCartProgress
 import com.teanode.kit.shopping.ShoppingTotal
 import com.teanode.kit.shopping.ShoppingTrip
 import com.teanode.kit.shopping.createShoppingList
+import com.teanode.kit.shopping.checkOffShoppingItem
 import com.teanode.kit.shopping.checkShoppingItem
+import com.teanode.kit.shopping.openShoppingTrips
+import com.teanode.kit.shopping.resumableShoppingTrip
+import com.teanode.kit.shopping.resumeShopping
 import com.teanode.kit.shopping.deleteShoppingList
 import com.teanode.kit.shopping.finishShopping
 import com.teanode.kit.shopping.otherShoppers
@@ -93,8 +97,64 @@ internal fun FollowShopping(connection: Connection, isDemo: Boolean, refresh: su
     }
 }
 
+/** The items the person put in their own cart (somebody else's cart is not theirs to finish). */
+internal fun List<ShoppingItem>.ownCart(ownUserId: String?): List<ShoppingItem> =
+    filter { item -> item.isInCart && item.cartedByUserId.isNotEmpty() && item.cartedByUserId == ownUserId }
+
+/**
+ * The trip the person finished in the last three hours and may resume. [refresh] reads it from the server (null when
+ * there is none, or when they are shopping again); [resume] opens it again and returns it, null when the server refused.
+ */
+internal class ShoppingResumable(private val connection: Connection, private val snackbar: SnackbarController) {
+    var trip by mutableStateOf<ShoppingTrip?>(null)
+        private set
+
+    /** Whether a resume is on its way, so the button cannot be pressed twice. */
+    var isResuming by mutableStateOf(false)
+        private set
+
+    suspend fun refresh() {
+        trip = try {
+            connection.resumableShoppingTrip()
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: Throwable) {
+            trip
+        }
+    }
+
+    suspend fun resume(): ShoppingTrip? {
+        val finished = trip ?: return null
+        if (isResuming) return null
+        isResuming = true
+        return try {
+            connection.resumeShopping(finished.id).also { trip = null }
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (failure: Throwable) {
+            snackbar.showError(failure)
+            null
+        } finally {
+            isResuming = false
+        }
+    }
+}
+
 /** The Shopping screen: the person's lists, the lists shared with them, and the stores their lists have items for. */
-internal class ShoppingHomeState(private val connection: Connection, private val scope: CoroutineScope, private val snackbar: SnackbarController) {
+internal class ShoppingHomeState(
+    private val connection: Connection,
+    private val scope: CoroutineScope,
+    private val snackbar: SnackbarController,
+    private val ownUserId: String?,
+) {
+    val resumable = ShoppingResumable(connection, snackbar)
+
+    /** The trip the person has open now, and how many items they have in their cart on it. */
+    var ownTrip by mutableStateOf<ShoppingTrip?>(null)
+        private set
+    var ownCartCount by mutableStateOf(0)
+        private set
+
     var lists by mutableStateOf<List<ShoppingList>>(emptyList())
         private set
     var stores by mutableStateOf<List<ShoppingStore>>(emptyList())
@@ -142,11 +202,32 @@ internal class ShoppingHomeState(private val connection: Connection, private val
             }
         }
         granteeNames = names
+        resumable.refresh()
+        loadOwnTrip()
+    }
+
+    private suspend fun loadOwnTrip() {
+        try {
+            ownTrip = connection.openShoppingTrips().firstOrNull { trip -> trip.isOpen && trip.userId == ownUserId }
+            val trip = ownTrip
+            ownCartCount = if (trip == null) 0 else connection.shoppingStoreItems(trip.storeName, trip.shoppingListIds).shoppingItems.ownCart(ownUserId).size
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: Throwable) {
+            // The row is left as it was; the next read corrects it.
+        }
     }
 
     fun reload() {
         loadFailure = null
         scope.launch { load() }
+    }
+
+    /** Resumes the trip the person finished; the trip when it is open again. */
+    suspend fun resume(): ShoppingTrip? {
+        val trip = resumable.resume() ?: return null
+        load()
+        return trip
     }
 
     /** Makes a list and returns it, null when the server refused. */
@@ -181,6 +262,13 @@ internal class ShoppingListState(
         private set
     var stores by mutableStateOf<List<ShoppingStore>>(emptyList())
         private set
+    val resumable = ShoppingResumable(connection, snackbar)
+
+    /** Whether the person has a trip of their own open (on any list), which makes the check on a row put the item in the cart. */
+    private var hasOwnOpenTrip by mutableStateOf(false)
+
+    /** Items whose check is waiting for the server, so a second tap does not send a second change. */
+    private val pendingItemIds = mutableSetOf<String>()
 
     /** Whether the person is reminded of the list at a store; kept here so a switch answers at once. */
     var isReminded by mutableStateOf(true)
@@ -191,6 +279,12 @@ internal class ShoppingListState(
         private set
     var loadFailure by mutableStateOf<Throwable?>(null)
         private set
+
+    /** What the person put in their own cart, which Done buys. */
+    val ownCart: List<ShoppingItem> get() = items.ownCart(ownUserId)
+
+    /** The trip to offer to resume here: the person's latest finished one, when it names this list. */
+    val resumableTrip: ShoppingTrip? get() = resumable.trip?.takeIf { trip -> listId in trip.shoppingListIds }
 
     val toBuy: List<ShoppingItem> get() = items.filter { item -> !item.isNotNeeded }
     val notNeeded: List<ShoppingItem> get() = ShoppingGrouping.split(items).second
@@ -213,6 +307,14 @@ internal class ShoppingListState(
         } catch (failure: Throwable) {
             if (hasLoaded) snackbar.showError(failure) else loadFailure = failure
             return
+        }
+        resumable.refresh()
+        hasOwnOpenTrip = try {
+            connection.openShoppingTrips().any { trip -> trip.isOpen && trip.userId == ownUserId }
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: Throwable) {
+            hasOwnOpenTrip
         }
         granteeNames = if (list?.isOwner == true && list?.isShared == true) {
             try {
@@ -292,17 +394,77 @@ internal class ShoppingListState(
         }
     }
 
-    /** Whether Done has anything to do here: the person has a trip open on this list, or has put something on it in the cart. */
+    /** Whether the person is shopping: they have a trip open, or have put something on this list in their cart. */
     val isShopping: Boolean
-        get() = trips.any { trip -> trip.isOpen && trip.userId == ownUserId } || items.any { item -> item.isInCart && item.cartedByUserId == ownUserId }
+        get() = hasOwnOpenTrip || trips.any { trip -> trip.isOpen && trip.userId == ownUserId } || ownCart.isNotEmpty()
 
-    /** Done: what the person put in the cart is bought, no receipt needed. */
-    suspend fun finish(doneText: String) {
+    /** Ends the person's trip: what they put in the cart is bought; true when it is over. */
+    suspend fun finishTrip(): Boolean {
         val isDone = attempt {
             connection.finishShopping()
+            hasOwnOpenTrip = false
             load()
         }
+        return isDone
+    }
+
+    /** Done with no receipt: ends the trip and says so. */
+    suspend fun finish(doneText: String): Boolean {
+        val isDone = finishTrip()
         if (isDone) say(doneText)
+        return isDone
+    }
+
+    /** Resumes the trip the person finished, and says so. */
+    suspend fun resume(resumedText: String) {
+        if (resumable.resume() == null) return
+        hasOwnOpenTrip = true
+        load()
+        say(resumedText)
+    }
+
+    /**
+     * The check on a row, answered at once and put right when the server refuses. Shopping, it puts the item in the
+     * cart (or takes the person's own out); not shopping, it buys the item now, or needs a bought one again.
+     */
+    fun check(item: ShoppingItem) {
+        if (item.id in pendingItemIds) return
+        val isOwnCartItem = item.isInCart && item.cartedByUserId == ownUserId
+        val shown: ShoppingItem
+        val send: suspend () -> ShoppingItem
+        when {
+            item.isNotNeeded -> {
+                shown = item.copy(shoppingItemState = "needed")
+                send = { connection.checkOffShoppingItem(item.id, false) }
+            }
+            isOwnCartItem -> {
+                shown = item.copy(shoppingItemState = "needed", cartedByUserId = "", cartedByName = "")
+                send = { connection.checkShoppingItem(item.id, false) }
+            }
+            item.isInCart -> return
+            isShopping -> {
+                shown = item.copy(shoppingItemState = "in_cart", cartedByUserId = ownUserId.orEmpty())
+                send = { connection.checkShoppingItem(item.id, true) }
+            }
+            else -> {
+                shown = item.copy(shoppingItemState = "not_needed", lastBoughtAt = java.time.Instant.now().toString())
+                send = { connection.checkOffShoppingItem(item.id, true) }
+            }
+        }
+        pendingItemIds.add(item.id)
+        replace(shown)
+        scope.launch {
+            try {
+                replace(send())
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                replace(item)
+                snackbar.showError(failure)
+            }
+            pendingItemIds.remove(item.id)
+            if (!hasOwnOpenTrip && shown.isInCart) load()
+        }
     }
 
     /** Reads the stores the lists have items for, to choose one to shop at. */
@@ -352,6 +514,7 @@ internal class ShoppingStoreState(
         private set
     var ownTrip by mutableStateOf<ShoppingTrip?>(null)
         private set
+    val resumable = ShoppingResumable(connection, snackbar)
     var isReminded by mutableStateOf(true)
         private set
     var hasLoaded by mutableStateOf(false)
@@ -368,7 +531,19 @@ internal class ShoppingStoreState(
     val storeKey: String get() = com.teanode.kit.shopping.ShoppingStoreKey.key(storeName)
     private val shownItems: List<ShoppingItem> get() = items.filter { item -> !item.isNotNeeded }
     val progress: ShoppingCartProgress get() = ShoppingCartProgress.of(shownItems)
-    val sections: ShoppingStoreSections get() = ShoppingGrouping.forStore(shownItems)
+
+    /** The store's sections of what is still to find: the items in a cart (anybody's) are in [cartItems] instead. */
+    val sections: ShoppingStoreSections get() = ShoppingGrouping.forStore(shownItems.filter { item -> !isChecked(item) })
+
+    /** The items in a cart, in the order of the aisles, which the screen shows last. */
+    val cartItems: List<ShoppingItem> get() = ShoppingGrouping.byAisle(shownItems.filter { item -> isChecked(item) }).flatMap { group -> group.items }
+
+    /** What the person put in their own cart (as far as they have just said), which Done buys. */
+    val ownCart: List<ShoppingItem>
+        get() = shownItems.filter { item -> isChecked(item) && (item.cartedByUserId == ownUserId || pendingChecks[item.id] == true) }
+
+    /** The trip to offer to resume here: the person's latest finished one, when it was at this store. */
+    val resumableTrip: ShoppingTrip? get() = resumable.trip?.takeIf { trip -> trip.storeKey == storeKey }
     val otherShopperNames: List<String> get() = trips.otherShoppers(storeKey, ownUserId)
     val includedCount: Int get() = lists.count { list -> list.isIncluded }
 
@@ -389,6 +564,7 @@ internal class ShoppingStoreState(
             hasLoaded = true
             loadFailure = null
             ownTrip = trips.firstOrNull { trip -> trip.isOpen && trip.userId == ownUserId }
+            resumable.refresh()
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: Throwable) {
@@ -462,10 +638,18 @@ internal class ShoppingStoreState(
         }
     }
 
+    /** Resumes the trip the person finished here, and reads the screen again; true when it is open again. */
+    suspend fun resume(): Boolean {
+        if (resumable.resume() == null) return false
+        load()
+        return true
+    }
+
     /** Done: what the person put in the cart is bought, no receipt needed; true when it is over. */
     suspend fun finish(): Boolean = try {
         connection.finishShopping()
         ownTrip = null
+        load()
         true
     } catch (failure: CancellationException) {
         throw failure

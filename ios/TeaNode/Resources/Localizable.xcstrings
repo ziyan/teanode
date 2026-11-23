@@ -97119,66 +97119,450 @@
         }
       }
     },
-    "Keep out of the Inbox": {
+    "Your cart is empty": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "受信トレイに入れない"
+            "value": "カートは空です"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "不再进入收件箱"
+            "value": "购物车是空的"
           }
         }
       }
     },
-    "Let back into the Inbox": {
+    "Check items off at the store to put them in your cart.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "受信トレイに戻す"
+            "value": "お店で品物にチェックを付けるとカートに入ります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "恢复进入收件箱"
+            "value": "在店里勾选物品，把它们放进购物车。"
           }
         }
       }
     },
-    "Out of the Inbox": {
+    "Your cart": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "受信トレイに入れない"
+            "value": "あなたのカート"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "不进入收件箱"
+            "value": "你的购物车"
           }
         }
       }
     },
-    "Keep out of the Inbox instead": {
+    "Keep shopping": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "代わりに受信トレイに入れない"
+            "value": "買い物を続ける"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "改为不再进入收件箱"
+            "value": "继续购物"
+          }
+        }
+      }
+    },
+    "Snap the receipt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートを撮る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拍下收据"
+          }
+        }
+      }
+    },
+    "Finish without a receipt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートなしで終える"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不拍收据，直接完成"
+          }
+        }
+      }
+    },
+    "Finish without a receipt?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートなしで終えますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不拍收据就完成吗？"
+          }
+        }
+      }
+    },
+    "Take %@ out of the cart": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ をカートから出す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把%@从购物车拿出"
+          }
+        }
+      }
+    },
+    "The item in your cart is marked bought. You can resume this trip for the next three hours.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カートの品物は購入済みになります。この買い物は3時間以内なら再開できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购物车里的物品会标记为已买。接下来三小时内可以继续这次购物。"
+          }
+        }
+      }
+    },
+    "The %lld items in your cart are marked bought. You can resume this trip for the next three hours.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カートの %lld 点は購入済みになります。この買い物は3時間以内なら再開できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购物车里的 %lld 件物品会标记为已买。接下来三小时内可以继续这次购物。"
+          }
+        }
+      }
+    },
+    "You finished shopping at %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に買い物を終えました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你在 %@ 完成了购物"
+          }
+        }
+      }
+    },
+    "You finished shopping at %@ at %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@ に %1$@ での買い物を終えました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你在 %2$@ 于 %1$@ 完成了购物"
+          }
+        }
+      }
+    },
+    "1 item goes back in your cart": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 点がカートに戻ります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 件物品会放回购物车"
+          }
+        }
+      }
+    },
+    "%lld items go back in your cart": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 点がカートに戻ります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件物品会放回购物车"
+          }
+        }
+      }
+    },
+    "You are shopping": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "買い物中です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你正在购物"
+          }
+        }
+      }
+    },
+    "Nothing in your cart yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カートはまだ空です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购物车里还没有东西"
+          }
+        }
+      }
+    },
+    "%lld in your cart": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カートに %lld 点"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购物车里有 %lld 件"
+          }
+        }
+      }
+    },
+    "Done shopping · %lld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "買い物を終える · %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购物完成 · %lld"
+          }
+        }
+      }
+    },
+    "Out of stock (%@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在庫切れ（%@）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缺货（%@）"
+          }
+        }
+      }
+    },
+    "Shopping again. What the trip bought is back in your cart.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "買い物を再開しました。この買い物で買った品物はカートに戻りました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续购物。这次买的东西已放回购物车。"
+          }
+        }
+      }
+    },
+    "Sending the receipt…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートを送信中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在发送收据…"
+          }
+        }
+      }
+    },
+    "Finishing…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終えています…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在完成…"
+          }
+        }
+      }
+    },
+    "Done shopping.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "買い物を終えました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购物完成。"
+          }
+        }
+      }
+    },
+    "Done shopping. The receipt is being read; prices are added when it is done.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "買い物を終えました。レシートを読み取り中です。終わると価格が記録されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "购物完成。正在读取收据，读完后会记下价格。"
+          }
+        }
+      }
+    },
+    "Checked off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チェック済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已勾选"
+          }
+        }
+      }
+    },
+    "To buy": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "買うもの"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待买"
+          }
+        }
+      }
+    },
+    "Scan a receipt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートを読み取る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描收据"
+          }
+        }
+      }
+    },
+    "Search this list": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このリストを検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索此清单"
           }
         }
       }
@@ -97969,6 +98353,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "可从 TestFlight 安装"
+          }
+        }
+      }
+    },
+    "Keep out of the Inbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信トレイに入れない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不再进入收件箱"
+          }
+        }
+      }
+    },
+    "Let back into the Inbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信トレイに戻す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复进入收件箱"
+          }
+        }
+      }
+    },
+    "Out of the Inbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信トレイに入れない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不进入收件箱"
+          }
+        }
+      }
+    },
+    "Keep out of the Inbox instead": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代わりに受信トレイに入れない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改为不再进入收件箱"
           }
         }
       }

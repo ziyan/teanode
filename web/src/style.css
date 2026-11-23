@@ -22197,6 +22197,15 @@ button.person-row:focus-visible {
   width: 100%;
 }
 
+/* The list's search field, on a line above the tabs. */
+.shopping-search-row {
+  margin-bottom: var(--space-2);
+}
+
+.shopping-search-row input {
+  width: 100%;
+}
+
 /* The tabs of a list and the layout switch on one line, the switch at the
    end; the line under the tabs runs under both. */
 .shopping-tabs-row {
@@ -22335,6 +22344,161 @@ button.person-row:focus-visible {
 .shopping-card.is-in-cart .shopping-item-description strong {
   color: var(--muted);
   text-decoration: line-through;
+}
+
+/* The round check at the start of an item's row. The label is the 44 pixel
+   target; the circle is drawn inside it, filled when checked, in the
+   accent, so it reads the same in light and dark. */
+.shopping-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: -10px 0;
+  cursor: pointer;
+}
+
+.shopping-check input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: grid;
+  place-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  border: 2px solid var(--muted);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.shopping-check input[type='checkbox']::after {
+  content: '';
+  width: 6px;
+  height: 11px;
+  margin-top: -2px;
+  border: solid var(--accent-text);
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: rotate(45deg);
+}
+
+.shopping-check input[type='checkbox']:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.shopping-check input[type='checkbox']:checked::after {
+  opacity: 1;
+}
+
+.shopping-check input[type='checkbox']:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.shopping-check input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A card's check sits in the line with the name, so it must not push the
+   words down. */
+.shopping-card-name .shopping-check {
+  margin: -10px -6px -10px -10px;
+}
+
+/* A row or a card that opens its item when the empty part of it is clicked. */
+.shopping-row.is-openable {
+  cursor: pointer;
+}
+
+.shopping-row.is-openable:hover {
+  background: var(--field);
+}
+
+/* A line above a list or a column: a trip finished a moment ago with its
+   Resume button, or the trip the person is on, which opens the store. */
+.shopping-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--field);
+  color: inherit;
+  text-decoration: none;
+}
+
+.shopping-notice-words {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.shopping-notice button {
+  flex: none;
+}
+
+.mailbox-rows > .shopping-notice {
+  margin: 0;
+  border-width: 0 0 1px;
+  border-radius: 0;
+}
+
+.shopping-notice-link:hover {
+  background: var(--sidebar-hover);
+}
+
+/* What Done shopping opens: the cart's items, one line each, scrolling inside
+   the dialog on a short screen. */
+.shopping-cart-items {
+  max-height: 50dvh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.shopping-cart-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 52px;
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--border);
+}
+
+.shopping-cart-item .shopping-check {
+  margin: 0 -8px 0 -10px;
+}
+
+.shopping-cart-words {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.shopping-cart-words .muted {
+  font-size: var(--text-label);
+}
+
+.shopping-cart-price {
+  flex: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .shopping-picture-field {

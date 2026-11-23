@@ -114,7 +114,7 @@ func TestUndoingAReceiptPutsBackExactlyWhatItChanged(t *testing.T) {
 	var items []*models.ShoppingItem
 	world.run(t, func(tx db.Transaction) {
 		lists, _ := tx.ListShoppingLists(world.owner.ID)
-		items, _, _ = tx.ListShoppingItems(world.owner.ID, lists[0].ID, nil, 0, 10)
+		items, _, _ = tx.ListShoppingItems(world.owner.ID, lists[0].ID, nil, "", 0, 10)
 		if _, err := tx.SetShoppingItemNeed(world.owner.ID, items[1].ID, true, "2"); err != nil {
 			t.Fatal(err)
 		}
@@ -315,7 +315,7 @@ func TestTheSecondRoundOfReceiptEdges(t *testing.T) {
 	// proposed for line 1 (the oats) is not applied to what line 1 is now.
 	world.run(t, func(tx db.Transaction) {
 		lists, _ := tx.ListShoppingLists(world.owner.ID)
-		items, _, _ := tx.ListShoppingItems(world.owner.ID, lists[0].ID, []models.ShoppingItemState{models.ShoppingItemStateNeeded}, 0, 10)
+		items, _, _ := tx.ListShoppingItems(world.owner.ID, lists[0].ID, []models.ShoppingItemState{models.ShoppingItemStateNeeded}, "", 0, 10)
 		var soapId string
 		for _, item := range items {
 			if item.ItemDescription == "Dish soap" {

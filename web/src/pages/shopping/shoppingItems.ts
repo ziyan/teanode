@@ -1,6 +1,6 @@
-import { subscribe } from '../../api'
+import { graphql, subscribe } from '../../api'
 import { uploadFiles } from '../../upload'
-import { AGENT_ATTACHMENTS_PATH } from '../finance/financeApi'
+import { AGENT_ATTACHMENTS_PATH, READ_RECEIPT } from '../finance/financeApi'
 import { SHOPPING_EVENTS, ShoppingItem } from './shoppingApi'
 
 // What the Shopping page works out from the items it reads: how they are
@@ -33,6 +33,22 @@ export function isOnShoppingTab(item: ShoppingItem, tab: ShoppingTab): boolean {
     default:
       return item.shoppingItemState === 'needed'
   }
+}
+
+// matchesShoppingSearch says whether an item answers the words typed in the
+// list's search field: every word must be found, ignoring case, in the
+// description, the details, the store or the aisle. Other apps use the same
+// rule, so there is no fuzzy matching here. No words match everything.
+export function matchesShoppingSearch(item: ShoppingItem, searchText: string): boolean {
+  const words = searchText
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word !== '')
+  if (words.length === 0) return true
+  const haystacks = [item.itemDescription, item.itemDetails, item.storeName, item.aisleName].map((field) =>
+    field.toLowerCase(),
+  )
+  return words.every((word) => haystacks.some((haystack) => haystack.includes(word)))
 }
 
 export function countShoppingTabs(items: ShoppingItem[]): Record<ShoppingTab, number> {
@@ -176,6 +192,49 @@ export async function uploadAgentAttachment(file: File): Promise<string> {
   const agentAttachmentId = uploaded?.attachments?.[0]?.id
   if (!agentAttachmentId) throw new Error('The file was not kept.')
   return agentAttachmentId
+}
+
+// readShoppingReceipt sends a receipt, a photo or a PDF, and has it read, so
+// its prices land on the items it matches.
+export async function readShoppingReceipt(file: File): Promise<void> {
+  const agentAttachmentId = await uploadAgentAttachment(file)
+  await graphql(READ_RECEIPT, { agentAttachmentId })
+}
+
+// --- the cart ----------------------------------------------------------------
+
+// isInOwnCart says whether an item is in the cart of the person with this ID.
+export function isInOwnCart(item: ShoppingItem, userId: string | undefined): boolean {
+  return item.shoppingItemState === 'in_cart' && item.cartedByUserId === userId
+}
+
+// isInOtherCart says whether an item is in somebody else's cart, which the
+// person cannot take it out of.
+export function isInOtherCart(item: ShoppingItem, userId: string | undefined): boolean {
+  return item.shoppingItemState === 'in_cart' && item.cartedByUserId !== '' && item.cartedByUserId !== userId
+}
+
+// lineAmount is what an item in the cart should come to: its count times its
+// latest price, or null when either is not known.
+export function lineAmount(item: ShoppingItem): number | null {
+  const unitPrice = priceNumber(item.unitPriceAmount)
+  const quantity = Number(item.neededQuantity)
+  if (unitPrice === null || !Number.isFinite(quantity)) return null
+  return unitPrice * quantity
+}
+
+// cartEstimate adds up what the items should come to, in the currency of the
+// first one with a price; an item with no price adds nothing. Null when none
+// has a price.
+export function cartEstimate(items: ShoppingItem[]): { amount: number; currencyCode: string } | null {
+  let estimate: { amount: number; currencyCode: string } | null = null
+  for (const item of items) {
+    const amount = lineAmount(item)
+    if (amount === null) continue
+    estimate ??= { amount: 0, currencyCode: item.currencyCode }
+    if (item.currencyCode === estimate.currencyCode) estimate.amount += amount
+  }
+  return estimate
 }
 
 // --- addresses ---------------------------------------------------------------

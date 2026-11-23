@@ -849,9 +849,11 @@ func TestMirroredMigrationMarksStoredCopies(t *testing.T) {
 		t.Fatalf("the data set does not say what it was meant to: %v", detected)
 	}
 
-	var migration, laterMigration, shoppingMigration migrations.Migration
+	var migration, laterMigration, shoppingMigration, shoppingTripMigration migrations.Migration
 	for _, candidate := range migrations.Migrations() {
 		switch candidate.ID {
+		case "0280_shopping_item_bought_by_trip":
+			shoppingTripMigration = candidate
 		case "0144_agent_finance_transaction_duplicate":
 			migration = candidate
 		case "0154_finance_receipts":
@@ -860,14 +862,17 @@ func TestMirroredMigrationMarksStoredCopies(t *testing.T) {
 			shoppingMigration = candidate
 		}
 	}
-	if migration.SQL == "" || migration.ReverseSQL == "" || laterMigration.SQL == "" || shoppingMigration.ReverseSQL == "" {
-		t.Fatal("the migrations 0144_agent_finance_transaction_duplicate, 0154_finance_receipts and 0260_shopping are missing")
+	if migration.SQL == "" || migration.ReverseSQL == "" || laterMigration.SQL == "" || shoppingMigration.ReverseSQL == "" || shoppingTripMigration.ReverseSQL == "" {
+		t.Fatal("the migrations 0144_agent_finance_transaction_duplicate, 0154_finance_receipts, 0260_shopping and 0280_shopping_item_bought_by_trip are missing")
 	}
 	// A later migration adds columns to the same table after these, so it
 	// is taken off first and put back after, newest first as a downgrade
 	// does: the columns then come back in the order the driver's cached
 	// statements were prepared against. The shopping tables point at the
-	// receipts, so they are taken off before them and put back after.
+	// receipts, so they are taken off before them and put back after; a
+	// shopping item points at the trip that bought it, so that comes off
+	// first of all.
+	dbtest.Exec(t, database, shoppingTripMigration.ReverseSQL)
 	dbtest.Exec(t, database, shoppingMigration.ReverseSQL)
 	dbtest.Exec(t, database, laterMigration.ReverseSQL)
 	dbtest.Exec(t, database, migration.ReverseSQL)
@@ -879,6 +884,7 @@ func TestMirroredMigrationMarksStoredCopies(t *testing.T) {
 	dbtest.Exec(t, database, migration.SQL)
 	dbtest.Exec(t, database, laterMigration.SQL)
 	dbtest.Exec(t, database, shoppingMigration.SQL)
+	dbtest.Exec(t, database, shoppingTripMigration.SQL)
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		migrated := duplicateOfByProviderId(t, tx, fixture.agentId)
 		if fmt.Sprint(migrated) != fmt.Sprint(detected) {

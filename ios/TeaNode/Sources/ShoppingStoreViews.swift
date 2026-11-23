@@ -14,9 +14,9 @@ import TeaNodeKit
 struct ShoppingStoreScreen: View {
     let connection: Connection
     let storeName: String
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: ShoppingStoreModel
+    @State private var isShowingCart = false
     @State private var pickedReceiptItems: [PhotosPickerItem] = []
     @State private var isTakingReceiptPicture = false
     @AppStorage(ShoppingLayoutChoice.storageKey) private var layoutName = ShoppingLayoutChoice.list.rawValue
@@ -42,10 +42,24 @@ struct ShoppingStoreScreen: View {
             .sheet(item: Bindable(model.receipts).target) { target in
                 ShoppingReceiptSheet(connection: connection, financeReceiptId: target.financeReceiptId)
             }
+            .sheet(isPresented: $isShowingCart) {
+                ShoppingCartSheet(connection: connection, storeName: storeName, ownUserId: model.ownUserId, shownItems: model.items) { text in
+                    Task { await model.finished(saying: text) }
+                }
+            }
             .shoppingReceiptSource(pickedItems: $pickedReceiptItems, isTakingPicture: $isTakingReceiptPicture) { file in
                 Task { await model.receipts.scan(file) }
             }
             .toast(done: $model.doneText, problem: $model.problemText)
+            #if DEBUG
+                .task {
+                    // `-TeaNodeScreen shopping-cart` opens the cart over the store.
+                    if DemoServer.isRequested, DemoServer.screen == "shopping-cart" {
+                        try? await Task.sleep(for: .milliseconds(600))
+                        isShowingCart = true
+                    }
+                }
+            #endif
     }
 
     private var screen: some View {
@@ -66,7 +80,13 @@ struct ShoppingStoreScreen: View {
 
     private var content: some View {
         let sections = model.sections
+        let inCart = model.inCart
         return List {
+            if let resumableTrip = model.resumableTrip {
+                Section {
+                    ShoppingResumeRow(trip: resumableTrip) { _ = await model.resume(resumableTrip) }
+                }
+            }
             // The summary and the list buttons share one section, so the
             // list does not put a section's spacing between them.
             Section {
@@ -87,6 +107,11 @@ struct ShoppingStoreScreen: View {
                         tileGrid(placedTiles(sections))
                     }
                 }
+                if !inCart.isEmpty {
+                    Section("In the cart") {
+                        tileGrid(inCart.map { ShoppingPlacedItem(item: $0, groupName: ShoppingWords.listItemPlace($0)) })
+                    }
+                }
             } else {
                 ForEach(sections.aisleGroups) { group in
                     Section {
@@ -100,8 +125,14 @@ struct ShoppingStoreScreen: View {
                         ForEach(sections.anyStoreItems) { item in row(item) }
                     }
                 }
+                if !inCart.isEmpty {
+                    Section("In the cart") {
+                        ForEach(inCart) { item in row(item) }
+                    }
+                }
             }
         }
+        .animation(reduceMotion ? nil : .default, value: inCart.map(\.id))
     }
 
     private var header: some View {
@@ -207,7 +238,7 @@ struct ShoppingStoreScreen: View {
             LoadFailedView(problemText: loadFailedText) { await model.load() }
         } else if !model.hasLoaded {
             ProgressView()
-        } else if model.sections.aisleGroups.isEmpty, model.sections.anyStoreItems.isEmpty {
+        } else if model.sections.aisleGroups.isEmpty, model.sections.anyStoreItems.isEmpty, model.inCart.isEmpty, model.resumableTrip == nil {
             ContentUnavailableView(
                 "Nothing to buy here", systemImage: AppSection.shopping.systemImage,
                 description: Text("Everything on the lists you chose is in the cart or not needed."))
@@ -219,6 +250,10 @@ struct ShoppingStoreScreen: View {
     private var menu: some View {
         Menu {
             ShoppingLayoutPicker(layoutName: $layoutName)
+            Menu("Scan a receipt", systemImage: "doc.text.viewfinder") {
+                ShoppingReceiptSourceChoices(pickedItems: $pickedReceiptItems, isTakingPicture: $isTakingReceiptPicture)
+            }
+            .disabled(model.receipts.readingText != nil)
             Toggle("Remind me when I arrive here", isOn: reminderBinding)
                 .disabled(storeName.isEmpty)
         } label: {
@@ -230,59 +265,26 @@ struct ShoppingStoreScreen: View {
         Binding(get: { model.isReminded }, set: { isOn in Task { await model.setReminder(isOn) } })
     }
 
-    /// The buttons over the bottom of the screen. While the person is
-    /// shopping, Done is the one prominent button, and needs no receipt; the
-    /// receipt is the round button beside it. Before that, scanning a receipt
-    /// is the screen's one action.
+    /// The button over the bottom of the screen: once something is in the
+    /// person's cart, Done shopping, which opens the cart to look over before
+    /// it is bought. Scanning a receipt otherwise is in the screen's menu.
     @ViewBuilder private var bottomControls: some View {
-        Group {
-            if model.isShopping {
-                HStack(spacing: 12) {
-                    Button {
-                        finish()
-                    } label: {
-                        Text("Done shopping")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.large)
-                    Menu {
-                        ShoppingReceiptSourceChoices(pickedItems: $pickedReceiptItems, isTakingPicture: $isTakingReceiptPicture)
-                    } label: {
-                        Image(systemName: "doc.text.viewfinder")
-                            .font(.title3.weight(.semibold))
-                            .frame(width: 52, height: 52)
-                            .glassEffect(.regular.interactive(), in: .circle)
-                            .contentShape(.circle)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
-                    .disabled(model.receipts.readingText != nil)
-                    .accessibilityLabel(Text("Scan the receipt"))
-                }
-            } else {
-                Menu {
-                    ShoppingReceiptSourceChoices(pickedItems: $pickedReceiptItems, isTakingPicture: $isTakingReceiptPicture)
-                } label: {
-                    Label("Scan the receipt", systemImage: "doc.text.viewfinder")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
-                .controlSize(.large)
-                .disabled(model.receipts.readingText != nil)
+        if !model.ownCart.isEmpty {
+            Button {
+                isShowingCart = true
+            } label: {
+                Text(verbatim: ShoppingWords.doneShoppingTitle(cartCount: model.ownCart.count))
+                    .contentTransition(.numericText())
+                    .frame(maxWidth: .infinity)
             }
-        }
-        .padding(.horizontal)
-        .padding(.bottom, 8)
-        // Floating buttons stop growing before they cover the items under them.
-        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-    }
-
-    private func finish() {
-        Task {
-            if await model.finish() { dismiss() }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .readableWidth()
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            // Floating buttons stop growing before they cover the items under them.
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         }
     }
 }
@@ -347,11 +349,14 @@ struct ShoppingStoreItemRow: View {
 /// ShoppingCheckMark is the check that says an item is in the cart.
 struct ShoppingCheckMark: View {
     let isChecked: Bool
+    /// A check that cannot be tapped (an item in somebody else's cart) is
+    /// grey, so it does not read as the person's own.
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
             .font(.title2)
-            .foregroundStyle(isChecked ? Color.accentColor : Color.secondary)
+            .foregroundStyle(isChecked && isEnabled ? Color.accentColor : Color.secondary)
             .symbolEffect(.bounce, value: isChecked)
             .frame(width: 32)
     }
