@@ -145,6 +145,9 @@ const AgentAdminPage = lazyPage(async () => ({
 const AgentPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/agent')).AgentPage,
 }))
+const FeedPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/feed')).FeedPage,
+}))
 const AgentConversationsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/agentConversations')).AgentConversationsPage,
 }))
@@ -620,6 +623,8 @@ export function App() {
                       <Route path="/mailbox/subscriptions/:key" element={<MailboxSubscriptionsPage />} />
                       <Route path="/mailbox/:folderId" element={<MailboxPage />} />
                       <Route path="/mailbox/:folderId/:itemId" element={<MailboxPage />} />
+                      {/* What the agent posted unasked, first in the rail. */}
+                      <Route path="/feed" element={<FeedPage />} />
                       {/* The chats: the person's conversations with their agent
                       and with people, as tiles. /agent was its address before,
                       and links the server and the phone still make use it. */}

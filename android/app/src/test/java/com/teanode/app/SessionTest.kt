@@ -194,7 +194,7 @@ class SessionTest {
 
     @Test
     fun theTabBarKeepsWhatThePersonChose() {
-        assertEquals(listOf(AppSection.Agent, AppSection.Mail, AppSection.Photos), session.tabBarSections.value)
+        assertEquals(listOf(AppSection.Feed, AppSection.Agent, AppSection.Mail), session.tabBarSections.value)
         session.setTabBarSections(listOf(AppSection.Finance, AppSection.Settings, AppSection.Mail))
         assertEquals(listOf(AppSection.Finance, AppSection.Mail), session.tabBarSections.value)
         val again = AppSession(context, MemorySecretStore(), server, null, context.getSharedPreferences("session-test", Context.MODE_PRIVATE))

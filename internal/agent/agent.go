@@ -102,6 +102,9 @@ type Agent struct {
 	cancel    context.CancelFunc
 	waitGroup sync.WaitGroup
 
+	// feedPictures is the fetching of cards' pictures under way.
+	feedPictures sync.WaitGroup
+
 	// describedHeads is which checkout heads this process has already
 	// asked a model to describe, by source id and head. A describe whose
 	// answer files nothing leaves no mark on the page, and the profile

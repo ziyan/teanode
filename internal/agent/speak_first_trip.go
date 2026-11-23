@@ -133,7 +133,8 @@ func (self *Agent) tripReason() speakFirstReason {
 			look := self.tripLooks[agent.ID]
 			return look != nil && look.isDue, nil
 		},
-		prepare: self.prepareTrip,
+		feedLines: "This note is not a conversation: post it as ONE card with the feed tool instead of writing it here: feed_item_kind update, title the trip as a line, body the note as you would have said it, pictureSymbol airplane, coalesce_key trip:<the trip's event id from the note above>, so that the note before leaving replaces the first. Write nothing else in this turn.",
+		prepare:   self.prepareTrip,
 		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time, prepared map[string]string) (string, error) {
 			var trip tripNote
 			if err := json.Unmarshal([]byte(prepared[preparedTrip]), &trip); err != nil {

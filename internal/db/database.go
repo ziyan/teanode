@@ -283,6 +283,27 @@ func (self *database) ListenChatCallEvents(ctx context.Context) (<-chan string, 
 	return self.listen(ctx, ChatCallEventChannel)
 }
 
+// FeedEventChannel is what an instance LISTENs on to hear that a card of an
+// agent's feed changed, so that a feed open on this one updates.
+const FeedEventChannel = "feed_event"
+
+// NotifyFeedEvent is outside any transaction, like NotifyChatCallEvent: the
+// change is stored already, and a screen that missed this reads the feed
+// again.
+func (self *database) NotifyFeedEvent(event *models.FeedEvent) error {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	return self.db.Exec("SELECT pg_notify(?, ?)", FeedEventChannel, string(payload)).Error
+}
+
+// ListenFeedEvents delivers the payload (a models.FeedEvent as JSON) of
+// every change any instance announces, for as long as the context lives.
+func (self *database) ListenFeedEvents(ctx context.Context) (<-chan string, error) {
+	return self.listen(ctx, FeedEventChannel)
+}
+
 // PresenceEventChannel carries a person's tab's or phone's report that it is
 // shown (agent.PresenceReport as JSON, with the instance that was given it),
 // so that every instance knows who is looking at what.

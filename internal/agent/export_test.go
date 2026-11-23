@@ -4,8 +4,17 @@ import (
 	"context"
 	"time"
 
+	"github.com/ziyan/teanode/internal/linkpreview"
 	"github.com/ziyan/teanode/internal/models"
 )
+
+// SetFeedPictureFetcher is what fetches cards' pictures, and returns what it
+// was.
+func SetFeedPictureFetcher(fetcher *linkpreview.Fetcher) *linkpreview.Fetcher {
+	previous := feedPictureFetcher
+	feedPictureFetcher = fetcher
+	return previous
+}
 
 // EmbedOverviewSectionsOfTheMostImportant is EmbedOverviewSections reading
 // only the pageCount most important pages, for a test that needs a page
