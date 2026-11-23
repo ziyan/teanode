@@ -31,6 +31,10 @@
             if let picture = Self.avatarPicture(for: request) {
                 return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
             }
+            // So is the picture of a feed card.
+            if let picture = Self.feedMediaPicture(for: request) {
+                return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
             // So is the picture of a link's page.
             if let picture = Self.linkPreviewPicture(for: request) {
                 return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
@@ -48,6 +52,8 @@
                 answer = journalAnswer
             } else if let shoppingAnswer = Self.shoppingAnswer(query: query, body: request.httpBody) {
                 answer = shoppingAnswer
+            } else if let feedAnswer = Self.feedAnswer(query: query, body: request.httpBody) {
+                answer = feedAnswer
             } else if let linkPreviewAnswer = Self.linkPreviewAnswering(query: query, body: request.httpBody) {
                 answer = linkPreviewAnswer
             } else if let personCardAnswer = Self.personCardAnswering(query: query, body: request.httpBody) {
@@ -210,7 +216,7 @@
             } else if query.contains("GetSession") {
                 answer = Self.session
             } else if query.contains("GetAppUpdate") {
-                answer = Self.screen == "app-update" ? Self.appUpdate : #"{"data":{"GetAppUpdate":null}}"#
+                answer = Self.screen == "app-update" || Self.screen == "feed-app-update" ? Self.appUpdate : #"{"data":{"GetAppUpdate":null}}"#
             } else {
                 answer = #"{"data":{}}"#
             }

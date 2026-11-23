@@ -503,6 +503,25 @@ jobs:
           shoot finance-person-all-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-person-all
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
+          # The agent's feed (docs/planning/agent-feed-execplan.md): cards with a table of facts, a decision to
+          # answer, a coding session's question and a mail tidy-up proposal.
+          shoot feed-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed
+          shoot feed-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed
+          shoot feed-stack-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-stack
+          shoot feed-stack-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-stack
+          shoot feed-stack-open-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-stack-open
+          shoot feed-deck-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-deck
+          shoot feed-deck-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-deck
+          shoot feed-stack-open-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-stack-open
+          shoot feed-media-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-media
+          shoot feed-media-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-media
+          shoot feed-app-update-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-app-update
+          shoot feed-app-update-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-app-update
+          shoot feed-app-update-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-app-update
+          shoot feed-brief-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-brief
+          shoot feed-brief-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-brief
+          shoot feed-brief-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-brief
+          shoot feed-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed
           # Photos, from invented photos drawn by the demo server: the library as a grid, the viewer on its
           # first photo, the Trash, and a library with nothing in it.
           shoot photos-library-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
@@ -849,6 +868,7 @@ jobs:
             "circles|-TeaNodeTab settings -TeaNodeScreen circles"
             "photos-backup-on|-TeaNodeTab settings -TeaNodeScreen photos-backup-on"
             "passwords-settings|-TeaNodeTab passwords -TeaNodeScreen passwords-settings"
+            "feed|-TeaNodeTab feed -TeaNodeScreen feed"
           )
           shoot ipad-connect-light light large
           shoot ipad-server-setup-light light large -TeaNodeScreen server-setup

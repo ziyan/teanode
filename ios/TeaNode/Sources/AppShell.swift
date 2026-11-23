@@ -4,7 +4,7 @@ import TeaNodeKit
 /// AppSection is a part of TeaNode, as the dashboard's sidebar has them: a
 /// tab of the tab bar, a row of the More tab, or a row of the iPad's sidebar.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case agent, journal, goals, ideas, mail, calendar, contacts, photos, location, health, passwords, shopping, knowledge, finance, recordings, coding, settings
+    case feed, agent, journal, goals, ideas, mail, calendar, contacts, photos, location, health, passwords, shopping, knowledge, finance, recordings, coding, settings
 
     var id: String { rawValue }
 
@@ -13,6 +13,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
     /// groups as well as the agent's own.
     var title: String {
         switch self {
+        case .feed: String(localized: "Feed")
         case .agent: String(localized: "Chats")
         case .journal: JournalText.title
         case .goals: String(localized: "Goals")
@@ -35,6 +36,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
 
     var systemImage: String {
         switch self {
+        case .feed: "newspaper"
         case .agent: "bubble.left"
         case .journal: "book.closed"
         case .goals: "target"
@@ -57,7 +59,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
 }
 
 /// MainView is the signed-in app: a tab bar of icons, with the three parts the
-/// person chose (Chats, Mail and Photos at first), then More, which holds the
+/// person chose (Feed, Chats and Mail at first), then More, which holds the
 /// other parts, and Search. The bar
 /// shrinks to a small pill while a list scrolls. Where the window is wide, as
 /// on an iPad, the same tabs are a sidebar, and the parts that are under More
@@ -87,6 +89,9 @@ struct MainView: View {
     /// What is pushed on the list of conversations in the Chats tab.
     @State private var chatPath: [ChatPlace] = []
     @State private var mail: MailModel
+    /// The agent's feed, held here so the Feed tab's badge and the cards stay
+    /// current while another tab is open.
+    @State private var feed: FeedModel
     @State private var finance: FinanceModel
     @State private var financePart = FinancePart.spending
     /// The pages pushed on Settings by name, as the Search tab opens them.
@@ -107,6 +112,7 @@ struct MainView: View {
     init(connection: Connection, username: String) {
         self.connection = connection
         _mail = State(initialValue: MailModel(connection: connection, username: username))
+        _feed = State(initialValue: FeedModel(connection: connection))
         _finance = State(initialValue: FinanceModel(connection: connection))
         _photos = State(initialValue: PhotosModel.start(connection: connection))
         _passwords = State(initialValue: PasswordsModel(connection: connection))
@@ -116,6 +122,9 @@ struct MainView: View {
         // In parts: as one chain of modifiers the body was more than the
         // compiler would type-check in reasonable time.
         presented
+            // The feed is kept current whichever tab is open, for the Feed
+            // tab's badge.
+            .modifier(FeedBadgeFollower(model: feed))
             // While the conversation is on screen the person is here, and
             // notifications that would tell them what they see are held back.
             // Elsewhere in the app they are away from it, so what the agent says
@@ -428,10 +437,11 @@ struct MainView: View {
         AppSection.allCases.filter { !tabBarSections.contains($0) }.reduce(0) { $0 + badgeCount(of: $1) }
     }
 
-    /// What waits in a part: the unread chats, and the coding sessions that
-    /// ask something.
+    /// What waits in a part: the unread cards of the feed, the unread chats,
+    /// and the coding sessions that ask something.
     private func badgeCount(of section: AppSection) -> Int {
         switch section {
+        case .feed: app.unreadFeedCount
         case .agent: app.unreadChatCount
         case .coding: app.codingAskingCount
         default: 0
@@ -697,6 +707,8 @@ struct MainView: View {
     @ViewBuilder
     private func availableScreen(_ section: AppSection) -> some View {
         switch section {
+        case .feed:
+            FeedScreen(model: feed)
         case .agent:
             chatsTab
         case .mail:

@@ -9,6 +9,7 @@ import (
 
 	"github.com/op/go-logging"
 
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/aggregate"
 )
 
@@ -136,6 +137,12 @@ type Database interface {
 	// theirs on any instance reads the call again.
 	NotifyChatCallEvent(callId string, userIds []string) error
 	ListenChatCallEvents(ctx context.Context) (<-chan string, error)
+
+	// NotifyFeedEvent and ListenFeedEvents are the same for a card of an
+	// agent's feed posted, replaced, settled or dismissed: the payload is a
+	// models.FeedEvent naming the person it is for.
+	NotifyFeedEvent(event *models.FeedEvent) error
+	ListenFeedEvents(ctx context.Context) (<-chan string, error)
 
 	// NotifyPresenceEvent and ListenPresenceEvents carry what a person's
 	// tabs and phones report about being shown, to every instance.
@@ -302,6 +309,7 @@ type Transaction interface {
 	IdeaOperation
 	BackgroundWorkOperation
 	GoalOperation
+	FeedOperation
 	WatchedItemOperation
 	AlertOperation
 	FinanceOperation

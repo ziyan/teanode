@@ -89,6 +89,10 @@ type SaveAgentScheduleArguments struct {
 	Prompt         string                        `json:"prompt" graphapi:"nullable"`
 	Deliver        string                        `json:"deliver" graphapi:"nullable"`
 	Enabled        *bool                         `json:"enabled" graphapi:"nullable"`
+
+	// IsNotifiedWhenPosted: the first card of each run, in the feed, sends
+	// one quiet notification saying the schedule's cards are ready.
+	IsNotifiedWhenPosted *bool `json:"isNotifiedWhenPosted" graphapi:"nullable"`
 }
 
 // DeleteAgentScheduleArguments name the schedule.
@@ -226,7 +230,10 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		writtenBy = models.WrittenByPerson
 	}
 	if arguments.ScheduleID == "" {
-		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), MailConditions: arguments.MailConditions, Prompt: strings.TrimSpace(arguments.Prompt), WrittenBy: writtenBy, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled}
+		schedule := &models.AgentSchedule{AgentID: found.ID, Name: strings.TrimSpace(arguments.Name), Cron: strings.TrimSpace(arguments.Cron), MailConditions: arguments.MailConditions, Prompt: strings.TrimSpace(arguments.Prompt), WrittenBy: writtenBy, Deliver: arguments.Deliver, Enabled: arguments.Enabled == nil || *arguments.Enabled, IsNotifiedWhenPosted: arguments.IsNotifiedWhenPosted != nil && *arguments.IsNotifiedWhenPosted}
+		if schedule.Deliver == "" {
+			schedule.Deliver = models.DefaultScheduleDeliver(found)
+		}
 		next, err := agent.SettleSchedule(schedule, principal.User, time.Now())
 		if err != nil {
 			return nil, translateError(err)
@@ -283,6 +290,9 @@ func (self *graph) SaveAgentSchedule(ctx context.Context, arguments SaveAgentSch
 		}
 		if arguments.Enabled != nil {
 			schedule.Enabled = *arguments.Enabled
+		}
+		if arguments.IsNotifiedWhenPosted != nil {
+			schedule.IsNotifiedWhenPosted = *arguments.IsNotifiedWhenPosted
 		}
 		if principal.IsPersonsTap() {
 			if strings.TrimSpace(arguments.Prompt) != "" {

@@ -61,6 +61,7 @@ object NotificationOpening {
         is NotificationDestination.Shopping -> AppSection.Shopping
         is NotificationDestination.Coding, NotificationDestination.CodingHome -> AppSection.Coding
         is NotificationDestination.JournalDay -> AppSection.Journal
+        NotificationDestination.Feed -> AppSection.Feed
         is NotificationDestination.Conversation, NotificationDestination.Main -> AppSection.Agent
     }
 
@@ -81,7 +82,7 @@ object NotificationOpening {
             is NotificationDestination.Coding -> listOf(partRoute, codingSessionRoute(destination.computer, destination.paneId))
             is NotificationDestination.JournalDay -> if (destination.day.isEmpty()) listOf(partRoute) else listOf(partRoute, JournalRoutes.day(destination.day))
             // Location opens on the map with the person selected: the screen reads [LocationOpening].
-            is NotificationDestination.Location, NotificationDestination.CodingHome, NotificationDestination.Main -> listOf(partRoute)
+            is NotificationDestination.Location, NotificationDestination.CodingHome, NotificationDestination.Main, NotificationDestination.Feed -> listOf(partRoute)
         }
     }
 }

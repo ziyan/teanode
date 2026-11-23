@@ -25,7 +25,7 @@ import Foundation
 public struct NotificationContent: Codable, Equatable, Sendable {
     /// alert, herdr_question, goal_needs_you, speak_first, message,
     /// approval, question, answer, circle, chat, skill_share_call, photo,
-    /// location, shopping, journalEveningQuestion, test, or, in a VoIP push,
+    /// location, shopping, journalEveningQuestion, agent_feed, test, or, in a VoIP push,
     /// call (a call rings, `callId` names it) and call_ended (it no longer
     /// rings this phone).
     public let notificationKind: String
@@ -53,6 +53,10 @@ public struct NotificationContent: Codable, Equatable, Sendable {
     public let questionFingerprint: String?
     /// For the journal's evening question, the day it asks about.
     public let journalDay: String?
+    /// For a card of the agent's feed (agent_feed), the card
+    /// (`feedItemId` in `push.Content`). Its choices are the buttons, each
+    /// with a `buttonAction` of `feed:<choiceKey>`.
+    public let feedItemId: String?
     public let title: String
     public let body: String
     public let buttons: [NotificationButton]?
@@ -62,7 +66,7 @@ public struct NotificationContent: Codable, Equatable, Sendable {
 /// NotificationButton is one action on a notification.
 public struct NotificationButton: Codable, Equatable, Sendable {
     public let label: String
-    /// approve, deny, answer:<option number>, reply or open.
+    /// approve, deny, answer:<option number>, feed:<choice key>, reply or open.
     public let buttonAction: String
 }
 

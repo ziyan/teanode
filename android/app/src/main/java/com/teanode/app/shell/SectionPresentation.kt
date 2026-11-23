@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MonitorHeart
+import androidx.compose.material.icons.outlined.Newspaper
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Psychology
@@ -30,6 +31,7 @@ import com.teanode.kit.AppSectionGroup
  */
 val AppSection.titleResource: Int
     @StringRes get() = when (this) {
+        AppSection.Feed -> R.string.section_feed
         AppSection.Agent -> R.string.section_agent
         AppSection.Journal -> R.string.section_journal
         AppSection.Goals -> R.string.section_goals
@@ -52,6 +54,7 @@ val AppSection.titleResource: Int
 /** The part's symbol, the Material counterpart of the iPhone app's SF Symbol. */
 val AppSection.icon: ImageVector
     get() = when (this) {
+        AppSection.Feed -> Icons.Outlined.Newspaper
         AppSection.Agent -> Icons.Outlined.ChatBubbleOutline
         AppSection.Journal -> Icons.AutoMirrored.Outlined.MenuBook
         AppSection.Goals -> Icons.Outlined.AdsClick

@@ -228,6 +228,38 @@ func TestAlertJobTellsTheBurstAndDropsTheNewsletter(t *testing.T) {
 	}
 }
 
+// With the feed as the agent's destination, the same burst is one card of
+// kind alert in the feed, named by its subject, and nothing is written in the
+// main conversation; the alert is recorded, so that it is not said twice.
+func TestAlertJobTellsTheBurstInTheFeedInsteadOfTheMainConversation(t *testing.T) {
+	provider := &alertModel{answers: []string{`{"alerts":[{"subject_key":"Photo App sign-in codes","is_urgent":true,"candidate_ids":["c1"],"alert_text":"Heads up: someone has been requesting sign-in codes for your photo app account, six in the last hour. If that wasn't you, change the password."}],"dropped":[]}`}}
+	server := provider.serve(t)
+	fixture := newAlertFixtureWith(t, server.URL, zoneAtHour(t, 12))
+	fixture.useFeed(t)
+	burst := fixture.candidate(t, models.AlertCandidateBurst, models.AlertSignalNone, "no-reply@photos.example.com", "Your sign-in code is 123456", "Your code is 123456.")
+	fixture.decide(t)
+
+	if messages := fixture.mainMessages(t); len(messages) != 0 {
+		t.Fatalf("nothing is said in the main conversation: %+v", messages)
+	}
+	alerts := fixture.alerts(t)
+	if len(alerts) != 1 || alerts[0].ConversationID != "" || fixture.candidateByID(t, burst.ID).AlertID != alerts[0].ID {
+		t.Fatalf("the alert is recorded: %+v", alerts)
+	}
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		items, _, err := tx.ListAgentFeedItems(fixture.owner.ID, nil, 10, false, time.Now())
+		if err != nil || len(items) != 1 {
+			t.Fatalf("one card: %+v %v", items, err)
+		}
+		card := items[0]
+		if card.FeedItemKind != models.FeedItemAlert || card.FeedSourceKind != models.FeedSourceAlert || card.FeedSourceID != alerts[0].ID ||
+			card.CoalesceKey != "alert:photo app sign-in codes" || card.FeedUrgency != models.FeedUrgencyNow || card.FeedStackKey != "" ||
+			!strings.HasPrefix(card.Title, "Heads up:") || card.Body != alerts[0].AlertText {
+			t.Fatalf("the card: %+v", card)
+		}
+	})
+}
+
 // At three in the morning an alert that can wait is held for seven, its
 // candidate left waiting and the job put back to then; one that cannot
 // wait is said.

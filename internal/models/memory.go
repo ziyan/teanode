@@ -168,9 +168,15 @@ type AgentSchedule struct {
 	// the agent wrote on the strength of something it read.
 	WrittenBy string `json:"writtenBy,omitempty"`
 
-	// Deliver is where the answer goes: mail, to the account's
-	// notification address, or drawer, a turn in ConversationID.
+	// Deliver is where the answer goes: feed, cards in the person's feed,
+	// mail, to the account's notification address, or drawer, a turn in
+	// ConversationID.
 	Deliver string `json:"deliver"`
+
+	// IsNotifiedWhenPosted makes the first card of each run of a schedule that
+	// answers in the feed send one quiet notification, "<name> is ready",
+	// though its cards are not urgent.
+	IsNotifiedWhenPosted bool `json:"isNotifiedWhenPosted"`
 
 	// ConversationID is the conversation the schedule was made in, where a
 	// drawer schedule takes its turn; empty, or a conversation since
@@ -226,6 +232,7 @@ const (
 const (
 	AgentDeliverMail   = "mail"
 	AgentDeliverDrawer = "drawer"
+	AgentDeliverFeed   = "feed"
 )
 
 // KnownWriter is one of those three, or empty for anything else.
@@ -281,9 +288,9 @@ func (self *AgentSchedule) Validate() error {
 		errors.add("prompt", "required")
 	}
 	switch self.Deliver {
-	case "", "mail", "drawer":
+	case "", "mail", "drawer", "feed":
 	default:
-		errors.add("deliver", "%q is not mail or drawer", self.Deliver)
+		errors.add("deliver", "%q is not feed, mail or drawer", self.Deliver)
 	}
 	return errors.ErrOrNil()
 }
@@ -373,4 +380,14 @@ type AgentSkillSecret struct {
 
 	// Value is sealed with the server secret and never leaves the server.
 	Value string `json:"-"`
+}
+
+// DefaultScheduleDeliver is where a new schedule's answer goes when it was
+// not said: the feed, or the main conversation for an agent whose person sent
+// what it says unasked back there.
+func DefaultScheduleDeliver(found *Agent) string {
+	if found != nil && !found.IsFeedFor() {
+		return AgentDeliverDrawer
+	}
+	return AgentDeliverFeed
 }

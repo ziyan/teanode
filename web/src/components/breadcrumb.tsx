@@ -55,6 +55,8 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   { prefix: '/health', trail: [{ label: 'health.title', to: '/health' }] },
   // A page of its own in the rail, after the chats. A day and the periods
   // above it add their own crumbs below.
+  // The first row of the rail: what the agent posted unasked.
+  { prefix: '/feed', trail: [{ label: 'feed.title', to: '/feed' }] },
   { prefix: '/journal', trail: [{ label: 'journal.title', to: '/journal' }] },
   { prefix: '/passwords', trail: [{ label: 'passwords.title', to: '/passwords' }] },
   // A page of its own in the mailbox's rail; a list, a store or a receipt
