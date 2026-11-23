@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.234.0] - 2026-11-23
+
+### Added
+
+- Operators can see what the database and the file storage hold, by area, kind of file and person, with a daily trend, a projection of growth and the day a disk fills, on the Server page, in the iPhone and Android apps, with `teanode server storage` and through the agent. The operators are told when a disk is projected to fill within 30 days, and again within 7. (#772)
+
 ## [0.233.1] - 2026-11-23
 
 ### Changed
