@@ -21,7 +21,8 @@ import (
 // lists they reach. A match is never written to an item they do not reach.
 type ShoppingReceiptOperation interface {
 	// ListShoppingReceiptCandidates are the items a receipt from this
-	// merchant could have bought: needed or in the cart, on the lists the
+	// merchant could have bought: needed, in the cart or bought within
+	// models.ShoppingReceiptBoughtWithin, on the lists the
 	// person reaches, for a store whose name the merchant's contains (or the
 	// other way round), or for any store.
 	ListShoppingReceiptCandidates(userId, merchantName string) ([]*models.ShoppingItem, error)
@@ -215,8 +216,11 @@ func (self *transaction) ListShoppingReceiptCandidates(userId, merchantName stri
 	}
 	// The store is compared here rather than in the query, by the loose rule
 	// above; every item still to buy is read first, a list's worth at most.
-	items, err := self.shoppingItemsOf(self.tx.Where("\"shopping_list_id\" IN ? AND \"shopping_item_state\" IN ?", listIds,
-		[]string{string(models.ShoppingItemStateNeeded), string(models.ShoppingItemStateInCart)}).
+	// An item bought in the last few hours is one too: a receipt snapped at
+	// the checkout is read after Done has bought the cart.
+	items, err := self.shoppingItemsOf(self.tx.Where("\"shopping_list_id\" IN ? AND (\"shopping_item_state\" IN ? OR "+
+		"(\"shopping_item_state\" = 'not_needed' AND \"last_bought_at\" >= ?))", listIds,
+		[]string{string(models.ShoppingItemStateNeeded), string(models.ShoppingItemStateInCart)}, time.Now().Add(-models.ShoppingReceiptBoughtWithin)).
 		Order("\"updated_at\" DESC").Limit(shoppingItemsPerListMost))
 	if err != nil {
 		return nil, err
@@ -301,6 +305,11 @@ func (self *transaction) applyShoppingReceiptMatch(userId string, receipt *agent
 	}
 	// Bought fewer than needed: what is left is still needed.
 	updates := withUpdatedAt(boughtShoppingItemUpdates(boughtAt), now)
+	if models.ShoppingItemState(row.ShoppingItemState) != models.ShoppingItemStateNotNeeded {
+		// Bought now by the receipt, not by the trip that last bought it, so
+		// resuming that trip must not take it back into the cart.
+		updates["bought_shopping_trip_id"] = nil
+	}
 	if match.MatchedQuantity != nil && models.ShoppingItemState(row.ShoppingItemState) == models.ShoppingItemStateNeeded {
 		needed, isNeededParsed := parseRat(row.NeededQuantity)
 		bought, isBoughtParsed := parseRat(*match.MatchedQuantity)

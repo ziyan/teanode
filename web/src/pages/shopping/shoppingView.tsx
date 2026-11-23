@@ -85,6 +85,7 @@ export function ShoppingItemCard({
   check,
   facts,
   actions,
+  onOpen,
 }: {
   shoppingItem: ShoppingItem
   // The store and aisle the table would put it under. The cards run on in
@@ -92,20 +93,26 @@ export function ShoppingItemCard({
   // row of empty space; each card says where it is instead.
   groupName: string
   listName?: string
-  // The checkbox that puts it in the cart, or nothing where an item cannot
-  // be checked (a bought item on Not needed).
+  // The round check that puts it in the cart or checks it off.
   check: ReactNode
   facts: string[]
   actions: ReactNode
+  // Opens the item when the card itself is clicked, not one of its buttons.
+  onOpen?: () => void
 }) {
   const shownFacts = facts.filter(Boolean)
   return (
     <li
-      className={
-        shoppingItem.shoppingItemState === 'in_cart'
-          ? 'shopping-card shopping-row is-in-cart'
-          : 'shopping-card shopping-row'
-      }
+      className={[
+        'shopping-card shopping-row',
+        shoppingItem.shoppingItemState === 'needed' ? '' : 'is-in-cart',
+        onOpen ? 'is-openable' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      onClick={(event) => {
+        if (onOpen && !(event.target as HTMLElement).closest('button, a, input, label')) onOpen()
+      }}
     >
       <ShoppingPicture item={shoppingItem} pictureSize="card" />
       <div className="shopping-card-body">

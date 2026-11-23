@@ -17,7 +17,7 @@ const (
 
 	shoppingItemSelection = `{ id shoppingListId listName itemDescription itemDetails storeName storeKey isStoreBrand aisleName aisleRank itemRank neededQuantity quantityUnit unitPriceAmount currencyCode shoppingItemState cartedByUserId cartedByName cartedAt outOfStockAt outOfStockByUserId outOfStockByName outOfStockStoreName lastBoughtAt pictureFileId picturePageUrl picturePath pictureSource pictureSearchedAt createdByUserId createdAt updatedAt }`
 
-	shoppingTripSelection = `{ id userId storeName storeKey startedAt finishedAt shoppingListIds shopperUsername shopperName }`
+	shoppingTripSelection = `{ id userId storeName storeKey startedAt finishedAt shoppingListIds shopperUsername shopperName boughtItemCount }`
 
 	shoppingShareSelection = `{ id shoppingListId granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName createdByUserId createdAt listName ownerUserId ownerUsername ownerName }`
 
@@ -33,7 +33,7 @@ const (
 const (
 	DocumentListShoppingLists = `query { ListShoppingLists ` + shoppingListSelection + ` }`
 
-	DocumentGetShoppingList = `query ($shoppingListId: String!, $shoppingItemStates: [String!], $offset: Int, $pageSize: Int) { GetShoppingList(shoppingListId: $shoppingListId, shoppingItemStates: $shoppingItemStates, offset: $offset, pageSize: $pageSize) { totalCount shoppingList ` + shoppingListSelection + ` shoppingItems ` + shoppingItemSelection + ` shoppingTrips ` + shoppingTripSelection + ` } }`
+	DocumentGetShoppingList = `query ($shoppingListId: String!, $shoppingItemStates: [String!], $searchText: String, $offset: Int, $pageSize: Int) { GetShoppingList(shoppingListId: $shoppingListId, shoppingItemStates: $shoppingItemStates, searchText: $searchText, offset: $offset, pageSize: $pageSize) { totalCount shoppingList ` + shoppingListSelection + ` shoppingItems ` + shoppingItemSelection + ` shoppingTrips ` + shoppingTripSelection + ` } }`
 
 	DocumentGetShoppingItem = `query ($shoppingItemId: String!) { GetShoppingItem(shoppingItemId: $shoppingItemId) ` + shoppingItemSelection + ` }`
 
@@ -44,6 +44,8 @@ const (
 	DocumentListShoppingStoreItems = `query ($storeName: String!, $shoppingListIds: [String!], $isAnyStoreIncluded: Boolean) { ListShoppingStoreItems(storeName: $storeName, shoppingListIds: $shoppingListIds, isAnyStoreIncluded: $isAnyStoreIncluded) { storeName isReminded shoppingItems ` + shoppingItemSelection + ` shoppingLists { shoppingListId listName neededCount isIncluded } shoppingTrips ` + shoppingTripSelection + ` } }`
 
 	DocumentListOpenShoppingTrips = `query { ListOpenShoppingTrips ` + shoppingTripSelection + ` }`
+
+	DocumentGetResumableShoppingTrip = `query { GetResumableShoppingTrip ` + shoppingTripSelection + ` }`
 
 	DocumentListWatchedStores = `query ($latitudeDegrees: Float, $longitudeDegrees: Float) { ListWatchedStores(latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees) { storeName storeKey placeName osmType osmId osmCategory latitudeDegrees longitudeDegrees radiusMeters distanceMeters placeId } }`
 
@@ -89,6 +91,10 @@ const (
 	DocumentStartShopping = `mutation ($storeName: String, $shoppingListIds: [String!]!) { StartShopping(storeName: $storeName, shoppingListIds: $shoppingListIds) ` + shoppingTripSelection + ` }`
 
 	DocumentFinishShopping = `mutation ($shoppingTripId: String) { FinishShopping(shoppingTripId: $shoppingTripId) ` + shoppingTripSelection + ` }`
+
+	DocumentResumeShopping = `mutation ($shoppingTripId: String!) { ResumeShopping(shoppingTripId: $shoppingTripId) ` + shoppingTripSelection + ` }`
+
+	DocumentCheckOffShoppingItem = `mutation ($shoppingItemId: String!, $isCheckedOff: Boolean!) { CheckOffShoppingItem(shoppingItemId: $shoppingItemId, isCheckedOff: $isCheckedOff) ` + shoppingItemSelection + ` }`
 
 	DocumentMatchShoppingReceipt = `mutation ($financeReceiptId: String!) { MatchShoppingReceipt(financeReceiptId: $financeReceiptId) }`
 
@@ -192,6 +198,7 @@ type ShoppingReceiptView struct {
 type ShoppingListQuery struct {
 	ShoppingListID     string
 	ShoppingItemStates []string
+	SearchText         string
 	Offset             int
 	PageSize           int
 }
@@ -270,6 +277,9 @@ func GetShoppingList(ctx context.Context, executor Executor, query ShoppingListQ
 	variables := map[string]any{"shoppingListId": query.ShoppingListID}
 	if len(query.ShoppingItemStates) > 0 {
 		variables["shoppingItemStates"] = query.ShoppingItemStates
+	}
+	if query.SearchText != "" {
+		variables["searchText"] = query.SearchText
 	}
 	if query.Offset > 0 {
 		variables["offset"] = query.Offset
@@ -589,6 +599,20 @@ func CheckShoppingItem(ctx context.Context, executor Executor, shoppingItemId st
 	return result.CheckShoppingItem, nil
 }
 
+// CheckOffShoppingItem is the check on a list for somebody not shopping: the
+// item is bought now, with no trip and nobody told. Unchecked, it is needed
+// again, and a purchase only hours old is taken back.
+func CheckOffShoppingItem(ctx context.Context, executor Executor, shoppingItemId string, isCheckedOff bool) (*models.ShoppingItem, error) {
+	variables := map[string]any{"shoppingItemId": shoppingItemId, "isCheckedOff": isCheckedOff}
+	var result struct {
+		CheckOffShoppingItem *models.ShoppingItem `json:"CheckOffShoppingItem"`
+	}
+	if err := executor.Execute(ctx, DocumentCheckOffShoppingItem, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.CheckOffShoppingItem, nil
+}
+
 // SetShoppingItemNeed makes an item needed again with a count (1 when
 // neededQuantity is empty), or not needed (bought, if it was in the cart).
 func SetShoppingItemNeed(ctx context.Context, executor Executor, shoppingItemId string, isNeeded bool, neededQuantity string) (*models.ShoppingItem, error) {
@@ -673,6 +697,31 @@ func StartShopping(ctx context.Context, executor Executor, storeName string, sho
 		return nil, err
 	}
 	return result.StartShopping, nil
+}
+
+// GetResumableShoppingTrip is the caller's latest trip when it finished in
+// the last few hours and resuming it would put something back in the cart;
+// nil when there is none or they are shopping now.
+func GetResumableShoppingTrip(ctx context.Context, executor Executor) (*models.ShoppingTrip, error) {
+	var result struct {
+		GetResumableShoppingTrip *models.ShoppingTrip `json:"GetResumableShoppingTrip"`
+	}
+	if err := executor.Execute(ctx, DocumentGetResumableShoppingTrip, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.GetResumableShoppingTrip, nil
+}
+
+// ResumeShopping opens again a trip the caller finished in the last few
+// hours: what it bought goes back in their cart.
+func ResumeShopping(ctx context.Context, executor Executor, shoppingTripId string) (*models.ShoppingTrip, error) {
+	var result struct {
+		ResumeShopping *models.ShoppingTrip `json:"ResumeShopping"`
+	}
+	if err := executor.Execute(ctx, DocumentResumeShopping, map[string]any{"shoppingTripId": shoppingTripId}, &result); err != nil {
+		return nil, err
+	}
+	return result.ResumeShopping, nil
 }
 
 // FinishShopping ends a trip; what the caller put in the cart is bought. An

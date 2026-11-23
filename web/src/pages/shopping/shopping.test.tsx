@@ -104,7 +104,7 @@ it('lists the items under a heading for each store and aisle, the items for any 
 
   // The tabs say how many each holds; the bought item is on the last one.
   expect(screen.getByRole('button', { name: /^To buy/ }).textContent).toContain('3')
-  expect(screen.getByRole('button', { name: /^Not needed/ }).textContent).toContain('1')
+  expect(screen.getByRole('button', { name: /^Checked off/ }).textContent).toContain('1')
   expect(screen.queryByText('Rice')).toBeNull()
 
   // A picture when there is one, and the first letter of the item when not.
@@ -121,21 +121,11 @@ it('lists the items under a heading for each store and aisle, the items for any 
   expect(within(milkRow).getByText('Store brand')).toBeTruthy()
 })
 
-it('checks an item off with CheckShoppingItem', async () => {
-  serve()
-  renderShopping('/shopping/lists/list-1')
-
-  fireEvent.click(await screen.findByRole('checkbox', { name: 'Check off Peas' }))
-
-  await waitFor(() => expect(callsOf('CheckShoppingItem')).toHaveLength(1))
-  expect(callsOf('CheckShoppingItem')[0][1]).toEqual({ shoppingItemId: 'item-1', isChecked: true, storeName: null })
-})
-
 it('keeps the tab in the address and offers Need again on the items that are not needed', async () => {
   serve()
   renderShopping('/shopping/lists/list-1')
 
-  fireEvent.click(await screen.findByRole('button', { name: /^Not needed/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /^Checked off/ }))
   expect(screen.getByTestId('where').textContent).toBe('/shopping/lists/list-1?tab=not-needed')
   const riceRow = (await screen.findByText('Rice')).closest('tr') as HTMLElement
   expect(within(riceRow).getByText('Dec 24, 2029')).toBeTruthy()
@@ -162,7 +152,7 @@ it('adds an item under a heading with its store and aisle set, on the tab of wha
   expect((screen.getByLabelText('Aisle') as HTMLInputElement).value).toBe('Frozen')
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
-  fireEvent.click(screen.getByRole('button', { name: /^Not needed/ }))
+  fireEvent.click(screen.getByRole('button', { name: /^Checked off/ }))
   await screen.findByText('Rice')
   expect(screen.queryByRole('button', { name: /Add an item here/ })).toBeNull()
 })
@@ -311,8 +301,9 @@ it('says who is shopping the list now, and finishes the trip of the caller', asy
   expect(screen.queryByRole('button', { name: 'Start shopping' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Done shopping' }))
 
-  await waitFor(() => expect(callsOf('FinishShopping')).toHaveLength(1))
-  expect(callsOf('FinishShopping')[0][1]).toEqual({ shoppingTripId: 'trip-2' })
+  // Done opens the cart; nothing is finished until a way is chosen.
+  expect(await screen.findByRole('alertdialog', { name: 'Your cart' })).toBeTruthy()
+  expect(callsOf('FinishShopping')).toHaveLength(0)
 })
 
 it('opens a store with the list on it and starts nothing; Done waits for something in the cart', async () => {
@@ -330,11 +321,13 @@ it('opens a store with the list on it and starts nothing; Done waits for somethi
   expect(callsOf('StartShopping')).toHaveLength(0)
 })
 
-it('buys what the caller put in the cart with Done, with no trip and no receipt', async () => {
+it('buys what the caller put in the cart with Done and no receipt, once asked', async () => {
   serve({ items: [shoppingItem({ shoppingItemState: 'in_cart', cartedByUserId: 'person-a', cartedByName: 'Alex' })] })
   renderShopping('/shopping/lists/list-1')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Done shopping' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Done shopping · 1' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Finish without a receipt' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Finish' }))
   await waitFor(() => expect(callsOf('FinishShopping')).toHaveLength(1))
   expect(callsOf('FinishShopping')[0][1]).toEqual({ shoppingTripId: null })
 })

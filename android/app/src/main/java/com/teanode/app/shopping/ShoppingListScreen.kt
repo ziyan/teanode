@@ -1,6 +1,15 @@
 package com.teanode.app.shopping
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.ImeAction
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +25,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
@@ -29,6 +41,7 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +72,7 @@ import com.teanode.app.session.LocalAppSession
 import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.ui.components.ConfirmationDialog
+import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
 import com.teanode.app.ui.components.LocalSnackbar
@@ -66,6 +80,7 @@ import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.kit.shopping.ShoppingGrouping
 import com.teanode.kit.shopping.ShoppingGroup
 import com.teanode.kit.shopping.ShoppingItem
+import com.teanode.kit.shopping.ShoppingSearch
 import com.teanode.kit.shopping.openTrips
 import kotlinx.coroutines.launch
 
@@ -96,6 +111,11 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
     val receiptReader = remember(connection) { ShoppingReceiptReader(connection, scope, snackbar, { text -> snackbar.show(text) }, context) }
     var layout by remember { mutableStateOf(initialLayout) }
     var grouping by remember { mutableStateOf(ShoppingListGrouping.Store) }
+    // Kept across a rotation, so the typed words and the filtered list stay where they were.
+    var isSearching by rememberSaveable { mutableStateOf(false) }
+    var searchText by rememberSaveable { mutableStateOf("") }
+    fun closeSearch() { isSearching = false; searchText = "" }
+    BackHandler(isSearching) { closeSearch() }
     var isRefreshing by remember { mutableStateOf(false) }
     var isMenuOpen by remember { mutableStateOf(false) }
     var isLayoutMenuOpen by remember { mutableStateOf(false) }
@@ -104,6 +124,8 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
     var removing by remember { mutableStateOf<ShoppingItem?>(null) }
     // Touch and hold on an item offers what the iPhone's swipe and menu do: Need again (for one not needed now) and Remove.
     fun itemActions(item: ShoppingItem) = ShoppingItemActions(onNeedAgain = { needingAgain = item }, onRemove = { removing = item })
+    @Composable
+    fun itemCheck(item: ShoppingItem) = shoppingListCheck(item, ownUserId) { state.check(item) }
     var isAdding by remember { mutableStateOf(false) }
     var addingStoreName by remember { mutableStateOf("") }
     var isImporting by remember { mutableStateOf(false) }
@@ -112,25 +134,35 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
     var isConfirmingDelete by remember { mutableStateOf(false) }
     var isChoosingStore by remember { mutableStateOf(false) }
     var isChoosingReceiptSource by remember { mutableStateOf(false) }
+    var isCartOpen by remember { mutableStateOf(false) }
+    var isConfirmingFinish by remember { mutableStateOf(false) }
+    // Whether the receipt being chosen is the one that finishes the trip (from the cart), or one scanned from the menu.
+    var isSnappingAtDone by remember { mutableStateOf(false) }
+    fun receiptChosen(file: ShoppingPendingFile) {
+        if (isSnappingAtDone) receiptReader.snapAndFinish(file, finish = { state.finishTrip() }, onFinished = { isCartOpen = false })
+        else receiptReader.scan(file)
+    }
 
     LaunchedEffect(state) { state.load() }
     FollowShopping(connection, session.isDemo) { state.load() }
     LaunchedEffect(state.isDeleted) { if (state.isDeleted) navigator.back() }
 
     val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
-        if (uri != null) receiptReader.scan(context.readPendingFile(uri, "receipt.jpg"))
+        if (uri != null) receiptChosen(context.readPendingFile(uri, "receipt.jpg"))
     }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
-        if (bitmap != null) receiptReader.scan(bitmap.toPendingFile("receipt.jpg"))
+        if (bitmap != null) receiptChosen(bitmap.toPendingFile("receipt.jpg"))
     }
 
     val list = state.list
     val title = list?.listName.orEmpty()
     TeaNodeScreen(
         title = title,
-        onBack = { navigator.back() },
+        onBack = { if (isSearching) closeSearch() else navigator.back() },
+        titleContent = if (isSearching) ({ ShoppingSearchField(searchText, onChange = { text -> searchText = text }) }) else null,
         actions = {
-            if (state.hasLoaded) {
+            if (state.hasLoaded && !isSearching) {
+                IconButton(onClick = { isSearching = true }) { Icon(Icons.Outlined.Search, contentDescription = stringResource(R.string.shopping_search_this_list)) }
                 Box {
                     IconButton(onClick = { isLayoutMenuOpen = true }) {
                         Icon(if (layout == ShoppingLayoutChoice.List) Icons.Outlined.ViewList else Icons.Outlined.GridView, contentDescription = stringResource(R.string.shopping_layout))
@@ -171,7 +203,7 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                         DropdownMenuItem(text = { Text(stringResource(R.string.shopping_import)) }, leadingIcon = { Icon(Icons.Outlined.Download, null) }, onClick = { isMenuOpen = false; isImporting = true })
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.shopping_upload_a_receipt)) }, leadingIcon = { Icon(Icons.Outlined.CameraAlt, null) },
-                            onClick = { isMenuOpen = false; isChoosingReceiptSource = true },
+                            onClick = { isMenuOpen = false; isSnappingAtDone = false; isChoosingReceiptSource = true },
                         )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.shopping_remind_me_at_stores)) },
@@ -191,8 +223,8 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.isShopping) {
                         ExtendedFloatingActionButton(
-                            onClick = { scope.launch { state.finish(context.getString(R.string.shopping_done_shopping)) } },
-                            icon = { Icon(Icons.Outlined.Check, null) }, text = { Text(stringResource(R.string.shopping_done)) },
+                            onClick = { isCartOpen = true },
+                            icon = { Icon(Icons.Outlined.Check, null) }, text = { Text(stringResource(R.string.shopping_done_shopping_button)) },
                         )
                     }
                     ExtendedFloatingActionButton(
@@ -212,15 +244,25 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                     isRefreshing = isRefreshing,
                     onRefresh = { scope.launch { isRefreshing = true; state.load(); isRefreshing = false } },
                 ) {
+                    // Every section is filtered by the one rule the iPhone and the dashboard use; a group left with no items is not shown.
+                    val shownToBuy = if (isSearching) state.toBuy.filter { item -> ShoppingSearch.matches(item, searchText) } else state.toBuy
+                    val shownNotNeeded = if (isSearching) state.notNeeded.filter { item -> ShoppingSearch.matches(item, searchText) } else state.notNeeded
                     val groups = when (grouping) {
-                        ShoppingListGrouping.Store -> ShoppingGrouping.byStore(state.toBuy)
-                        ShoppingListGrouping.Aisle -> ShoppingGrouping.byAisle(state.toBuy)
+                        ShoppingListGrouping.Store -> ShoppingGrouping.byStore(shownToBuy)
+                        ShoppingListGrouping.Aisle -> ShoppingGrouping.byAisle(shownToBuy)
                     }
                     fun groupTitle(group: ShoppingGroup): String = when (grouping) {
                         ShoppingListGrouping.Store -> words.storeTitle(group)
                         ShoppingListGrouping.Aisle -> words.aisleTitle(group)
                     }
-                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+                    if (isSearching && searchText.isNotBlank() && shownToBuy.isEmpty() && shownNotNeeded.isEmpty()) {
+                        EmptyState(Icons.Outlined.SearchOff, stringResource(R.string.shopping_no_items_match, searchText.trim()))
+                    } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 160.dp)) {
+                        state.resumableTrip?.let { trip ->
+                            item("resume") {
+                                ShoppingResumeRow(trip, state.resumable.isResuming, onResume = { scope.launch { state.resume(context.getString(R.string.shopping_resumed)) } })
+                            }
+                        }
                         item("subtitle") {
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
@@ -246,10 +288,10 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                         }
                         if (layout == ShoppingLayoutChoice.Pictures) {
                             val placed = groups.flatMap { group -> group.items.map { item -> ShoppingPlacedItem(item, groupTitle(group)) } }
-                            tileRows(placed, words, actionsOf = ::itemActions) { item -> editing = item }
-                            if (state.notNeeded.isNotEmpty()) {
-                                item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_not_needed)) }
-                                tileRows(state.notNeeded.map { item -> ShoppingPlacedItem(item, words.listItemPlace(item)) }, words, actionsOf = ::itemActions) { item -> editing = item }
+                            tileRows(placed, words, actionsOf = ::itemActions, checkOf = { item -> itemCheck(item) }) { item -> editing = item }
+                            if (shownNotNeeded.isNotEmpty()) {
+                                item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_checked_off)) }
+                                tileRows(shownNotNeeded.map { item -> ShoppingPlacedItem(item, words.listItemPlace(item)) }, words, actionsOf = ::itemActions, checkOf = { item -> itemCheck(item) }) { item -> editing = item }
                             }
                         } else {
                             for (group in groups) {
@@ -262,11 +304,11 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
                                         }
                                     }
                                 }
-                                items(group.items, key = { item -> "item-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item)) }
+                                items(group.items, key = { item -> "item-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item), check = itemCheck(item)) }
                             }
-                            if (state.notNeeded.isNotEmpty()) {
-                                item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_not_needed)) }
-                                items(state.notNeeded, key = { item -> "not-needed-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item)) }
+                            if (shownNotNeeded.isNotEmpty()) {
+                                item("not-needed-header") { SectionTitle(stringResource(R.string.shopping_checked_off)) }
+                                items(shownNotNeeded, key = { item -> "not-needed-" + item.id }) { item -> ShoppingListItemRow(item, words, onOpen = { editing = item }, actions = itemActions(item), check = itemCheck(item)) }
                             }
                         }
                     }
@@ -275,6 +317,30 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
         }
     }
 
+    if (isCartOpen) {
+        val ownCart = state.ownCart
+        ShoppingCartSheet(
+            items = ownCart, showsListName = ownCart.map { item -> item.shoppingListId }.distinct().size > 1, busyText = receiptReader.readingText,
+            onTakeOut = { item -> state.check(item) },
+            onSnapReceipt = { isSnappingAtDone = true; isChoosingReceiptSource = true },
+            onFinishWithoutReceipt = { isConfirmingFinish = true },
+            onDismiss = { isCartOpen = false },
+        )
+    }
+    if (isConfirmingFinish) {
+        val cartCount = state.ownCart.size
+        ConfirmationDialog(
+            title = stringResource(R.string.shopping_finish_without_receipt_question),
+            text = if (cartCount == 0) stringResource(R.string.shopping_finish_without_receipt_message_empty)
+            else pluralStringResource(R.plurals.shopping_finish_without_receipt_message, cartCount, cartCount),
+            confirmLabel = stringResource(R.string.shopping_finish_action),
+            onConfirm = {
+                isConfirmingFinish = false
+                scope.launch { if (state.finish(context.getString(R.string.shopping_done_shopping))) isCartOpen = false }
+            },
+            onDismiss = { isConfirmingFinish = false },
+        )
+    }
     if (isChoosingStore) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { isChoosingStore = false },
@@ -364,16 +430,41 @@ fun ShoppingListScreen(listId: String, initialLayout: ShoppingLayoutChoice = Sho
     }
 }
 
+/** The bar's search box: a field with a clear button, focused when it appears so the keyboard comes up. */
+@Composable
+private fun ShoppingSearchField(searchText: String, onChange: (String) -> Unit) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    TextField(
+        value = searchText, onValueChange = onChange, singleLine = true,
+        placeholder = { Text(stringResource(R.string.shopping_search_this_list)) },
+        trailingIcon = {
+            if (searchText.isNotEmpty()) {
+                IconButton(onClick = { onChange("") }) { Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.shopping_clear_search)) }
+            }
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
+        modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+    )
+}
+
 @Composable
 internal fun SectionTitle(text: String) {
     Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.semantics { heading() }.padding(start = 16.dp, top = 16.dp, bottom = 8.dp))
 }
 
 /** Tiles two to a row, which fills a section's one row of the list. */
-internal fun androidx.compose.foundation.lazy.LazyListScope.tileRows(placed: List<ShoppingPlacedItem>, words: ShoppingWords, actionsOf: ((ShoppingItem) -> ShoppingItemActions)? = null, onOpen: (ShoppingItem) -> Unit) {
+internal fun androidx.compose.foundation.lazy.LazyListScope.tileRows(
+    placed: List<ShoppingPlacedItem>,
+    words: ShoppingWords,
+    actionsOf: ((ShoppingItem) -> ShoppingItemActions)? = null,
+    checkOf: (@Composable (ShoppingItem) -> ShoppingListCheck)? = null,
+    onOpen: (ShoppingItem) -> Unit,
+) {
     items(placed.chunked(2), key = { row -> "tiles-" + row.first().item.id }) { row ->
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            for (cell in row) ShoppingListItemTile(cell.item, cell.groupName, words, onOpen = { onOpen(cell.item) }, modifier = Modifier.weight(1f), actions = actionsOf?.invoke(cell.item))
+            for (cell in row) ShoppingListItemTile(cell.item, cell.groupName, words, onOpen = { onOpen(cell.item) }, modifier = Modifier.weight(1f), actions = actionsOf?.invoke(cell.item), check = checkOf?.invoke(cell.item))
             if (row.size == 1) Box(Modifier.weight(1f))
         }
     }

@@ -48,6 +48,9 @@ func TestShoppingParity(test *testing.T) {
 		"AddShoppingItemFromReceiptLine": {[]string{"add-from-receipt"}, []string{"add_from_receipt"}},
 		"AddShoppingItems":               {[]string{"add"}, []string{"add_items"}},
 		"CheckShoppingItem":              {[]string{"check", "uncheck"}, []string{"check", "uncheck"}},
+		"CheckOffShoppingItem":           {[]string{"check-off", "undo-check-off"}, []string{"check_off", "undo_check_off"}},
+		"GetResumableShoppingTrip":       {[]string{"resumable"}, []string{"resumable_trip"}},
+		"ResumeShopping":                 {[]string{"resume"}, []string{"resume_shopping"}},
 		"CreateShoppingList":             {[]string{"create"}, []string{"create_list"}},
 		"DecideShoppingReceiptMatch":     {[]string{"decide"}, []string{"decide_match"}},
 		"DeleteShoppingList":             {[]string{"delete"}, []string{"delete_list"}},
@@ -140,7 +143,7 @@ func TestShoppingParity(test *testing.T) {
 	// with the reason. The tool's properties are one set for all its actions,
 	// as the model is given them.
 	flagNames := map[string]string{
-		"shoppingItemStates": "state", "offset": "offset", "pageSize": "limit", "storeName": "store", "shoppingListIds": "list",
+		"shoppingItemStates": "state", "searchText": "search", "offset": "offset", "pageSize": "limit", "storeName": "store", "shoppingListIds": "list",
 		"isAnyStoreIncluded": "this-store-only", "importText": "from-file", "agentAttachmentIds": "picture", "isReminded": "off",
 		"itemDescription": "description", "itemDetails": "details", "isStoreBrand": "store-brand", "aisleName": "aisle",
 		"neededQuantity": "quantity", "quantityUnit": "unit", "isOutOfStock": "in-stock", "observedOn": "on", "currencyCode": "currency",
@@ -148,7 +151,7 @@ func TestShoppingParity(test *testing.T) {
 	}
 	propertyNames := map[string]string{
 		"shoppingListId": "list_id", "shoppingListIds": "list_ids", "shoppingItemId": "item_id", "shoppingItemIds": "item_ids",
-		"shoppingItemStates": "shopping_item_states", "offset": "offset", "pageSize": "page_size", "storeName": "store_name",
+		"shoppingItemStates": "shopping_item_states", "searchText": "search_text", "offset": "offset", "pageSize": "page_size", "storeName": "store_name",
 		"isAnyStoreIncluded": "is_any_store_included", "importText": "import_text", "agentAttachmentIds": "attachment_ids",
 		"listName": "list_name", "granteeUserId": "with", "granteeCircleId": "with", "shoppingListShareId": "share_id",
 		"isReminded": "is_reminded", "shoppingItems": "items", "itemDescription": "item_description", "itemDetails": "item_details",
@@ -172,6 +175,8 @@ func TestShoppingParity(test *testing.T) {
 		"unitPriceAmount.command":      "the price is an argument of the subcommand",
 		"isChecked.command":            "the subcommands are check and uncheck",
 		"isChecked.tool":               "the actions are check and uncheck",
+		"isCheckedOff.command":         "the subcommands are check-off and undo-check-off",
+		"isCheckedOff.tool":            "the actions are check_off and undo_check_off",
 		"isNeeded.command":             "the subcommands are need and not-needed",
 		"isNeeded.tool":                "the actions are need and not_needed",
 

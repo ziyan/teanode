@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 
 import { useBreadcrumbDetail } from '../../components/breadcrumb'
@@ -12,17 +12,17 @@ import { useTranslation } from '../../i18n/i18n'
 import { useSession } from '../../session'
 import {
   checkShoppingItem,
-  finishShopping,
   listShoppingStoreItems,
   setShoppingItemOutOfStock,
   setShoppingStoreReminder,
   ShoppingItem,
 } from './shoppingApi'
+import { ShoppingCartDialog, ShoppingResumeRow, useReceiptReader } from './shoppingCart'
 import { ShoppingItemDialog } from './shoppingItemDialog'
-import { groupShoppingItemsByAisle, quantityText, storeKeyOf } from './shoppingItems'
+import { groupShoppingItemsByAisle, isInOwnCart, quantityText, storeKeyOf } from './shoppingItems'
 import { ShoppingPaneBack, useShoppingLayout } from './shoppingLayout'
 import { ShoppingItemCard, ShoppingViewSwitch, useShoppingView } from './shoppingView'
-import { ShoppingItemName, ShoppingPicture } from './shoppingParts'
+import { ShoppingCheck, ShoppingItemName, ShoppingPicture } from './shoppingParts'
 import { useShoppingEvents } from './useShoppingEvents'
 
 // The store screen: what is needed at one store across the lists the person
@@ -36,7 +36,7 @@ export function ShoppingStorePage() {
   const { t } = useTranslation()
   const toast = useToast()
   const session = useSession()
-  const { reloadShoppingLists } = useShoppingLayout()
+  const { reloadShoppingLists, resumableTrip } = useShoppingLayout()
   const [parameters, setParameters] = useSearchParams()
   const listsParameter = parameters.get('lists') ?? ''
   const askedListIds = useMemo(() => (listsParameter ? listsParameter.split(',') : []), [listsParameter])
@@ -45,6 +45,9 @@ export function ShoppingStorePage() {
   })
   const [isBusy, setIsBusy] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
+  const [isCartOpen, setIsCartOpen] = useState(false)
+  const receiptInput = useRef<HTMLInputElement>(null)
+  const readReceipt = useReceiptReader()
 
   const shoppingLists = view.data?.shoppingLists ?? []
   useShoppingEvents((changedListId) => {
@@ -56,18 +59,33 @@ export function ShoppingStorePage() {
 
   const shoppingItems = useMemo(() => view.data?.shoppingItems ?? [], [view.data])
   const includedLists = shoppingLists.filter((each) => each.isIncluded)
-  const groups = useMemo(() => groupShoppingItemsByAisle(shoppingItems), [shoppingItems])
+  // What is in a cart, anybody's, goes last under its own heading, so what is
+  // left to find stays on top.
+  const cartItems = useMemo(() => shoppingItems.filter((item) => item.shoppingItemState === 'in_cart'), [shoppingItems])
+  const groups = useMemo(
+    () => groupShoppingItemsByAisle(shoppingItems.filter((item) => item.shoppingItemState !== 'in_cart')),
+    [shoppingItems],
+  )
   const storeKey = storeKeyOf(storeName)
   const openTrips = (view.data?.shoppingTrips ?? []).filter(
     (trip) => trip.finishedAt === null && trip.storeKey === storeKey,
   )
   const ownTrip = openTrips.find((trip) => trip.userId === session.userId) ?? null
-  const hasOwnCart = shoppingItems.some(
-    (item) => item.shoppingItemState === 'in_cart' && item.cartedByUserId === session.userId,
-  )
+  const ownCartCount = shoppingItems.filter((item) => isInOwnCart(item, session.userId)).length
+  const resumeHere = resumableTrip && resumableTrip.storeKey === storeKey ? resumableTrip : null
   const [shoppingView, chooseShoppingView] = useShoppingView()
   const otherTrips = openTrips.filter((trip) => trip.userId !== session.userId)
   const editingItem = shoppingItems.find((each) => each.id === editing) ?? null
+
+  async function uploadReceipt(file: File | undefined) {
+    if (!file) return
+    setIsBusy(true)
+    try {
+      if (await readReceipt(file)) toast.done(t('shopping.receiptReading'))
+    } finally {
+      setIsBusy(false)
+    }
+  }
 
   async function act(work: () => Promise<unknown>, done?: string) {
     setIsBusy(true)
@@ -112,6 +130,16 @@ export function ShoppingStorePage() {
   }
 
   const isListNamed = includedLists.length > 1
+  const sections = [
+    ...groups.map((group) => ({
+      key: group.isAnyStore ? '\u0000any-store' : group.aisleName,
+      heading: group.isAnyStore ? t('shopping.storeAnyStoreSection') : group.aisleName || t('shopping.noAisle'),
+      shoppingItems: group.shoppingItems,
+    })),
+    ...(cartItems.length > 0
+      ? [{ key: '\u0000in-cart', heading: t('shopping.tabInCart'), shoppingItems: cartItems }]
+      : []),
+  ]
   return (
     <>
       <ErrorMessage error={view.error} />
@@ -130,15 +158,16 @@ export function ShoppingStorePage() {
 
         <div className="page-actions shopping-list-actions">
           {/* The first item put in the cart starts the trip, so there is no
-              Start; Done buys the cart and needs no receipt. */}
-          {ownTrip || hasOwnCart ? (
+              Start. Done opens the cart; it is the primary button only once
+              something is in the person's own cart. */}
+          {ownTrip || ownCartCount > 0 ? (
             <button
               type="button"
-              className="primary"
+              className={ownCartCount > 0 ? 'primary' : ''}
               disabled={isBusy}
-              onClick={() => void act(() => finishShopping(ownTrip?.id), t('shopping.shoppingDone'))}
+              onClick={() => setIsCartOpen(true)}
             >
-              {t('shopping.doneShopping')}
+              {ownCartCount > 0 ? t('shopping.doneShoppingCount', { count: ownCartCount }) : t('shopping.doneShopping')}
             </button>
           ) : null}
           <button
@@ -155,7 +184,31 @@ export function ShoppingStorePage() {
           >
             {view.data?.isReminded ? t('shopping.dontRemindAtStore') : t('shopping.remindAtStore')}
           </button>
+          <button type="button" disabled={isBusy} onClick={() => receiptInput.current?.click()}>
+            {t('shopping.uploadReceipt')}
+          </button>
+          <input
+            ref={receiptInput}
+            type="file"
+            accept="image/*,application/pdf"
+            hidden
+            aria-label={t('shopping.uploadReceipt')}
+            onChange={(event) => {
+              void uploadReceipt(event.target.files?.[0])
+              event.target.value = ''
+            }}
+          />
         </div>
+
+        {resumeHere ? (
+          <ShoppingResumeRow
+            shoppingTrip={resumeHere}
+            onResumed={() => {
+              reloadShoppingLists()
+              void view.reload(true)
+            }}
+          />
+        ) : null}
 
         {shoppingLists.length > 0 || shoppingItems.length > 0 ? (
           <div className="shopping-view-bar">
@@ -186,14 +239,13 @@ export function ShoppingStorePage() {
           <SettingsEmpty>{t('shopping.storeEmpty', { storeName })}</SettingsEmpty>
         ) : shoppingView === 'pictures' ? (
           <ul className="shopping-cards">
-            {groups.flatMap((group) =>
-              group.shoppingItems.map((shoppingItem) => (
+            {sections.flatMap((section) =>
+              section.shoppingItems.map((shoppingItem) => (
                 <ShoppingItemCard
                   key={shoppingItem.id}
                   shoppingItem={shoppingItem}
-                  groupName={
-                    group.isAnyStore ? t('shopping.storeAnyStoreSection') : group.aisleName || t('shopping.noAisle')
-                  }
+                  groupName={section.heading}
+                  onOpen={() => setEditing(shoppingItem.id)}
                   listName={isListNamed ? shoppingItem.listName : undefined}
                   check={
                     <StoreItemCheck
@@ -237,14 +289,14 @@ export function ShoppingStorePage() {
                   </th>
                 </tr>
               </thead>
-              {groups.map((group) => (
-                <tbody key={group.isAnyStore ? '\u0000any-store' : group.aisleName}>
+              {sections.map((section) => (
+                <tbody key={section.key}>
                   <tr className="shopping-group-row">
                     <th colSpan={5} scope="colgroup">
-                      {group.isAnyStore ? t('shopping.storeAnyStoreSection') : group.aisleName || t('shopping.noAisle')}
+                      {section.heading}
                     </th>
                   </tr>
-                  {group.shoppingItems.map((shoppingItem) => (
+                  {section.shoppingItems.map((shoppingItem) => (
                     <StoreItemRow
                       key={shoppingItem.id}
                       shoppingItem={shoppingItem}
@@ -265,6 +317,23 @@ export function ShoppingStorePage() {
           </div>
         )}
       </section>
+      {isCartOpen ? (
+        <ShoppingCartDialog
+          ownTrip={ownTrip}
+          shoppingListId={null}
+          storeName={storeName}
+          onChanged={() => {
+            reloadShoppingLists()
+            void view.reload(true)
+          }}
+          onFinished={() => {
+            setIsCartOpen(false)
+            reloadShoppingLists()
+            void view.reload(true)
+          }}
+          onClose={() => setIsCartOpen(false)}
+        />
+      ) : null}
       {editingItem ? (
         <ShoppingItemDialog
           target={{ shoppingItem: editingItem }}
@@ -295,7 +364,16 @@ function StoreItemRow({
   onEdit: () => void
 }) {
   return (
-    <tr className={shoppingItem.shoppingItemState === 'in_cart' ? 'shopping-row is-in-cart' : 'shopping-row'}>
+    <tr
+      className={
+        shoppingItem.shoppingItemState === 'in_cart'
+          ? 'shopping-row is-in-cart is-openable'
+          : 'shopping-row is-openable'
+      }
+      onClick={(event) => {
+        if (!(event.target as HTMLElement).closest('button, a, input, label')) onEdit()
+      }}
+    >
       <td className="shrink">
         <StoreItemCheck shoppingItem={shoppingItem} isBusy={isBusy} onCheck={onCheck} />
       </td>
@@ -315,7 +393,8 @@ function StoreItemRow({
   )
 }
 
-// StoreItemCheck is the box that puts an item in the cart at the store.
+// StoreItemCheck is the round check that puts an item in the cart at the
+// store.
 function StoreItemCheck({
   shoppingItem,
   isBusy,
@@ -327,12 +406,11 @@ function StoreItemCheck({
 }) {
   const { t } = useTranslation()
   return (
-    <input
-      type="checkbox"
-      checked={shoppingItem.shoppingItemState === 'in_cart'}
-      disabled={isBusy}
-      aria-label={t('shopping.checkItem', { itemDescription: shoppingItem.itemDescription })}
-      onChange={(event) => onCheck(event.target.checked)}
+    <ShoppingCheck
+      isChecked={shoppingItem.shoppingItemState === 'in_cart'}
+      isDisabled={isBusy}
+      label={t('shopping.checkItem', { itemDescription: shoppingItem.itemDescription })}
+      onChange={onCheck}
     />
   )
 }

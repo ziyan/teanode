@@ -25,20 +25,21 @@ enum ShoppingWords {
         return String(localized: "Shared with \(ListFormatter.localizedString(byJoining: granteeNames))")
     }
 
-    /// The line under a list's title: who it is shared with, how many are to
-    /// buy, and about what they cost.
-    static func listSubtitle(_ list: ShoppingList?, granteeNames: [String], toBuyCount: Int, total: ShoppingTotal?) -> String {
-        var parts: [String] = []
-        if let list {
-            if !list.isOwner {
-                parts.append(String(localized: "Shared by \(list.shownOwner)"))
-            } else if !granteeNames.isEmpty {
-                parts.append(String(localized: "Shared with \(ListFormatter.localizedString(byJoining: granteeNames))"))
-            }
-        }
-        parts.append(Self.toBuyCount(toBuyCount))
+    /// The line under a list's title: how many are to buy, and about what
+    /// they cost.
+    static func listSubtitle(toBuyCount: Int, total: ShoppingTotal?) -> String {
+        var parts = [Self.toBuyCount(toBuyCount)]
         if let total { parts.append(String(localized: "about \(total.shown)")) }
         return parts.joined(separator: " · ")
+    }
+
+    /// Who a list is shared with or by, at its top; nil for a list nobody
+    /// else has.
+    static func listSharingLine(_ list: ShoppingList?, granteeNames: [String]) -> String? {
+        guard let list else { return nil }
+        if !list.isOwner { return String(localized: "Shared by \(list.shownOwner)") }
+        if !granteeNames.isEmpty { return String(localized: "Shared with \(ListFormatter.localizedString(byJoining: granteeNames))") }
+        return list.isShared ? String(localized: "Shared") : nil
     }
 
     /// The line under an item on a list: how many it needs and its details; or
@@ -84,7 +85,7 @@ enum ShoppingWords {
         } else if item.isOutOfStock {
             parts.append(
                 item.outOfStockByName.isEmpty
-                    ? String(localized: "Out of stock") : String(localized: "Out of stock · marked by \(item.outOfStockByName)"))
+                    ? String(localized: "Out of stock") : String(localized: "Out of stock (\(item.outOfStockByName))"))
         } else if !item.itemDetails.isEmpty {
             parts.append(item.itemDetails)
         }
@@ -116,6 +117,50 @@ enum ShoppingWords {
         return trips.count == 1
             ? String(localized: "\(names) is shopping this list at \(first.storeName)")
             : String(localized: "\(names) are shopping this list at \(first.storeName)")
+    }
+
+    /// "3 items · about $12.40": the cart at Done.
+    static func cartSummary(itemCount: Int, total: ShoppingTotal?) -> String {
+        var line = itemCount == 1 ? String(localized: "1 item") : String(localized: "\(itemCount) items")
+        if let total { line += " · " + String(localized: "about \(total.shown)") }
+        return line
+    }
+
+    /// What finishing without a receipt does, asked before it is done.
+    static func finishWithoutReceiptMessage(itemCount: Int) -> String {
+        itemCount == 1
+            ? String(localized: "The item in your cart is marked bought. You can resume this trip for the next three hours.")
+            : String(localized: "The \(itemCount) items in your cart are marked bought. You can resume this trip for the next three hours.")
+    }
+
+    /// "You finished shopping at Example Market at 3:41 PM".
+    static func finishedLine(_ trip: ShoppingTrip) -> String {
+        let time = trip.finishedDate?.formatted(date: .omitted, time: .shortened) ?? ""
+        return trip.storeName.isEmpty
+            ? String(localized: "You finished shopping at \(time)")
+            : String(localized: "You finished shopping at \(trip.storeName) at \(time)")
+    }
+
+    /// What resuming a trip does: "3 items go back in your cart".
+    static func resumeDetail(_ trip: ShoppingTrip) -> String {
+        trip.boughtItemCount == 1
+            ? String(localized: "1 item goes back in your cart")
+            : String(localized: "\(trip.boughtItemCount) items go back in your cart")
+    }
+
+    /// "Shopping at Example Market", the person's own trip.
+    static func shoppingNowLine(_ trip: ShoppingTrip) -> String {
+        trip.storeName.isEmpty ? String(localized: "You are shopping") : String(localized: "Shopping at \(trip.storeName)")
+    }
+
+    /// "3 in your cart".
+    static func inYourCart(_ count: Int) -> String {
+        count == 0 ? String(localized: "Nothing in your cart yet") : String(localized: "\(count) in your cart")
+    }
+
+    /// "Done shopping · 3", the button that opens the cart.
+    static func doneShoppingTitle(cartCount: Int) -> String {
+        cartCount == 0 ? String(localized: "Done shopping") : String(localized: "Done shopping · \(cartCount)")
     }
 
     /// An aisle's name, or the words for none.

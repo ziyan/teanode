@@ -78,6 +78,7 @@ export function shoppingTrip(overrides: Partial<ShoppingTrip> = {}): ShoppingTri
     shoppingListIds: ['list-1'],
     startedAt: '2030-01-01T10:00:00Z',
     finishedAt: null,
+    boughtItemCount: 0,
     ...overrides,
   }
 }

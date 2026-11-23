@@ -44,7 +44,7 @@
                     "id": id, "shoppingListId": listId, "listName": listName, "itemDescription": description, "itemDetails": details,
                     "storeName": store, "storeKey": ShoppingStoreKey.key(of: store), "isStoreBrand": isStoreBrand, "aisleName": aisle,
                     "aisleRank": aisleRank, "itemRank": rank, "neededQuantity": quantity, "quantityUnit": unit, "unitPriceAmount": price,
-                    "currencyCode": price.isEmpty ? "" : "USD", "shoppingItemState": state, "cartedByUserId": cartedBy.isEmpty ? "" : "alex",
+                    "currencyCode": price.isEmpty ? "" : "USD", "shoppingItemState": state, "cartedByUserId": cartedBy.lowercased(),
                     "cartedByName": cartedBy, "outOfStockByUserId": outOfStockBy.isEmpty ? "" : "alex", "outOfStockByName": outOfStockBy,
                     "outOfStockStoreName": outOfStockBy.isEmpty ? "" : store, "pictureFileId": hasPicture ? "demo" : "",
                     "picturePageUrl": "", "picturePath": hasPicture ? "/api/v1/shopping/pictures/\(id)?v=demo" : "",
@@ -69,7 +69,7 @@
                 aisleRank: 1, rank: 3, quantity: "1", unit: "lb", price: "2.49", state: "in_cart", cartedBy: "Alex"),
             Item(
                 id: "item-soup", listId: groceriesListId, description: "Soup", details: "Chicken noodle", store: exampleMarket, isStoreBrand: true,
-                aisle: "Canned goods", aisleRank: 2, rank: 4, quantity: "2", unit: "cans", price: "1.99"),
+                aisle: "Canned goods", aisleRank: 2, rank: 4, quantity: "2", unit: "cans", price: "1.99", state: "in_cart", cartedBy: "Robin"),
             Item(
                 id: "item-chili", listId: groceriesListId, description: "Frozen chili", store: cornerGrocer, aisle: "Frozen", aisleRank: 1, rank: 5,
                 quantity: "1", price: "4.50"),
@@ -84,7 +84,7 @@
                 price: "8.50", state: "not_needed", boughtDaysAgo: 12, hasPicture: false),
             Item(
                 id: "item-plates", listId: partyListId, description: "Paper plates", store: exampleMarket, aisle: "Household", aisleRank: 3, rank: 1,
-                quantity: "2", unit: "packs", price: "3.25"),
+                quantity: "2", unit: "packs", price: "3.25", state: "in_cart", cartedBy: "Robin"),
             Item(
                 id: "item-balloons", listId: partyListId, description: "Balloons", aisle: "Party", aisleRank: 5, rank: 2, quantity: "20",
                 price: "0.15", hasPicture: false),
@@ -117,13 +117,25 @@
             ]
         }
 
+        /// Whether the demo person is shopping: on every screen but the one
+        /// that offers to resume their trip.
+        static var isRobinShopping: Bool { DemoServer.screen != "shopping-resume" }
+
+        /// The trips open now: Alex's, and the demo person's own.
+        static var openTrips: [[String: Any]] {
+            isRobinShopping ? [alexTrip, tripDictionary(storeName: exampleMarket, isFinished: false)] : [alexTrip]
+        }
+
         static func tripDictionary(storeName: String, isFinished: Bool) -> [String: Any] {
             var object: [String: Any] = [
                 "id": "trip-robin", "userId": "robin", "shopperName": "Robin", "shopperUsername": "robin", "storeName": storeName,
                 "storeKey": ShoppingStoreKey.key(of: storeName), "shoppingListIds": [groceriesListId],
                 "startedAt": DemoServer.demoTime(daysAgo: 0, hour: 9, minute: 30),
             ]
-            if isFinished { object["finishedAt"] = DemoServer.demoTime(daysAgo: 0, hour: 10, minute: 0) }
+            if isFinished {
+                object["finishedAt"] = DemoServer.demoTime(daysAgo: 0, hour: 10, minute: 0)
+                object["boughtItemCount"] = 3
+            }
             return object
         }
 
@@ -142,7 +154,7 @@
             let shown = atStore.filter { listIds.isEmpty || listIds.contains($0.listId) }
             return [
                 "storeName": storeName, "isReminded": true, "shoppingItems": shown.map(\.dictionary), "shoppingLists": lists,
-                "shoppingTrips": [alexTrip],
+                "shoppingTrips": openTrips,
             ]
         }
 
@@ -265,7 +277,7 @@
             }
             if query.contains("GetShoppingList(") {
                 let listId = variables["shoppingListId"] as? String ?? ShoppingDemo.groceriesListId
-                let trips: [[String: Any]] = listId == ShoppingDemo.groceriesListId || listId == ShoppingDemo.partyListId ? [ShoppingDemo.alexTrip] : []
+                let trips: [[String: Any]] = listId == ShoppingDemo.groceriesListId || listId == ShoppingDemo.partyListId ? ShoppingDemo.openTrips : []
                 let page: [String: Any] = [
                     "totalCount": ShoppingDemo.items(ofList: listId).count, "shoppingList": ShoppingDemo.listDictionary(listId),
                     "shoppingItems": ShoppingDemo.items(ofList: listId).map(\.dictionary), "shoppingTrips": trips,
@@ -285,7 +297,11 @@
                         ["storeKey": "cornergrocer", "storeName": ShoppingDemo.cornerGrocer, "neededCount": 1, "isReminded": true],
                     ])
             }
-            if query.contains("ListOpenShoppingTrips") { return answer("ListOpenShoppingTrips", [ShoppingDemo.alexTrip]) }
+            if query.contains("ListOpenShoppingTrips") { return answer("ListOpenShoppingTrips", ShoppingDemo.openTrips) }
+            if query.contains("GetResumableShoppingTrip") {
+                let resumable: Any = ShoppingDemo.isRobinShopping ? NSNull() : ShoppingDemo.tripDictionary(storeName: ShoppingDemo.exampleMarket, isFinished: true)
+                return answer("GetResumableShoppingTrip", resumable)
+            }
             if query.contains("ListSimilarShoppingItems") {
                 let typed = (variables["itemDescription"] as? String ?? "").lowercased()
                 return answer("ListSimilarShoppingItems", ShoppingDemo.items.filter { $0.description.lowercased().contains(typed) }.map(\.dictionary))
@@ -337,9 +353,25 @@
                     }
                 })
             }
+            if query.contains("CheckOffShoppingItem") {
+                let isCheckedOff = variables["isCheckedOff"] as? Bool ?? true
+                return answer("CheckOffShoppingItem", changedItem {
+                    $0["shoppingItemState"] = isCheckedOff ? "not_needed" : "needed"
+                    $0["cartedByUserId"] = ""
+                    $0["cartedByName"] = ""
+                })
+            }
+            if query.contains("ResumeShopping") {
+                return answer("ResumeShopping", ShoppingDemo.tripDictionary(storeName: ShoppingDemo.exampleMarket, isFinished: false))
+            }
             if query.contains("CheckShoppingItem") {
                 let isChecked = variables["isChecked"] as? Bool ?? true
-                return answer("CheckShoppingItem", changedItem { $0["shoppingItemState"] = isChecked ? "in_cart" : "needed" })
+                return answer("CheckShoppingItem", changedItem {
+                    $0["shoppingItemState"] = isChecked ? "in_cart" : "needed"
+                    $0["cartedByUserId"] = isChecked ? "robin" : ""
+                    $0["cartedByName"] = isChecked ? "Robin" : ""
+                    $0["cartedAt"] = isChecked ? CalendarDates.text(Date()) : NSNull()
+                })
             }
             if query.contains("SetShoppingItemNeed") {
                 let isNeeded = variables["isNeeded"] as? Bool ?? true

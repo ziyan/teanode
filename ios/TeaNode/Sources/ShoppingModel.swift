@@ -80,6 +80,15 @@ final class ShoppingHomeModel {
 
     private(set) var lists: [ShoppingList] = []
     private(set) var stores: [ShoppingStore] = []
+    /// The person's own trip, while they are shopping.
+    private(set) var ownTrip: ShoppingTrip?
+    /// How many items are in the person's own cart at that trip's store.
+    private(set) var ownCartCount = 0
+    /// The trip the person finished in the last few hours, which they can
+    /// resume; nil while they shop.
+    private(set) var resumableTrip: ShoppingTrip?
+    /// The person's own id, set by the screen before the first read.
+    var ownUserId: String?
     /// Who each of the person's shared lists is shared with, by list.
     private(set) var granteeNames: [String: [String]] = [:]
     private(set) var hasLoaded = false
@@ -105,11 +114,40 @@ final class ShoppingHomeModel {
             return
         }
         stores = (try? await connection.shoppingStores()) ?? stores
+        await loadTrips()
         var names: [String: [String]] = [:]
         for list in lists where list.isOwner && list.isShared {
             names[list.id] = (try? await connection.shoppingListShares(shoppingListId: list.id))?.shownGrantees ?? granteeNames[list.id] ?? []
         }
         granteeNames = names
+    }
+
+    /// Reads the person's own trip and what is in their cart, or the trip
+    /// they could resume. Only a help to the screen, so a failure keeps what
+    /// was read before.
+    private func loadTrips() async {
+        guard let openTrips = try? await connection.openShoppingTrips() else { return }
+        ownTrip = openTrips.first { $0.userId == ownUserId }
+        if let ownTrip {
+            resumableTrip = nil
+            let atStore = try? await connection.shoppingStoreItems(storeName: ownTrip.storeName, shoppingListIds: [])
+            ownCartCount = atStore?.shoppingItems.filter { $0.isInCart && $0.cartedByUserId == ownUserId }.count ?? ownCartCount
+        } else {
+            ownCartCount = 0
+            resumableTrip = try? await connection.resumableShoppingTrip()
+        }
+    }
+
+    /// Resumes a trip finished by mistake; true when it is open again.
+    func resume(_ trip: ShoppingTrip) async -> Bool {
+        do {
+            try await connection.resumeShopping(shoppingTripId: trip.id)
+            await load()
+            return true
+        } catch {
+            problemText = ShoppingWords.problem(error)
+            return false
+        }
     }
 
     /// Makes a list and returns it, nil when the server refused.
@@ -140,6 +178,16 @@ final class ShoppingListModel {
     private(set) var list: ShoppingList?
     private(set) var items: [ShoppingItem] = []
     private(set) var trips: [ShoppingTrip] = []
+    /// The person's own open trip on any list, which makes a check here put
+    /// the item in their cart rather than buy it.
+    private(set) var ownTrip: ShoppingTrip?
+    /// The trip the person finished in the last few hours on this list, which
+    /// they can resume.
+    private(set) var resumableTrip: ShoppingTrip?
+    /// Checks answered at once and not yet confirmed by the server, by item.
+    private(set) var pendingChecks: [String: Bool] = [:]
+    /// The person's own id, set by the screen before the first read.
+    var ownUserId: String?
     private(set) var granteeNames: [String] = []
     private(set) var stores: [ShoppingStore] = []
     /// Whether the person is reminded of the list at a store; kept here so a
@@ -163,6 +211,8 @@ final class ShoppingListModel {
 
     var toBuy: [ShoppingItem] { items.filter { !$0.isNotNeeded } }
     var notNeeded: [ShoppingItem] { ShoppingGrouping.split(items).notNeeded }
+    /// What the person has in their own cart from this list.
+    var ownCart: [ShoppingItem] { items.filter { $0.isInCart && $0.cartedByUserId == ownUserId } }
     var neededCount: Int { items.filter(\.isNeeded).count }
     var estimatedTotal: ShoppingTotal? { ShoppingMoney.estimate(of: items.filter(\.isNeeded)) }
 
@@ -186,6 +236,65 @@ final class ShoppingListModel {
         } else {
             granteeNames = []
         }
+        await loadTrips()
+    }
+
+    /// Reads the person's own trip, or the one they could resume. Only a help
+    /// to the screen, so a failure keeps what was read before.
+    private func loadTrips() async {
+        guard let openTrips = try? await connection.openShoppingTrips() else { return }
+        ownTrip = openTrips.first { $0.userId == ownUserId }
+        if ownTrip != nil {
+            resumableTrip = nil
+        } else {
+            let resumable = try? await connection.resumableShoppingTrip()
+            resumableTrip = resumable?.shoppingListIds.contains(listId) == true ? resumable : nil
+        }
+    }
+
+    // MARK: Checks
+
+    /// Whether an item's check is filled, as far as the person has just said:
+    /// in a cart, or checked off.
+    func isChecked(_ item: ShoppingItem) -> Bool {
+        pendingChecks[item.id] ?? !item.isNeeded
+    }
+
+    /// Whether the person may tap an item's check: not while it is in
+    /// somebody else's cart, which is theirs to buy.
+    func canCheck(_ item: ShoppingItem) -> Bool {
+        !(item.isInCart && item.cartedByUserId != ownUserId)
+    }
+
+    /// The check on a list. While the person shops, it puts the item in their
+    /// cart, as the store screen does; otherwise it is bought now, with no
+    /// trip and nobody told. A filled check takes back what it did.
+    func toggle(_ item: ShoppingItem) async {
+        guard canCheck(item) else { return }
+        let isChecking = !isChecked(item)
+        pendingChecks[item.id] = isChecking
+        do {
+            if item.isInCart {
+                replace(try await connection.checkShoppingItem(shoppingItemId: item.id, isChecked: false))
+            } else if ownTrip != nil && isChecking {
+                replace(try await connection.checkShoppingItem(shoppingItemId: item.id, isChecked: true, storeName: ownTrip?.storeName ?? ""))
+            } else {
+                replace(try await connection.checkOffShoppingItem(shoppingItemId: item.id, isCheckedOff: isChecking))
+            }
+        } catch {
+            problemText = ShoppingWords.problem(error)
+        }
+        pendingChecks[item.id] = nil
+    }
+
+    /// Resumes a trip finished by mistake; true when it is open again.
+    func resume(_ trip: ShoppingTrip) async -> Bool {
+        let isDone = await attempt { try await connection.resumeShopping(shoppingTripId: trip.id) }
+        if isDone {
+            await load()
+            doneText = String(localized: "Shopping again. What the trip bought is back in your cart.")
+        }
+        return isDone
     }
 
     func follow() async {
@@ -257,20 +366,9 @@ final class ShoppingListModel {
         if !isDone { isReminded = previous }
     }
 
-    /// Whether Done has anything to do here: the person has a trip open on
-    /// this list, or has put something on it in the cart.
-    func isShopping(ownUserId: String?) -> Bool {
-        trips.contains { $0.isOpen && $0.userId == ownUserId } || items.contains { $0.isInCart && $0.cartedByUserId == ownUserId }
-    }
-
-    /// Done: what the person put in the cart is bought, no receipt needed.
-    func finish() async {
-        let isDone = await attempt {
-            _ = try await connection.finishShopping()
-            await load()
-        }
-        if isDone { doneText = String(localized: "Done shopping. What you checked off is bought.") }
-    }
+    /// Whether the person is shopping: they have a trip open, or something
+    /// of this list in their cart.
+    var isShopping: Bool { ownTrip != nil || !ownCart.isEmpty }
 
     /// Reads the stores the lists have items for, to choose one to shop at.
     func loadStores() async {
@@ -302,12 +400,15 @@ final class ShoppingStoreModel {
     let connection: Connection
     let storeName: String
     /// The person's own id, which of the open trips is theirs.
-    private let ownUserId: String?
+    let ownUserId: String?
 
     private(set) var items: [ShoppingItem] = []
     private(set) var lists: [ShoppingStoreList] = []
     private(set) var trips: [ShoppingTrip] = []
     private(set) var ownTrip: ShoppingTrip?
+    /// The trip the person finished here in the last few hours, which they
+    /// can resume; nil while they shop.
+    private(set) var resumableTrip: ShoppingTrip?
     private(set) var isReminded = true
     private(set) var hasLoaded = false
     private(set) var loadFailedText: String?
@@ -333,7 +434,12 @@ final class ShoppingStoreModel {
 
     var storeKey: String { ShoppingStoreKey.key(of: storeName) }
     var progress: ShoppingCartProgress { ShoppingCartProgress(items: shownItems) }
-    var sections: ShoppingStoreSections { ShoppingGrouping.forStore(shownItems) }
+    /// What is left to find, by aisle; what is in a cart is under it.
+    var sections: ShoppingStoreSections { ShoppingGrouping.forStore(shownItems.filter { !isChecked($0) }) }
+    /// What is in a cart, the person's own and the others', last.
+    var inCart: [ShoppingItem] { shownItems.filter { isChecked($0) } }
+    /// What is in the person's own cart here.
+    var ownCart: [ShoppingItem] { items.filter { $0.isInCart && $0.cartedByUserId == ownUserId } }
     var otherShopperNames: [String] { trips.otherShoppers(atStoreKey: storeKey, excludingUserId: ownUserId) }
     var includedCount: Int { lists.filter(\.isIncluded).count }
 
@@ -364,6 +470,13 @@ final class ShoppingStoreModel {
             ownTrip = trips.first { $0.isOpen && $0.userId == ownUserId }
         } catch {
             if hasLoaded { problemText = error.loadProblemText } else { loadFailedText = error.loadProblemText }
+            return
+        }
+        if ownTrip != nil {
+            resumableTrip = nil
+        } else {
+            let resumable = try? await connection.resumableShoppingTrip()
+            resumableTrip = resumable?.storeKey == storeKey ? resumable : nil
         }
     }
 
@@ -422,16 +535,105 @@ final class ShoppingStoreModel {
         }
     }
 
-    /// Done: what the person put in the cart is bought, no receipt needed;
-    /// true when it is over.
-    func finish() async -> Bool {
+    /// Resumes a trip finished by mistake; true when it is open again.
+    func resume(_ trip: ShoppingTrip) async -> Bool {
         do {
-            try await connection.finishShopping()
-            ownTrip = nil
+            try await connection.resumeShopping(shoppingTripId: trip.id)
+            await load()
+            doneText = String(localized: "Shopping again. What the trip bought is back in your cart.")
             return true
         } catch {
             problemText = ShoppingWords.problem(error)
             return false
+        }
+    }
+
+    /// After the cart sheet finished the trip: what is left is read again,
+    /// and the trip is offered to resume.
+    func finished(saying text: String) async {
+        ownTrip = nil
+        await load()
+        doneText = text
+    }
+}
+
+// MARK: The cart
+
+/// ShoppingCartModel is the person's cart at Done: what they put in it, to
+/// look over before it is bought, and the two ways to finish, with a picture
+/// of the receipt or without.
+@MainActor
+@Observable
+final class ShoppingCartModel {
+    let connection: Connection
+    let storeName: String
+    private let ownUserId: String?
+
+    private(set) var items: [ShoppingItem]
+    private(set) var isWorking = false
+    /// What the sheet is doing while it sends the receipt and finishes.
+    private(set) var workingText: String?
+    var problemText: String?
+
+    /// shownItems are the items the screen already has; the store's are read
+    /// too, so an item put in the cart from another list is not missed.
+    init(connection: Connection, storeName: String, ownUserId: String?, shownItems: [ShoppingItem]) {
+        self.connection = connection
+        self.storeName = storeName
+        self.ownUserId = ownUserId
+        items = shownItems.filter { $0.isInCart && $0.cartedByUserId == ownUserId }
+    }
+
+    var total: ShoppingTotal? { ShoppingMoney.estimate(of: items) }
+    var listCount: Int { Set(items.map(\.shoppingListId)).count }
+
+    func load() async {
+        guard let atStore = try? await connection.shoppingStoreItems(storeName: storeName, shoppingListIds: []) else { return }
+        var merged = items
+        for item in atStore.shoppingItems where item.isInCart && item.cartedByUserId == ownUserId {
+            if let index = merged.firstIndex(where: { $0.id == item.id }) {
+                merged[index] = item
+            } else {
+                merged.append(item)
+            }
+        }
+        items = merged
+    }
+
+    /// Takes an item out of the cart, back to needed.
+    func takeOut(_ item: ShoppingItem) async {
+        do {
+            _ = try await connection.checkShoppingItem(shoppingItemId: item.id, isChecked: false)
+            items.removeAll { $0.id == item.id }
+        } catch {
+            problemText = ShoppingWords.problem(error)
+        }
+    }
+
+    /// Finishes the trip, after sending the receipt's picture to be read when
+    /// there is one. The reading goes on after: a receipt read late still
+    /// prices what was just bought. Answers what to tell the person, nil when
+    /// it did not work.
+    func finish(receipt file: PendingFile?) async -> String? {
+        isWorking = true
+        defer {
+            isWorking = false
+            workingText = nil
+        }
+        do {
+            if let file {
+                workingText = String(localized: "Sending the receipt…")
+                let attachmentId = try await connection.upload(name: file.name, contentType: file.contentType, data: file.data)
+                try await connection.readReceipt(attachmentId: attachmentId)
+            }
+            workingText = String(localized: "Finishing…")
+            try await connection.finishShopping()
+            return file == nil
+                ? String(localized: "Done shopping.")
+                : String(localized: "Done shopping. The receipt is being read; prices are added when it is done.")
+        } catch {
+            problemText = ShoppingWords.problem(error)
+            return nil
         }
     }
 }

@@ -86,7 +86,7 @@ it('lists what reads like the item being added, and goes to the one chosen', asy
   const found = await screen.findByRole('region', { name: 'Already on your lists' })
   expect(callsOf('ListSimilarShoppingItems')[0][1]).toEqual({ shoppingListId: 'list-1', itemDescription: 'milk' })
   expect(within(found).getByText(/To buy 2/)).toBeTruthy()
-  expect(within(found).getByText(/Warehouse · Not needed/)).toBeTruthy()
+  expect(within(found).getByText(/Warehouse · Checked off/)).toBeTruthy()
 
   fireEvent.click(within(found).getByRole('button', { name: /Oat milk/ }))
   expect(onOpenItem).toHaveBeenCalledWith(onAnother)

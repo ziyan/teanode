@@ -34,6 +34,7 @@ val LocalDrawer = staticCompositionLocalOf<DrawerController?> { null }
  *
  * @param onBack goes back; give it on every screen but a part's first, which shows the drawer button instead.
  * @param actions icon buttons and menus at the end of the bar.
+ * @param titleContent replaces the title text in the bar, for a screen whose bar turns into a search field.
  * @param onTitleClick makes the title a button, for a screen whose title names something that has a page of its own.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +48,7 @@ fun TeaNodeScreen(
     bottomBar: @Composable () -> Unit = {},
     onTitleClick: (() -> Unit)? = null,
     titleClickLabel: String? = null,
+    titleContent: (@Composable () -> Unit)? = null,
     content: @Composable (contentPadding: PaddingValues) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
@@ -55,7 +57,7 @@ fun TeaNodeScreen(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
-                title = {
+                title = titleContent ?: {
                     // A title that opens something (the person's card in a chat with one person) is a button as a whole.
                     Text(
                         title, maxLines = 1, overflow = TextOverflow.Ellipsis,

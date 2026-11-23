@@ -2,10 +2,11 @@ import { formatMoney } from '../../components/common'
 import { PencilIcon, PlusIcon, RestoreIcon, TrashIcon } from '../../components/icons'
 import { Tooltip } from '../../components/tooltip'
 import { useTranslation } from '../../i18n/i18n'
+import { useSession } from '../../session'
 import { formatDay } from '../finance/financeApi'
 import { ShoppingItem } from './shoppingApi'
-import { groupShoppingItems, priceNumber, quantityText, ShoppingTab } from './shoppingItems'
-import { ShoppingItemName, ShoppingPicture } from './shoppingParts'
+import { groupShoppingItems, isInOtherCart, priceNumber, quantityText, ShoppingTab } from './shoppingItems'
+import { ShoppingCheck, ShoppingItemName, ShoppingPicture } from './shoppingParts'
 import { ShoppingItemCard } from './shoppingView'
 
 // The items of one tab of a list, as a table grouped under a heading for each
@@ -81,10 +82,11 @@ export function ShoppingItemTable({
             {group.shoppingItems.map((shoppingItem) => (
               <tr
                 key={shoppingItem.id}
-                className={shoppingItem.shoppingItemState === 'in_cart' ? 'shopping-row is-in-cart' : 'shopping-row'}
+                className={`${rowClassName(shoppingItem)} is-openable`}
+                onClick={(event) => openFromRow(event, () => onEdit(shoppingItem))}
               >
                 <td className="shrink">
-                  <ListItemCheck shoppingItem={shoppingItem} tab={tab} isBusy={isBusy} onCheck={onCheck} />
+                  <ListItemCheck shoppingItem={shoppingItem} onCheck={onCheck} />
                 </td>
                 <td className="shrink">
                   <ShoppingPicture item={shoppingItem} />
@@ -145,7 +147,8 @@ export function ShoppingItemGrid({
             key={shoppingItem.id}
             shoppingItem={shoppingItem}
             groupName={groupHeading(group.storeName, group.aisleName, t)}
-            check={<ListItemCheck shoppingItem={shoppingItem} tab={tab} isBusy={isBusy} onCheck={onCheck} />}
+            check={<ListItemCheck shoppingItem={shoppingItem} onCheck={onCheck} />}
+            onOpen={() => onEdit(shoppingItem)}
             facts={[
               shoppingItem.shoppingItemState === 'not_needed'
                 ? ''
@@ -177,28 +180,41 @@ function priceText(shoppingItem: ShoppingItem): string {
     : formatMoney(Number(shoppingItem.unitPriceAmount), shoppingItem.currencyCode)
 }
 
-// ListItemCheck is the box that puts an item in the cart; a bought item on
-// Not needed has none.
+// rowClassName is a row's classes: crossed out while the item is in a cart or
+// checked off, in the same height as one that is not.
+function rowClassName(shoppingItem: ShoppingItem): string {
+  return shoppingItem.shoppingItemState === 'needed' ? 'shopping-row' : 'shopping-row is-in-cart'
+}
+
+// openFromRow opens an item when the click is on the row itself and not on a
+// button, link or check in it, so the whole row is a target.
+function openFromRow(event: React.MouseEvent, open: () => void) {
+  if ((event.target as HTMLElement).closest('button, a, input, label')) return
+  open()
+}
+
+// ListItemCheck is the round check on a list. An item to buy is checked off,
+// or put in the cart while the person shops; a checked one (in a cart or
+// checked off) is put back. An item in somebody else's cart cannot be touched.
 function ListItemCheck({
   shoppingItem,
-  tab,
-  isBusy,
   onCheck,
 }: {
   shoppingItem: ShoppingItem
-  tab: ShoppingTab
-  isBusy: boolean
   onCheck: (shoppingItem: ShoppingItem, isChecked: boolean) => void
 }) {
   const { t } = useTranslation()
-  if (tab === 'not-needed') return null
+  const session = useSession()
+  const label =
+    shoppingItem.shoppingItemState === 'not_needed'
+      ? t('shopping.uncheckItem', { itemDescription: shoppingItem.itemDescription })
+      : t('shopping.checkItem', { itemDescription: shoppingItem.itemDescription })
   return (
-    <input
-      type="checkbox"
-      checked={shoppingItem.shoppingItemState === 'in_cart'}
-      disabled={isBusy}
-      aria-label={t('shopping.checkItem', { itemDescription: shoppingItem.itemDescription })}
-      onChange={(event) => onCheck(shoppingItem, event.target.checked)}
+    <ShoppingCheck
+      isChecked={shoppingItem.shoppingItemState !== 'needed'}
+      isDisabled={isInOtherCart(shoppingItem, session.userId)}
+      label={label}
+      onChange={(isChecked) => onCheck(shoppingItem, isChecked)}
     />
   )
 }

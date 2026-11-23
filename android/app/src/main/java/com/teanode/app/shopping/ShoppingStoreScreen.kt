@@ -29,6 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -75,7 +76,14 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
     var isRefreshing by remember { mutableStateOf(false) }
     var isMenuOpen by remember { mutableStateOf(false) }
     var isConfirmingFinish by remember { mutableStateOf(false) }
+    var isCartOpen by remember { mutableStateOf(false) }
     var isChoosingReceiptSource by remember { mutableStateOf(false) }
+    // Whether the receipt being chosen is the one that finishes the trip (from the cart), or one scanned from the menu.
+    var isSnappingAtDone by remember { mutableStateOf(false) }
+    fun receiptChosen(file: ShoppingPendingFile) {
+        if (isSnappingAtDone) receiptReader.snapAndFinish(file, finish = { state.finish() }, onFinished = { isCartOpen = false })
+        else receiptReader.scan(file)
+    }
     var menuItem by remember { mutableStateOf<ShoppingItem?>(null) }
     var opened by remember { mutableStateOf<ShoppingItem?>(null) }
 
@@ -83,10 +91,10 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
     FollowShopping(connection, session.isDemo) { state.load() }
 
     val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) receiptReader.scan(context.readPendingFile(uri, "receipt.jpg"))
+        if (uri != null) receiptChosen(context.readPendingFile(uri, "receipt.jpg"))
     }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
-        if (bitmap != null) receiptReader.scan(bitmap.toPendingFile("receipt.jpg"))
+        if (bitmap != null) receiptChosen(bitmap.toPendingFile("receipt.jpg"))
     }
 
     TeaNodeScreen(
@@ -100,6 +108,11 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
                 IconButton(onClick = { isMenuOpen = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.shopping_more)) }
                 DropdownMenu(isMenuOpen, { isMenuOpen = false }) {
                     DropdownMenuItem(
+                        text = { Text(stringResource(R.string.shopping_scan_the_receipt)) }, leadingIcon = { Icon(Icons.Outlined.CameraAlt, null) },
+                        enabled = receiptReader.readingText == null,
+                        onClick = { isMenuOpen = false; isSnappingAtDone = false; isChoosingReceiptSource = true },
+                    )
+                    DropdownMenuItem(
                         text = { Text(stringResource(R.string.shopping_i_am_here)) }, enabled = storeName.isNotEmpty(),
                         trailingIcon = { Switch(state.isReminded, null, enabled = storeName.isNotEmpty()) },
                         onClick = { state.setReminder(!state.isReminded) },
@@ -109,13 +122,12 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
         },
         floatingActionButton = {
             if (state.hasLoaded) {
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (state.isShopping) {
-                        ExtendedFloatingActionButton(onClick = { isConfirmingFinish = true }, icon = { Icon(Icons.Outlined.Check, null) }, text = { Text(stringResource(R.string.shopping_done_shopping_button)) })
-                    }
+                // Done shopping appears once something is in the person's own cart, with how many.
+                val ownCartCount = state.ownCart.size
+                if (ownCartCount > 0) {
                     ExtendedFloatingActionButton(
-                        onClick = { if (receiptReader.readingText == null) isChoosingReceiptSource = true },
-                        icon = { Icon(Icons.Outlined.CameraAlt, null) }, text = { Text(stringResource(R.string.shopping_scan_the_receipt)) },
+                        onClick = { isCartOpen = true }, icon = { Icon(Icons.Outlined.Check, null) },
+                        text = { Text(stringResource(R.string.shopping_done_shopping_count, ownCartCount)) },
                     )
                 }
             }
@@ -124,6 +136,7 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
         Box(Modifier.fillMaxSize().padding(padding)) {
             val failure = state.loadFailure
             val sections = state.sections
+            val cartItems = state.cartItems
             when {
                 failure != null && !state.hasLoaded -> ErrorState(session.describeLoadProblem(failure), onRetry = { state.reload() })
                 !state.hasLoaded -> LoadingState()
@@ -132,6 +145,13 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
                     onRefresh = { scope.launch { isRefreshing = true; state.load(); isRefreshing = false } },
                 ) {
                     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 168.dp)) {
+                        state.resumableTrip?.let { trip ->
+                            item("resume") {
+                                ShoppingResumeRow(trip, state.resumable.isResuming, onResume = {
+                                    scope.launch { if (state.resume()) snackbar.show(context.getString(R.string.shopping_resumed)) }
+                                })
+                            }
+                        }
                         item("header") {
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 val progress = state.progress
@@ -157,7 +177,7 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
                                 }
                             }
                         }
-                        if (sections.aisleGroups.isEmpty() && sections.anyStoreItems.isEmpty()) {
+                        if (sections.aisleGroups.isEmpty() && sections.anyStoreItems.isEmpty() && cartItems.isEmpty()) {
                             item("empty") {
                                 EmptyState(
                                     Icons.Outlined.ShoppingCart, stringResource(R.string.shopping_nothing_here),
@@ -166,7 +186,8 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
                             }
                         } else if (layout == ShoppingLayoutChoice.Pictures) {
                             val placed = sections.aisleGroups.flatMap { group -> group.items.map { item -> ShoppingPlacedItem(item, words.aisleTitle(group)) } } +
-                                sections.anyStoreItems.map { item -> ShoppingPlacedItem(item, context.getString(R.string.shopping_any_store)) }
+                                sections.anyStoreItems.map { item -> ShoppingPlacedItem(item, context.getString(R.string.shopping_any_store)) } +
+                                cartItems.map { item -> ShoppingPlacedItem(item, context.getString(R.string.shopping_in_the_cart)) }
                             items(placed.chunked(2), key = { row -> "tiles-" + row.first().item.id }) { row ->
                                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     for (cell in row) {
@@ -190,6 +211,10 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
                                 item("any-store-header") { SectionTitle(stringResource(R.string.shopping_also_on_the_list_any_store)) }
                                 items(sections.anyStoreItems, key = { item -> "any-" + item.id }) { item -> storeRow(item, state, words, menuItem?.id == item.id, onMenu = { menuItem = item }, onDismiss = { menuItem = null }, onOpenItem = { opened = item }) }
                             }
+                            if (cartItems.isNotEmpty()) {
+                                item("cart-header") { SectionTitle(stringResource(R.string.shopping_in_the_cart)) }
+                                items(cartItems, key = { item -> "cart-" + item.id }) { item -> storeRow(item, state, words, menuItem?.id == item.id, onMenu = { menuItem = item }, onDismiss = { menuItem = null }, onOpenItem = { opened = item }) }
+                            }
                         }
                     }
                 }
@@ -197,11 +222,32 @@ fun ShoppingStoreScreen(storeName: String, listIds: List<String>, initialLayout:
         }
     }
 
+    if (isCartOpen) {
+        val ownCart = state.ownCart
+        ShoppingCartSheet(
+            items = ownCart, showsListName = ownCart.map { item -> item.shoppingListId }.distinct().size > 1, busyText = receiptReader.readingText,
+            onTakeOut = { item -> state.toggle(item) },
+            onSnapReceipt = { isSnappingAtDone = true; isChoosingReceiptSource = true },
+            onFinishWithoutReceipt = { isConfirmingFinish = true },
+            onDismiss = { isCartOpen = false },
+        )
+    }
     if (isConfirmingFinish) {
+        val cartCount = state.ownCart.size
         ConfirmationDialog(
-            title = stringResource(R.string.shopping_finish_question), text = stringResource(R.string.shopping_finish_message),
-            confirmLabel = stringResource(R.string.shopping_done),
-            onConfirm = { isConfirmingFinish = false; scope.launch { if (state.finish()) navigator.back() } },
+            title = stringResource(R.string.shopping_finish_without_receipt_question),
+            text = if (cartCount == 0) stringResource(R.string.shopping_finish_without_receipt_message_empty)
+            else pluralStringResource(R.plurals.shopping_finish_without_receipt_message, cartCount, cartCount),
+            confirmLabel = stringResource(R.string.shopping_finish_action),
+            onConfirm = {
+                isConfirmingFinish = false
+                scope.launch {
+                    if (state.finish()) {
+                        isCartOpen = false
+                        snackbar.show(context.getString(R.string.shopping_done_shopping))
+                    }
+                }
+            },
             onDismiss = { isConfirmingFinish = false },
         )
     }

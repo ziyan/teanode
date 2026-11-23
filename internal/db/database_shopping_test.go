@@ -160,7 +160,7 @@ func TestAddingAShoppingItemTwiceMergesIt(t *testing.T) {
 		if isMerged[1] {
 			t.Fatalf("tomatoes for another store were merged into the ones for any store")
 		}
-		items, total, err := tx.ListShoppingItems(world.owner.ID, list.ID, nil, 0, 50)
+		items, total, err := tx.ListShoppingItems(world.owner.ID, list.ID, nil, "", 0, 50)
 		if err != nil || total != 4 || len(items) != 4 {
 			t.Fatalf("the list has %d items (%v), want 4", total, err)
 		}

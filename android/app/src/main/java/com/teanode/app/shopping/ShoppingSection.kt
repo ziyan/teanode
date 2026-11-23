@@ -63,8 +63,10 @@ fun ShoppingSection() {
     val navigator = LocalAppNavigator.current
     val scope = rememberCoroutineScope()
     val words = rememberShoppingWords()
-    val state = remember(connection) { ShoppingHomeState(connection, scope, snackbar) }
     val facts by session.facts.collectAsState()
+    val ownUserId = facts.session?.userId
+    val state = remember(connection, ownUserId) { ShoppingHomeState(connection, scope, snackbar, ownUserId) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val hasReadFacts by session.hasReadFacts.collectAsState()
     val isNotAllowed = hasReadFacts && !facts.isAvailable(AppSection.Shopping)
     var isCreating by remember { mutableStateOf(false) }
@@ -92,6 +94,25 @@ fun ShoppingSection() {
                     onRefresh = { scope.launch { isRefreshing = true; state.load(); isRefreshing = false } },
                 ) {
                     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+                        // Shopping now: the way back to the store; or the trip just finished, which can be resumed.
+                        state.ownTrip?.let { trip ->
+                            item("shopping-now") {
+                                ShoppingShoppingRow(trip, state.ownCartCount, onClick = { navigator.navigate(shoppingStoreRoute(trip.storeName, trip.shoppingListIds)) })
+                            }
+                        }
+                        state.resumable.trip?.takeIf { state.ownTrip == null }?.let { trip ->
+                            item("resume") {
+                                ShoppingResumeRow(trip, state.resumable.isResuming, onResume = {
+                                    scope.launch {
+                                        val resumed = state.resume()
+                                        if (resumed != null) {
+                                            snackbar.show(context.getString(R.string.shopping_resumed))
+                                            navigator.navigate(shoppingStoreRoute(resumed.storeName, resumed.shoppingListIds))
+                                        }
+                                    }
+                                })
+                            }
+                        }
                         if (state.ownLists.isNotEmpty()) {
                             item("own-header") { TeaNodeSectionHeader(stringResource(R.string.shopping_your_lists)) }
                             items(state.ownLists, key = { list -> "own-" + list.id }) { list ->
