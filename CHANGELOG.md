@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.232.0] - 2026-11-23
+
+### Changed
+
+- A schedule is now a goal that runs at set times or when mail arrives. Existing schedules become goals when the server upgrades; a switched-off schedule becomes a paused goal. Goals can be paused, run now and changed from the dashboard, the apps, `teanode agent goal` and the agent. (#775)
+- What a goal on set times finds arrives in the feed, one stack per turn. The daily brief is a goal and arrives there too. (#775)
+
+### Removed
+
+- The schedule tool, the schedule operations (`ListAgentSchedules`, `SaveAgentSchedule`, `DeleteAgentSchedule`, `RunAgentSchedule`, `MoveAgentScheduleToGoal`) and `teanode agent schedule`. Use goals with `--time` or `--on-mail`. (#775)
+- Answers by mail from scheduled runs. (#775)
+
 ## [0.231.0] - 2026-11-23
 
 ### Added
