@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.10] - 2026-11-23
+
+### Fixed
+
+- iPhone and Android: a message that asks about a mail, file, photo, recording or transaction shows it above the message while the agent is still answering. (#767)
+
 ## [0.230.9] - 2026-11-23
 
 ### Fixed
