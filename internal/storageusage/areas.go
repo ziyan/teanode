@@ -100,7 +100,7 @@ var areaTables = map[Area][]string{
 		"agent_evaluation_answer", "agent_evaluation_question", "agent_evaluation_run", "agent_feedback",
 		"agent_follow_up", "agent_goal_activity", "agent_goal_artifact", "agent_job", "agent_mcp_connection",
 		"agent_page_share", "agent_phone", "agent_plan_usage",
-		"agent_provider_access_token", "agent_provider_sign_in", "agent_reach", "agent_schedule", "agent_skill",
+		"agent_provider_access_token", "agent_provider_sign_in", "agent_reach", "agent_skill",
 		"agent_skill_secret", "agent_todo", "agent_usage", "alias", "alias_usage", "audit_event", "bimi_logo",
 		"bimi_publication", "calendar", "calendar_invitation", "calendar_object", "calendar_occurrence",
 		"calendar_request", "calendar_request_cancellation", "calendar_share", "circle", "circle_invitation",
