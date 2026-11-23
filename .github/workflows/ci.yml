@@ -146,7 +146,9 @@ jobs:
         env:
           TEANODE_TEST_DATABASE_HOST: 127.0.0.1
           TEANODE_TEST_VECTOR: "on"
-        run: go test -mod=vendor -race -count=1 -timeout 25m ./internal/db ./internal/agent
+        # The same bound as the server's tests, for the same reason: the agent
+        # package alone takes over twenty-five minutes under the race detector.
+        run: go test -mod=vendor -race -count=1 -timeout 45m ./internal/db ./internal/agent
 
   dashboard:
     name: Dashboard
