@@ -302,25 +302,28 @@ struct FeedAgendaLine: View {
         }
     }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private var content: some View {
         HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .trailing, spacing: 0) {
-                if let startDate = entry.startDate {
-                    Text(startDate.formatted(date: .omitted, time: .shortened))
-                        .font(.footnote.weight(.semibold))
-                        .monospacedDigit()
+            // At the largest sizes the times go above the title: beside it
+            // they break mid-word ("9:00 A / M").
+            if !dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .trailing, spacing: 0) {
+                    startText
+                    endText
                 }
-                if let endDate = entry.endDate {
-                    Text(endDate.formatted(date: .omitted, time: .shortened))
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
+                .padding(.vertical, 6)
+                .frame(minWidth: 62, alignment: .trailing)
             }
-            .padding(.vertical, 6)
-            .frame(minWidth: 62, alignment: .trailing)
             rail
             VStack(alignment: .leading, spacing: 2) {
+                if dynamicTypeSize.isAccessibilitySize {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        startText
+                        endText
+                    }
+                }
                 Text(entry.agendaTitle)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.primary)
@@ -336,6 +339,29 @@ struct FeedAgendaLine: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
+    }
+
+    /// When the entry starts, kept on one line.
+    @ViewBuilder
+    private var startText: some View {
+        if let startDate = entry.startDate {
+            Text(startDate.formatted(date: .omitted, time: .shortened))
+                .font(.footnote.weight(.semibold))
+                .monospacedDigit()
+                .fixedSize()
+        }
+    }
+
+    /// When the entry ends, kept on one line.
+    @ViewBuilder
+    private var endText: some View {
+        if let endDate = entry.endDate {
+            Text(endDate.formatted(date: .omitted, time: .shortened))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .fixedSize()
+        }
     }
 
     /// The time rail: a thin line through the entries, and this entry's dot
