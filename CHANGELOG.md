@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.9] - 2026-11-23
+
+### Fixed
+
+- Pulling the Feed down to refresh no longer leaves the page stuck pulled down on the iPhone. (#780)
+
 ## [0.230.8] - 2026-11-23
 
 ### Fixed
