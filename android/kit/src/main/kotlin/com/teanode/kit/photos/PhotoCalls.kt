@@ -10,38 +10,32 @@ import kotlinx.serialization.json.JsonPrimitive
 
 private fun photoIdsVariable(photoIds: List<String>): JsonElement = JsonArray(photoIds.map { photoId -> JsonPrimitive(photoId) })
 
-/** One page of photos of a part of the library, newest first, narrowed by the filter. */
-suspend fun Connection.photos(
-    collection: PhotoCollection,
-    filter: PhotoFilter = PhotoFilter(),
-    beforePhotoId: String? = null,
-    pageSize: Int = PhotoPaging.PAGE_SIZE,
-): List<Photo> {
+/** One page of a list newest first, by the oldest photo of the page before it (the Trash reads this way). */
+suspend fun Connection.photos(query: PhotoListQuery, beforePhotoId: String? = null, pageSize: Int = PhotoPaging.PAGE_SIZE): List<Photo> {
     val variables = mutableMapOf<String, JsonElement>("pageSize" to JsonPrimitive(pageSize))
     if (!beforePhotoId.isNullOrEmpty()) variables["beforePhotoId"] = JsonPrimitive(beforePhotoId)
-    collection.isFavoriteFilter?.let { isFavorite -> variables["isFavorite"] = JsonPrimitive(isFavorite) }
-    collection.isTrashedFilter?.let { isTrashed -> variables["isTrashed"] = JsonPrimitive(isTrashed) }
-    variables.putAll(filter.variables())
+    variables.putAll(query.variables())
     return execute<ListPhotosAnswer>(PhotoDocuments.LIST_PHOTOS, variables).ListPhotos
 }
+
+/** One page of a list by its place: the [pageSize] photos from [offset] on, newest first. */
+suspend fun Connection.photosAt(query: PhotoListQuery, offset: Int, pageSize: Int = PhotoWindow.PAGE_SIZE): List<Photo> {
+    val variables = mutableMapOf<String, JsonElement>("pageSize" to JsonPrimitive(pageSize), "offset" to JsonPrimitive(offset))
+    variables.putAll(query.variables())
+    return execute<ListPhotosAnswer>(PhotoDocuments.LIST_PHOTOS, variables).ListPhotos
+}
+
+@Serializable private class CountPhotosAnswer(val CountPhotos: Int)
+
+/** How many photos a list holds. */
+suspend fun Connection.countPhotos(query: PhotoListQuery): Int =
+    execute<CountPhotosAnswer>(PhotoDocuments.COUNT_PHOTOS, query.variables()).CountPhotos
 
 /** The photos the server finds for these words, most relevant first. */
 suspend fun Connection.photos(matching: String): List<Photo> {
     val variables = mapOf<String, JsonElement>(
         "pageSize" to JsonPrimitive(PhotoSearch.MOST_RESULT_COUNT), "searchText" to JsonPrimitive(PhotoSearch.words(matching).orEmpty()),
     )
-    return execute<ListPhotosAnswer>(PhotoDocuments.LIST_PHOTOS, variables).ListPhotos
-}
-
-suspend fun Connection.photosInAlbum(photoAlbumId: String, beforePhotoId: String? = null, pageSize: Int = PhotoPaging.PAGE_SIZE): List<Photo> {
-    val variables = mutableMapOf<String, JsonElement>("pageSize" to JsonPrimitive(pageSize), "albumId" to JsonPrimitive(photoAlbumId))
-    if (!beforePhotoId.isNullOrEmpty()) variables["beforePhotoId"] = JsonPrimitive(beforePhotoId)
-    return execute<ListPhotosAnswer>(PhotoDocuments.LIST_PHOTOS, variables).ListPhotos
-}
-
-suspend fun Connection.photosInFaceGroup(photoFaceGroupId: String, beforePhotoId: String? = null, pageSize: Int = PhotoPaging.PAGE_SIZE): List<Photo> {
-    val variables = mutableMapOf<String, JsonElement>("pageSize" to JsonPrimitive(pageSize), "faceGroupId" to JsonPrimitive(photoFaceGroupId))
-    if (!beforePhotoId.isNullOrEmpty()) variables["beforePhotoId"] = JsonPrimitive(beforePhotoId)
     return execute<ListPhotosAnswer>(PhotoDocuments.LIST_PHOTOS, variables).ListPhotos
 }
 
@@ -289,3 +283,31 @@ suspend fun Connection.savePhotoToLibrary(photoId: String): Photo =
 suspend fun Connection.savePhotoFromAttachment(agentAttachmentId: String): Photo =
     execute<SavePhotoAnswer>(PhotoDocuments.SAVE_PHOTO_FROM_ATTACHMENT, mapOf("agentAttachmentId" to JsonPrimitive(agentAttachmentId))).SavePhotoFromAttachment
         ?: throw com.teanode.kit.TeaNodeError.UnreadableAnswer
+
+/** The newest and the oldest year a list has photos in, or null when it has none: how many, the first, and the last. */
+suspend fun Connection.overviewYears(query: PhotoListQuery, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): PhotoYearSpan? {
+    val totalCount = countPhotos(query)
+    if (totalCount == 0) return null
+    val newest = photosAt(query, 0, 1).firstOrNull() ?: return null
+    val oldest = if (totalCount > 1) photosAt(query, totalCount - 1, 1).firstOrNull() else null
+    val newestYear = PhotoPeriods.year(newest, zone) ?: return null
+    val oldestYear = oldest?.let { photo -> PhotoPeriods.year(photo, zone) } ?: newestYear
+    return PhotoYearSpan(newestYear, minOf(newestYear, oldestYear))
+}
+
+/** A year or a month with the photo that stands for it and how many photos it holds, or null when the list has none in it. */
+suspend fun Connection.overviewPeriod(
+    query: PhotoListQuery, year: Int, monthIndex: Int?, zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+): PhotoPeriod? {
+    val (takenAfter, takenBefore) = PhotoPeriods.bounds(year, monthIndex, zone)
+    val narrowed = PhotoPeriods.narrow(query.filter, takenAfter, takenBefore, zone) ?: return null
+    val periodQuery = query.copy(filter = narrowed)
+    val coverPhoto = photosAt(periodQuery, 0, 1).firstOrNull() ?: return null
+    return PhotoPeriod(PhotoPeriods.id(year, monthIndex), year, monthIndex, takenAfter, takenBefore, coverPhoto, countPhotos(periodQuery))
+}
+
+/** How many photos of the list are newer than the whole of a period: the place of the period's newest photo, from zero. */
+suspend fun Connection.countNewer(query: PhotoListQuery, period: PhotoPeriod, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): Int {
+    val newerFilter = PhotoPeriods.newerThan(query.filter, period.takenBefore, zone) ?: return 0
+    return countPhotos(query.copy(filter = newerFilter))
+}

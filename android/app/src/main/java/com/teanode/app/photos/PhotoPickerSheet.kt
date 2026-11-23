@@ -37,9 +37,7 @@ import com.teanode.app.ui.components.ErrorState
 import com.teanode.app.ui.components.LoadingState
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.kit.photos.PhotoAlbum
-import com.teanode.kit.photos.PhotoCollection
-import com.teanode.kit.photos.PhotoFilter
-import com.teanode.kit.photos.PhotoTimeline
+import com.teanode.kit.photos.PhotoListQuery
 import com.teanode.kit.photos.addPhotos
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -63,7 +61,7 @@ internal fun PhotoPickerContent(album: PhotoAlbum, onAdded: () -> Unit, onDismis
     val snackbar = LocalSnackbar.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val list = rememberPhotoList(PhotoListSource.Collection(PhotoCollection.Library, PhotoFilter()))
+    val list = rememberPhotoWindow(PhotoListQuery())
     var selectedIds by remember { mutableStateOf(emptySet<String>()) }
     var isAdding by remember { mutableStateOf(false) }
     val moreError = list.moreError
@@ -103,12 +101,12 @@ internal fun PhotoPickerContent(album: PhotoAlbum, onAdded: () -> Unit, onDismis
             when {
                 list.error != null && !list.isLoaded -> ErrorState(stringResource(R.string.photos_cannot_load), onRetry = { list.retry() })
                 !list.isLoaded -> LoadingState()
-                list.photos.isEmpty() -> EmptyState(Icons.Outlined.PhotoLibrary, stringResource(R.string.photos_empty_library), description = stringResource(R.string.photos_picker_empty_text))
-                else -> PhotoGrid(
-                    PhotoGridContent.Days(PhotoTimeline.days(list.photos)), selectedIds, isSelecting = true,
-                    onOpen = { photo -> selectedIds = if (photo.id in selectedIds) selectedIds - photo.id else selectedIds + photo.id },
+                list.totalCount == 0 -> EmptyState(Icons.Outlined.PhotoLibrary, stringResource(R.string.photos_empty_library), description = stringResource(R.string.photos_picker_empty_text))
+                else -> PhotoWindowGrid(
+                    list, selectedIds, isSelecting = true,
+                    onOpen = { _, photo -> selectedIds = if (photo.id in selectedIds) selectedIds - photo.id else selectedIds + photo.id },
                     onToggleSelected = { photo -> selectedIds = if (photo.id in selectedIds) selectedIds - photo.id else selectedIds + photo.id },
-                    onShowed = { photo -> list.showed(photo.id) }, modifier = Modifier.fillMaxSize(), state = rememberLazyGridState(),
+                    modifier = Modifier.fillMaxSize(), state = rememberLazyGridState(),
                 )
             }
         }

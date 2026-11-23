@@ -9,8 +9,14 @@ photoFileRoles processingErrorMessage isOwnedByCaller ownerName
 """.trimEnd()
 
     val LIST_PHOTOS = """
-query (${'$'}beforePhotoId: String, ${'$'}pageSize: Int, ${'$'}isFavorite: Boolean, ${'$'}isTrashed: Boolean, ${'$'}albumId: String, ${'$'}faceGroupId: String, ${'$'}accountUserId: String, ${'$'}photoKind: String, ${'$'}takenAfter: DateTime, ${'$'}takenBefore: DateTime, ${'$'}searchText: String, ${'$'}nearLatitude: Float, ${'$'}nearLongitude: Float, ${'$'}nearDistanceKilometers: Float) {
-  ListPhotos(beforePhotoId: ${'$'}beforePhotoId, pageSize: ${'$'}pageSize, isFavorite: ${'$'}isFavorite, isTrashed: ${'$'}isTrashed, albumId: ${'$'}albumId, faceGroupId: ${'$'}faceGroupId, accountUserId: ${'$'}accountUserId, photoKind: ${'$'}photoKind, takenAfter: ${'$'}takenAfter, takenBefore: ${'$'}takenBefore, searchText: ${'$'}searchText, nearLatitude: ${'$'}nearLatitude, nearLongitude: ${'$'}nearLongitude, nearDistanceKilometers: ${'$'}nearDistanceKilometers) { ${PHOTO_FIELDS} }
+query (${'$'}beforePhotoId: String, ${'$'}offset: Int, ${'$'}pageSize: Int, ${'$'}isFavorite: Boolean, ${'$'}isTrashed: Boolean, ${'$'}albumId: String, ${'$'}faceGroupId: String, ${'$'}accountUserId: String, ${'$'}photoKind: String, ${'$'}takenAfter: DateTime, ${'$'}takenBefore: DateTime, ${'$'}searchText: String, ${'$'}nearLatitude: Float, ${'$'}nearLongitude: Float, ${'$'}nearDistanceKilometers: Float) {
+  ListPhotos(beforePhotoId: ${'$'}beforePhotoId, offset: ${'$'}offset, pageSize: ${'$'}pageSize, isFavorite: ${'$'}isFavorite, isTrashed: ${'$'}isTrashed, albumId: ${'$'}albumId, faceGroupId: ${'$'}faceGroupId, accountUserId: ${'$'}accountUserId, photoKind: ${'$'}photoKind, takenAfter: ${'$'}takenAfter, takenBefore: ${'$'}takenBefore, searchText: ${'$'}searchText, nearLatitude: ${'$'}nearLatitude, nearLongitude: ${'$'}nearLongitude, nearDistanceKilometers: ${'$'}nearDistanceKilometers) { ${PHOTO_FIELDS} }
+}
+""".trimEnd()
+
+    val COUNT_PHOTOS = """
+query (${'$'}isFavorite: Boolean, ${'$'}isTrashed: Boolean, ${'$'}albumId: String, ${'$'}faceGroupId: String, ${'$'}accountUserId: String, ${'$'}photoKind: String, ${'$'}takenAfter: DateTime, ${'$'}takenBefore: DateTime, ${'$'}searchText: String, ${'$'}nearLatitude: Float, ${'$'}nearLongitude: Float, ${'$'}nearDistanceKilometers: Float) {
+  CountPhotos(isFavorite: ${'$'}isFavorite, isTrashed: ${'$'}isTrashed, albumId: ${'$'}albumId, faceGroupId: ${'$'}faceGroupId, accountUserId: ${'$'}accountUserId, photoKind: ${'$'}photoKind, takenAfter: ${'$'}takenAfter, takenBefore: ${'$'}takenBefore, searchText: ${'$'}searchText, nearLatitude: ${'$'}nearLatitude, nearLongitude: ${'$'}nearLongitude, nearDistanceKilometers: ${'$'}nearDistanceKilometers)
 }
 """.trimEnd()
 

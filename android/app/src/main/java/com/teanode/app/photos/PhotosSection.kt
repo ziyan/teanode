@@ -82,6 +82,7 @@ import com.teanode.kit.photos.PhotoTimeline
 import com.teanode.kit.photos.emptyPhotoTrash
 import com.teanode.kit.photos.deletePhotos
 import com.teanode.kit.photos.photoLibrary
+import com.teanode.kit.photos.PhotoListQuery
 import com.teanode.kit.photos.restorePhotos
 import com.teanode.kit.photos.setPhotoFavorite
 import com.teanode.kit.photos.trashPhotos
@@ -131,7 +132,13 @@ fun PhotosSection(
     var searchText by rememberSaveable { mutableStateOf("") }
     var isSelecting by rememberSaveable { mutableStateOf(initialIsSelecting) }
     var selectedIds by remember { mutableStateOf(initialSelectedIds) }
-    var openedPhotoId by rememberSaveable { mutableStateOf(initialOpenedPhotoId) }
+    // The photo to open once its list holds it (a search result, or a demo screen), and the place the viewer is open on.
+    var pendingOpenPhotoId by rememberSaveable { mutableStateOf(initialOpenedPhotoId) }
+    var openedIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+    // Choosing a year or month scrolls All to this place of the list once.
+    var scrollTargetIndex by remember { mutableStateOf<Int?>(null) }
+    // The photos chosen, kept apart from the pages of the window, which are let go as the person scrolls.
+    val chosenPhotos = remember { mutableMapOf<String, Photo>() }
     var isSectionMenuOpen by remember { mutableStateOf(false) }
     var isMoreMenuOpen by remember { mutableStateOf(false) }
     var isFilterOpen by remember { mutableStateOf(false) }
@@ -147,18 +154,27 @@ fun PhotosSection(
         section = PhotoSectionChoice.Library
         isSearching = true
         searchText = search.words
-        openedPhotoId = search.photoId
+        pendingOpenPhotoId = search.photoId
     }
     val libraryLoad = com.teanode.app.ui.components.rememberLoad { runCatching { connection.photoLibrary() }.getOrNull() }
     val library = libraryLoad.value
 
     val searchWords = com.teanode.kit.photos.PhotoSearch.words(searchText).takeIf { section == PhotoSectionChoice.Library && isSearching }
-    val source: PhotoListSource? = when {
+    // The library and Favorites are read a window at a time; the Trash and a search are held whole.
+    val heldSource: PhotoListSource? = when {
         searchWords != null -> PhotoListSource.Search(searchWords)
-        section.collection != null -> PhotoListSource.Collection(section.collection!!, if (section == PhotoSectionChoice.Library) filter else PhotoFilter())
+        section == PhotoSectionChoice.Trash -> PhotoListSource.Trash
         else -> null
     }
-    val list = source?.let { current -> rememberPhotoList(current) }
+    val query: PhotoListQuery? = when {
+        searchWords != null -> null
+        section == PhotoSectionChoice.Library -> PhotoListQuery(PhotoCollection.Library, filter)
+        section == PhotoSectionChoice.Favorites -> PhotoListQuery(PhotoCollection.Favorites)
+        else -> null
+    }
+    val heldList = heldSource?.let { current -> rememberPhotoList(current) }
+    val window = query?.let { current -> rememberPhotoWindow(current) }
+    val list: PhotoListHandle? = heldList ?: window
     val moreError = list?.moreError
     LaunchedEffect(moreError) {
         if (moreError != null) {
@@ -172,9 +188,17 @@ fun PhotosSection(
         if (hasShownSection) { isSelecting = false; selectedIds = emptySet() }
         hasShownSection = true
     }
-    BackHandler(enabled = isSelecting || openedPhotoId != null || isSearching) {
+    // A photo asked for by its id opens once the list holds it.
+    LaunchedEffect(list?.isLoaded, list?.heldPhotos?.size, pendingOpenPhotoId) {
+        val pendingId = pendingOpenPhotoId ?: return@LaunchedEffect
+        val held = list ?: return@LaunchedEffect
+        if (!held.isLoaded) return@LaunchedEffect
+        val index = window?.window?.index(pendingId) ?: heldList?.photos?.indexOfFirst { photo -> photo.id == pendingId }?.takeIf { place -> place >= 0 }
+        if (index != null) { openedIndex = index; pendingOpenPhotoId = null }
+    }
+    BackHandler(enabled = isSelecting || openedIndex != null || isSearching) {
         when {
-            openedPhotoId != null -> openedPhotoId = null
+            openedIndex != null -> openedIndex = null
             isSelecting -> {
                 isSelecting = false
                 selectedIds = emptySet()
@@ -188,6 +212,7 @@ fun PhotosSection(
 
     fun toggle(photo: Photo) {
         isSelecting = true
+        chosenPhotos[photo.id] = photo
         selectedIds = if (photo.id in selectedIds) selectedIds - photo.id else selectedIds + photo.id
     }
 
@@ -213,10 +238,15 @@ fun PhotosSection(
         }
     }
 
-    val selectedPhotos = list?.photos?.filter { photo -> photo.id in selectedIds }.orEmpty()
+    // The chosen photos: the ones chosen by hand, and the ones held now (a screen opened already choosing).
+    fun chosen(): List<Photo> {
+        val held = list?.heldPhotos.orEmpty().associateBy { photo -> photo.id }
+        return selectedIds.mapNotNull { id -> held[id] ?: chosenPhotos[id] }
+    }
+    val selectedPhotos = chosen()
 
     fun favoriteSelected() {
-        val chosen = list?.photos?.filter { photo -> photo.id in selectedIds }.orEmpty()
+        val chosen = chosen()
         val isFavorite = com.teanode.kit.photos.PhotoFavorites.isFavoriteTarget(chosen)
         scope.launch {
             try {
@@ -237,7 +267,7 @@ fun PhotosSection(
     }
 
     fun shareSelected() {
-        val chosen = list?.photos?.filter { photo -> photo.id in selectedIds }.orEmpty()
+        val chosen = chosen()
         scope.launch {
             isPreparingShare = true
             try {
@@ -259,7 +289,7 @@ fun PhotosSection(
         onBack = if (isSelecting) ({ isSelecting = false; selectedIds = emptySet() }) else null,
         actions = {
             if (isSelecting) {
-                TextButton(onClick = { selectedIds = list?.photos?.map { photo -> photo.id }?.toSet().orEmpty() }) { Text(stringResource(R.string.photos_select_all)) }
+                TextButton(onClick = { selectedIds = list?.heldPhotos?.map { photo -> photo.id }?.toSet().orEmpty() }) { Text(stringResource(R.string.photos_select_all)) }
             } else {
                 if (section == PhotoSectionChoice.Library) {
                     IconButton(onClick = { isSearching = !isSearching; if (!isSearching) searchText = "" }) {
@@ -285,10 +315,10 @@ fun PhotosSection(
                 Box {
                     IconButton(onClick = { isMoreMenuOpen = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.photos_more)) }
                     DropdownMenu(expanded = isMoreMenuOpen, onDismissRequest = { isMoreMenuOpen = false }) {
-                        if (section.collection != null && (list?.photos?.isNotEmpty() == true)) {
+                        if (section.collection != null && ((list?.totalCount ?: 0) > 0)) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.photos_select)) }, onClick = { isMoreMenuOpen = false; isSelecting = true })
                         }
-                        if (section == PhotoSectionChoice.Trash && (list?.photos?.isNotEmpty() == true)) {
+                        if (section == PhotoSectionChoice.Trash && ((list?.totalCount ?: 0) > 0)) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.photos_empty_trash)) }, onClick = { isMoreMenuOpen = false; isEmptyTrashConfirming = true })
                         }
                         if (section == PhotoSectionChoice.People) {
@@ -333,21 +363,25 @@ fun PhotosSection(
                     when (section) {
                         PhotoSectionChoice.Albums -> AlbumsContent(onOpenAlbum = { album -> navigator.navigate(Routes.child(AppSection.Photos, "album/${album.id}")) })
                         PhotoSectionChoice.People -> PeopleContent(isHiddenShown, library, onOpenPerson = { group -> navigator.navigate(Routes.child(AppSection.Photos, "person/${group.id}")) })
-                        else -> if (list != null) LibraryList(list, section, scale, library, searchWords, selectedIds, isSelecting, filter, { photo -> openedPhotoId = photo.id }, ::toggle) { scale = PhotoScale.All }
+                        else -> if (list != null) LibraryList(
+                            list, query, section, scale, library, searchWords, selectedIds, isSelecting, filter, { index -> openedIndex = index }, ::toggle,
+                            scrollTargetIndex, { scrollTargetIndex = null }, { target -> scrollTargetIndex = target; scale = PhotoScale.All },
+                        )
                     }
                 }
             }
         }
     }
-    val opened = list?.photos?.firstOrNull { photo -> photo.id == openedPhotoId }
-            if (opened != null && list != null) {
-                PhotoViewer(
-                    photos = list.photos, initialPhotoId = opened.id, onClose = { openedPhotoId = null }, library = library,
-                    onPhotoChanged = { photo -> list.replace(photo) },
-                    onPhotosGone = { ids -> list.remove(ids); libraryLoad.refresh() },
-                    onShowNear = { photo -> com.teanode.kit.photos.PhotoNearFilter.near(photo)?.let { near -> section = PhotoSectionChoice.Library; filter = PhotoFilter(photoNearFilter = near); openedPhotoId = null } },
-                )
-            }
+    val openedAt = openedIndex
+    if (openedAt != null && list != null) {
+        PhotoViewer(
+            photoCount = list.totalCount, photoAt = { index -> window?.window?.photo(index) ?: heldList?.photos?.getOrNull(index) },
+            initialIndex = openedAt, onShowed = { index -> window?.showed(index) }, onClose = { openedIndex = null }, library = library,
+            onPhotoChanged = { photo -> list.replace(photo) },
+            onPhotosGone = { ids -> list.remove(ids); libraryLoad.refresh() },
+            onShowNear = { photo -> com.teanode.kit.photos.PhotoNearFilter.near(photo)?.let { near -> section = PhotoSectionChoice.Library; filter = PhotoFilter(photoNearFilter = near); openedIndex = null } },
+        )
+    }
     }
     if (isFilterOpen) PhotoFilterSheet(filter, onApply = { applied -> filter = applied; isFilterOpen = false }, onDismiss = { isFilterOpen = false })
     if (isTrashConfirming) {
@@ -386,7 +420,7 @@ fun PhotosSection(
         )
     }
     if (isLocationChoosing) {
-        val chosen = list?.photos?.filter { photo -> photo.id in selectedIds }.orEmpty()
+        val chosen = chosen()
         ChangeLocationSheet(
             photoIds = chosen.map { photo -> photo.id }, hasLocation = chosen.any { photo -> photo.latitude != null },
             onDone = { isLocationChoosing = false; isSelecting = false; selectedIds = emptySet(); list?.refresh() },
@@ -398,6 +432,15 @@ fun PhotosSection(
             photoIds = selectedIds.toList(), onDone = { isAlbumChoosing = false; isSelecting = false; selectedIds = emptySet() }, onDismiss = { isAlbumChoosing = false },
         )
     }
+}
+
+@Composable
+internal fun rememberPhotoWindow(query: PhotoListQuery): PhotoWindowController {
+    val connection = LocalConnection.current
+    val scope = rememberCoroutineScope()
+    val controller = remember(query, connection) { PhotoWindowController(scope, connection, query) }
+    LaunchedEffect(controller) { controller.start() }
+    return controller
 }
 
 @Composable
@@ -541,7 +584,8 @@ internal fun kindFilterName(kind: com.teanode.kit.photos.PhotoKindFilter): Strin
 
 @Composable
 private fun LibraryList(
-    list: PhotoListController,
+    list: PhotoListHandle,
+    query: PhotoListQuery?,
     section: PhotoSectionChoice,
     scale: PhotoScale,
     library: PhotoLibrary?,
@@ -549,37 +593,84 @@ private fun LibraryList(
     selectedIds: Set<String>,
     isSelecting: Boolean,
     filter: PhotoFilter,
-    onOpen: (Photo) -> Unit,
+    onOpen: (Int) -> Unit,
     onToggle: (Photo) -> Unit,
-    onShowAll: () -> Unit,
+    scrollTargetIndex: Int?,
+    onScrolledToTarget: () -> Unit,
+    onChoosePeriod: (Int) -> Unit,
 ) {
     val gridState = rememberLazyGridState()
-    val photos = list.photos
+    val snackbar = LocalSnackbar.current
+    val scope = rememberCoroutineScope()
+    val isOverview = section == PhotoSectionChoice.Library && searchWords == null && scale != PhotoScale.All
+    val overview = if (query != null && isOverview) rememberPhotoOverview(query) else null
+    val readError = overview?.readError
+    LaunchedEffect(readError) {
+        if (readError != null) {
+            overview.clearReadError()
+            snackbar.showError(readError)
+        }
+    }
+    // Choosing a year or month shows All at the place of its newest photo.
+    LaunchedEffect(scrollTargetIndex, scale) {
+        val target = scrollTargetIndex ?: return@LaunchedEffect
+        if (scale != PhotoScale.All) return@LaunchedEffect
+        gridState.scrollToItem(target.coerceIn(0, maxOf(0, list.totalCount - 1)))
+        onScrolledToTarget()
+    }
     when {
         list.error != null && !list.isLoaded -> ErrorState(stringResource(R.string.photos_cannot_load), onRetry = { list.retry() })
         !list.isLoaded -> LoadingState()
-        photos.isEmpty() -> PhotosEmpty(section, filter.isActive, searchWords != null, library)
+        list.totalCount == 0 -> PhotosEmpty(section, filter.isActive, searchWords != null, library)
+        overview != null && overview.error != null && !overview.isLoaded -> ErrorState(stringResource(R.string.photos_cannot_load), onRetry = { overview.start() })
+        overview != null && !overview.isLoaded -> LoadingState()
         else -> androidx.compose.material3.pulltorefresh.PullToRefreshBox(isRefreshing = list.isRefreshing, onRefresh = { list.refresh() }, modifier = Modifier.fillMaxSize()) {
-            val footer: @Composable () -> Unit = {
-                if (list.isLoadingMore) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { androidx.compose.material3.CircularProgressIndicator() }
-                else if (list.moreError != null) TextButton(onClick = { list.loadMore() }) { Text(stringResource(R.string.photos_try_again)) }
-            }
+            val window = list as? PhotoWindowController
             when {
-                section == PhotoSectionChoice.Library && searchWords == null && scale == PhotoScale.Years ->
-                    PhotoOverviewGrid(PhotoOverview.years(photos), null, onOpenYear = { onShowAll() }, onOpenMonth = {})
-                section == PhotoSectionChoice.Library && searchWords == null && scale == PhotoScale.Months ->
-                    PhotoOverviewGrid(null, PhotoOverview.months(photos), onOpenYear = {}, onOpenMonth = { onShowAll() })
+                overview != null -> PhotoOverviewGrid(
+                    overview, isMonths = scale == PhotoScale.Months,
+                    onChoose = { period ->
+                        scope.launch {
+                            try {
+                                onChoosePeriod(overview.countNewer(period))
+                            } catch (failure: kotlinx.coroutines.CancellationException) {
+                                throw failure
+                            } catch (failure: Throwable) {
+                                snackbar.showError(failure)
+                            }
+                        }
+                    },
+                )
+                window != null -> PhotoWindowGrid(window, selectedIds, isSelecting, { index, _ -> onOpen(index) }, onToggle, state = gridState)
                 section == PhotoSectionChoice.Trash -> PhotoGrid(
-                    PhotoGridContent.TrashDays(PhotoTimeline.trashDays(photos, library?.trashRetentionDays ?: 30), library?.trashRetentionDays ?: 30),
-                    selectedIds, isSelecting, onOpen, onToggle, { photo -> list.showed(photo.id) }, state = gridState, footer = footer,
+                    PhotoGridContent.TrashDays(PhotoTimeline.trashDays(list.heldPhotos, library?.trashRetentionDays ?: 30), library?.trashRetentionDays ?: 30),
+                    selectedIds, isSelecting, { photo -> onOpen(list.heldPhotos.indexOf(photo)) }, onToggle, { photo -> (list as? PhotoListController)?.showed(photo.id) }, state = gridState,
+                    footer = { HeldListFooter(list as? PhotoListController) },
                 )
                 else -> PhotoGrid(
-                    PhotoGridContent.Days(if (searchWords != null) PhotoTimeline.rankedDay(photos) else PhotoTimeline.days(photos)),
-                    selectedIds, isSelecting, onOpen, onToggle, { photo -> list.showed(photo.id) }, state = gridState, footer = footer,
+                    PhotoGridContent.Days(PhotoTimeline.rankedDay(list.heldPhotos)),
+                    selectedIds, isSelecting, { photo -> onOpen(list.heldPhotos.indexOf(photo)) }, onToggle, { photo -> (list as? PhotoListController)?.showed(photo.id) }, state = gridState,
+                    footer = { HeldListFooter(list as? PhotoListController) },
                 )
             }
         }
     }
+}
+
+@Composable
+private fun HeldListFooter(list: PhotoListController?) {
+    if (list == null) return
+    if (list.isLoadingMore) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { androidx.compose.material3.CircularProgressIndicator() }
+    else if (list.moreError != null) TextButton(onClick = { list.loadMore() }) { Text(stringResource(R.string.photos_try_again)) }
+}
+
+@Composable
+internal fun rememberPhotoOverview(query: PhotoListQuery): PhotoOverviewController {
+    val connection = LocalConnection.current
+    val scope = rememberCoroutineScope()
+    val controller = remember(query, connection) { PhotoOverviewController(scope, connection, query) }
+    LaunchedEffect(controller) { controller.start() }
+    return controller
 }
 
 @Composable

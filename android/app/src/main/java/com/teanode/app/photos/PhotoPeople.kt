@@ -61,6 +61,7 @@ import com.teanode.app.ui.components.rememberLoad
 import com.teanode.kit.photos.NamedPhotoFaceGroup
 import com.teanode.kit.photos.PhotoFaceGroup
 import com.teanode.kit.photos.PhotoLibrary
+import com.teanode.kit.photos.PhotoListQuery
 import com.teanode.kit.photos.PhotoNamingContact
 import com.teanode.kit.photos.PhotoNaming
 import com.teanode.kit.photos.PhotoTimeline
@@ -146,13 +147,13 @@ fun PersonScreen(photoFaceGroupId: String, onBack: () -> Unit) {
     val snackbar = LocalSnackbar.current
     val scope = rememberCoroutineScope()
     val groupLoad = rememberLoad(photoFaceGroupId) { connection.photoFaceGroup(photoFaceGroupId) }
-    val list = rememberPhotoList(PhotoListSource.FaceGroup(photoFaceGroupId))
+    val list = rememberPhotoWindow(PhotoListQuery(photoFaceGroupId = photoFaceGroupId))
     var group by remember { mutableStateOf<PhotoFaceGroup?>(null) }
     LaunchedEffect(groupLoad.value) { groupLoad.value?.let { loaded -> group = loaded } }
     var isMenuOpen by remember { mutableStateOf(false) }
     var isNaming by remember { mutableStateOf(false) }
     var isMerging by remember { mutableStateOf(false) }
-    var openedPhotoId by remember { mutableStateOf<String?>(null) }
+    var openedIndex by remember { mutableStateOf<Int?>(null) }
     val current = group
 
     fun fail(failure: Throwable) { if (failure is CancellationException) throw failure else snackbar.showError(failure) }
@@ -179,24 +180,24 @@ fun PersonScreen(photoFaceGroupId: String, onBack: () -> Unit) {
             when {
                 list.error != null && !list.isLoaded -> ErrorState(stringResource(R.string.photos_cannot_load), onRetry = { list.retry() })
                 !list.isLoaded -> LoadingState()
-                list.photos.isEmpty() -> EmptyState(Icons.Outlined.Face, stringResource(R.string.photos_no_photos_of_person), description = stringResource(R.string.photos_no_photos_of_person_text))
+                list.totalCount == 0 -> EmptyState(Icons.Outlined.Face, stringResource(R.string.photos_no_photos_of_person), description = stringResource(R.string.photos_no_photos_of_person_text))
                 else -> Column {
                     if (current?.isInCircles == true) Text(
                         stringResource(R.string.photos_in_your_circles_as, current.account?.let { account -> account.name.ifEmpty { account.username } } ?: ""),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     )
-                    PhotoGrid(
-                        PhotoGridContent.Days(PhotoTimeline.days(list.photos)), emptySet(), false, onOpen = { photo -> openedPhotoId = photo.id },
-                        onToggleSelected = {}, onShowed = { photo -> list.showed(photo.id) }, state = rememberLazyGridState(),
+                    PhotoWindowGrid(
+                        list, emptySet(), false, onOpen = { index, _ -> openedIndex = index },
+                        onToggleSelected = {}, state = rememberLazyGridState(),
                     )
                 }
             }
         }
     }
-    val opened = list.photos.firstOrNull { photo -> photo.id == openedPhotoId }
-            if (opened != null) {
-                androidx.activity.compose.BackHandler { openedPhotoId = null }
-                PhotoViewer(photos = list.photos, initialPhotoId = opened.id, onClose = { openedPhotoId = null }, library = null, onPhotoChanged = { photo -> list.replace(photo) }, onPhotosGone = { ids -> list.remove(ids) })
+    val openedAt = openedIndex
+            if (openedAt != null) {
+                androidx.activity.compose.BackHandler { openedIndex = null }
+                PhotoViewer(photoCount = list.totalCount, photoAt = { index -> list.window.photo(index) }, initialIndex = openedAt, onShowed = { index -> list.showed(index) }, onClose = { openedIndex = null }, library = null, onPhotoChanged = { photo -> list.replace(photo) }, onPhotosGone = { ids -> list.remove(ids) })
             }
     }
     if (isNaming && current != null) {

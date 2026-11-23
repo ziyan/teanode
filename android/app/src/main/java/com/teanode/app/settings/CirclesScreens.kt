@@ -619,7 +619,7 @@ private fun CircleBookAndAlbums(circle: PeopleCircle, directory: CircleDirectory
 @Composable
 fun MemberPhotosScreen(userId: String, name: String, onBack: () -> Unit) {
     val connection = LocalConnection.current
-    val loaded = com.teanode.app.ui.components.rememberLoad(userId) { connection.photos(com.teanode.kit.photos.PhotoCollection.Library, com.teanode.kit.photos.PhotoFilter(accountUserId = userId, accountName = name)) }
+    val loaded = com.teanode.app.ui.components.rememberLoad(userId) { connection.photos(com.teanode.kit.photos.PhotoListQuery(filter = com.teanode.kit.photos.PhotoFilter(accountUserId = userId, accountName = name))) }
     LoadedSettingsPage(
         stringResource(R.string.settings_circles_member_photos, name), onBack, loaded, isEmpty = { list -> list.isEmpty() },
         empty = { EmptyState(Icons.Outlined.Group, stringResource(R.string.settings_circles_member_photos_none)) },

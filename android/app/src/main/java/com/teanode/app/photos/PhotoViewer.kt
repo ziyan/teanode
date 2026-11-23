@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -110,11 +111,40 @@ import kotlinx.coroutines.launch
  * info (date, camera, file, place, albums, what a model read in it, the people in it) and the actions that fit where
  * it was opened from. [album] is the album it was opened in, which adds "Use as album cover" and "Remove from album".
  */
-@OptIn(ExperimentalMaterial3Api::class)
+/** The viewer over photos held in a list, opened on the one with [initialPhotoId]. */
 @Composable
 fun PhotoViewer(
     photos: List<Photo>,
     initialPhotoId: String,
+    onClose: () -> Unit,
+    library: PhotoLibrary?,
+    onPhotoChanged: (Photo) -> Unit,
+    onPhotosGone: (Collection<String>) -> Unit,
+    album: com.teanode.kit.photos.PhotoAlbum? = null,
+    onAlbumChanged: (com.teanode.kit.photos.PhotoAlbum) -> Unit = {},
+    onShowNear: ((Photo) -> Unit)? = null,
+    initialIsInfoOpen: Boolean = false,
+) {
+    PhotoViewer(
+        photoCount = photos.size, photoAt = { index -> photos.getOrNull(index) },
+        initialIndex = photos.indexOfFirst { photo -> photo.id == initialPhotoId }.coerceAtLeast(0), onShowed = {},
+        onClose = onClose, library = library, onPhotoChanged = onPhotoChanged, onPhotosGone = onPhotosGone, album = album,
+        onAlbumChanged = onAlbumChanged, onShowNear = onShowNear, initialIsInfoOpen = initialIsInfoOpen,
+    )
+}
+
+/**
+ * The viewer over a window of a list (the iPhone app's viewer on an index): it pages over every place of the list, and
+ * tells [onShowed] which place is on screen so the page beside it is read before the person gets there. A place whose
+ * photo is not read yet shows a wait.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PhotoViewer(
+    photoCount: Int,
+    photoAt: (Int) -> Photo?,
+    initialIndex: Int,
+    onShowed: (Int) -> Unit,
     onClose: () -> Unit,
     library: PhotoLibrary?,
     onPhotoChanged: (Photo) -> Unit,
@@ -129,9 +159,20 @@ fun PhotoViewer(
     val navigator = LocalAppNavigator.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val startIndex = photos.indexOfFirst { photo -> photo.id == initialPhotoId }.coerceAtLeast(0)
-    val pagerState = rememberPagerState(initialPage = startIndex) { photos.size }
-    val photo = photos.getOrNull(pagerState.currentPage) ?: return
+    val pagerState = rememberPagerState(initialPage = initialIndex.coerceIn(0, maxOf(0, photoCount - 1))) { photoCount }
+    val currentPageIndex = pagerState.currentPage
+    LaunchedEffect(pagerState) { snapshotFlow { pagerState.currentPage }.collect { index -> onShowed(index) } }
+    val photo = photoAt(currentPageIndex)
+    if (photo == null) {
+        // The page of this place is on its way: the pager and a way back are drawn, nothing to act on yet.
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            HorizontalPager(pagerState, Modifier.fillMaxSize()) { page -> photoAt(page)?.let { held -> ViewerPage(held, onToggleBar = {}) } ?: ViewerWaitPage() }
+            IconButton(onClick = onClose, Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.photos_close), tint = Color.White)
+            }
+        }
+        return
+    }
     var isInfoOpen by remember { mutableStateOf(initialIsInfoOpen) }
     var isMenuOpen by remember { mutableStateOf(false) }
     var confirming by remember { mutableStateOf<ViewerConfirmation?>(null) }
@@ -150,8 +191,8 @@ fun PhotoViewer(
 
     Column(Modifier.fillMaxSize().background(Color.Black)) {
     Box(Modifier.weight(1f).fillMaxWidth()) {
-        HorizontalPager(pagerState, Modifier.fillMaxSize(), key = { index -> photos[index].id }) { page ->
-            ViewerPage(photos[page], onToggleBar = { isBarShown = !isBarShown })
+        HorizontalPager(pagerState, Modifier.fillMaxSize()) { page ->
+            photoAt(page)?.let { held -> ViewerPage(held, onToggleBar = { isBarShown = !isBarShown }) } ?: ViewerWaitPage()
         }
         if (isBarShown) {
             Row(
@@ -209,8 +250,8 @@ fun PhotoViewer(
             }
         }
     }
-    if (isBarShown && photos.size > 1) {
-        PhotoThumbnailStrip(photos, pagerState.currentPage, onChoose = { index -> scope.launch { pagerState.animateScrollToPage(index) } })
+    if (isBarShown && photoCount > 1) {
+        PhotoThumbnailStrip(photoCount, photoAt, pagerState.currentPage, onChoose = { index -> scope.launch { pagerState.animateScrollToPage(index) } })
     }
     }
     if (isDateChanging) ChangeDateDialog(photo, onChanged = onPhotoChanged, onDismiss = { isDateChanging = false })
@@ -248,6 +289,11 @@ fun PhotoViewer(
         )
         null -> Unit
     }
+}
+
+@Composable
+private fun ViewerWaitPage() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color.White) }
 }
 
 private enum class ViewerConfirmation { Trash, Delete, RemoveFromAlbum }
@@ -303,10 +349,10 @@ private fun ViewerMenu(
 @Composable
 private fun ViewerPage(photo: Photo, onToggleBar: () -> Unit) {
     val picture = rememberServerPicture(photo.viewerPreviewPath)
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
-    var isPlaying by remember { mutableStateOf(false) }
+    var scale by remember(photo.id) { mutableFloatStateOf(1f) }
+    var offsetX by remember(photo.id) { mutableFloatStateOf(0f) }
+    var offsetY by remember(photo.id) { mutableFloatStateOf(0f) }
+    var isPlaying by remember(photo.id) { mutableStateOf(false) }
     Box(
         Modifier.fillMaxSize().clickable(role = Role.Button, onClick = onToggleBar).pointerInput(Unit) {
             detectTransformGestures { _, pan, zoom, _ ->
