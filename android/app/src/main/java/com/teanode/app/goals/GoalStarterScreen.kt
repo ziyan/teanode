@@ -23,6 +23,7 @@ import com.teanode.app.session.LocalConnection
 import com.teanode.app.shell.LocalAppNavigator
 import com.teanode.app.ui.components.LocalSnackbar
 import com.teanode.app.ui.components.TeaNodeScreen
+import com.teanode.app.ui.components.TeaNodeSectionHeader
 import com.teanode.kit.goals.startGoal
 import kotlinx.coroutines.launch
 
@@ -35,20 +36,21 @@ fun GoalStarterScreen() {
     val scope = rememberCoroutineScope()
     var title by remember { mutableStateOf("") }
     var details by remember { mutableStateOf("") }
+    var whenDraft by remember { mutableStateOf(GoalWhenDraft()) }
     var isStarting by remember { mutableStateOf(false) }
     TeaNodeScreen(
         title = stringResource(R.string.goals_new_goal),
         onBack = { navigator.back() },
         actions = {
             TextButton(
-                enabled = !isStarting && title.isNotBlank() && details.isNotBlank(),
+                enabled = !isStarting && title.isNotBlank() && details.isNotBlank() && whenDraft.isComplete,
                 onClick = {
                     val goalTitle = title.trim()
                     val goalDetails = details.trim()
                     isStarting = true
                     scope.launch {
                         try {
-                            connection.startGoal(goalTitle, goalDetails)
+                            connection.startGoal(whenDraft.change(goalTitle = goalTitle, goalDescription = goalDetails))
                             navigator.back()
                         } catch (failure: Exception) {
                             snackbar.showError(failure)
@@ -59,21 +61,23 @@ fun GoalStarterScreen() {
             ) { Text(stringResource(R.string.goals_start)) }
         },
     ) { contentPadding ->
-        Column(Modifier.fillMaxSize().padding(contentPadding).padding(16.dp).verticalScroll(rememberScrollState())) {
+        Column(Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState())) {
             OutlinedTextField(
                 value = title,
                 onValueChange = { text -> title = text },
                 label = { Text(stringResource(R.string.goals_starter_title_hint)) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
                 singleLine = true,
             )
             OutlinedTextField(
                 value = details,
                 onValueChange = { text -> details = text },
                 label = { Text(stringResource(R.string.goals_starter_details_hint)) },
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 minLines = 4,
             )
+            TeaNodeSectionHeader(stringResource(R.string.goals_when))
+            GoalWhenEditor(whenDraft) { changed -> whenDraft = changed }
         }
     }
 }

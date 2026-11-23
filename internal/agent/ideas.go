@@ -137,9 +137,12 @@ var ideaUsedChecks = map[string]usedCheck{
 		}
 		return false, nil
 	},
-	"schedule": func(tx db.Transaction, agent *models.Agent, owner *models.User) (bool, error) {
-		schedules, err := tx.ListAgentSchedules(agent.ID)
-		return len(schedules) > 0, err
+	"goal_on_times": func(tx db.Transaction, agent *models.Agent, owner *models.User) (bool, error) {
+		goals, err := tx.ListAgentGoals(agent.ID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting, models.GoalPaused}, 0)
+		if err != nil {
+			return false, err
+		}
+		return slices.ContainsFunc(goals, (*models.AgentConversation).IsGoalOnSetTimes), nil
 	},
 	"knowledge_source": func(tx db.Transaction, agent *models.Agent, owner *models.User) (bool, error) {
 		sources, err := tx.ListAgentSources(agent.ID)

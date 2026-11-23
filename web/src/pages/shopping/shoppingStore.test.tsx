@@ -75,7 +75,7 @@ it('shows the items of every list by aisle, each saying its list while more than
   const headings = Array.from(container.querySelectorAll('.shopping-group-row th')).map(
     (heading) => heading.textContent,
   )
-  expect(headings).toEqual(['Frozen', 'Also on the list, any store'])
+  expect(headings).toEqual(['Frozen', 'Also on the list, any store', 'In the cart'])
   const crackersRow = screen.getByText('Crackers').closest('tr') as HTMLElement
   expect(within(crackersRow).getByText('Party')).toBeTruthy()
   const peasRow = screen.getByText('Peas').closest('tr') as HTMLElement
@@ -173,6 +173,8 @@ it('finishes the caller’s trip here and says who else is shopping', async () =
   expect(await screen.findByText('Sam is shopping at Example Market now')).toBeTruthy()
   expect(screen.queryByText(/Kim/)).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Done shopping' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Finish without a receipt' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Finish' }))
   await waitFor(() => expect(callsOf('FinishShopping')).toHaveLength(1))
   expect(callsOf('FinishShopping')[0][1]).toEqual({ shoppingTripId: 'trip-2' })
 })

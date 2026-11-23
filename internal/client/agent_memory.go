@@ -29,23 +29,7 @@ type AgentFeedback struct {
 	Said      string    `json:"said"`
 }
 
-// AgentSchedule is a prompt the agent runs at set times, or whenever mail
-// that passes its MailConditions arrives.
-type AgentSchedule struct {
-	ID                   string                 `json:"id"`
-	Name                 string                 `json:"name"`
-	Cron                 string                 `json:"cron"`
-	MailConditions       []MailboxRuleCondition `json:"mailConditions,omitempty"`
-	Prompt               string                 `json:"prompt"`
-	Deliver              string                 `json:"deliver"`
-	IsNotifiedWhenPosted bool                   `json:"isNotifiedWhenPosted"`
-	Enabled              bool                   `json:"enabled"`
-	LastRunAt            *time.Time             `json:"lastRunAt"`
-	NextRunAt            *time.Time             `json:"nextRunAt"`
-}
-
 const memoryFields = `{ id createdAt modifiedAt title content tags appliesTo pinned usedAt }`
-const scheduleFields = `{ id name cron mailConditions { field header operator value } prompt deliver isNotifiedWhenPosted enabled lastRunAt nextRunAt }`
 
 // The documents.
 const (
@@ -57,13 +41,7 @@ const (
 	}`
 	DocumentDeleteAgentMemory    = `mutation ($memoryId: String!) { DeleteAgentMemory(memoryId: $memoryId) }`
 	DocumentListAgentCorrections = `query ($first: Int) { ListAgentCorrections(first: $first) { id createdAt kind mailId said } }`
-	DocumentListAgentSchedules   = `query { ListAgentSchedules ` + scheduleFields + ` }`
-	DocumentSaveAgentSchedule    = `mutation ($scheduleId: String, $name: String, $cron: String, $mailConditions: [MailboxRuleConditionInput!], $prompt: String, $deliver: String, $enabled: Boolean, $isNotifiedWhenPosted: Boolean) {
-		SaveAgentSchedule(scheduleId: $scheduleId, name: $name, cron: $cron, mailConditions: $mailConditions, prompt: $prompt, deliver: $deliver, enabled: $enabled, isNotifiedWhenPosted: $isNotifiedWhenPosted) ` + scheduleFields + `
-	}`
-	DocumentDeleteAgentSchedule = `mutation ($scheduleId: String!) { DeleteAgentSchedule(scheduleId: $scheduleId) }`
-	DocumentRunAgentSchedule    = `mutation ($scheduleId: String!) { RunAgentSchedule(scheduleId: $scheduleId) }`
-	DocumentAnswerAgentQuestion = `mutation ($runId: String!, $callId: String!, $answer: String!) { AnswerAgentQuestion(runId: $runId, callId: $callId, answer: $answer) }`
+	DocumentAnswerAgentQuestion  = `mutation ($runId: String!, $callId: String!, $answer: String!) { AnswerAgentQuestion(runId: $runId, callId: $callId, answer: $answer) }`
 )
 
 // ListAgentMemories is what the agent remembers, pinned first; searched
@@ -120,51 +98,6 @@ func ListAgentCorrections(ctx context.Context, connection *Client, first int) ([
 		return nil, err
 	}
 	return result.ListAgentCorrections, nil
-}
-
-// ListAgentSchedules is the person's schedules.
-func ListAgentSchedules(ctx context.Context, connection *Client) ([]*AgentSchedule, error) {
-	var result struct {
-		ListAgentSchedules []*AgentSchedule `json:"ListAgentSchedules"`
-	}
-	if err := connection.Execute(ctx, DocumentListAgentSchedules, nil, &result); err != nil {
-		return nil, err
-	}
-	return result.ListAgentSchedules, nil
-}
-
-// SaveAgentSchedule adds a schedule, or changes one when scheduleId is given.
-func SaveAgentSchedule(ctx context.Context, connection *Client, scheduleId string, fields map[string]any) (*AgentSchedule, error) {
-	var result struct {
-		SaveAgentSchedule *AgentSchedule `json:"SaveAgentSchedule"`
-	}
-	variables := map[string]any{}
-	for key, value := range fields {
-		variables[key] = value
-	}
-	if scheduleId != "" {
-		variables["scheduleId"] = scheduleId
-	}
-	if err := connection.Execute(ctx, DocumentSaveAgentSchedule, variables, &result); err != nil {
-		return nil, err
-	}
-	return result.SaveAgentSchedule, nil
-}
-
-// DeleteAgentSchedule removes a schedule.
-func DeleteAgentSchedule(ctx context.Context, connection *Client, scheduleId string) error {
-	var result struct {
-		DeleteAgentSchedule bool `json:"DeleteAgentSchedule"`
-	}
-	return connection.Execute(ctx, DocumentDeleteAgentSchedule, map[string]any{"scheduleId": scheduleId}, &result)
-}
-
-// RunAgentSchedule runs a schedule now.
-func RunAgentSchedule(ctx context.Context, connection *Client, scheduleId string) error {
-	var result struct {
-		RunAgentSchedule bool `json:"RunAgentSchedule"`
-	}
-	return connection.Execute(ctx, DocumentRunAgentSchedule, map[string]any{"scheduleId": scheduleId}, &result)
 }
 
 // AnswerAgentQuestion answers a question the agent asked in a turn.

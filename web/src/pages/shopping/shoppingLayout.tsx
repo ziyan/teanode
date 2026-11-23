@@ -10,8 +10,25 @@ import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import { hasPermission, useSession } from '../../session'
-import { createShoppingList, listShoppingLists, listShoppingStores, ShoppingList, ShoppingStore } from './shoppingApi'
-import { listenToShoppingEvents, SHOPPING_PATH, shoppingListAddress, shoppingStoreAddress } from './shoppingItems'
+import {
+  createShoppingList,
+  getResumableShoppingTrip,
+  listOpenShoppingTrips,
+  listShoppingLists,
+  listShoppingStoreItems,
+  listShoppingStores,
+  ShoppingList,
+  ShoppingStore,
+  ShoppingTrip,
+} from './shoppingApi'
+import { ShoppingOwnTripRow, ShoppingResumeRow } from './shoppingCart'
+import {
+  isInOwnCart,
+  listenToShoppingEvents,
+  SHOPPING_PATH,
+  shoppingListAddress,
+  shoppingStoreAddress,
+} from './shoppingItems'
 
 // The Shopping page, drawn as the mailbox is: the person's lists (their own
 // first, then the ones shared with them) and the stores their items are for
@@ -28,8 +45,36 @@ export interface ShoppingLayoutContext {
   shoppingLists: ShoppingList[]
   // Whether the first answer is still outstanding.
   isLoading: boolean
+  // The trip the person has open now, if any.
+  ownTrip: ShoppingTrip | null
+  // The trip the person finished a moment ago and can open again, if any.
+  resumableTrip: ShoppingTrip | null
   // Reads the lists again, quietly.
   reloadShoppingLists: () => void
+}
+
+// What the person is doing at a store, read for every part of the page: their
+// open trip with how many items are in their cart, and the trip they could
+// resume. Failing to read it never breaks the lists, so it falls back to none.
+interface ShoppingActivity {
+  ownTrip: ShoppingTrip | null
+  ownCartCount: number
+  resumableTrip: ShoppingTrip | null
+}
+
+async function readShoppingActivity(userId: string | undefined): Promise<ShoppingActivity> {
+  try {
+    const [openTrips, resumableTrip] = await Promise.all([listOpenShoppingTrips(), getResumableShoppingTrip()])
+    const ownTrip = openTrips.find((trip) => trip.userId === userId && trip.finishedAt === null) ?? null
+    let ownCartCount = 0
+    if (ownTrip?.storeName) {
+      const view = await listShoppingStoreItems(ownTrip.storeName, ownTrip.shoppingListIds)
+      ownCartCount = view.shoppingItems.filter((item) => isInOwnCart(item, userId)).length
+    }
+    return { ownTrip, ownCartCount, resumableTrip: ownTrip ? null : resumableTrip }
+  } catch {
+    return { ownTrip: null, ownCartCount: 0, resumableTrip: null }
+  }
 }
 
 export function useShoppingLayout(): ShoppingLayoutContext {
@@ -55,15 +100,19 @@ function ShoppingLayoutContent() {
   const location = useLocation()
   const lists = useQuery(() => listShoppingLists(), [], { refresh: false })
   const stores = useQuery(() => listShoppingStores(), [], { refresh: false })
+  const session = useSession()
+  const activity = useQuery(() => readShoppingActivity(session.userId), [session.userId], { refresh: false })
   const [isNaming, setIsNaming] = useState(false)
 
   const reloadRef = useRef(() => {
     void lists.reload(true)
     void stores.reload(true)
+    void activity.reload(true)
   })
   reloadRef.current = () => {
     void lists.reload(true)
     void stores.reload(true)
+    void activity.reload(true)
   }
   useEffect(() => listenToShoppingEvents(() => reloadRef.current()), [])
 
@@ -74,6 +123,8 @@ function ShoppingLayoutContent() {
   const context: ShoppingLayoutContext = {
     shoppingLists,
     isLoading: lists.loading && !lists.data,
+    ownTrip: activity.data?.ownTrip ?? null,
+    resumableTrip: activity.data?.resumableTrip ?? null,
     reloadShoppingLists: () => reloadRef.current(),
   }
   // Something is open in the pane at every address below /shopping itself.
@@ -91,6 +142,22 @@ function ShoppingLayoutContent() {
               </button>
             </div>
             <div className="mailbox-rows">
+              {context.ownTrip ? (
+                <ShoppingOwnTripRow shoppingTrip={context.ownTrip} cartCount={activity.data?.ownCartCount ?? 0} />
+              ) : null}
+              {context.resumableTrip && !isReading ? (
+                <ShoppingResumeRow
+                  shoppingTrip={context.resumableTrip}
+                  onResumed={(shoppingTrip) => {
+                    context.reloadShoppingLists()
+                    navigate(
+                      shoppingTrip.storeName
+                        ? shoppingStoreAddress(shoppingTrip.storeName, shoppingTrip.shoppingListIds)
+                        : shoppingListAddress(shoppingTrip.shoppingListIds[0] ?? ''),
+                    )
+                  }}
+                />
+              ) : null}
               {lists.loading && !lists.data ? <Loading /> : null}
               {lists.data && shoppingLists.length === 0 ? (
                 <p className="mailbox-placeholder">{t('shopping.noLists')}</p>

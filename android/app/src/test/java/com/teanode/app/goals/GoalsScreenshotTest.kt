@@ -1,6 +1,7 @@
 package com.teanode.app.goals
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -13,6 +14,7 @@ import com.teanode.app.screenshots.Look
 import com.teanode.app.screenshots.PHONE_QUALIFIERS
 import com.teanode.app.screenshots.WithFontScale
 import com.teanode.app.screenshots.photograph
+import com.teanode.app.settings.LocalDialogsInline
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,7 +22,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** Photographs of Goals in demo mode: the list, one goal open and one met, the schedule picker and the form that starts a goal. */
+/** Photographs of Goals in demo mode: the list, one goal open and one met, a goal on set times, one waiting for mail and a paused one, the When editor and the form that starts a goal. */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], qualifiers = PHONE_QUALIFIERS)
@@ -29,7 +31,7 @@ class GoalsScreenshotTest {
     val composeRule = createComposeRule()
 
     private fun draw(look: Look, fontScale: Float = 1f, content: @Composable () -> Unit) {
-        composeRule.setContent { DemoHost(appearance = look.appearance) { WithFontScale(fontScale, content) } }
+        composeRule.setContent { DemoHost(appearance = look.appearance) { WithFontScale(fontScale) { CompositionLocalProvider(LocalDialogsInline provides true) { content() } } } }
         composeRule.waitForIdle()
     }
 
@@ -62,7 +64,32 @@ class GoalsScreenshotTest {
         composeRule.photograph("goals-detail-end-dark")
     }
 
-    @Test fun `schedule picker light`() { draw(Look.Light) { GoalSchedulePickerScreen("goal-working") }; composeRule.photograph("goals-schedules-light") }
+    @Test fun `mail goal light`() { draw(Look.Light) { GoalDetailScreen("goal-mail") }; composeRule.photograph("goals-detail-mail-light") }
+
+    @Test fun `paused goal light`() { draw(Look.Light) { GoalDetailScreen("goal-paused") }; composeRule.photograph("goals-detail-paused-light") }
+
+    @Test fun `when editor light`() {
+        draw(Look.Light) { GoalDetailScreen("goal-working") }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Change when it runs"))
+        composeRule.onNodeWithText("Change when it runs").performClick()
+        composeRule.waitForIdle()
+        composeRule.photograph("goals-when-editor-light")
+    }
+
+    @Test fun `mail editor dark`() {
+        draw(Look.Dark) { GoalDetailScreen("goal-mail") }
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("Change when it runs"))
+        composeRule.onNodeWithText("Change when it runs").performClick()
+        composeRule.waitForIdle()
+        composeRule.photograph("goals-when-editor-mail-dark")
+    }
+
+    @Test fun `new goal at set times light`() {
+        draw(Look.Light) { GoalStarterScreen() }
+        composeRule.onNodeWithText("Set times").performClick()
+        composeRule.waitForIdle()
+        composeRule.photograph("goals-new-set-times-light")
+    }
 
     @Test fun `new goal light`() { draw(Look.Light) { GoalStarterScreen() }; composeRule.photograph("goals-new-light") }
 

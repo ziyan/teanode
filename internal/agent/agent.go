@@ -354,7 +354,6 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobReply, self.runReply)
 	self.Register(models.AgentJobSend, self.runSend)
 	self.Register(models.AgentJobEmbed, self.runEmbed)
-	self.Register(models.AgentJobSchedule, self.runSchedule)
 	self.Register(models.AgentJobGoal, self.runGoal)
 	self.Register(models.AgentJobResearch, self.runResearch)
 	self.Register(models.AgentJobExtract, self.runExtract)
@@ -492,7 +491,7 @@ func (self *Agent) OnMailboxDelivery(tx db.Transaction, mailbox *models.Mailbox,
 	if !agent.Active() {
 		return
 	}
-	self.noteMailForSchedules(tx, agent, mailbox, item, mail)
+	self.noteMailForGoals(tx, agent, mailbox, item, mail)
 	source := mailbox.Agent
 	if source.Triage != nil && source.Triage.Enabled && configuration.Agent.FeatureOn("triage") {
 		if _, err := self.Enqueue(tx, models.AgentJobTriage, agent.ID, mailbox.ID, mail.ID); err != nil {
@@ -564,17 +563,11 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	// These write rows; they do not take a slot. Returning early when
 	// every slot was busy meant a worker with a long backlog stopped
 	// noticing that anything else was due at all -- no conversation was
-	// filed, no schedule ran and no night happened for as long as the
+	// filed, no goal took its turn and no night happened for as long as the
 	// backlog lasted, which on a first ingest is days. The queue is what
 	// decides the order; a full queue is not a reason to stop looking.
-	if err := self.dueSchedules(ctx, now); err != nil {
-		log.Warningf("cannot queue the schedules that are due: %s", err)
-	}
 	if err := self.dueGoals(ctx, now); err != nil {
 		log.Warningf("cannot queue the goals that are due: %s", err)
-	}
-	if err := self.wakeGoalsWithoutSchedule(ctx, now); err != nil {
-		log.Warningf("cannot wake the goals whose schedule is gone: %s", err)
 	}
 	self.surfaceGoals(ctx)
 	self.postWaitingFiles(ctx)

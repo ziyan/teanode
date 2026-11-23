@@ -326,8 +326,8 @@ const (
 	feedPageMost    = 100
 )
 
-// feedItemView is a card as the API answers, with the name of the goal or
-// schedule that made it.
+// feedItemView is a card as the API answers, with the name of the goal that
+// made it.
 func feedItemView(tx db.Transaction, item *models.AgentFeedItem) (*AgentFeedItemView, error) {
 	sourceTitle := ""
 	switch item.FeedSourceKind {
@@ -338,14 +338,6 @@ func feedItemView(tx db.Transaction, item *models.AgentFeedItem) (*AgentFeedItem
 		}
 		if goal != nil && goal.AgentID == item.AgentID && goal.IsGoal() {
 			sourceTitle = goalView(goal).GoalTitle
-		}
-	case models.FeedSourceSchedule:
-		schedule, err := tx.GetAgentSchedule(item.FeedSourceID)
-		if err != nil {
-			return nil, err
-		}
-		if schedule != nil && schedule.AgentID == item.AgentID {
-			sourceTitle = schedule.Name
 		}
 	}
 	chosenChoiceKey := item.ChosenChoiceKey

@@ -817,8 +817,8 @@ function FeedCard({
   )
 }
 
-// FeedInfoDialog says why a card is here: what posted it (linking to the goal,
-// schedule or coding session when there is one), when, what it was based on,
+// FeedInfoDialog says why a card is here: what posted it (linking to the goal or
+// coding session when there is one), when, what it was based on,
 // and the two ways to be rid of it.
 function FeedInfoDialog({
   item,
@@ -838,11 +838,9 @@ function FeedInfoDialog({
   const sourcePath =
     item.feedSourceKind === 'goal' && item.feedSourceId
       ? `/settings/agent/goals?goal=${encodeURIComponent(item.feedSourceId)}`
-      : item.feedSourceKind === 'schedule'
-        ? '/settings/agent/schedules'
-        : item.feedSourceKind === 'coding_session' && item.feedSourceId
-          ? codingSessionPath(item.feedSourceId)
-          : ''
+      : item.feedSourceKind === 'coding_session' && item.feedSourceId
+        ? codingSessionPath(item.feedSourceId)
+        : ''
   const sourceNode = sourcePath ? (
     <Link to={sourcePath} onClick={onClose}>
       {sourceName}
@@ -850,7 +848,7 @@ function FeedInfoDialog({
   ) : (
     sourceName
   )
-  const knownKinds = ['goal', 'schedule', 'alert', 'speak_first', 'coding_session', 'agent']
+  const knownKinds = ['goal', 'alert', 'speak_first', 'coding_session', 'agent']
   const sourceKey = `feed.source.${knownKinds.includes(item.feedSourceKind) ? item.feedSourceKind : 'agent'}` as Key
   const sourceLinks = item.sourceLinks
     .map((link) => ({ ...link, address: webAddressOf(link.sourceUrl) }))

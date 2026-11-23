@@ -46,7 +46,7 @@ func (self *Agent) onboardingReason() speakFirstReason {
 		},
 		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time, prepared map[string]string) (string, error) {
 			return speakFirstMessage(owner, now, "The person has just switched you on and has never written to you. Introduce yourself.", prepared) + strings.Join([]string{
-				"Greet them in a sentence, say in one or two what you can do for them (answer from what you remember, keep schedules, and work in their browser and on their computer when they connect them; offer hosted mail or collections only when available), and then ask the first of these, one question per message, waiting for each answer:",
+				"Greet them in a sentence, say in one or two what you can do for them (answer from what you remember, do things at times they choose, and work in their browser and on their computer when they connect them; offer hosted mail or collections only when available), and then ask the first of these, one question per message, waiting for each answer:",
 				"",
 				"1. What they would like to call you.",
 				"2. What you should call them.",

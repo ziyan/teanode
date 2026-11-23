@@ -164,10 +164,10 @@ const (
 	}`
 
 	DocumentSetAgentBrief = `mutation ($enabled: Boolean!, $at: String, $days: [Int!]) {
-		SetAgentBrief(enabled: $enabled, at: $at, days: $days) ` + scheduleFields + `
+		SetAgentBrief(enabled: $enabled, at: $at, days: $days) { ` + goalFields + ` }
 	}`
 
-	DocumentRunAgentBriefNow = `mutation { RunAgentBriefNow ` + scheduleFields + ` }`
+	DocumentRunAgentBriefNow = `mutation { RunAgentBriefNow { ` + goalFields + ` } }`
 
 	DocumentAgentUsage = `query ($since: DateTime, $by: String) {
 		AgentUsage(since: $since, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
@@ -345,9 +345,9 @@ func GrantAgentSource(ctx context.Context, connection *Client, kind, id string, 
 }
 
 // SetAgentBrief turns the daily brief on or off and says when it comes.
-func SetAgentBrief(ctx context.Context, connection *Client, enabled bool, at string, days []int) (*AgentSchedule, error) {
+func SetAgentBrief(ctx context.Context, connection *Client, enabled bool, at string, days []int) (*AgentGoal, error) {
 	var result struct {
-		SetAgentBrief *AgentSchedule `json:"SetAgentBrief"`
+		SetAgentBrief *AgentGoal `json:"SetAgentBrief"`
 	}
 	variables := map[string]any{"enabled": enabled}
 	if strings.TrimSpace(at) != "" {
@@ -363,9 +363,9 @@ func SetAgentBrief(ctx context.Context, connection *Client, enabled bool, at str
 }
 
 // RunAgentBriefNow sends one immediately.
-func RunAgentBriefNow(ctx context.Context, connection *Client) (*AgentSchedule, error) {
+func RunAgentBriefNow(ctx context.Context, connection *Client) (*AgentGoal, error) {
 	var result struct {
-		RunAgentBriefNow *AgentSchedule `json:"RunAgentBriefNow"`
+		RunAgentBriefNow *AgentGoal `json:"RunAgentBriefNow"`
 	}
 	if err := connection.Execute(ctx, DocumentRunAgentBriefNow, nil, &result); err != nil {
 		return nil, err

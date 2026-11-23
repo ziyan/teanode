@@ -69,7 +69,7 @@ func TestACodingQuestionIsToldToThePhoneAndNotWrittenIntoTheMainConversation(t *
 	}
 
 	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
-		main, err := scheduleConversation(tx, fixture.agent.ID, "")
+		main, err := personsConversation(tx, fixture.agent.ID, "")
 		if err != nil {
 			t.Fatalf("scheduleConversation: %s", err)
 		}

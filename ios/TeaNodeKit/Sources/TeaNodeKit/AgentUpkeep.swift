@@ -1,7 +1,7 @@
 import Foundation
 
 // The agent page's upkeep tabs, as the dashboard has them: the sources it
-// reads, its memory and the checks of it, the dreams, the schedules, the
+// reads, its memory and the checks of it, the dreams, the daily brief, the
 // alerts muted, the connections, and what it did on its own. The documents
 // are the dashboard's, field for field, so a phone and a browser change the
 // same things in the same way.
@@ -782,57 +782,14 @@ public struct ReadingProgress: Codable, Hashable, Sendable {
     }
 }
 
-// MARK: - Schedules
+// MARK: - Goal times
 
-/// AgentSchedule is something the agent does at set times, a cron line in
-/// the person's zone, or when a matching message arrives in a mailbox;
-/// what to do, and where the answer goes.
-public struct AgentSchedule: Codable, Hashable, Sendable, Identifiable {
-    public let id: String
-    public let name: String
-    public let cron: String
-    public let prompt: String
-    /// drawer, a turn in the conversation, or mail.
-    public let deliver: String
-    public let enabled: Bool
-    public let lastRunAt: String?
-    public let nextRunAt: String?
-    /// The conversation its answers go to: a goal's, for a schedule that
-    /// runs a goal.
-    public let conversationId: String?
-    /// What a message must match, all of it, for the schedule to run; nil or
-    /// empty for a schedule that runs on the clock. A schedule that runs on
-    /// mail has an empty cron.
-    public let mailConditions: [MailRule.Condition]?
-
-    public init(
-        id: String, name: String, cron: String, prompt: String = "", deliver: String = "drawer", enabled: Bool = true, lastRunAt: String? = nil,
-        nextRunAt: String? = nil, conversationId: String? = nil, mailConditions: [MailRule.Condition]? = nil
-    ) {
-        self.id = id
-        self.name = name
-        self.cron = cron
-        self.prompt = prompt
-        self.deliver = deliver
-        self.enabled = enabled
-        self.lastRunAt = lastRunAt
-        self.nextRunAt = nextRunAt
-        self.conversationId = conversationId
-        self.mailConditions = mailConditions
-    }
-
-    public var isDeliveredByMail: Bool { deliver == "mail" }
-
-    /// Whether it runs when mail arrives, not at set times.
-    public var isTriggeredByMail: Bool { !(mailConditions ?? []).isEmpty }
-}
-
-/// ScheduleMailTrigger is what a schedule that runs when mail arrives is
+/// GoalMailTrigger is what a goal that takes a turn when mail arrives is
 /// made of: the conditions a message must all pass, as the server takes
 /// them and as a person reads them.
-public enum ScheduleMailTrigger {
-    /// The fields a schedule's conditions can test; the rest of a mailbox
-    /// rule's (score, category and so on) are not offered to schedules.
+public enum GoalMailTrigger {
+    /// The fields a goal's mail conditions can test; the rest of a mailbox
+    /// rule's (score, category and so on) are not offered to goals.
     public static let fields = ["from", "to", "subject", "header", "any"]
 
     /// Whether the conditions can be saved: there is one at least, and
@@ -847,7 +804,7 @@ public enum ScheduleMailTrigger {
     }
 
     /// As the server takes them.
-    static func variables(_ conditions: [MailRule.Condition]) -> JSONValue {
+    public static func variables(_ conditions: [MailRule.Condition]) -> JSONValue {
         .array(conditions.map(\.variables))
     }
 
@@ -868,16 +825,17 @@ public enum ScheduleMailTrigger {
     }
 }
 
-/// DailyBrief is the morning brief: an ordinary schedule with a known
-/// name, set by a time and the days of the week.
+/// DailyBrief is the morning brief: the goal titled "Daily brief" that
+/// the server writes itself, set by a time and the days of the week. Off
+/// is the goal paused.
 public enum DailyBrief {
-    /// The schedule the brief is kept as.
-    public static let scheduleName = "Daily brief"
+    /// The title the brief goal has.
+    public static let goalTitle = "Daily brief"
     static let defaultCron = "30 7 * * 1-5"
 
-    /// The brief among the schedules, if it was ever set.
-    public static func schedule(in schedules: [AgentSchedule]) -> AgentSchedule? {
-        schedules.first { $0.name == scheduleName }
+    /// The brief among the goals, if it was ever set.
+    public static func goal(in goals: [AgentGoal]) -> AgentGoal? {
+        goals.first { $0.goalWrittenBy == "built_in" && $0.goalTitle == goalTitle }
     }
 
     /// The time a cron line such as "30 7 * * 1-5" says, as "HH:MM".
@@ -983,6 +941,26 @@ public struct ScheduleTiming: Hashable, Sendable {
         case everyDay, weekdays, weekends
         case oneDay(Int)
         case someDays([Int])
+    }
+
+    public init(hour: Int, minute: Int, dayNumbers: [Int]) {
+        self.hour = hour
+        self.minute = minute
+        self.dayNumbers = dayNumbers.sorted()
+    }
+
+    /// The line the server takes for it: "30 7 * * 1-5", with Sunday as 0
+    /// as cron numbers it.
+    public var cron: String {
+        let dayField: String
+        switch dayPattern {
+        case .everyDay: dayField = "*"
+        case .weekdays: dayField = "1-5"
+        case .weekends: dayField = "6,0"
+        case .oneDay(let dayNumber): dayField = String(dayNumber % 7)
+        case .someDays(let someDayNumbers): dayField = someDayNumbers.map { String($0 % 7) }.joined(separator: ",")
+        }
+        return "\(minute) \(hour) * * \(dayField)"
     }
 
     /// Reads "minute hour * * days", or nil for any other line.
@@ -1647,27 +1625,13 @@ extension Documents {
         mutation ($minutes: Int!) { RereadAgentDocuments(minutes: $minutes) }
         """
 
-    public static let agentSchedules = """
-        query { ListAgentSchedules { id name cron prompt deliver enabled lastRunAt nextRunAt conversationId mailConditions { field header operator value } } }
-        """
-    public static let saveAgentSchedule = """
-        mutation ($scheduleId: String, $name: String, $cron: String, $mailConditions: [MailboxRuleConditionInput!], $prompt: String, $deliver: String, $enabled: Boolean) {
-          SaveAgentSchedule(scheduleId: $scheduleId, name: $name, cron: $cron, mailConditions: $mailConditions, prompt: $prompt, deliver: $deliver, enabled: $enabled) { id }
-        }
-        """
-    public static let deleteAgentSchedule = """
-        mutation ($scheduleId: String!) { DeleteAgentSchedule(scheduleId: $scheduleId) }
-        """
-    public static let runAgentSchedule = """
-        mutation ($scheduleId: String!) { RunAgentSchedule(scheduleId: $scheduleId) }
-        """
     public static let setDailyBrief = """
         mutation ($enabled: Boolean!, $at: String, $days: [Int!]) {
-          SetAgentBrief(enabled: $enabled, at: $at, days: $days) { id }
+          SetAgentBrief(enabled: $enabled, at: $at, days: $days) { \(goalFields) }
         }
         """
     public static let runDailyBrief = """
-        mutation { RunAgentBriefNow { id name } }
+        mutation { RunAgentBriefNow { \(goalFields) } }
         """
 
     public static let agentAlerts = """
@@ -1973,60 +1937,21 @@ extension Connection {
         return try await execute(Documents.rereadDocuments, variables: ["minutes": .number(Double(minutes))], as: Answer.self).RereadAgentDocuments
     }
 
-    public func agentSchedules() async throws -> [AgentSchedule] {
-        struct Answer: Decodable, Sendable { let ListAgentSchedules: [AgentSchedule?] }
-        return try await execute(Documents.agentSchedules, as: Answer.self).ListAgentSchedules.compactMap { $0 }
-    }
-
-    /// Adds a schedule, without an id, or changes one; what is not given
-    /// stays as it is. Mail conditions make it run when mail arrives and a
-    /// cron line makes it run at set times: give one of them, never both.
-    public func saveAgentSchedule(
-        scheduleId: String? = nil, name: String? = nil, cron: String? = nil, mailConditions: [MailRule.Condition]? = nil, prompt: String? = nil,
-        deliver: String? = nil, isEnabled: Bool? = nil
-    ) async throws {
-        struct Answer: Decodable, Sendable {
-            struct Saved: Decodable, Sendable { let id: String }
-            let SaveAgentSchedule: Saved?
-        }
-        var variables: [String: JSONValue] = [:]
-        if let scheduleId { variables["scheduleId"] = .string(scheduleId) }
-        if let name { variables["name"] = .string(name) }
-        if let cron { variables["cron"] = .string(cron) }
-        if let mailConditions { variables["mailConditions"] = ScheduleMailTrigger.variables(mailConditions) }
-        if let prompt { variables["prompt"] = .string(prompt) }
-        if let deliver { variables["deliver"] = .string(deliver) }
-        if let isEnabled { variables["enabled"] = .bool(isEnabled) }
-        _ = try await execute(Documents.saveAgentSchedule, variables: variables, as: Answer.self)
-    }
-
-    public func deleteAgentSchedule(_ scheduleId: String) async throws {
-        struct Answer: Decodable, Sendable { let DeleteAgentSchedule: JSONValue? }
-        _ = try await execute(Documents.deleteAgentSchedule, variables: ["scheduleId": .string(scheduleId)], as: Answer.self)
-    }
-
-    /// Runs a schedule now; the answer arrives where it says.
-    public func runAgentSchedule(_ scheduleId: String) async throws {
-        struct Answer: Decodable, Sendable { let RunAgentSchedule: JSONValue? }
-        _ = try await execute(Documents.runAgentSchedule, variables: ["scheduleId": .string(scheduleId)], as: Answer.self)
-    }
-
     /// Turns the morning brief on at a time and on days, or off; turned
-    /// off, its schedule is kept.
-    public func setDailyBrief(isEnabled: Bool, at time: String, days: [Int]) async throws {
-        struct Answer: Decodable, Sendable {
-            struct Saved: Decodable, Sendable { let id: String }
-            let SetAgentBrief: Saved?
-        }
+    /// off, its goal is paused and kept. Returns the brief goal.
+    @discardableResult
+    public func setDailyBrief(isEnabled: Bool, at time: String, days: [Int]) async throws -> AgentGoal? {
+        struct Answer: Decodable, Sendable { let SetAgentBrief: AgentGoal? }
         var variables: [String: JSONValue] = ["enabled": .bool(isEnabled), "at": .string(time)]
         if !days.isEmpty { variables["days"] = .array(days.map { .number(Double($0)) }) }
-        _ = try await execute(Documents.setDailyBrief, variables: variables, as: Answer.self)
+        return try await execute(Documents.setDailyBrief, variables: variables, as: Answer.self).SetAgentBrief
     }
 
     /// Sends a brief now.
-    public func runDailyBrief() async throws {
-        struct Answer: Decodable, Sendable { let RunAgentBriefNow: JSONValue? }
-        _ = try await execute(Documents.runDailyBrief, as: Answer.self)
+    @discardableResult
+    public func runDailyBrief() async throws -> AgentGoal? {
+        struct Answer: Decodable, Sendable { let RunAgentBriefNow: AgentGoal? }
+        return try await execute(Documents.runDailyBrief, as: Answer.self).RunAgentBriefNow
     }
 
     /// What the agent told the person lately, and what they muted.

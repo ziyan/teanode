@@ -1,14 +1,15 @@
 package agent
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// A schedule at one moment comes once, in the person's zone, and never
-// again: past it, there is no next time, which is how it turns itself off.
+// A goal's moment comes once, in the person's zone, and never
+// again: past it, there is no next time, and the moment is dropped.
 func TestNextCronAtOneMoment(t *testing.T) {
 	location, _ := time.LoadLocation("America/New_York")
 	after := time.Date(2026, 9, 10, 12, 0, 0, 0, location)
@@ -57,29 +58,31 @@ func TestResolveRelative(t *testing.T) {
 	}
 }
 
-// A distance from now is settled into the moment it means before it is
-// stored, whoever wrote it: the agent's own tool did this and the dashboard
-// did not, so "@in 20m" typed by a person was refused.
-func TestSettleScheduleResolvesADistanceFromNow(t *testing.T) {
+// A goal's times are settled before they are stored, whoever wrote them: a
+// distance from now becomes the moment it means, a cron line is left alone,
+// a moment that has passed is dropped, the same time twice is kept once,
+// and nonsense is refused. The next time is the soonest of them.
+func TestSettlingAGoalsTimes(t *testing.T) {
 	owner := &models.User{Timezone: "America/New_York"}
 	location, _ := time.LoadLocation("America/New_York")
-	now := time.Date(2026, 9, 10, 12, 0, 0, 0, location)
-	schedule := &models.AgentSchedule{Cron: "@in 20m", Name: "Later", Prompt: "look again"}
-	next, err := SettleSchedule(schedule, owner, now)
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, location) // a Thursday
+	settled, next, err := SettleGoalTimes([]string{"@in 20m", "0 8 * * 1-5", "@at 2026-09-01 09:00", "0 8 * * 1-5"}, owner, now)
 	if err != nil {
-		t.Fatalf("a distance from now is taken: %v", err)
+		t.Fatalf("the times are taken: %v", err)
 	}
-	if schedule.Cron != "@at 2026-09-10 12:20" {
-		t.Fatalf("it is stored as the moment it means, got %q", schedule.Cron)
+	if strings.Join(settled, " | ") != "@at 2026-09-10 12:20 | 0 8 * * 1-5" {
+		t.Fatalf("a distance is stored as its moment and a passed moment is dropped, got %q", settled)
 	}
-	if !next.Equal(time.Date(2026, 9, 10, 12, 20, 0, 0, location)) {
-		t.Fatalf("and runs then, got %s", next)
+	if next == nil || !next.Equal(time.Date(2026, 9, 10, 12, 20, 0, 0, location)) {
+		t.Fatalf("the next time is the soonest, got %v", next)
 	}
-	cron := &models.AgentSchedule{Cron: "0 8 * * 1-5"}
-	if _, err := SettleSchedule(cron, owner, now); err != nil || cron.Cron != "0 8 * * 1-5" {
-		t.Fatalf("a cron line is left alone: %q %v", cron.Cron, err)
+	if settled, next, err := SettleGoalTimes([]string{"@at 2026-09-01 09:00"}, owner, now); err != nil || len(settled) != 0 || next != nil {
+		t.Fatalf("only passed moments leave no time: %q %v %v", settled, next, err)
 	}
-	if _, err := SettleSchedule(&models.AgentSchedule{Cron: "@in never"}, owner, now); err == nil {
+	if _, _, err := SettleGoalTimes([]string{"@in never"}, owner, now); err == nil {
 		t.Fatal("nonsense is refused")
+	}
+	if _, _, err := SettleGoalTimes([]string{"0 8 * *"}, owner, now); err == nil {
+		t.Fatal("a cron line of four fields is refused")
 	}
 }

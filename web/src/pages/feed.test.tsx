@@ -275,7 +275,7 @@ it('does not draw a source link that is not a web address', async () => {
 it('says what the feed is when it is empty', async () => {
   execute.mockResolvedValue(listing([]))
   drawFeed()
-  expect(await screen.findByText(/Goals, schedules and alerts post here/)).toBeTruthy()
+  expect(await screen.findByText(/Goals and alerts post here/)).toBeTruthy()
 })
 
 it('reads the feed again when the feed says something changed', async () => {

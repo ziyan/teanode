@@ -51,12 +51,12 @@ type fakeRun struct {
 	// isStartedByOthers is a run that content began (a mail, a webhook, a
 	// goal, a schedule the agent wrote) rather than the person.
 	isStartedByOthers bool
-	// isWokenByAgentsSchedule is a schedule the agent wrote waking the run.
-	isWokenByAgentsSchedule bool
-	configuration           *config.Configuration
+	// isWokenByAgentsGoal is a schedule the agent wrote waking the run.
+	isWokenByAgentsGoal bool
+	configuration       *config.Configuration
 }
 
-func (self *fakeRun) IsWokenByAgentsSchedule() bool { return self.isWokenByAgentsSchedule }
+func (self *fakeRun) IsWokenByAgentsGoal() bool { return self.isWokenByAgentsGoal }
 
 func (self *fakeRun) Owner() *models.User   { return self.owner }
 func (self *fakeRun) Database() db.Database { return self.database }
@@ -548,13 +548,13 @@ func TestAProgramThePersonConnectedUsesNoPassword(test *testing.T) {
 // opens it: the same words from every action and from the browser's sign-in
 // check, and no item text. Any other run content started keeps the general
 // words.
-func TestARunOfAnAgentsScheduleIsToldHowThePersonOpensIt(test *testing.T) {
+func TestARunOfAnAgentsGoalIsToldHowThePersonOpensIt(test *testing.T) {
 	found := newWorld(test)
-	run := &fakeRun{database: found.database, owner: found.ada, secret: serverSecret, surface: "schedule", isHeadless: true, isStartedByOthers: true, isWokenByAgentsSchedule: true}
-	wanted := "The person can open the schedule on the dashboard or in the app (Agent, Schedules) and save it themselves to let its runs use Passwords."
+	run := &fakeRun{database: found.database, owner: found.ada, secret: serverSecret, surface: "schedule", isHeadless: true, isStartedByOthers: true, isWokenByAgentsGoal: true}
+	wanted := "The person can open the goal on the dashboard or in the app (Goals) and save it themselves, with the times it runs at, to let its turns use Passwords."
 	for _, action := range []string{"list", "read_note"} {
 		content, _ := mustAct(test, run, action, fmt.Sprintf(`{"item_id":%q}`, found.grantedNote))
-		if !strings.Contains(content, "schedule that the agent wrote") || !strings.Contains(content, wanted) {
+		if !strings.Contains(content, "goal that the agent wrote") || !strings.Contains(content, wanted) {
 			test.Errorf("%s: %s", action, content)
 		}
 		if strings.Contains(content, "padlock") || strings.Contains(content, "Example shop") {

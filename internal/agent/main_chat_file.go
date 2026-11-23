@@ -136,7 +136,7 @@ func (self *Agent) postWaitingFiles(ctx context.Context) {
 func (self *Agent) postToMainChat(ctx context.Context, attachment *models.AgentAttachment) error {
 	var main *models.AgentConversation
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		main, err = scheduleConversation(tx, attachment.AgentID, "")
+		main, err = personsConversation(tx, attachment.AgentID, "")
 		return err
 	}); err != nil {
 		return err

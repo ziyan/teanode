@@ -50,6 +50,32 @@ internal class ShoppingReceiptReader(
     /** The receipt whose effect on the lists a sheet shows. */
     var target by mutableStateOf<String?>(null)
 
+    /**
+     * Done with a receipt: uploads the picture, starts the reading, and then finishes the trip with [finish] without
+     * waiting for the reading (it can take two minutes, and the person is at the checkout). The server's matcher also
+     * considers what was bought a moment ago, so the prices still land. [onFinished] runs when the trip is over.
+     */
+    fun snapAndFinish(file: ShoppingPendingFile, finish: suspend () -> Boolean, onFinished: () -> Unit) {
+        if (readingText != null) return
+        readingText = context.getString(R.string.shopping_sending_receipt)
+        scope.launch {
+            try {
+                val attachmentId = connection.upload(file.name, file.contentType, file.data)
+                connection.readReceipt(attachmentId = attachmentId)
+                if (finish()) {
+                    say(context.getString(R.string.shopping_done_shopping_snapped))
+                    onFinished()
+                }
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                snackbar.showError(failure)
+            } finally {
+                readingText = null
+            }
+        }
+    }
+
     /** Waits every four seconds, two minutes at most, as Finance waits. */
     fun scan(file: ShoppingPendingFile) {
         readingText = context.getString(R.string.shopping_receipt_reading)

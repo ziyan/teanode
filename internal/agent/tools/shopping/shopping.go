@@ -43,8 +43,8 @@ func init() {
 		return tools.Grouped([]*tools.Tool{
 			read("shopping_lists", "The lists the person reaches, their own first, each with how many items are needed, in the cart and not needed, whose it is and whether it is shared. A page at a time.",
 				tools.Object(map[string]any{"offset": offsetProperty, "page_size": pageSizeProperty}), runLists),
-			read("shopping_list", "One list with its items, grouped as the list keeps them (by aisle), and who is shopping it now. shopping_item_states keeps only the items in those states (every state when left out).",
-				tools.Object(map[string]any{"list_id": listIDProperty, "shopping_item_states": itemStatesProperty, "offset": offsetProperty, "page_size": pageSizeProperty}, "list_id"), runList),
+			read("shopping_list", "One list with its items, grouped as the list keeps them (by aisle), and who is shopping it now. shopping_item_states keeps only the items in those states (every state when left out); search_text keeps only the items whose description, details, store or aisle hold every word of it, without case.",
+				tools.Object(map[string]any{"list_id": listIDProperty, "shopping_item_states": itemStatesProperty, "search_text": searchTextProperty, "offset": offsetProperty, "page_size": pageSizeProperty}, "list_id"), runList),
 			read("shopping_item", "One item: its details, count, store, aisle, picture source, latest price and where it is.",
 				tools.Object(map[string]any{"item_id": itemIDProperty}, "item_id"), runItem),
 			read("shopping_similar_items", "The items that read like one about to be added, on the list named and the person's other lists, nearest first and at most five, in every state. "+
@@ -58,6 +58,8 @@ func init() {
 				tools.Object(map[string]any{"store_name": storeNameProperty, "list_ids": listIDsProperty, "is_any_store_included": isAnyStoreIncludedProperty, "offset": offsetProperty, "page_size": pageSizeProperty}, "store_name"), runStore),
 			read("shopping_trips", "Who is shopping now, on the lists the person reaches: the shopper, the store and since when.",
 				nil, runTrips),
+			read("shopping_resumable_trip", "The person's own trip that finished in the last few hours and can be resumed, when they ended it by mistake: the store, when it finished and how many items it bought that resume_shopping would put back in their cart.",
+				nil, runResumableTrip),
 			read("shopping_watched_stores", "The branches the person's phone watches, near where they were last reported to be, of the stores their lists need something from with reminders on: "+
 				"walking into one is a visit there and brings the store's reminder. At most two branches of a store and six in all, nearest first, each with its distance and the person's place for it when they have one. "+
 				"Use it when the person asks why a store did not remind them. It needs Location as well as shopping lists.",
@@ -115,6 +117,10 @@ func init() {
 				tools.Object(map[string]any{"item_id": itemIDProperty, "item_ids": itemIDsProperty, "store_name": storeNameProperty}), runCheck),
 			write("shopping_uncheck", "Take items out of the cart, back to needed.",
 				tools.Object(map[string]any{"item_id": itemIDProperty, "item_ids": itemIDsProperty}), runUncheck),
+			write("shopping_check_off", "Check items off a list for somebody who is not shopping (they bought it already, or got it elsewhere): each is bought now, no trip starts and nobody is told. To shop a store, use check instead.",
+				tools.Object(map[string]any{"item_id": itemIDProperty, "item_ids": itemIDsProperty}), runCheckOff),
+			write("shopping_undo_check_off", "Need items checked off again. One bought in the last few hours was checked off by mistake, so its purchase is taken back; an older one is needed again.",
+				tools.Object(map[string]any{"item_id": itemIDProperty, "item_ids": itemIDsProperty}), runUndoCheckOff),
 			write("shopping_need", "Need items again, with needed_quantity of each (1 when left out). A bought item stays on its list as not_needed with its picture, store and prices, and this brings it back.",
 				tools.Object(map[string]any{"item_id": itemIDProperty, "item_ids": itemIDsProperty, "needed_quantity": neededQuantityProperty}), runNeed),
 			write("shopping_not_needed", "Mark items as bought or not wanted now; they stay on the list, and an item that was in the cart counts as bought.",
@@ -132,6 +138,8 @@ func init() {
 				tools.Object(map[string]any{"list_ids": listIDsProperty, "store_name": storeNameProperty}, "list_ids"), runStartShopping),
 			write("shopping_finish_shopping", "Finish shopping: what the person put in the cart is bought. No receipt is needed. Leave out trip_id to end the person's own trip, or to buy their cart when no trip is open.",
 				tools.Object(map[string]any{"trip_id": tripIDProperty}), runFinishShopping),
+			write("shopping_resume_shopping", "Resume a trip the person finished by mistake, by the trip_id resumable_trip gives: it is open again, and what it bought goes back in their cart. Only within a few hours of finishing, and not while they are shopping another trip.",
+				tools.Object(map[string]any{"trip_id": tripIDProperty}, "trip_id"), runResumeShopping),
 			write("shopping_match_receipt", "Match one of the person's Finance receipts to their lists again, for a receipt read before the list had its items. It is queued and takes a minute or so; receipt shows what it did.",
 				tools.Object(map[string]any{"receipt_id": receiptIDProperty}, "receipt_id"), runMatchReceipt),
 			write("shopping_decide_match", "Decide a match the matcher was unsure of: is_applied true applies it (the item is checked off and its price remembered), false dismisses it, undoing it when it was applied. The match_id is in receipt.",
@@ -168,6 +176,7 @@ func init() {
 					{Action: "stores", Tool: "shopping_stores"},
 					{Action: "store", Tool: "shopping_store"},
 					{Action: "trips", Tool: "shopping_trips"},
+					{Action: "resumable_trip", Tool: "shopping_resumable_trip"},
 					{Action: "watched_stores", Tool: "shopping_watched_stores"},
 					{Action: "prices", Tool: "shopping_prices"},
 					{Action: "receipt", Tool: "shopping_receipt"},
@@ -184,6 +193,8 @@ func init() {
 					{Action: "remove_items", Tool: "shopping_remove_items"},
 					{Action: "check", Tool: "shopping_check"},
 					{Action: "uncheck", Tool: "shopping_uncheck"},
+					{Action: "check_off", Tool: "shopping_check_off"},
+					{Action: "undo_check_off", Tool: "shopping_undo_check_off"},
 					{Action: "need", Tool: "shopping_need"},
 					{Action: "not_needed", Tool: "shopping_not_needed"},
 					{Action: "out_of_stock", Tool: "shopping_out_of_stock"},
@@ -191,6 +202,7 @@ func init() {
 					{Action: "find_picture", Tool: "shopping_find_picture"},
 					{Action: "start_shopping", Tool: "shopping_start_shopping"},
 					{Action: "finish_shopping", Tool: "shopping_finish_shopping"},
+					{Action: "resume_shopping", Tool: "shopping_resume_shopping"},
 					{Action: "match_receipt", Tool: "shopping_match_receipt"},
 					{Action: "decide_match", Tool: "shopping_decide_match"},
 					{Action: "match_line", Tool: "shopping_match_line"},
@@ -210,6 +222,7 @@ var (
 	itemIDProperty             = tools.StringProperty("the item, by the item_id that list or store gives")
 	itemIDsProperty            = tools.ArrayProperty("several items instead of item_id (up to 100), each by its item_id", map[string]any{"type": "string"})
 	itemStatesProperty         = tools.ArrayProperty("for list: only items in these states, from needed, in_cart and not_needed; every state when left out", map[string]any{"type": "string", "enum": []string{"needed", "in_cart", "not_needed"}})
+	searchTextProperty         = tools.StringProperty("for list: words to look for, such as oat milk; only the items whose description, details, store or aisle hold every one, without case")
 	offsetProperty             = tools.IntegerProperty("for lists, list, store, prices and receipt: skip this many rows, for the next page: the next_offset of the page before")
 	pageSizeProperty           = tools.IntegerProperty("for lists, list, store, prices and receipt: rows to a page, 1 to 200; 50 by default")
 	listNameProperty           = tools.StringProperty("the list's name, 1 to 200 characters, such as Groceries")
@@ -228,7 +241,7 @@ var (
 	unitPriceAmountProperty    = tools.StringProperty("price: the price of one as text, a number of at least zero, such as 3.49")
 	observedOnProperty         = tools.StringProperty("price: the day it was seen, as YYYY-MM-DD; today by default")
 	currencyCodeProperty       = tools.StringProperty("price: the currency, such as USD; the item's by default")
-	tripIDProperty             = tools.StringProperty("finish_shopping: the trip, by the trip_id that start_shopping or trips gives; leave out for the person's own")
+	tripIDProperty             = tools.StringProperty("finish_shopping: the trip, by the trip_id that start_shopping or trips gives; leave out for the person's own. resume_shopping: the trip resumable_trip gives")
 	receiptIDProperty          = tools.StringProperty("the Finance receipt, by the id that finance receipts give")
 	receiptLineIDProperty      = tools.StringProperty("the receipt line, by the receipt_line_id that receipt gives")
 	matchIDProperty            = tools.StringProperty("decide_match: the match, by the match_id that receipt gives")

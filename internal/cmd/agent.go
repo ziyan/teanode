@@ -47,7 +47,6 @@ func NewAgentCommand() *cli.Command {
 			newAgentAlertCommand(),
 			newAgentFollowCommand(),
 			newAgentSourceTypeCommand(),
-			newAgentScheduleCommand(),
 			newAgentKnowledgeCommand(),
 			newAgentDreamCommand(),
 			newAgentFeedbackCommand(),
@@ -348,25 +347,25 @@ func setBrief(ctx context.Context, command *cli.Command, enabled bool) error {
 	if err != nil {
 		return err
 	}
-	schedule, err := client.SetAgentBrief(ctx, connection, enabled, command.String("at"), days)
+	goal, err := client.SetAgentBrief(ctx, connection, enabled, command.String("at"), days)
 	if err != nil {
 		return describeError(command, err)
 	}
 	if command.Bool("json") {
-		return PrintJSON(schedule)
+		return PrintJSON(goal)
 	}
-	if schedule == nil {
+	if goal == nil {
 		fmt.Println("there was no brief to stop")
 		return nil
 	}
 	when := "off"
-	if schedule.Enabled {
-		when = schedule.Cron
-		if schedule.NextRunAt != nil {
-			when += ", next " + schedule.NextRunAt.Local().Format("Mon 2 Jan 15:04")
+	if goal.GoalState == "working" {
+		when = goalWhen(goal)
+		if goal.GoalNextAt != nil {
+			when += ", next " + goal.GoalNextAt.Local().Format("Mon 2 Jan 15:04")
 		}
 	}
-	fmt.Printf("%s: %s\n", schedule.Name, when)
+	fmt.Printf("%s: %s\n", goal.GoalTitle, when)
 	return nil
 }
 

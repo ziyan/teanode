@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -26,7 +27,7 @@ func startBackgroundGoal(t *testing.T, script []string) (*goalWorld, *models.Age
 	t.Helper()
 	world := startGoalWorld(t, script, "")
 	goal, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
-		return world.worker.StartGoal(tx, world.found, "Invoices filed", "File the invoices from last quarter, five in all.", world.conversation.ID)
+		return world.worker.StartGoal(tx, world.found, world.owner, &agent.GoalStart{GoalTitle: "Invoices filed", GoalDescription: "File the invoices from last quarter, five in all.", OriginConversationID: world.conversation.ID})
 	})
 	if err != nil {
 		t.Fatalf("StartGoal: %s", err)
@@ -135,7 +136,7 @@ func TestAPersonDropsAndReopensAGoal(t *testing.T) {
 	world, goal := startBackgroundGoal(t, nil)
 	defer world.close()
 	dropped, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
-		return world.worker.SetGoalState(tx, world.found, goal.ID, models.GoalDropped)
+		return world.worker.SetGoalState(tx, world.found, world.owner, goal.ID, models.GoalDropped)
 	})
 	if err != nil || dropped.GoalState != models.GoalDropped || dropped.GoalNextAt != nil {
 		t.Fatalf("dropped: %+v %v", dropped, err)
@@ -146,7 +147,7 @@ func TestAPersonDropsAndReopensAGoal(t *testing.T) {
 		t.Fatal("a dropped goal was told something")
 	}
 	reopened, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
-		return world.worker.SetGoalState(tx, world.found, goal.ID, models.GoalWorking)
+		return world.worker.SetGoalState(tx, world.found, world.owner, goal.ID, models.GoalWorking)
 	})
 	if err != nil || reopened.GoalState != models.GoalWorking || reopened.GoalNextAt == nil {
 		t.Fatalf("reopened: %+v %v", reopened, err)
@@ -156,69 +157,158 @@ func TestAPersonDropsAndReopensAGoal(t *testing.T) {
 	}
 	// And a goal is not put on a conversation the person chats in.
 	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
-		return world.worker.SetGoalState(tx, world.found, world.conversation.ID, models.GoalMet)
+		return world.worker.SetGoalState(tx, world.found, world.owner, world.conversation.ID, models.GoalMet)
 	}); err == nil {
 		t.Fatal("the main conversation was treated as a goal")
 	}
 }
 
-// A goal with a schedule runs on it: moving one to the goal stops the
-// goal's own turns, a turn it was owed is not taken, and a goal whose
-// schedule is switched off is given a turn again.
-func TestAGoalWithAScheduleRunsOnIt(t *testing.T) {
-	world, goal := startBackgroundGoal(t, nil)
+// A goal on set times takes its turns at them: it is due at the soonest
+// time, not at once; after a turn its next time is the next of them,
+// whatever minutes the turn asked for; paused it takes no turn, and taken up
+// again it is due at its next time.
+func TestAGoalOnSetTimesRunsAtThem(t *testing.T) {
+	world := startGoalWorld(t, []string{goalProgressRound}, "")
 	defer world.close()
-	var schedule *models.AgentSchedule
-	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		next := time.Now().Add(time.Hour)
-		var err error
-		if schedule, err = tx.CreateAgentSchedule(&models.AgentSchedule{
-			AgentID: world.found.ID, Name: "Save the photos", Cron: "0 */3 * * *", Prompt: "run the sync",
-			Deliver: models.AgentDeliverMail, ConversationID: world.conversation.ID, Enabled: true, NextRunAt: &next,
-		}); err != nil {
-			t.Fatalf("CreateAgentSchedule: %s", err)
+	goal, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.StartGoal(tx, world.found, world.owner, &agent.GoalStart{
+			GoalTitle: "Invoices", GoalDescription: "File the day's invoices.", GoalTimes: []string{"0 8 * * *"},
+		})
+	})
+	if err != nil {
+		t.Fatalf("StartGoal: %s", err)
+	}
+	location := agent.Location(world.owner)
+	nextEight := func(after time.Time) time.Time {
+		local := after.In(location)
+		at := time.Date(local.Year(), local.Month(), local.Day(), 8, 0, 0, 0, location)
+		if !at.After(after) {
+			at = at.AddDate(0, 0, 1)
 		}
-	})
-
-	moved, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentSchedule, error) {
-		return world.worker.MoveScheduleToGoal(tx, world.found, schedule.ID, goal.ID)
-	})
-	if err != nil || moved.ConversationID != goal.ID || moved.Deliver != models.AgentDeliverDrawer {
-		t.Fatalf("moved: %+v %v", moved, err)
+		return at
 	}
-	after, activity := readGoal(t, world, goal.ID)
-	if after.GoalNextAt != nil || activity[0].ActivityHeadline != `Runs on the schedule "Save the photos"` {
-		t.Fatalf("a goal on a schedule books no turn of its own: %+v %+v", after, activity[0])
+	if goal.GoalNextAt == nil || !goal.GoalNextAt.Equal(nextEight(time.Now())) {
+		t.Fatalf("a goal on set times is due at its time, not at once: %v", goal.GoalNextAt)
 	}
 
-	// A tick finds it without a turn but with a schedule: nothing queued.
+	// Due now, it takes its turn, and the turn's sixty minutes are not used.
+	makeDue := func() {
+		if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+			return tx.UpdateAgentConversation(goal.ID, func(changing *models.AgentConversation) error {
+				past := time.Now().Add(-time.Minute)
+				changing.GoalNextAt = &past
+				return nil
+			})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	makeDue()
 	if err := world.worker.Tick(context.Background()); err != nil {
 		t.Fatalf("Tick: %s", err)
 	}
 	world.worker.Wait()
-	var jobs []*models.AgentJob
-	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		jobs, _ = tx.ListAgentJobs(&db.AgentJobFilter{AgentID: world.found.ID, Kinds: []models.AgentJobKind{models.AgentJobGoal}}, nil)
-	})
-	if len(jobs) != 0 {
-		t.Fatalf("a goal on a schedule took a turn of its own: %+v", jobs)
+	waitForGoalJobs(t, world, 1)
+	after, _ := readGoal(t, world, goal.ID)
+	if after.GoalNextAt == nil || !after.GoalNextAt.Equal(nextEight(time.Now())) || after.GoalNote != "three of five invoices filed" {
+		t.Fatalf("after its turn it is due at its next time: %v %q", after.GoalNextAt, after.GoalNote)
 	}
 
-	// Switched off, the schedule no longer keeps it: it gets a turn.
-	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		if _, err := tx.UpdateAgentSchedule(schedule.ID, func(changing *models.AgentSchedule) error {
-			changing.Enabled = false
+	// Paused, a time that comes takes no turn.
+	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.SetGoalState(tx, world.found, world.owner, goal.ID, models.GoalPaused)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	makeDue()
+	if err := world.worker.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	waitForGoalJobs(t, world, 1)
+
+	// Taken up again, it is due at its next time.
+	resumed, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.SetGoalState(tx, world.found, world.owner, goal.ID, models.GoalWorking)
+	})
+	if err != nil || resumed.GoalNextAt == nil || !resumed.GoalNextAt.Equal(nextEight(time.Now())) {
+		t.Fatalf("taken up again, it is due at its next time: %+v %v", resumed, err)
+	}
+}
+
+// A moment given now that has passed, or that is no moment at all, is
+// refused rather than dropped: dropped, it would leave a goal with no times
+// that runs at once. A goal whose one moment passed while it was paused
+// goes on at a pace of its own when taken up again, rather than waiting
+// for a time that never comes.
+func TestAGoalsMomentsAreChecked(t *testing.T) {
+	world := startGoalWorld(t, []string{goalProgressRound}, "")
+	defer world.close()
+	for _, given := range []string{"@at 2020-01-01 09:00", "@at tomorrow 9"} {
+		if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+			return world.worker.StartGoal(tx, world.found, world.owner, &agent.GoalStart{
+				GoalTitle: "Call back", GoalDescription: "Remind them to call back.", GoalTimes: []string{given},
+			})
+		}); err == nil {
+			t.Errorf("a goal was started at %q", given)
+		}
+	}
+	later := time.Now().Add(2 * time.Hour).In(agent.Location(world.owner)).Format("2006-01-02 15:04")
+	goal, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.StartGoal(tx, world.found, world.owner, &agent.GoalStart{
+			GoalTitle: "Call back", GoalDescription: "Remind them to call back.", GoalTimes: []string{"@at " + later},
+		})
+	})
+	if err != nil {
+		t.Fatalf("StartGoal: %s", err)
+	}
+	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.SetGoalState(tx, world.found, world.owner, goal.ID, models.GoalPaused)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return tx.UpdateAgentConversation(goal.ID, func(changing *models.AgentConversation) error {
+			changing.GoalTimes = []string{"@at 2020-01-01 09:00"}
 			return nil
-		}); err != nil {
-			t.Fatalf("UpdateAgentSchedule: %s", err)
-		}
-	})
-	if err := world.worker.Tick(context.Background()); err != nil {
-		t.Fatalf("Tick: %s", err)
+		})
+	}); err != nil {
+		t.Fatal(err)
 	}
-	world.worker.Wait()
-	if woken, _ := readGoal(t, world, goal.ID); woken.GoalNextAt == nil {
-		t.Fatalf("a goal whose schedule is off has no turn: %+v", woken)
+	resumed, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.SetGoalState(tx, world.found, world.owner, goal.ID, models.GoalWorking)
+	})
+	if err != nil || resumed.GoalNextAt == nil || time.Until(*resumed.GoalNextAt) > time.Minute || len(resumed.GoalTimes) != 0 {
+		t.Fatalf("taken up again with every time passed, it goes on alone from now: %+v %v", resumed, err)
+	}
+}
+
+// waitForGoalJobs waits until the agent has as many goal jobs as wanted, all
+// finished, and fails when it has more.
+func waitForGoalJobs(t *testing.T, world *goalWorld, wanted int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var jobs []*models.AgentJob
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			jobs, _ = tx.ListAgentJobs(&db.AgentJobFilter{AgentID: world.found.ID, Kinds: []models.AgentJobKind{models.AgentJobGoal}}, nil)
+		})
+		finished := 0
+		for _, job := range jobs {
+			if job.Status == models.AgentJobDone {
+				finished++
+			}
+		}
+		if len(jobs) > wanted {
+			t.Fatalf("%d goal turns, wanted %d: %+v", len(jobs), wanted, jobs)
+		}
+		if finished == wanted {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d of %d goal turns finished: %+v", finished, wanted, jobs)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -234,73 +324,24 @@ func inTransaction[T any](t *testing.T, database db.Database, run func(tx db.Tra
 	return result, err
 }
 
-// The answers and edges of a goal on a schedule: an answer still earns a
-// turn, a mailed schedule is no clock for the goal, and the schedule of a
-// goal that is done does not run.
-func TestAGoalsScheduleEdges(t *testing.T) {
-	world, goal := startBackgroundGoal(t, nil)
+// An answer to a goal on set times still earns a turn a minute later; the
+// times take over again after it.
+func TestAnAnswerToAGoalOnSetTimesEarnsATurn(t *testing.T) {
+	world := startGoalWorld(t, nil, "")
 	defer world.close()
-	addSchedule := func(deliver string, nextRunAt time.Time) *models.AgentSchedule {
-		t.Helper()
-		var schedule *models.AgentSchedule
-		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-			var err error
-			if schedule, err = tx.CreateAgentSchedule(&models.AgentSchedule{
-				AgentID: world.found.ID, Name: "Look again", Cron: "0 */3 * * *", Prompt: "look",
-				Deliver: deliver, ConversationID: goal.ID, Enabled: true, NextRunAt: &nextRunAt,
-			}); err != nil {
-				t.Fatalf("CreateAgentSchedule: %s", err)
-			}
+	goal, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+		return world.worker.StartGoal(tx, world.found, world.owner, &agent.GoalStart{
+			GoalTitle: "Look again", GoalDescription: "Look at the build.", GoalTimes: []string{"0 */3 * * *"},
 		})
-		return schedule
-	}
-
-	// A mailed schedule is no clock: the goal keeps its own turns.
-	mailed := addSchedule(models.AgentDeliverMail, time.Now().Add(time.Hour))
-	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
-		return tx.UpdateAgentConversation(goal.ID, func(changing *models.AgentConversation) error {
-			changing.GoalNextAt = nil
-			return nil
-		})
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := world.worker.Tick(context.Background()); err != nil {
-		t.Fatalf("Tick: %s", err)
-	}
-	world.worker.Wait()
-	if woken, _ := readGoal(t, world, goal.ID); woken.GoalNextAt == nil && woken.GoalState == models.GoalWorking {
-		t.Fatalf("a goal whose only schedule mails was left without a turn: %+v", woken)
-	}
-	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		if err := tx.DeleteAgentSchedule(mailed.ID); err != nil {
-			t.Fatal(err)
-		}
 	})
-
-	// With a schedule it answers in, an answer still earns a turn.
-	addSchedule(models.AgentDeliverDrawer, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("StartGoal: %s", err)
+	}
 	told, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
 		return world.worker.TellGoal(tx, world.found, goal.ID, "yes, go on")
 	})
-	if err != nil || told.GoalNextAt == nil {
-		t.Fatalf("an answer to a goal on a schedule earns a turn: %+v %v", told, err)
-	}
-
-	// Done, its schedule does not run when it comes due.
-	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
-		return world.worker.SetGoalState(tx, world.found, goal.ID, models.GoalMet)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	before := len(messagesOf(t, world, goal.ID))
-	addSchedule(models.AgentDeliverDrawer, time.Now().Add(-time.Minute))
-	if err := world.worker.Tick(context.Background()); err != nil {
-		t.Fatalf("Tick: %s", err)
-	}
-	world.worker.Wait()
-	if after := len(messagesOf(t, world, goal.ID)); after != before {
-		t.Fatalf("the schedule of a goal that is done ran: %d messages, were %d", after, before)
+	if err != nil || told.GoalNextAt == nil || told.GoalNextAt.After(time.Now().Add(2*time.Minute)) {
+		t.Fatalf("an answer to a goal on set times earns a turn soon: %+v %v", told, err)
 	}
 }
 
@@ -337,7 +378,7 @@ func TestAGoalThePersonMarkedDoneIsNotSaid(t *testing.T) {
 	defer world.close()
 
 	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
-		return world.worker.SetGoalState(tx, world.found, goal.ID, models.GoalMet)
+		return world.worker.SetGoalState(tx, world.found, world.owner, goal.ID, models.GoalMet)
 	}); err != nil {
 		t.Fatalf("SetGoalState: %s", err)
 	}
@@ -362,7 +403,7 @@ func TestAGoalReopenedAndFinishedAloneIsSaidAgain(t *testing.T) {
 	}
 	world.worker.Wait()
 	if _, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
-		return world.worker.SetGoalState(tx, world.found, goal.ID, models.GoalWorking)
+		return world.worker.SetGoalState(tx, world.found, world.owner, goal.ID, models.GoalWorking)
 	}); err != nil {
 		t.Fatalf("SetGoalState: %s", err)
 	}

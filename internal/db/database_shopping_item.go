@@ -21,8 +21,10 @@ import (
 type ShoppingItemOperation interface {
 	// ListShoppingItems are a page of a list's items in the given states (all
 	// of them when none is given), by aisle and then by their order, with how
-	// many there are in all.
-	ListShoppingItems(userId, shoppingListId string, shoppingItemStates []models.ShoppingItemState, offset, limit int) ([]*models.ShoppingItem, int64, error)
+	// many there are in all. A search text keeps the items whose description,
+	// details, store or aisle hold every word of it, without case; the apps
+	// filter a list they have loaded by the same rule.
+	ListShoppingItems(userId, shoppingListId string, shoppingItemStates []models.ShoppingItemState, searchText string, offset, limit int) ([]*models.ShoppingItem, int64, error)
 
 	// GetShoppingItem is one item on a list the person reaches.
 	GetShoppingItem(userId, shoppingItemId string) (*models.ShoppingItem, error)
@@ -63,6 +65,14 @@ type ShoppingItemOperation interface {
 	// SetShoppingItemNeed makes an item needed with a count (Need again), or,
 	// with isNeeded false, not needed: bought when it was in the cart.
 	SetShoppingItemNeed(userId, shoppingItemId string, isNeeded bool, neededQuantity string) (*models.ShoppingItem, error)
+
+	// CheckOffShoppingItem is the check on a list, for a person who is not
+	// shopping: a needed item (or one in their own cart) is bought now, with
+	// no trip and nobody told. Unchecked, it is needed again, and when it was
+	// bought within models.ShoppingPurchaseUndoableFor the purchase is taken
+	// back, so it was last bought when it was before. An item in somebody
+	// else's cart is left there.
+	CheckOffShoppingItem(userId, shoppingItemId string, isCheckedOff bool) (*models.ShoppingItem, error)
 
 	// SetShoppingItemOutOfStock marks an item out of stock at a store, or
 	// takes the mark off.
@@ -148,13 +158,17 @@ type shoppingItemModel struct {
 	OutOfStockByUserID  *string    `gorm:"column:out_of_stock_by_user_id"`
 	OutOfStockStoreName string     `gorm:"column:out_of_stock_store_name"`
 	LastBoughtAt        *time.Time `gorm:"column:last_bought_at"`
-	PictureFileID       string     `gorm:"column:picture_file_id"`
-	PicturePageURL      string     `gorm:"column:picture_page_url"`
-	PictureSource       string     `gorm:"column:picture_source"`
-	PictureSearchedAt   *time.Time `gorm:"column:picture_searched_at"`
-	CreatedByUserID     *string    `gorm:"column:created_by_user_id"`
-	CreatedAt           time.Time  `gorm:"column:created_at"`
-	UpdatedAt           time.Time  `gorm:"column:updated_at"`
+	// The trip that last bought it and when it was bought before, so a
+	// purchase can be taken back (models.ShoppingPurchaseUndoableFor).
+	BoughtShoppingTripID *string    `gorm:"column:bought_shopping_trip_id"`
+	PreviousLastBoughtAt *time.Time `gorm:"column:previous_last_bought_at"`
+	PictureFileID        string     `gorm:"column:picture_file_id"`
+	PicturePageURL       string     `gorm:"column:picture_page_url"`
+	PictureSource        string     `gorm:"column:picture_source"`
+	PictureSearchedAt    *time.Time `gorm:"column:picture_searched_at"`
+	CreatedByUserID      *string    `gorm:"column:created_by_user_id"`
+	CreatedAt            time.Time  `gorm:"column:created_at"`
+	UpdatedAt            time.Time  `gorm:"column:updated_at"`
 }
 
 func (shoppingItemModel) TableName() string { return "shopping_item" }
@@ -255,7 +269,7 @@ func (self *transaction) shoppingItemsOf(query *gorm.DB) ([]*models.ShoppingItem
 	return items, nil
 }
 
-func (self *transaction) ListShoppingItems(userId, shoppingListId string, shoppingItemStates []models.ShoppingItemState, offset, limit int) ([]*models.ShoppingItem, int64, error) {
+func (self *transaction) ListShoppingItems(userId, shoppingListId string, shoppingItemStates []models.ShoppingItemState, searchText string, offset, limit int) ([]*models.ShoppingItem, int64, error) {
 	if offset < 0 || limit < 1 || limit > shoppingPageSizeMost {
 		return nil, 0, ErrInvalidArguments
 	}
@@ -272,6 +286,11 @@ func (self *transaction) ListShoppingItems(userId, shoppingListId string, shoppi
 			states = append(states, string(state))
 		}
 		query = query.Where("\"shopping_item_state\" IN ?", states)
+	}
+	for _, word := range strings.Fields(searchText) {
+		pattern := "%" + escapeLike(word) + "%"
+		query = query.Where(`("item_description" ILIKE ? OR "item_details" ILIKE ? OR "store_name" ILIKE ? OR "aisle_name" ILIKE ?)`,
+			pattern, pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -699,6 +718,22 @@ func boughtShoppingItemUpdates(boughtAt time.Time) map[string]any {
 	}
 }
 
+// purchasedShoppingItemUpdates are a purchase a person can take back: bought,
+// by a trip ending (shoppingTripId) or checked off on the list (empty), with
+// when it was bought before kept beside it. A receipt matched later changes
+// only when it was bought, so taking the purchase back still works.
+func purchasedShoppingItemUpdates(boughtAt time.Time, shoppingTripId string) map[string]any {
+	updates := boughtShoppingItemUpdates(boughtAt)
+	// Every right-hand side reads the row as it was, so this keeps the old
+	// last_bought_at even though the same statement replaces it.
+	updates["previous_last_bought_at"] = gorm.Expr("\"last_bought_at\"")
+	updates["bought_shopping_trip_id"] = nil
+	if shoppingTripId != "" {
+		updates["bought_shopping_trip_id"] = shoppingTripId
+	}
+	return updates
+}
+
 func (self *transaction) CheckShoppingItem(userId, shoppingItemId string, isChecked bool, storeName string) (*models.ShoppingItem, *models.ShoppingTrip, []string, error) {
 	var startedTrip *models.ShoppingTrip
 	var changedListIds []string
@@ -759,7 +794,7 @@ func (self *transaction) SetShoppingItemNeed(userId, shoppingItemId string, isNe
 	}
 	if !isNeeded {
 		if models.ShoppingItemState(row.ShoppingItemState) == models.ShoppingItemStateInCart {
-			return self.changeShoppingItem(row, boughtShoppingItemUpdates(time.Now()))
+			return self.changeShoppingItem(row, purchasedShoppingItemUpdates(time.Now(), ""))
 		}
 		return self.changeShoppingItem(row, map[string]any{
 			"shopping_item_state": string(models.ShoppingItemStateNotNeeded), "carted_by_user_id": nil, "carted_at": nil,
@@ -772,8 +807,45 @@ func (self *transaction) SetShoppingItemNeed(userId, shoppingItemId string, isNe
 	}
 	return self.changeShoppingItem(row, map[string]any{
 		"shopping_item_state": string(models.ShoppingItemStateNeeded), "needed_quantity": quantity, "carted_by_user_id": nil, "carted_at": nil,
-		"out_of_stock_at": nil, "out_of_stock_by_user_id": nil, "out_of_stock_store_name": "",
+		"out_of_stock_at": nil, "out_of_stock_by_user_id": nil, "out_of_stock_store_name": "", "bought_shopping_trip_id": nil,
 	})
+}
+
+func (self *transaction) CheckOffShoppingItem(userId, shoppingItemId string, isCheckedOff bool) (*models.ShoppingItem, error) {
+	row, err := self.lockShoppingItem(userId, shoppingItemId)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	state := models.ShoppingItemState(row.ShoppingItemState)
+	isInOwnCart := state == models.ShoppingItemStateInCart && optionalString(row.CartedByUserID) == userId
+	if isCheckedOff {
+		// Bought, with no trip: nobody is told, and nothing else on the list
+		// changes. An item in somebody else's cart stays theirs to buy.
+		if state == models.ShoppingItemStateNeeded || isInOwnCart {
+			return self.changeShoppingItem(row, purchasedShoppingItemUpdates(now, ""))
+		}
+		return self.GetShoppingItemByID(row.ID)
+	}
+	switch {
+	case isInOwnCart:
+		return self.changeShoppingItem(row, map[string]any{
+			"shopping_item_state": string(models.ShoppingItemStateNeeded), "carted_by_user_id": nil, "carted_at": nil,
+		})
+	case state == models.ShoppingItemStateNotNeeded:
+		updates := map[string]any{
+			"shopping_item_state": string(models.ShoppingItemStateNeeded), "out_of_stock_at": nil, "out_of_stock_by_user_id": nil,
+			"out_of_stock_store_name": "", "bought_shopping_trip_id": nil,
+		}
+		// Unchecked soon after it was bought, the purchase was a mistake:
+		// it was last bought when it was before. Later it was bought, and is
+		// needed again.
+		if row.LastBoughtAt != nil && now.Sub(*row.LastBoughtAt) < models.ShoppingPurchaseUndoableFor {
+			updates["last_bought_at"], updates["previous_last_bought_at"] = row.PreviousLastBoughtAt, nil
+		}
+		return self.changeShoppingItem(row, updates)
+	}
+	return self.GetShoppingItemByID(row.ID)
 }
 
 func (self *transaction) SetShoppingItemOutOfStock(userId, shoppingItemId string, isOutOfStock bool, storeName string) (*models.ShoppingItem, error) {

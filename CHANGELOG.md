@@ -6,6 +6,38 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.232.0] - 2026-11-23
+
+### Changed
+
+- A schedule is now a goal that runs at set times or when mail arrives. Existing schedules become goals when the server upgrades; a switched-off schedule becomes a paused goal. Goals can be paused, run now and changed from the dashboard, the apps, `teanode agent goal` and the agent. (#775)
+- What a goal on set times finds arrives in the feed, one stack per turn. The daily brief is a goal and arrives there too. (#775)
+
+### Removed
+
+- The schedule tool, the schedule operations (`ListAgentSchedules`, `SaveAgentSchedule`, `DeleteAgentSchedule`, `RunAgentSchedule`, `MoveAgentScheduleToGoal`) and `teanode agent schedule`. Use goals with `--time` or `--on-mail`. (#775)
+- Answers by mail from scheduled runs. (#775)
+
+## [0.231.0] - 2026-11-23
+
+### Added
+
+- Shopping lists have a check on each item: checking off without shopping buys it now, with no trip and no notice to the others, and unchecking soon after takes it back. (#773)
+- Done shopping shows the cart first, with Snap the receipt and a confirmed Finish without a receipt. (#773)
+- A trip finished by mistake can be resumed for three hours, with what it bought back in the cart. (#773)
+- A shopping list can be searched by the words of its items, their store or aisle, in the apps, the dashboard, the CLI (`teanode shopping show --search`) and the agent. (#773)
+
+### Changed
+
+- On the store screen, items in a cart move to an "In the cart" section at the bottom, and Done shopping shows how many items are in the cart. (#773)
+- A receipt snapped at Done still records prices for what Done just bought. (#773)
+
+## [0.230.10] - 2026-11-23
+
+### Fixed
+
+- iPhone and Android: a message that asks about a mail, file, photo, recording or transaction shows it above the message while the agent is still answering. (#767)
+
 ## [0.230.9] - 2026-11-23
 
 ### Fixed

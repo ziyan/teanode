@@ -21,6 +21,9 @@ final class AgentUpkeepTests: XCTestCase {
         return (Connection(account: account, transport: fake), fake)
     }
 
+    /// Some locales put a narrow space before AM, so spaces are compared as spaces.
+    private func spaced(_ text: String) -> String { text.replacingOccurrences(of: "\u{202F}", with: " ") }
+
     private func sentVariables(_ request: URLRequest) throws -> [String: JSONValue] {
         let body = try JSONDecoder().decode([String: JSONValue].self, from: request.httpBody ?? Data())
         guard case .object(let variables) = body["variables"] else {
@@ -249,11 +252,17 @@ final class AgentUpkeepTests: XCTestCase {
         XCTAssertEqual(DailyBrief.dayNumbers(fromCron: "30 7 * * 1-5"), [1, 2, 3, 4, 5])
         XCTAssertEqual(DailyBrief.dayNumbers(fromCron: nil), [1, 2, 3, 4, 5])
         XCTAssertEqual(DailyBrief.dayNumbers(fromCron: "30 7 * * */2"), [1, 2, 3, 4, 5])
-        let schedules = [AgentSchedule(id: "schedule-1", name: "Round-up", cron: "0 17 * * 5"), AgentSchedule(id: "schedule-2", name: "Daily brief", cron: "30 7 * * 1-5")]
-        XCTAssertEqual(DailyBrief.schedule(in: schedules)?.id, "schedule-2")
+        let goals = [
+            AgentGoal(conversationId: "goal-1", goalTitle: "Round-up", goalTimes: ["0 17 * * 5"]),
+            AgentGoal(conversationId: "goal-2", goalTitle: "Daily brief", goalTimes: ["30 7 * * 1-5"], goalWrittenBy: "built_in"),
+            AgentGoal(conversationId: "goal-3", goalTitle: "Daily brief", goalWrittenBy: "person"),
+        ]
+        XCTAssertEqual(DailyBrief.goal(in: goals)?.conversationId, "goal-2")
 
-        let (connection, fake) = connection(answering: #"{"data":{"SetAgentBrief":{"id":"schedule-2"}}}"#)
-        try await connection.setDailyBrief(isEnabled: true, at: "07:30", days: [1, 2])
+        let (connection, fake) = connection(
+            answering: #"{"data":{"SetAgentBrief":{"conversationId":"goal-2","goalTitle":"Daily brief","goalState":"working","goalWrittenBy":"built_in","goalTimes":["30 7 * * 1,2"]}}}"#)
+        let brief = try await connection.setDailyBrief(isEnabled: true, at: "07:30", days: [1, 2])
+        XCTAssertEqual(brief?.goalTimes, ["30 7 * * 1,2"])
         XCTAssertEqual(try sentVariables(fake.sent[0]), ["enabled": .bool(true), "at": .string("07:30"), "days": .array([.number(1), .number(2)])])
     }
 
@@ -313,71 +322,139 @@ final class AgentUpkeepTests: XCTestCase {
             XCTAssertNil(ScheduleTiming(cron: unplainCron), unplainCron)
         }
 
-        // A time the locale's way. Some locales put a narrow space before
-        // AM, so spaces are compared as spaces.
-        func spaced(_ text: String) -> String { text.replacingOccurrences(of: "\u{202F}", with: " ") }
         XCTAssertEqual(spaced(weekdays.timeText(locale: Locale(identifier: "en_US"))), "7:30 AM")
         XCTAssertEqual(spaced(ScheduleTiming(cron: "0 17 * * 5")?.timeText(locale: Locale(identifier: "en_US")) ?? ""), "5:00 PM")
         XCTAssertEqual(ScheduleTiming(cron: "0 17 * * 5")?.timeText(locale: Locale(identifier: "en_GB")), "17:00")
-    }
-
-    func testTurnsAScheduleOffWithoutTouchingTheRest() async throws {
-        let (connection, fake) = connection(answering: #"{"data":{"SaveAgentSchedule":{"id":"schedule-1"}}}"#)
-        try await connection.saveAgentSchedule(scheduleId: "schedule-1", isEnabled: false)
-        XCTAssertEqual(try sentVariables(fake.sent[0]), ["scheduleId": .string("schedule-1"), "enabled": .bool(false)])
-    }
-
-    func testReadsAScheduleThatRunsWhenMailArrives() async throws {
-        let (connection, fake) = connection(
-            answering: #"""
-                {"data":{"ListAgentSchedules":[
-                  {"id":"schedule-1","name":"Round-up","cron":"0 17 * * 5","prompt":"Sum up the week.","deliver":"mail","enabled":true,"lastRunAt":null,"nextRunAt":"2030-01-04T17:00:00Z","conversationId":null,"mailConditions":null},
-                  {"id":"schedule-2","name":"School pictures","cron":"","prompt":"Save the pictures.","deliver":"drawer","enabled":true,"lastRunAt":null,"nextRunAt":null,"conversationId":null,
-                    "mailConditions":[{"field":"from","header":null,"operator":"contains","value":"news@school.example"},{"field":"header","header":"List-Id","operator":"equals","value":"pictures.school.example"}]}
-                ]}}
-                """#)
-        let schedules = try await connection.agentSchedules()
-        XCTAssertFalse(schedules[0].isTriggeredByMail)
-        XCTAssertTrue(schedules[1].isTriggeredByMail)
-        XCTAssertNil(schedules[1].nextRunAt)
-        XCTAssertEqual(schedules[1].mailConditions?.count, 2)
-        XCTAssertEqual(schedules[1].mailConditions?[1].header, "List-Id")
-        XCTAssertEqual(schedules[1].mailConditions?[1].comparisonOperator, "equals")
-        XCTAssertTrue(fake.sent[0].httpBody.flatMap { String(data: $0, encoding: .utf8) }?.contains("mailConditions { field header operator value }") ?? false)
     }
 
     func testSaysWhenMailArrivesInWords() {
         let sender = MailRule.Condition(field: "from", comparisonOperator: "contains", value: "news@school.example")
         let header = MailRule.Condition(field: "header", header: "List-Id", comparisonOperator: "equals", value: "pictures.school.example")
         let anything = MailRule.Condition(field: "any", comparisonOperator: "", value: nil)
-        XCTAssertEqual(ScheduleMailTrigger.englishText([sender]), "When mail arrives: From contains news@school.example")
+        XCTAssertEqual(GoalMailTrigger.englishText([sender]), "When mail arrives: From contains news@school.example")
         XCTAssertEqual(
-            ScheduleMailTrigger.englishText([sender, header]),
+            GoalMailTrigger.englishText([sender, header]),
             "When mail arrives: From contains news@school.example, Header List-Id is pictures.school.example")
-        XCTAssertEqual(ScheduleMailTrigger.englishText([anything]), "When any mail arrives")
+        XCTAssertEqual(GoalMailTrigger.englishText([anything]), "When any mail arrives")
     }
 
     func testChecksThatMailConditionsAreComplete() {
         let sender = MailRule.Condition(field: "from", comparisonOperator: "contains", value: "news@school.example")
-        XCTAssertTrue(ScheduleMailTrigger.isComplete([sender]))
-        XCTAssertTrue(ScheduleMailTrigger.isComplete([MailRule.Condition(field: "any", comparisonOperator: "", value: nil)]))
-        XCTAssertFalse(ScheduleMailTrigger.isComplete([]))
-        XCTAssertFalse(ScheduleMailTrigger.isComplete([MailRule.Condition(field: "subject", comparisonOperator: "contains", value: "  ")]))
-        XCTAssertFalse(ScheduleMailTrigger.isComplete([sender, MailRule.Condition(field: "subject", comparisonOperator: "contains", value: nil)]))
-        XCTAssertFalse(ScheduleMailTrigger.isComplete([MailRule.Condition(field: "header", header: " ", comparisonOperator: "contains", value: "x")]))
-        XCTAssertTrue(ScheduleMailTrigger.isComplete([MailRule.Condition(field: "header", header: "List-Id", comparisonOperator: "contains", value: "x")]))
+        XCTAssertTrue(GoalMailTrigger.isComplete([sender]))
+        XCTAssertTrue(GoalMailTrigger.isComplete([MailRule.Condition(field: "any", comparisonOperator: "", value: nil)]))
+        XCTAssertFalse(GoalMailTrigger.isComplete([]))
+        XCTAssertFalse(GoalMailTrigger.isComplete([MailRule.Condition(field: "subject", comparisonOperator: "contains", value: "  ")]))
+        XCTAssertFalse(GoalMailTrigger.isComplete([sender, MailRule.Condition(field: "subject", comparisonOperator: "contains", value: nil)]))
+        XCTAssertFalse(GoalMailTrigger.isComplete([MailRule.Condition(field: "header", header: " ", comparisonOperator: "contains", value: "x")]))
+        XCTAssertTrue(GoalMailTrigger.isComplete([MailRule.Condition(field: "header", header: "List-Id", comparisonOperator: "contains", value: "x")]))
     }
 
-    func testSavesAScheduleThatRunsWhenMailArrives() async throws {
-        let (connection, fake) = connection(answering: #"{"data":{"SaveAgentSchedule":{"id":"schedule-2"}}}"#)
-        let sender = MailRule.Condition(field: "from", header: "left over", comparisonOperator: "contains", value: "news@school.example")
-        try await connection.saveAgentSchedule(name: "School pictures", mailConditions: [sender], prompt: "Save the pictures.")
-        let variables = try sentVariables(fake.sent[0])
-        XCTAssertNil(variables["cron"])
+    // MARK: Goal times
+
+    func testReadsAGoalWithItsTimesMailAndPausedState() async throws {
+        let (connection, fake) = connection(
+            answering: #"""
+                {"data":{"ListAgentGoals":[
+                  {"conversationId":"goal-1","goalTitle":"Round-up","goalDescription":"Sum up the week.","goalState":"working","goalStatus":"","goalTimes":["0 17 * * 5","@at 2030-12-11 09:00"],
+                    "goalMailConditions":[],"goalWrittenBy":"person","isGoalNotifiedWhenPosted":true,"goalSetAt":null,"goalNextAt":"2030-01-04T17:00:00Z","lastAt":null},
+                  {"conversationId":"goal-2","goalTitle":"School pictures","goalDescription":"Save the pictures.","goalState":"paused","goalStatus":"","goalTimes":[],
+                    "goalMailConditions":[{"field":"from","header":null,"operator":"contains","value":"news@school.example"}],"goalWrittenBy":"agent","isGoalNotifiedWhenPosted":false,
+                    "goalSetAt":null,"goalNextAt":null,"lastAt":null}
+                ]}}
+                """#)
+        let goals = try await connection.goals()
+        XCTAssertEqual(goals[0].goalTimes.count, 2)
+        XCTAssertTrue(goals[0].isOpen)
+        XCTAssertTrue(goals[0].canRunNow)
+        XCTAssertTrue(goals[0].isGoalNotifiedWhenPosted)
+        XCTAssertFalse(goals[0].isPaused)
+        XCTAssertTrue(goals[1].isPaused)
+        XCTAssertFalse(goals[1].isOpen)
+        XCTAssertFalse(goals[1].canRunNow)
+        XCTAssertTrue(goals[1].hasTimes)
+        XCTAssertEqual(goals[1].goalMailConditions[0].value, "news@school.example")
+        XCTAssertTrue(fake.sent[0].httpBody.flatMap { String(data: $0, encoding: .utf8) }?.contains("goalMailConditions { field header operator value }") ?? false)
+    }
+
+    func testReadsAGoalAtItsOwnPace() throws {
+        let goal = try JSONDecoder().decode(AgentGoal.self, from: Data(#"{"conversationId":"goal-1","goalTitle":"Learn","goalState":"waiting"}"#.utf8))
+        XCTAssertEqual(goal.goalTimes, [])
+        XCTAssertFalse(goal.hasTimes)
+        XCTAssertTrue(goal.isOpen)
+        XCTAssertFalse(goal.canRunNow)
+    }
+
+    func testSaysAGoalsTimesInWords() throws {
+        guard case .weekly(let timing) = GoalTime("30 7 * * 1-5") else { return XCTFail("a weekly line reads as weekly") }
+        XCTAssertEqual(timing.dayPattern, .weekdays)
+        XCTAssertEqual(spaced(timing.timeText(locale: Locale(identifier: "en_US"))), "7:30 AM")
+        guard case .moment(let moment) = GoalTime("@at 2030-12-11 09:00") else { return XCTFail("a moment reads as a moment") }
+        XCTAssertEqual(moment, GoalMoment(year: 2030, month: 12, day: 11, hour: 9, minute: 0))
+        XCTAssertEqual(moment.dayText(locale: Locale(identifier: "en_US")), "Dec 11")
+        XCTAssertEqual(moment.dayText(locale: Locale(identifier: "en_US"), includesYear: true), "Dec 11, 2030")
+        XCTAssertEqual(spaced(moment.timeText(locale: Locale(identifier: "en_US"))), "9:00 AM")
+        // A 24-hour locale has no AM; whether the hour has a leading zero is
+        // the system's locale data, which differs between releases.
+        XCTAssertTrue(["9:00", "09:00"].contains(moment.timeText(locale: Locale(identifier: "en_GB"))))
+        XCTAssertEqual(GoalTime("*/15 * * * *"), .other("*/15 * * * *"))
+        XCTAssertEqual(GoalTime("@at tomorrow"), .other("@at tomorrow"))
+        XCTAssertEqual(GoalMoment(text: "@at 2030-12-11 09:00:30")?.text, "@at 2030-12-11 09:00")
+        XCTAssertNil(GoalMoment(text: "@at 2030-13-11 09:00"))
+    }
+
+    func testWritesTheTimesTheServerTakes() {
+        XCTAssertEqual(ScheduleTiming(hour: 7, minute: 30, dayNumbers: [1, 2, 3, 4, 5]).cron, "30 7 * * 1-5")
+        XCTAssertEqual(ScheduleTiming(hour: 9, minute: 0, dayNumbers: ScheduleWeekday.allDayNumbers).cron, "0 9 * * *")
+        XCTAssertEqual(ScheduleTiming(hour: 10, minute: 5, dayNumbers: [6, 7]).cron, "5 10 * * 6,0")
+        XCTAssertEqual(ScheduleTiming(hour: 17, minute: 0, dayNumbers: [7]).cron, "0 17 * * 0")
+        XCTAssertEqual(ScheduleTiming(hour: 9, minute: 0, dayNumbers: [5, 1, 3]).cron, "0 9 * * 1,3,5")
+        for line in ["30 7 * * 1-5", "0 9 * * *", "5 10 * * 6,0", "0 17 * * 0", "0 9 * * 1,3,5"] {
+            XCTAssertEqual(ScheduleTiming(cron: line).map { ScheduleTiming(hour: $0.hour, minute: $0.minute, dayNumbers: $0.dayNumbers).cron }, line)
+        }
+        XCTAssertEqual(GoalMoment(year: 2030, month: 1, day: 5, hour: 8, minute: 5).text, "@at 2030-01-05 08:05")
+    }
+
+    func testUpdatingAGoalSendsOnlyWhatChanged() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"UpdateAgentGoal":{"conversationId":"goal-1"}}}"#)
+        try await connection.updateGoal("goal-1", change: AgentGoalChange(goalTimes: ["30 7 * * 1-5"]))
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["conversationId": .string("goal-1"), "goalTimes": .array([.string("30 7 * * 1-5")])])
+        try await connection.updateGoal("goal-1", change: AgentGoalChange(goalTimes: [], goalMailConditions: [], isGoalNotifiedWhenPosted: false))
         XCTAssertEqual(
-            variables["mailConditions"],
+            try sentVariables(fake.sent[1]),
+            ["conversationId": .string("goal-1"), "goalTimes": .array([]), "goalMailConditions": .array([]), "isGoalNotifiedWhenPosted": .bool(false)])
+        try await connection.updateGoal("goal-1", change: AgentGoalChange(goalTitle: "New title", goalDescription: "New words"))
+        XCTAssertEqual(
+            try sentVariables(fake.sent[2]), ["conversationId": .string("goal-1"), "goalTitle": .string("New title"), "goalDescription": .string("New words")])
+        let sender = MailRule.Condition(field: "from", header: "left over", comparisonOperator: "contains", value: "news@school.example")
+        try await connection.updateGoal("goal-1", change: AgentGoalChange(goalMailConditions: [sender]))
+        let variables = try sentVariables(fake.sent[3])
+        XCTAssertNil(variables["goalTimes"])
+        XCTAssertEqual(
+            variables["goalMailConditions"],
             .array([.object(["field": .string("from"), "header": .string(""), "operator": .string("contains"), "value": .string("news@school.example")])]))
-        XCTAssertTrue(fake.sent[0].httpBody.flatMap { String(data: $0, encoding: .utf8) }?.contains("$mailConditions: [MailboxRuleConditionInput!]") ?? false)
+        XCTAssertTrue(fake.sent[3].httpBody.flatMap { String(data: $0, encoding: .utf8) }?.contains("$goalMailConditions: [MailboxRuleConditionInput!]") ?? false)
+    }
+
+    func testStartsAGoalWithItsTimes() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"StartAgentGoal":{"conversationId":"goal-9"}}}"#)
+        let conversationId = try await connection.startGoal(
+            AgentGoalChange(goalTitle: "Round-up", goalDescription: "Sum up the week.", goalTimes: ["0 17 * * 5"], isGoalNotifiedWhenPosted: true))
+        XCTAssertEqual(conversationId, "goal-9")
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]),
+            [
+                "goalTitle": .string("Round-up"), "goalDescription": .string("Sum up the week."), "goalTimes": .array([.string("0 17 * * 5")]),
+                "isGoalNotifiedWhenPosted": .bool(true),
+            ])
+    }
+
+    func testPausesAndRunsAGoal() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"SetAgentGoalState":{"conversationId":"goal-1"}}}"#)
+        try await connection.setGoalState("goal-1", to: "paused")
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["conversationId": .string("goal-1"), "goalState": .string("paused")])
+        let (runner, runnerFake) = self.connection(answering: #"{"data":{"RunAgentGoal":{"conversationId":"goal-1"}}}"#)
+        try await runner.runGoal("goal-1")
+        XCTAssertEqual(try sentVariables(runnerFake.sent[0]), ["conversationId": .string("goal-1")])
     }
 
     // MARK: Alerts and connections

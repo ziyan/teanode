@@ -494,17 +494,22 @@ class Transcript(
         return if (index < 0) null else index
     }
 
-    /** Shows what the person just sent from this app, before the turn it begins is under way. */
+    /**
+     * Shows what the person just sent from this app, before the turn it begins is under way: with the message it replies to and what it
+     * asks about, as the stored message shows them once it is read back.
+     */
     fun addSent(
         text: String,
         attachments: List<AgentAttachment> = emptyList(),
-        replyingTo: AgentReference? = null,
+        references: List<AgentReference> = emptyList(),
         author: ChatAuthor? = null,
         isVoiceMessage: Boolean = false,
     ): String {
+        val reply = references.firstOrNull { reference -> reference.isReply }
         val line = TranscriptLine(
             SENT_PREFIX + UUID.randomUUID(), TranscriptLine.Kind.Person, text, attachments = attachments, author = author, isVoiceMessage = isVoiceMessage,
-            quotedText = replyingTo?.quotedText.orEmpty(), quotedRole = replyingTo?.quotedRole.orEmpty(),
+            quotedText = reply?.quotedText.orEmpty(), quotedRole = reply?.quotedRole.orEmpty(),
+            references = references.filter { reference -> !reference.isReply },
         )
         storedLines.add(line)
         return line.id

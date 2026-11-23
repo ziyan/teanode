@@ -59,6 +59,8 @@
             } else if let personCardAnswer = Self.personCardAnswering(query: query, body: request.httpBody) {
                 // Before the rest: its document names fields (photos, recordings, mail) that the operations below are looked for by.
                 answer = personCardAnswer
+            } else if let goalAnswer = Self.goalAnswer(query: query, body: request.httpBody) {
+                answer = goalAnswer
             } else if query.contains("SearchEverything") {
                 answer = Self.searchEverything(answering: request.httpBody)
             } else if let financeSharingAnswer = Self.financeSharingAnswer(query: query, body: request.httpBody) {
@@ -149,8 +151,6 @@
             } else if query.contains("AddAgentFollowUp") {
                 // The list is fixed, so an added one is acknowledged and not shown.
                 answer = #"{"data":{"AddAgentFollowUp":{"id":"follow-up-added","followUpTitle":"Added"}}}"#
-            } else if query.contains("MoveAgentScheduleToGoal") {
-                answer = #"{"data":{"MoveAgentScheduleToGoal":{"id":"schedule-moved"}}}"#
             } else if query.contains("ReadAgent") {
                 answer = Self.agent
             } else if query.contains("ListAgentDreams") {
@@ -159,8 +159,6 @@
                 answer = #"{"data":{"AgentDreamState":{"dreamJobStatus":"","queuedAt":null,"startedAt":null}}}"#
             } else if query.contains("AgentReadingProgress") {
                 answer = #"{"data":{"AgentReadingProgress":{"waiting":340,"read":2860,"perHour":410,"hoursLeft":0.83,"bootstrapping":false,"spent":1.84,"costLeft":0.22,"currency":"USD","dreams":5}}}"#
-            } else if query.contains("ListAgentSchedules") {
-                answer = Self.schedules
             } else if query.contains("ListSessions") {
                 answer = Self.sessions
             } else if query.contains("ListAgentPhones") {
@@ -211,8 +209,6 @@
                 answer = #"{"data":{"AgentGraphPage":{"contact":{"id":"robin"}}}}"#
             } else if query.contains("ListAgentIdeas") {
                 answer = Self.ideas
-            } else if query.contains("ListAgentGoals") {
-                answer = Self.goals
             } else if query.contains("GetSession") {
                 answer = Self.session
             } else if query.contains("GetAppUpdate") {
@@ -355,13 +351,70 @@
             return #"{"data":{"\#(operation)":{"projectPath":"projects/recipe-box","text":"\#(text)"}}}"#
         }
 
-        static let goals = #"""
-            {"data":{"ListAgentGoals":[
-            {"conversationId":"g1","goalTitle":"Plan the spring trip","goalDescription":"Find dates and a place everyone can make.","goalState":"waiting","goalStatus":"Two weekends work; which one do you prefer?","goalSetAt":"2026-10-01T09:00:00Z","goalNextAt":null,"lastAt":"2026-10-10T08:00:00Z"},
-            {"conversationId":"g2","goalTitle":"Keep the reading list short","goalDescription":"Each week, drop what I will not read.","goalState":"working","goalStatus":"Dropped four articles this week.","goalSetAt":"2026-09-20T09:00:00Z","goalNextAt":"2026-10-17T09:00:00Z","lastAt":"2026-10-10T07:00:00Z"},
-            {"conversationId":"g3","goalTitle":"Renew the passport","goalDescription":"Before the summer.","goalState":"met","goalStatus":"Renewed; the new one arrived.","goalSetAt":"2026-08-01T09:00:00Z","goalNextAt":null,"lastAt":"2026-09-02T07:00:00Z"}
-            ]}}
-            """#
+        /// The demo goals, each as the server writes it: one waiting for the
+        /// person, one on set times (a weekly time and a single moment), the
+        /// daily brief, one that takes a turn when mail arrives, one at its
+        /// own pace, a paused one and a met one.
+        private static var demoGoalObjects: [(id: String, json: String)] { [
+            (
+                "g1",
+                #"{"conversationId":"g1","goalTitle":"Plan the spring trip","goalDescription":"Find dates and a place everyone can make.","goalState":"waiting","goalStatus":"Two weekends work; which one do you prefer?","goalTimes":[],"goalMailConditions":[],"goalWrittenBy":"person","isGoalNotifiedWhenPosted":false,"goalSetAt":"2026-10-01T09:00:00Z","goalNextAt":null,"goalSurfacedAt":null,"lastAt":"2026-10-10T08:00:00Z"}"#
+            ),
+            (
+                "g2",
+                #"{"conversationId":"g2","goalTitle":"Keep the reading list short","goalDescription":"Each week, drop what I will not read.","goalState":"working","goalStatus":"Dropped four articles this week.","goalTimes":["0 9 * * 1","@at 2026-12-11 09:00"],"goalMailConditions":[],"goalWrittenBy":"person","isGoalNotifiedWhenPosted":true,"goalSetAt":"2026-09-20T09:00:00Z","goalNextAt":"\#(nextDemoTime(hour: 9, minute: 0, weekdays: [2]))","goalSurfacedAt":null,"lastAt":"2026-10-10T07:00:00Z"}"#
+            ),
+            (
+                "g-brief",
+                #"{"conversationId":"g-brief","goalTitle":"Daily brief","goalDescription":"What is on today, what arrived overnight that needs me, and the weather for the walk to the station.","goalState":"working","goalStatus":"Sent this morning.","goalTimes":["30 7 * * 1-5"],"goalMailConditions":[],"goalWrittenBy":"built_in","isGoalNotifiedWhenPosted":false,"goalSetAt":"2026-09-01T09:00:00Z","goalNextAt":"\#(nextDemoTime(hour: 7, minute: 30, weekdays: [2, 3, 4, 5, 6]))","goalSurfacedAt":null,"lastAt":"2026-10-09T07:30:00Z"}"#
+            ),
+            (
+                "g4",
+                #"{"conversationId":"g4","goalTitle":"School pictures","goalDescription":"Save the pictures and videos it links to the photo library.","goalState":"working","goalStatus":"Saved twelve pictures from the last newsletter.","goalTimes":[],"goalMailConditions":[{"field":"from","header":null,"operator":"contains","value":"news@school.example"}],"goalWrittenBy":"person","isGoalNotifiedWhenPosted":false,"goalSetAt":"2026-09-10T09:00:00Z","goalNextAt":null,"goalSurfacedAt":null,"lastAt":"2026-10-08T15:20:00Z"}"#
+            ),
+            (
+                "g5",
+                #"{"conversationId":"g5","goalTitle":"Water the plants","goalDescription":"Remind me to water the plants, and say which ones were watered last week.","goalState":"paused","goalStatus":"","goalTimes":["0 9 * * 0"],"goalMailConditions":[],"goalWrittenBy":"person","isGoalNotifiedWhenPosted":true,"goalSetAt":"2026-09-01T09:00:00Z","goalNextAt":null,"goalSurfacedAt":null,"lastAt":"2026-09-27T09:00:00Z"}"#
+            ),
+            (
+                "g3",
+                #"{"conversationId":"g3","goalTitle":"Renew the passport","goalDescription":"Before the summer.","goalState":"met","goalStatus":"Renewed; the new one arrived.","goalTimes":[],"goalMailConditions":[],"goalWrittenBy":"person","isGoalNotifiedWhenPosted":false,"goalSetAt":"2026-08-01T09:00:00Z","goalNextAt":null,"goalSurfacedAt":null,"lastAt":"2026-09-02T07:00:00Z"}"#
+            ),
+        ] }
+
+        /// The next time at that hour and minute on one of the weekdays
+        /// (1 for Sunday, as Calendar counts them), as the server writes a
+        /// time, so a demo goal's next turn is always a little ahead.
+        private static func nextDemoTime(hour: Int, minute: Int, weekdays: [Int]) -> String {
+            let calendar = Calendar.current
+            let found = weekdays.compactMap { weekday in
+                calendar.nextDate(after: Date(), matching: DateComponents(hour: hour, minute: minute, weekday: weekday), matchingPolicy: .nextTime)
+            }.min() ?? Date().addingTimeInterval(86_400)
+            return ISO8601DateFormatter().string(from: found)
+        }
+
+        /// The answers to the goal operations, found by their names.
+        static func goalAnswer(query: String, body: Data?) -> String? {
+            let goalObjects = demoGoalObjects.map { $0.json }
+            if query.contains("ListAgentGoals") {
+                return #"{"data":{"ListAgentGoals":["# + goalObjects.joined(separator: ",") + "]}}"
+            }
+            if query.contains("GetAgentGoal") {
+                let conversationId = requestVariables(body)["conversationId"] as? String ?? ""
+                let found = demoGoalObjects.first { $0.id == conversationId } ?? demoGoalObjects[1]
+                let activity =
+                    #","goalOriginTitle":null,"activity":[{"id":"a1","createdAt":"2026-10-10T07:00:00Z","goalActivityKind":"turn","activityHeadline":"Dropped four articles","activityDetail":"Four pieces had sat unread for a month."},{"id":"a2","createdAt":"2026-10-03T07:00:00Z","goalActivityKind":"turn","activityHeadline":"Checked the list","activityDetail":""}]}"#
+                return #"{"data":{"GetAgentGoal":"# + String(found.json.dropLast()) + activity + "}}"
+            }
+            if query.contains("SetAgentBrief") || query.contains("RunAgentBriefNow") {
+                let operation = query.contains("SetAgentBrief") ? "SetAgentBrief" : "RunAgentBriefNow"
+                return #"{"data":{"\#(operation)":"# + demoGoalObjects[2].json + "}}"
+            }
+            for operation in ["StartAgentGoal", "UpdateAgentGoal", "RunAgentGoal", "TellAgentGoal", "SetAgentGoalState"] where query.contains(operation) {
+                return #"{"data":{"\#(operation)":{"conversationId":"g2"}}}"#
+            }
+            return nil
+        }
 
         static let ideas = #"""
             {"data":{"ListAgentIdeas":{"ideas":[
@@ -955,16 +1008,6 @@
               {"id":"dream3","jobId":"job3","startedAt":"2026-10-10T02:10:00Z","finishedAt":"2026-10-10T02:31:00Z","digested":46,"filed":38,"merged":3,"rewritten":5,"moved":1,"dormant":2,"embedded":52,"backlog":340,"coarse":false,"strengthened":12,"associated":9,"rehearsed":12,"gaps":2,"unknown":1,"revised":4,"overviewsWritten":1,"themesMade":1,"themesUpdated":2,"reflectionsWritten":1,"lastError":null,"cost":0.41,"currency":"USD"},
               {"id":"dream2","jobId":"job2","startedAt":"2026-10-09T01:45:00Z","finishedAt":"2026-10-09T02:02:00Z","digested":31,"filed":27,"merged":1,"rewritten":3,"moved":0,"dormant":0,"embedded":35,"backlog":386,"coarse":false,"strengthened":8,"associated":6,"rehearsed":10,"gaps":1,"unknown":0,"revised":2,"overviewsWritten":0,"themesMade":0,"themesUpdated":1,"reflectionsWritten":1,"lastError":null,"cost":0.33,"currency":"USD"},
               {"id":"dream1","jobId":"job1","startedAt":"2026-10-08T03:05:00Z","finishedAt":"2026-10-08T03:19:00Z","digested":24,"filed":20,"merged":2,"rewritten":1,"moved":2,"dormant":1,"embedded":26,"backlog":417,"coarse":false,"strengthened":5,"associated":4,"rehearsed":0,"gaps":0,"unknown":0,"revised":1,"overviewsWritten":1,"themesMade":0,"themesUpdated":0,"reflectionsWritten":0,"lastError":null,"cost":0.27,"currency":"USD"}
-            ]}}
-            """#
-
-        static let schedules = #"""
-            {"data":{"ListAgentSchedules":[
-              {"id":"brief","name":"Daily brief","cron":"30 7 * * 1-5","prompt":"What is on today, what arrived overnight that needs me, and the weather for the walk to the station.","deliver":"drawer","enabled":true,"lastRunAt":"2026-10-09T07:30:00Z","nextRunAt":"2026-10-12T07:30:00Z"},
-              {"id":"roundup","name":"Friday round-up","cron":"0 17 * * 5","prompt":"Sum up the week: what I answered, what still waits, and what is on next week.","deliver":"mail","enabled":true,"lastRunAt":"2026-10-09T17:00:00Z","nextRunAt":"2026-10-16T17:00:00Z"},
-              {"id":"pictures","name":"School pictures","cron":"","prompt":"Save the pictures and videos it links to the photo library.","deliver":"drawer","enabled":true,"lastRunAt":"2026-10-08T15:20:00Z","nextRunAt":null,
-                "mailConditions":[{"field":"from","header":null,"operator":"contains","value":"news@school.example"}]},
-              {"id":"plants","name":"Water the plants","cron":"0 9 * * 0","prompt":"Remind me to water the plants, and say which ones were watered last week.","deliver":"drawer","enabled":false,"lastRunAt":"2026-09-27T09:00:00Z","nextRunAt":null}
             ]}}
             """#
 

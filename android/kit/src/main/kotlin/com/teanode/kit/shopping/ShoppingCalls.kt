@@ -109,6 +109,14 @@ suspend fun Connection.shoppingStoreItems(
 /** The trips open now on the lists the person reaches. */
 suspend fun Connection.openShoppingTrips(): List<ShoppingTrip> = shoppingField(ShoppingDocuments.OPEN_SHOPPING_TRIPS, "ListOpenShoppingTrips")
 
+/** The person's latest finished trip when it can still be resumed (finished in the last three hours); null when there is none. */
+suspend fun Connection.resumableShoppingTrip(): ShoppingTrip? {
+    val data: JsonObject = execute(ShoppingDocuments.RESUMABLE_SHOPPING_TRIP, emptyMap())
+    val element = data["GetResumableShoppingTrip"]
+    if (element == null || element is JsonNull) return null
+    return ShoppingJson.decodeFromJsonElement(ShoppingTrip.serializer(), element)
+}
+
 /** An item's prices, newest first. */
 suspend fun Connection.shoppingItemPrices(shoppingItemId: String): List<ShoppingItemPrice> =
     shoppingField(ShoppingDocuments.SHOPPING_ITEM_PRICES, "ListShoppingItemPrices", mapOf("shoppingItemId" to text(shoppingItemId)))
@@ -215,6 +223,16 @@ suspend fun Connection.checkShoppingItem(shoppingItemId: String, isChecked: Bool
     return shoppingField(ShoppingDocuments.CHECK_SHOPPING_ITEM, "CheckShoppingItem", variables)
 }
 
+/**
+ * The check on a list for somebody who is not shopping: with [isCheckedOff] the item is bought now (no trip, nobody
+ * told); without, it is needed again. An item in the person's own cart is moved out of it or into it as well.
+ */
+suspend fun Connection.checkOffShoppingItem(shoppingItemId: String, isCheckedOff: Boolean): ShoppingItem =
+    shoppingField(
+        ShoppingDocuments.CHECK_OFF_SHOPPING_ITEM, "CheckOffShoppingItem",
+        mapOf("shoppingItemId" to text(shoppingItemId), "isCheckedOff" to flag(isCheckedOff)),
+    )
+
 /** Needs an item again with a count, or marks it not needed. */
 suspend fun Connection.setShoppingItemNeed(shoppingItemId: String, isNeeded: Boolean, neededQuantity: String? = null): ShoppingItem {
     val variables = mutableMapOf("shoppingItemId" to text(shoppingItemId), "isNeeded" to flag(isNeeded))
@@ -274,6 +292,10 @@ suspend fun Connection.finishShopping(shoppingTripId: String? = null): ShoppingT
     if (!shoppingTripId.isNullOrEmpty()) variables["shoppingTripId"] = text(shoppingTripId)
     return shoppingField(ShoppingDocuments.FINISH_SHOPPING, "FinishShopping", variables)
 }
+
+/** Opens again a trip the person finished in the last three hours: what it bought goes back in their cart. */
+suspend fun Connection.resumeShopping(shoppingTripId: String): ShoppingTrip =
+    shoppingField(ShoppingDocuments.RESUME_SHOPPING, "ResumeShopping", mapOf("shoppingTripId" to text(shoppingTripId)))
 
 // MARK: Receipts
 

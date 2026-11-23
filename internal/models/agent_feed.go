@@ -29,14 +29,13 @@ func IsFeedItemKind(value FeedItemKind) bool {
 	return false
 }
 
-// FeedSourceKind is what made a card: a goal, a schedule, an alert, the
-// agent speaking first, a coding session, or a turn's own post.
+// FeedSourceKind is what made a card: a goal, an alert, the agent
+// speaking first, a coding session, or a turn's own post.
 type FeedSourceKind string
 
 // The kinds of source.
 const (
 	FeedSourceGoal          FeedSourceKind = "goal"
-	FeedSourceSchedule      FeedSourceKind = "schedule"
 	FeedSourceAlert         FeedSourceKind = "alert"
 	FeedSourceSpeakFirst    FeedSourceKind = "speak_first"
 	FeedSourceCodingSession FeedSourceKind = "coding_session"
@@ -46,7 +45,7 @@ const (
 // IsFeedSourceKind says whether a word is one of the kinds of source.
 func IsFeedSourceKind(value FeedSourceKind) bool {
 	switch value {
-	case FeedSourceGoal, FeedSourceSchedule, FeedSourceAlert, FeedSourceSpeakFirst, FeedSourceCodingSession, FeedSourceAgent:
+	case FeedSourceGoal, FeedSourceAlert, FeedSourceSpeakFirst, FeedSourceCodingSession, FeedSourceAgent:
 		return true
 	}
 	return false
@@ -392,13 +391,6 @@ func (self *AgentFeedItem) CanStack() bool {
 // for a schedule the run, so that each morning's brief is a stack of its own.
 func (self *AgentFeedItem) DefaultFeedStackKey() string {
 	switch self.FeedSourceKind {
-	case FeedSourceSchedule:
-		if self.FeedSourceID != "" && self.RunConversationID != "" {
-			return "schedule:" + self.FeedSourceID + ":" + self.RunConversationID
-		}
-		if self.FeedSourceID != "" {
-			return "schedule:" + self.FeedSourceID
-		}
 	case FeedSourceGoal, FeedSourceSpeakFirst:
 		if self.FeedSourceID != "" {
 			return string(self.FeedSourceKind) + ":" + self.FeedSourceID

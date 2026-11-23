@@ -10,12 +10,12 @@ unasked thing the agent does now goes. The plan with its decisions is
 ## The pieces
 
 `internal/models/agent_feed.go` is the card (`AgentFeedItem`) and its enums:
-kind (update, decision, alert, report, idea, news), source (goal, schedule,
-alert, speak_first, coding_session, agent), urgency (now, today, whenever),
+kind (update, decision, alert, report, idea, news), source (goal, alert,
+speak_first, coding_session, agent), urgency (now, today, whenever),
 choice role (action, dismiss, discuss, open) and layout (text, list, weather,
-agenda). Migration 0276 makes the table `agent_feed_item` and three columns
-that belong to the feature: `agent.feed_destination` and
-`agent_schedule.is_notified_when_posted`. `internal/db/database_feed.go` keeps
+agenda). Migration 0276 makes the table `agent_feed_item` and the column
+`agent.feed_destination`; migration 0281 adds
+`agent_conversation.is_goal_notified_when_posted`. `internal/db/database_feed.go` keeps
 the rows. `internal/agent/agent_feed_post.go` posts, `agent_feed_choose.go`
 answers, likes and settles, `feed_layout.go` checks a layout's content,
 `reference_feed.go` tells a turn what a card says. `internal/api/v1api/apigraph/agent_feed.go`
@@ -48,9 +48,9 @@ what is wrong.
 
 Cards of one source pile up, so the list shows one entry per stack: the top
 card, with `stackItemCount` and `stackUnreadCount`. The stack key defaults to
-`goal:<id>` for a goal, `speak_first:<reason>` for the agent speaking first,
-and `schedule:<id>:<run conversation id>` for a schedule, so each morning's
-run is a stack of its own. A card with a button that acts, dismisses or opens,
+`goal:<id>` for a goal and `speak_first:<reason>` for the agent speaking
+first; a turn of a goal on set times stacks under `goal:<id>:<job id>`, so each
+morning's brief is a stack of its own. A card with a button that acts, dismisses or opens,
 and an alert never stack, because each needs the person on its own. A coding
 session's questions are the exception: a busy day of sessions asks many, so
 they stack by the day on the person's clock, `coding:<date>`, titled
@@ -104,11 +104,9 @@ is drawn as a deck that fans out in place when tapped and gathers back.
   conversations. `mail_organize` is a weekly look, only when the Inbox holds 30
   or more routine messages from the last week: a turn that reads and changes
   nothing and posts at most one decision card (Approve, Discuss, Not now).
-- **Schedules.** `deliver` may be `feed`, the default for new schedules. A run
-  gets a conversation of its own, posts with the tool, and when it posted
-  nothing its answer becomes one card. With `is_notified_when_posted` the first
-  card of a run sends one quiet notification, "<schedule> is ready".
 - **Goals** post with the tool during their turns, told how in their check-in.
+  With `is_goal_notified_when_posted` the first card of a turn of a goal on set
+  times sends one quiet notification, "<goal> is ready".
 - **Coding sessions.** The asking event posts a decision card as well as the
   phone notification. Its source id is `computer/pane`, its coalesce key ends
   in the question's fingerprint, and each option is a choice `option:N`. A
@@ -117,7 +115,7 @@ is drawn as a deck that fans out in place when tapped and gathers back.
   computer".
 
 The per-agent setting `feedDestination` (`feed` or `main`) sends alerts,
-speaking first and feed schedules back to the main conversation.
+speaking first and what goals post back to the main conversation.
 
 ## Choosing
 
@@ -157,5 +155,5 @@ events.
 Only a card of urgency now notifies, as content kind `agent_feed` with
 `feedItemId`. A decision carries its choices as buttons, `feed:<choice key>`,
 at most four. A coding session's card sends no second notification, since the
-existing herdr question notification stands for it. A schedule's "ready"
+existing herdr question notification stands for it. A goal's "ready"
 notification is sent with `isQuiet`.
