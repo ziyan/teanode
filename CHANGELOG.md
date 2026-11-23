@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.233.1] - 2026-11-23
+
+### Changed
+
+- The audit log no longer records the server's own bookkeeping (a dream finishing, a credential being used), and each change shows only the fields that changed. (#783)
+- Reordering spending rules is one entry in the audit log. (#783)
+
+### Fixed
+
+- The audit log no longer shows an empty list changing to nothing as a change. (#783)
+
 ## [0.233.0] - 2026-11-23
 
 ### Changed
