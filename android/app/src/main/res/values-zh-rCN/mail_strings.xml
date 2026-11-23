@@ -150,9 +150,9 @@
     <string name="mail_moved_to_trash">已移到废纸篓</string>
     <string name="mail_move_to">移动到…</string>
     <string name="mail_move_up">上移</string>
-    <string name="mail_mute">静音</string>
-    <string name="mail_muted">已静音</string>
-    <string name="mail_mute_instead">改为静音</string>
+    <string name="mail_keep_out_of_inbox">不再进入收件箱</string>
+    <string name="mail_out_of_inbox">不进入收件箱</string>
+    <string name="mail_keep_out_of_inbox_instead">改为不再进入收件箱</string>
     <string name="mail_name">姓名</string>
     <string name="mail_name_and_signature">名称和签名</string>
     <string name="mail_narrow">筛选…</string>
@@ -303,7 +303,7 @@
     <string name="mail_undo">撤销</string>
     <string name="mail_undone">已撤销</string>
     <string name="mail_unknown_sender">未知发件人</string>
-    <string name="mail_unmute">取消静音</string>
+    <string name="mail_let_back_into_inbox">恢复进入收件箱</string>
     <string name="mail_unnamed_rule">未命名规则</string>
     <string name="mail_unpin">取消固定</string>
     <string name="mail_unpinned_done">已取消固定</string>

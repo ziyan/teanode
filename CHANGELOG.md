@@ -6,6 +6,58 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.8] - 2026-11-23
+
+### Fixed
+
+- iPhone: at the largest text sizes, the agenda in a brief card shows each time whole instead of breaking it across lines. (#776)
+
+## [0.230.7] - 2026-11-23
+
+### Changed
+
+- A mail, memory page, transaction, recording or photo shown above a message you sent opens when you tap it, on the dashboard, iPhone and Android. (#771)
+
+### Fixed
+
+- On the iPhone and Android, the setting that keeps a subscription's mail out of the Inbox is called "Keep out of the Inbox" instead of "Mute". (#770)
+
+## [0.230.6] - 2026-11-23
+
+### Security
+
+- The server is built with Go 1.26.11, which fixes a flaw in its HTTP handling. (#759)
+
+## [0.230.5] - 2026-11-23
+
+### Fixed
+
+- The agent's nightly look for ideas reads your mail and calendar again when it also remembers things from recorded meetings. (#769)
+
+## [0.230.4] - 2026-11-23
+
+### Changed
+
+- The dashboard's button that opens the chat drawer shows a chat bubble. (#768)
+
+## [0.230.3] - 2026-11-23
+
+### Fixed
+
+- Mail forwarded from Gmail is no longer refused when its sender signs from a subdomain, lists signed headers twice, or sends from a no-reply domain with no mail servers. (#766)
+
+## [0.230.2] - 2026-11-23
+
+### Fixed
+
+- Android testers can install every new build: build numbers only grow. (#760)
+
+## [0.230.1] - 2026-11-23
+
+### Changed
+
+- The Android app draws its maps from your TeaNode server, like the dashboard, using the map style in the server's places settings. The phone no longer asks OpenStreetMap for map tiles itself. (#774)
+
 ## [0.230.0] - 2026-11-23
 
 ### Added

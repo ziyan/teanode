@@ -224,6 +224,10 @@ final class AppModel {
     /// words and opens the viewer on the photo, and clears this.
     var openedSearchedPhoto: SearchedPhoto?
 
+    /// A finance transaction to open, by its id, on top of the Finance part
+    /// that is shown.
+    var openedFinanceTransactionId: String?
+
     /// The open_page events already followed, by run and sequence, so a
     /// feed replayed after the screen comes back does not move the app again.
     private var shownNavigations: Set<String> = []
@@ -249,8 +253,8 @@ final class AppModel {
             openedSection = .calendar
         case .conversation(let id):
             openedConversationId = id
-        case .financeTransaction:
-            openedFinancePart = .transactions
+        case .financeTransaction(let id):
+            openedFinanceTransactionId = id
             openedSection = .finance
         case .financeReceipt:
             openedFinancePart = .receipts
@@ -258,6 +262,30 @@ final class AppModel {
         case .recording(let path):
             show(path: path)
         }
+    }
+
+    /// Opens what a chip above a sent message names, where the app has it: a
+    /// mail, a page of memory, a finance transaction, a recording, a photo. A
+    /// thread named without one of its messages opens nothing.
+    func open(_ reference: AgentReference) {
+        if let id = reference.financeTransactionId {
+            openedFinanceTransactionId = id
+            openedSection = .finance
+        } else if let id = reference.recordingId {
+            show(path: "/recordings/\(id)")
+        } else if let id = reference.photoId {
+            openedSearchedPhoto = SearchedPhoto(photoId: id, words: "")
+        } else if let path = reference.path {
+            openedKnowledgePath = path
+        } else if let itemId = reference.itemId {
+            openedMailItemId = itemId
+        }
+    }
+
+    /// Whether `open(_:)` has somewhere to take the reference.
+    static func canOpen(_ reference: AgentReference) -> Bool {
+        reference.financeTransactionId != nil || reference.recordingId != nil || reference.photoId != nil
+            || reference.path != nil || reference.itemId != nil
     }
 
     /// The Location page's address, `/location`, with the day it may name

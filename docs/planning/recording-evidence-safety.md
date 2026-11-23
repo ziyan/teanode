@@ -15,7 +15,10 @@ Each dream owns a shared atomic recording-evidence flag. Trusted document metada
 it before recording digestion. Knowledge and memory lookups set it when owned raw or
 derived recording evidence is returned, including before the digest stage. Once set,
 all later model-requested calls in that dream and its nested turns are held to memory,
-knowledge and recording lookups. Each variable-risk operation is also checked as a read
+knowledge and recording lookups, and to reading the person's own mail, calendar and
+conversations. Those reads reach nothing outside the server and the run is read-only by
+then; without them, a person whose self page carried one fact from a recording had every
+dream held to memory, and the nightly look for ideas could no longer read their mail. Each variable-risk operation is also checked as a read
 at dispatch. Connected and headless tool exceptions cannot widen these permissions.
 
 The flag is internal, not a user setting or model-supplied argument. Provenance checks

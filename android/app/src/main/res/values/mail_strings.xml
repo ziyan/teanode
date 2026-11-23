@@ -150,9 +150,9 @@
     <string name="mail_moved_to_trash">Moved to Trash</string>
     <string name="mail_move_to">Move to…</string>
     <string name="mail_move_up">Move up</string>
-    <string name="mail_mute">Mute</string>
-    <string name="mail_muted">Muted</string>
-    <string name="mail_mute_instead">Mute instead</string>
+    <string name="mail_keep_out_of_inbox">Keep out of the Inbox</string>
+    <string name="mail_out_of_inbox">Out of the Inbox</string>
+    <string name="mail_keep_out_of_inbox_instead">Keep out of the Inbox instead</string>
     <string name="mail_name">Name</string>
     <string name="mail_name_and_signature">Name and signature</string>
     <string name="mail_narrow">Narrow…</string>
@@ -303,7 +303,7 @@
     <string name="mail_undo">Undo</string>
     <string name="mail_undone">Undone</string>
     <string name="mail_unknown_sender">Unknown sender</string>
-    <string name="mail_unmute">Unmute</string>
+    <string name="mail_let_back_into_inbox">Let back into the Inbox</string>
     <string name="mail_unnamed_rule">Unnamed rule</string>
     <string name="mail_unpin">Unpin</string>
     <string name="mail_unpinned_done">Unpinned</string>

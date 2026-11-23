@@ -347,17 +347,32 @@ func (self *exchange) checkFromMx(authenticator *authenticator, from string) {
 		for _, mx := range mxs {
 			mailServers = append(mailServers, mx.Host)
 		}
-		authenticationResults := models.AuthenticationResults{
+		// A From domain with no mail servers is not refused here: whether
+		// it is depends on DMARC, which the other check finds, so the
+		// verdict is fromMailServersVerdict's once both are in.
+		return models.AuthenticationResults{
 			FromMX: &models.MXResult{
 				Domain:      fromDomain,
 				MailServers: mailServers,
 			},
-		}
-		if len(mailServers) == 0 {
-			return authenticationResults, nil, mailparse.ErrInvalidFromMX
-		}
-		return authenticationResults, nil, nil
+		}, nil, nil
 	})
+}
+
+// fromMailServersVerdict refuses mail whose From domain has no mail servers,
+// unless DMARC passed for it. A domain that takes no mail is a common mark of
+// forged mail, but also of a sender's no-reply domain: a utility's bills come
+// from a domain with no mail servers and a reject policy, signed properly,
+// and were refused, forwarded or not. Mail that passes DMARC, here or at a
+// trusted forwarder, is the domain's own.
+func fromMailServersVerdict(authenticationResults models.AuthenticationResults) error {
+	if authenticationResults.FromMX == nil || len(authenticationResults.FromMX.MailServers) > 0 {
+		return nil
+	}
+	if authenticationResults.DMARC.IsPassed() {
+		return nil
+	}
+	return mailparse.ErrInvalidFromMX
 }
 
 func (self *exchange) checkSenderMx(authenticator *authenticator, envelope *mailparse.Envelope) {
@@ -566,7 +581,10 @@ func forwarderThatPassedDMARC(ctx context.Context, headers []string, body []byte
 }
 
 // sealerFoundDMARCPass is whether a forwarder's recorded results say DMARC
-// passed for the From domain.
+// passed for the From domain. A forwarder may name the domain whose policy it
+// applied rather than the From domain itself: Gmail records a sender's
+// subdomain under its organizational domain. So the two are compared by
+// organizational domain, which is also how relaxed alignment compares them.
 func sealerFoundDMARCPass(sealerAuthenticationResults, fromDomain string) bool {
 	_, results, err := authres.Parse(sealerAuthenticationResults)
 	if err != nil {
@@ -574,11 +592,20 @@ func sealerFoundDMARCPass(sealerAuthenticationResults, fromDomain string) bool {
 	}
 	for _, result := range results {
 		dmarcResult, ok := result.(*authres.DMARCResult)
-		if ok && dmarcResult.Value == authres.ResultPass && strings.EqualFold(strings.TrimSuffix(dmarcResult.From, "."), strings.TrimSuffix(fromDomain, ".")) {
+		if ok && dmarcResult.Value == authres.ResultPass && isSameOrganization(dmarcResult.From, fromDomain) {
 			return true
 		}
 	}
 	return false
+}
+
+// isSameOrganization says two domains have the same organizational domain.
+func isSameOrganization(first, second string) bool {
+	first, second = strings.ToLower(strings.TrimSuffix(first, ".")), strings.ToLower(strings.TrimSuffix(second, "."))
+	if first == "" || second == "" {
+		return false
+	}
+	return dmarc.OrganizationalDomain(first) == dmarc.OrganizationalDomain(second)
 }
 
 func (self *exchange) checkArc(authenticator *authenticator, headers []string, body []byte) {

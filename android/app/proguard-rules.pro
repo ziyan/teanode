@@ -10,10 +10,6 @@
 -keep class org.webrtc.** { *; }
 -dontwarn org.webrtc.**
 
-# The map reads its tile sources and preferences by name.
--keep class org.osmdroid.** { *; }
--dontwarn org.osmdroid.**
-
 # Used only by tools that are not part of the app.
 -dontwarn javax.annotation.**
 -dontwarn org.slf4j.**
