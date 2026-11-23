@@ -44,7 +44,7 @@ const settingsSelection = `{
 		skillSecrets { skill key hasValue }
 		models { default fast quick embedding triage research summarize reply ask schedule compact choices scan synthesize decide categorize embeddingDimensions }
 		features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-		limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency embeddingTokensPerDay dreamShare ingestChunksPerRun maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
+		limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency embeddingTokensPerDay dreamShare ingestChunksPerRun maxRoundsPerSubagent goalShare goalTurnsAlone backgroundWakesAlone }
 		retention { runs corrections }
 		search { kind hasApiKey }
 		voice { enabled provider transcriptionModel silenceMS speechModel speechVoice askModel }

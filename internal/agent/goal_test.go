@@ -342,34 +342,30 @@ func TestGoalTurnThatFailedIsNotRetried(t *testing.T) {
 	})
 }
 
-// The turns a conversation may take in a day are counted from the job
-// rows. At the cap the goal goes on tomorrow instead, and says so.
-func TestGoalStopsAtTheDayCap(t *testing.T) {
+// The goals at their own pace spend at most their share of the person's
+// day. Once goal turns have spent it, the goal goes on tomorrow instead, and
+// says so.
+func TestGoalStopsAtTheGoalsShareOfTheDay(t *testing.T) {
 	world := startGoalWorld(t, []string{goalNoteRound, answerRound}, "watch the deploy")
 	defer world.close()
 
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		for turn := 0; turn < 48; turn++ {
-			job, err := tx.EnqueueAgentJob(&models.AgentJob{AgentID: world.found.ID, Kind: models.AgentJobGoal, SubjectID: world.conversation.ID})
-			if err != nil {
-				t.Fatalf("EnqueueAgentJob: %s", err)
-			}
-			claimed, err := tx.ClaimAgentJobs("fixture", 1, time.Now())
-			if err != nil || len(claimed) != 1 || claimed[0].ID != job.ID {
-				t.Fatalf("claim fixture job: %v", err)
-			}
-			if _, err := tx.FinishAgentJob(job.ID, claimed[0].ClaimID, &db.AgentJobOutcome{JobStatus: models.AgentJobDone, FinishedAt: time.Now()}); err != nil {
-				t.Fatalf("FinishAgentJob: %s", err)
-			}
+		// The default day is two hundred thousand tokens, and the goals'
+		// share of it half.
+		if err := tx.PutAgentUsage(&db.AgentUsage{
+			AgentID: world.found.ID, Model: "fake:thinker", Kind: string(models.AgentJobGoal),
+			At: agent.DayStart(world.owner, time.Now()).Add(time.Minute), Values: []uint64{100000, 0, 0, 0, 1},
+		}); err != nil {
+			t.Fatalf("PutAgentUsage: %s", err)
 		}
 	})
-	world.runGoalTurn(t, 49)
+	world.runGoalTurn(t, 1)
 
 	after := world.read(t)
 	if after.GoalState != models.GoalWorking {
-		t.Fatalf("the cap postpones the goal, it does not end it: %+v", after)
+		t.Fatalf("the share postpones the goal, it does not end it: %+v", after)
 	}
-	if !strings.Contains(after.GoalNote, "48 turns today") {
+	if !strings.Contains(after.GoalNote, "share of today") {
 		t.Fatalf("the note should say why it stopped: %q", after.GoalNote)
 	}
 	berlin, err := time.LoadLocation("Europe/Berlin")
@@ -381,9 +377,9 @@ func TestGoalStopsAtTheDayCap(t *testing.T) {
 	if after.GoalNextAt == nil || !after.GoalNextAt.Equal(midnight) {
 		t.Fatalf("it should go on at the person's own midnight (%s), got %v", midnight, after.GoalNextAt)
 	}
-	// And the model was never asked: the cap comes before the turn.
+	// And the model was never asked: the share comes before the turn.
 	if len(*world.requests) != 0 {
-		t.Fatalf("a capped goal asks the model nothing: %d requests", len(*world.requests))
+		t.Fatalf("a goal past its share asks the model nothing: %d requests", len(*world.requests))
 	}
 }
 

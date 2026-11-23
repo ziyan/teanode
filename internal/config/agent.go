@@ -555,6 +555,8 @@ func featureOn(value *bool) bool {
 
 // AgentLimits bound what a run may cost.
 type AgentLimits struct {
+	deprecatedLimits `yaml:",inline"`
+
 	// MaxBodyCharacters is how much of a message a model is given.
 	MaxBodyCharacters int `yaml:"maxBodyCharacters"`
 
@@ -636,18 +638,15 @@ type AgentLimits struct {
 	// Zero resolves to 20.
 	MaxRoundsPerSubagent int `yaml:"maxRoundsPerSubagent,omitempty"`
 
-	// GoalTurnsPerDay is how many turns of its own one goal takes in a
-	// day. Zero resolves to 48.
-	GoalTurnsPerDay int `yaml:"goalTurnsPerDay,omitempty"`
+	// GoalShare is how much of the daily budget the goals at their own
+	// pace may spend between them, so that work nobody is watching never
+	// eats the day the person talks to the agent in. Zero resolves to 0.5.
+	GoalShare float64 `yaml:"goalShare,omitempty"`
 
 	// GoalTurnsAlone is how many turns of its own a goal takes without a
 	// word from the person before it stops and asks them. Zero resolves
 	// to 24.
 	GoalTurnsAlone int `yaml:"goalTurnsAlone,omitempty"`
-
-	// GoalsInProgress is how many goals one person may have working or
-	// waiting at once. Zero resolves to 20.
-	GoalsInProgress int `yaml:"goalsInProgress,omitempty"`
 
 	// BackgroundWakesAlone is how many turns finished background commands
 	// and work may wake in one conversation before the person writes there
@@ -1591,9 +1590,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 		value int
 	}{
 		{"maxRoundsPerSubagent", agent.Limits.MaxRoundsPerSubagent},
-		{"goalTurnsPerDay", agent.Limits.GoalTurnsPerDay},
 		{"goalTurnsAlone", agent.Limits.GoalTurnsAlone},
-		{"goalsInProgress", agent.Limits.GoalsInProgress},
 		{"backgroundWakesAlone", agent.Limits.BackgroundWakesAlone},
 	} {
 		if field.value < 0 {
@@ -1855,9 +1852,7 @@ func (self *Agent) PrivateAddressesAllowed() []string {
 // The defaults of the limits whose zero means the default.
 const (
 	MaxRoundsPerSubagentDefault = 20
-	GoalTurnsPerDayDefault      = 48
 	GoalTurnsAloneDefault       = 24
-	GoalsInProgressDefault      = 20
 	BackgroundWakesAloneDefault = 20
 )
 
@@ -1874,19 +1869,25 @@ func (self *AgentLimits) EffectiveMaxRoundsPerSubagent() int {
 	return limitOr(self.MaxRoundsPerSubagent, MaxRoundsPerSubagentDefault)
 }
 
-// EffectiveGoalTurnsPerDay resolves the zero value.
-func (self *AgentLimits) EffectiveGoalTurnsPerDay() int {
-	return limitOr(self.GoalTurnsPerDay, GoalTurnsPerDayDefault)
+// GoalShareDefault is the share of the daily budget the goals at their own
+// pace may spend when the operator has not chosen one.
+const GoalShareDefault = 0.5
+
+// EffectiveGoalShare resolves the zero value, and a share past the whole
+// day to the whole day.
+func (self *AgentLimits) EffectiveGoalShare() float64 {
+	switch {
+	case self.GoalShare <= 0:
+		return GoalShareDefault
+	case self.GoalShare > 1:
+		return 1
+	}
+	return self.GoalShare
 }
 
 // EffectiveGoalTurnsAlone resolves the zero value.
 func (self *AgentLimits) EffectiveGoalTurnsAlone() int {
 	return limitOr(self.GoalTurnsAlone, GoalTurnsAloneDefault)
-}
-
-// EffectiveGoalsInProgress resolves the zero value.
-func (self *AgentLimits) EffectiveGoalsInProgress() int {
-	return limitOr(self.GoalsInProgress, GoalsInProgressDefault)
 }
 
 // EffectiveBackgroundWakesAlone resolves the zero value.
