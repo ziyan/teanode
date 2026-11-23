@@ -309,6 +309,10 @@ class PhotoBackupWorker(private val context: Context, parameters: WorkerParamete
                     role.refusalReason = (outcome.failure as? PhotoBackupFailure.FileRefused)?.serverReason ?: (outcome.failure as? PhotoBackupFailure.SystemDescription)?.description
                 }
                 PhotoBackupOutcome.SignInNeeded -> {
+                    // The next pass makes a new device password, so the one being dropped is taken back on the
+                    // server first (a no-op when the server already refused it): otherwise every refusal leaves
+                    // one more valid, never revoked password behind.
+                    runCatching { connection.revokePhotoBackupCredential(credential.credentialId) }
                     settings.forgetCredential()
                     settings.saveRecords(records)
                     PhotoBackupProgress.publish { status -> status.copy(phase = PhotoBackupPhase.NeedsSignIn, lastFailure = PhotoBackupFailure.SignInRefused) }
