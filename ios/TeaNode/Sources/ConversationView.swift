@@ -415,6 +415,8 @@ struct ConversationView: View {
                     ReferenceStrip(
                         systemImage: "photo", title: reference.label.isEmpty ? String(localized: "Photo") : reference.label, detail: "",
                         onCancel: drop)
+                } else if reference.feedItemId != nil {
+                    ReferenceStrip(systemImage: "newspaper", title: String(localized: "Card: \(reference.label)"), detail: "", onCancel: drop)
                 } else if reference.financeTransactionId != nil {
                     ReferenceStrip(
                         systemImage: "creditcard", title: reference.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? reference.description ?? "",
@@ -1465,7 +1467,7 @@ struct PersonBubble: View {
             ForEach(line.references, id: \.self) { reference in
                 let label = Label(
                     reference.label.isEmpty && reference.photoId != nil ? String(localized: "Photo") : reference.label,
-                    systemImage: reference.recordingId != nil ? "waveform" : reference.photoId != nil ? "photo" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope"
+                    systemImage: reference.recordingId != nil ? "waveform" : reference.photoId != nil ? "photo" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : reference.feedItemId != nil ? "newspaper" : "envelope"
                 )
                 .font(.footnote)
                 .foregroundStyle(.secondary)

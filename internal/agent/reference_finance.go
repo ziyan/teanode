@@ -46,6 +46,7 @@ func resolveReferences(tx db.Transaction, agentId, userId, conversationId string
 	seenFinanceTransactionIds := map[string]bool{}
 	seenRecordingIds := map[string]bool{}
 	seenPhotoIds := map[string]bool{}
+	seenFeedItemIds := map[string]bool{}
 	isReplyKept := false
 	for _, reference := range references {
 		if isReplyReference(reference) {
@@ -74,6 +75,20 @@ func resolveReferences(tx db.Transaction, agentId, userId, conversationId string
 			}
 			if recording != nil {
 				resolved = append(resolved, *recording)
+			}
+			continue
+		}
+		if reference.FeedItemID != "" {
+			if seenFeedItemIds[reference.FeedItemID] {
+				continue
+			}
+			seenFeedItemIds[reference.FeedItemID] = true
+			card, err := resolveFeedReference(tx, agentId, reference)
+			if err != nil {
+				return nil, err
+			}
+			if card != nil {
+				resolved = append(resolved, *card)
 			}
 			continue
 		}

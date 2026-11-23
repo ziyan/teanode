@@ -66,6 +66,8 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
+import com.teanode.app.shell.icon
+import com.teanode.kit.AppSection
 import com.teanode.app.session.LocalConnection
 import com.teanode.kit.chats.AgentAttachment
 import com.teanode.kit.chats.AgentMessageReaction
@@ -168,7 +170,10 @@ fun PersonBubble(
                         }
                     }
                     for (reference in line.references) {
-                        val label = reference.label.ifEmpty { if (reference.photoId != null) stringResource(R.string.chats_photo) else "" }
+                        val label = when {
+                            reference.feedItemId != null -> stringResource(R.string.chats_feed_item_reference, reference.feedItemTitle.orEmpty())
+                            else -> reference.label.ifEmpty { if (reference.photoId != null) stringResource(R.string.chats_photo) else "" }
+                        }
                         // What the message asked about opens where the app keeps it.
                         val opening = if (canOpenReference(reference)) Modifier.clip(RoundedCornerShape(6.dp)).clickable(role = Role.Button) { openReference(navigator, reference) } else Modifier
                         Row(opening.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -218,6 +223,7 @@ private const val SHOWN_CHARACTER_COUNT = 3000
 private fun referenceIcon(reference: com.teanode.kit.chats.AgentReference): androidx.compose.ui.graphics.vector.ImageVector = when {
     reference.recordingId != null -> Icons.Outlined.GraphicEq
     reference.photoId != null -> Icons.Outlined.Image
+    reference.feedItemId != null -> AppSection.Feed.icon
     reference.merchantName != null -> Icons.Outlined.CreditCard
     reference.path != null -> Icons.Outlined.Psychology
     else -> Icons.Outlined.Mail

@@ -682,6 +682,10 @@ final class AppModel {
     /// the Chats tab.
     private(set) var unreadChatCount = 0
 
+    /// How many cards of the agent's feed the person has not read: the badge
+    /// on the Feed tab. The feed's model says it, as the cards are read.
+    var unreadFeedCount = 0
+
     /// The person's own id, which of a chat's members they are; nil until
     /// read.
     private(set) var ownUserId: String?
@@ -803,6 +807,7 @@ final class AppModel {
         hasReadPermissions = false
         hasPermissionReadFailed = false
         unreadChatCount = 0
+        unreadFeedCount = 0
         isAgentEnabledByPerson = true
         hasAgent = true
     }
@@ -1147,6 +1152,9 @@ final class AppModel {
                     openedCodingTarget = CodingTarget(computer: info.computer, paneId: info.paneId)
                 }
                 openedSection = .coding
+            } else if info.notificationKind == "agent_feed" {
+                // A card of the feed: the Feed, where it is.
+                openedSection = .feed
             } else if info.notificationKind == NotificationCategories.journalEveningQuestion {
                 // The evening question: the day it asks about, in the Journal.
                 openedJournalDay = info.journalDay
@@ -1170,6 +1178,12 @@ final class AppModel {
                     _ = try await notifyingConnection.ask(text, in: info.conversationId.isEmpty ? nil : info.conversationId, drawerId: drawerId)
                 }
             default:
+                if info.notificationKind == "agent_feed" {
+                    // One of the choices of a card of the feed, answered without opening the app.
+                    guard let choiceKey = NotificationCategories.feedChoiceKey(forAction: pressed.actionIdentifier), !info.feedItemId.isEmpty else { return }
+                    _ = try await notifyingConnection.chooseAgentFeedItem(info.feedItemId, choiceKey: choiceKey)
+                    return
+                }
                 if info.notificationKind == NotificationCategories.journalEveningQuestion {
                     // One of the five faces of the evening question.
                     guard let moodLevel = NotificationCategories.journalMoodLevel(forAction: pressed.actionIdentifier), JournalDays.isDayText(info.journalDay) else { return }
@@ -1185,6 +1199,8 @@ final class AppModel {
                 await tell(String(localized: "That did not reach the chat: \(describe(error))"))
             } else if info.notificationKind == NotificationCategories.journalEveningQuestion {
                 await tell(String(localized: "That did not reach your journal: \(describe(error))"))
+            } else if info.notificationKind == "agent_feed" {
+                await tell(String(localized: "That answer did not reach your feed: \(describe(error))"))
             } else {
                 await tell(String(localized: "That did not reach your agent: \(describe(error))"))
             }
@@ -1425,7 +1441,7 @@ extension AppModel {
         // The agent's screen also holds the person's chats, which need no
         // agent.
         case .agent: return services.isAssistantEnabled || canChat
-        case .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
+        case .feed, .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
         case .location: return canUseLocation
         case .health: return canUseHealth
         case .journal: return canUseJournal

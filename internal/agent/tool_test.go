@@ -318,8 +318,10 @@ func TestTheCatalogStaysShort(t *testing.T) {
 	// items, check, start shopping, match a receipt) no other tool has.
 	// 73 since journal, a new thing with its own permission: the person's
 	// days, whose verbs (read a day or a period, write their words, set the
-	// mood, pin a record) no other tool has.
-	if count := len(catalog.All()); count > 73 {
+	// mood, pin a record) no other tool has. 74 since feed, a new thing: the
+	// cards the agent posts for what the person did not ask, whose verbs
+	// (post, update, withdraw, list) no other tool has.
+	if count := len(catalog.All()); count > 74 {
 		t.Fatalf("the catalog is %d tools; merge the verbs of something before adding another name", count)
 	}
 

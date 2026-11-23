@@ -17,6 +17,18 @@ enum NotificationCategories {
     static let shopping = "shopping"
     static let codingQuestion = "herdr_question"
     static let questionPrefix = "question-"
+    /// A card of the agent's feed names its choices as buttons of the
+    /// form `feed:<choice key>`; its category is made when it arrives.
+    static let feedPrefix = "feed-"
+    static let feedChoiceActionPrefix = "feed:"
+
+    /// The choice key a button of a feed notification stands for; nil for any
+    /// other button.
+    static func feedChoiceKey(forAction actionIdentifier: String) -> String? {
+        guard actionIdentifier.hasPrefix(feedChoiceActionPrefix) else { return nil }
+        let choiceKey = String(actionIdentifier.dropFirst(feedChoiceActionPrefix.count))
+        return choiceKey.isEmpty ? nil : choiceKey
+    }
 
     // The journal's evening question. The server sends it as a notification
     // of kind journalEveningQuestion (NotificationContent) carrying the day it
@@ -121,6 +133,15 @@ enum NotificationCategories {
             return fixed.first { $0.identifier == codingQuestion }
         case journalEveningQuestion:
             return fixed.first { $0.identifier == journalEveningQuestion }
+        case "agent_feed":
+            let buttons = Array((content.buttons ?? []).filter { feedChoiceKey(forAction: $0.buttonAction) != nil }.prefix(4))
+            guard !buttons.isEmpty else { return fixed.first { $0.identifier == message } }
+            // No options: a choice is answered from the lock screen, without
+            // opening the app. The card on the Feed shows what was chosen.
+            let actions = buttons.map { UNNotificationAction(identifier: $0.buttonAction, title: $0.label, options: []) }
+            let digest = SHA256.hash(data: Data(buttons.map { "\($0.buttonAction)\u{0}\($0.label)" }.joined(separator: "\u{1}").utf8))
+            let identifier = feedPrefix + digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+            return UNNotificationCategory(identifier: identifier, actions: actions + [openAction], intentIdentifiers: [])
         case "question":
             let buttons = Array((content.buttons ?? []).prefix(4))
             let actions: [UNNotificationAction] = buttons.map { button in
@@ -162,6 +183,8 @@ struct NotificationInfo: Sendable {
     let paneId: String
     /// For the journal's evening question, the day it asks about, YYYY-MM-DD.
     let journalDay: String
+    /// For a card of the agent's feed, the card.
+    let feedItemId: String
     /// A question's choices, by the button that gives them.
     let answers: [String: String]
 
@@ -179,6 +202,7 @@ struct NotificationInfo: Sendable {
         computer = content.computer ?? ""
         paneId = content.paneId ?? ""
         journalDay = content.journalDay ?? ""
+        feedItemId = content.feedItemId ?? ""
         var answers: [String: String] = [:]
         for button in content.buttons ?? [] where button.buttonAction.hasPrefix("answer:") {
             answers[button.buttonAction] = button.label
@@ -199,6 +223,7 @@ struct NotificationInfo: Sendable {
         computer = info["computer"] as? String ?? ""
         paneId = info["paneId"] as? String ?? ""
         journalDay = info["journalDay"] as? String ?? info["day"] as? String ?? ""
+        feedItemId = info["feedItemId"] as? String ?? ""
         answers = info["answers"] as? [String: String] ?? [:]
     }
 
@@ -206,7 +231,7 @@ struct NotificationInfo: Sendable {
         [
             "accountKey": accountKey, "notificationKind": notificationKind, "conversationId": conversationId, "runId": runId, "callId": callId,
             "locationUserId": locationUserId, "shoppingStoreName": shoppingStoreName, "shoppingListId": shoppingListId,
-            "computer": computer, "paneId": paneId, "journalDay": journalDay, "answers": answers,
+            "computer": computer, "paneId": paneId, "journalDay": journalDay, "feedItemId": feedItemId, "answers": answers,
         ]
     }
 }

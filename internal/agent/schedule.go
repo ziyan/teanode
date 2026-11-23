@@ -142,6 +142,12 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 			schedule = nil
 			return err
 		}
+		if schedule.Deliver == models.AgentDeliverFeed && wantsFeed(run.Agent) {
+			// A run of its own, which the cards it posts name as theirs, so
+			// that each run is a stack.
+			conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.Agent.ID, Kind: models.AgentConversationRun, Title: "Schedule: " + schedule.Name, JobID: run.Job.ID, JobKind: string(models.AgentJobSchedule), SubjectID: schedule.ID, Surface: "schedule", LastAt: time.Now()})
+			return err
+		}
 		if schedule.Deliver == models.AgentDeliverMail {
 			if !configuration.Services.IsEnabled(models.ServiceMailboxes) {
 				return &Deferral{Until: time.Now().Add(time.Minute), Reason: "hosted email notifications are disabled"}
@@ -169,8 +175,14 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 		return err
 	}
 	isMailed := schedule.Deliver == models.AgentDeliverMail
+	isFed := schedule.Deliver == models.AgentDeliverFeed && wantsFeed(run.Agent)
 	surface, turnMessage := "schedule", ""
-	if isMailed {
+	if isFed {
+		turnMessage = scheduledMessage(schedule) + "\n\n" + scheduleFeedLines
+		if schedule.IsMailTriggered() {
+			turnMessage += "\n\n" + arrivalLines(schedule, run.Owner)
+		}
+	} else if isMailed {
 		surface, turnMessage = "mail", scheduledMessage(schedule)
 		if schedule.IsMailTriggered() {
 			turnMessage += "\n\n" + arrivalLines(schedule, run.Owner)
@@ -222,6 +234,20 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 		}
 	}
 	isCutShort := ctx.Err() != nil
+	if isFed {
+		// Not tried again: each try would post its cards again.
+		switch {
+		case failure != "":
+			log.Warningf("the scheduled turn of %q failed: %s", schedule.Name, failure)
+		case isCutShort:
+			log.Warningf("the scheduled turn of %q ran out of time", schedule.Name)
+		default:
+			if err := self.postScheduleAnswer(ctx, run, schedule, conversation, answer); err != nil {
+				log.Warningf("cannot post the answer of schedule %q to the feed: %s", schedule.Name, err)
+			}
+		}
+		return self.finishRun(run, schedule)
+	}
 	if !isMailed {
 		// In the drawer the answer is already where it belongs: the turn
 		// wrote it into the conversation as it went, and a turn that failed
@@ -251,6 +277,38 @@ func (self *Agent) runSchedule(ctx context.Context, run *Run) error {
 		}
 	}
 	return self.finishRun(run, schedule)
+}
+
+// scheduleFeedLines is what a schedule that answers in the feed is told: its
+// findings are cards, and what it answers when it posted none is one.
+const scheduleFeedLines = "This schedule answers in the person's feed. Post what you find with the feed tool: one card per subject, in plain words, with a feed_item_kind that fits (report for a summary, news for stories). " +
+	"A run that posts several cards that belong together gives the stack a stack_title once and a stack_position to each (a summary at 0, then its sections in reading order); its cards stack by themselves. " +
+	"A brief reads and never acts: what you would do (archive, reply) is a card with an action choice. If you post no card, your answer becomes one, so answer in a few lines worth a card, or say nothing when nothing needs them."
+
+// postScheduleAnswer posts what a schedule's run answered as one card, when
+// the run posted none of its own: a prompt written before the feed still says
+// something worth reading.
+func (self *Agent) postScheduleAnswer(ctx context.Context, run *Run, schedule *models.AgentSchedule, conversation *models.AgentConversation, answer string) error {
+	answer = strings.TrimSpace(mailedAnswer(answer))
+	if answer == "" {
+		return nil
+	}
+	var postedCount int
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		postedCount, err = tx.CountAgentFeedItemsInRun(conversation.ID)
+		return err
+	}); err != nil {
+		return err
+	}
+	if postedCount > 0 {
+		return nil
+	}
+	title, body := scheduleMail(schedule.Name, answer)
+	_, _, err := self.PostFeedItem(ctx, &FeedPost{AgentID: run.Agent.ID, Item: &models.AgentFeedItem{
+		FeedItemKind: models.FeedItemReport, FeedSourceKind: models.FeedSourceSchedule, FeedSourceID: schedule.ID, RunConversationID: conversation.ID,
+		Title: title, Body: body, PictureSymbol: "clock", FeedStackTitle: schedule.Name,
+	}})
+	return err
 }
 
 // scheduleConversation is where a drawer schedule takes its turn: the
@@ -402,6 +460,7 @@ func goalScheduleLines(goal *models.AgentConversation) string {
 	return strings.Join([]string{
 		"This schedule belongs to the goal " + strconv.Quote(goalTitleOf(goal)) + ", which you keep at in the background: " + goal.Goal,
 		"Its runs are the goal's turns; the goal takes none of its own while it has a schedule, and the person does not read this conversation.",
+		goalFeedLines,
 		"End by calling the goal tool exactly once: note, with status saying where it stands in one line and activity only when something happened worth their reading later; wait, with status saying what you need from them, when they have to act; met, with text saying what came of it, when what the goal is for is done. Only a wait and a met are said to them.",
 	}, "\n")
 }

@@ -1096,6 +1096,10 @@ export interface AgentReference {
   // stored row.
   photoId?: string
   photoTitle?: string
+  // A card of the feed the person pressed Discuss on, with its headline for
+  // the chip. The server reads the card again from the stored row.
+  feedItemId?: string
+  feedItemTitle?: string
   // A message of the conversation the turn answers: its id when the
   // drawer has one, whose it was, and what it said. The server reads the
   // words again from the stored message.

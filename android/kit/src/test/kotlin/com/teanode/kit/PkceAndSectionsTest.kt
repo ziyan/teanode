@@ -44,7 +44,7 @@ class SectionFactsTest {
 
     @Test
     fun theTabBarKeepsKnownPartsOnceAndThreeAtMost() {
-        assertEquals(listOf(AppSection.Agent, AppSection.Mail, AppSection.Photos), TabBarChoice.sections(TabBarChoice.defaultText))
+        assertEquals(listOf(AppSection.Feed, AppSection.Agent, AppSection.Mail), TabBarChoice.sections(TabBarChoice.defaultText))
         assertEquals(
             listOf(AppSection.Mail, AppSection.Finance, AppSection.Photos),
             TabBarChoice.sections("mail,mail,settings,nonsense,finance,photos,agent"),

@@ -36,6 +36,7 @@ export function referenceLabel(reference: AgentReference, t: ReturnType<typeof u
   }
   if (reference.recordingId)
     return t('agentDrawer.recordingReference', { title: reference.recordingTitle || t('recordings.untitled') })
+  if (reference.feedItemId) return t('agentDrawer.feedItemReference', { title: reference.feedItemTitle || '' })
   if (reference.photoId)
     return reference.photoTitle
       ? t('agentDrawer.photoReference', { title: reference.photoTitle })
@@ -144,16 +145,18 @@ export function ReferenceChips({
         const path = onRemove ? null : referencePath(reference)
         return (
           <Tooltip
-            key={`${reference.itemId ?? reference.path ?? reference.financeTransactionId ?? reference.recordingId ?? reference.photoId ?? ''}-${index}`}
+            key={`${reference.itemId ?? reference.path ?? reference.financeTransactionId ?? reference.recordingId ?? reference.photoId ?? reference.feedItemId ?? ''}-${index}`}
             label={referenceHint(reference)}
           >
             {path ? (
               <Link className="agent-reference-chip" to={path} onClick={onLeaving}>
-                <ReferenceMark reference={reference} /> {label}
+                <ReferenceMark reference={reference} />
+                <span className="agent-reference-label">{label}</span>
               </Link>
             ) : (
               <span className="agent-reference-chip">
-                <ReferenceMark reference={reference} /> {label}
+                <ReferenceMark reference={reference} />
+                <span className="agent-reference-label">{label}</span>
                 {onRemove && (
                   <button
                     type="button"

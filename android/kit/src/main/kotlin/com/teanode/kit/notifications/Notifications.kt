@@ -35,7 +35,7 @@ import javax.crypto.spec.SecretKeySpec
 data class NotificationContent(
     /**
      * alert, herdr_question, goal_needs_you, speak_first, message, approval, question, answer, circle, chat,
-     * skill_share_call, photo, location, shopping, journalEveningQuestion, test, or, in a push that rings, call (a call
+     * skill_share_call, photo, location, shopping, journalEveningQuestion, agent_feed, test, or, in a push that rings, call (a call
      * rings, `callId` names it) and call_ended (it no longer rings this phone).
      */
     val notificationKind: String,
@@ -57,6 +57,10 @@ data class NotificationContent(
     val questionFingerprint: String? = null,
     /** For the journal's evening question, the day it asks about. */
     val journalDay: String? = null,
+    /** For an urgent card of the agent's feed (`agent_feed`), the card, so that its choices answer it and tapping it opens it. */
+    val feedItemId: String? = null,
+    /** Shown without sound or a banner: a feed brief that is ready, rather than something that cannot wait. */
+    val isQuiet: Boolean = false,
     val title: String = "",
     val body: String = "",
     val buttons: List<NotificationButton>? = null,
@@ -67,7 +71,7 @@ data class NotificationContent(
 @Serializable
 data class NotificationButton(
     val label: String,
-    /** approve, deny, answer:<option number>, reply or open. */
+    /** approve, deny, answer:<option number>, feed:<choice key> (an urgent feed card's choice), reply or open. */
     val buttonAction: String,
 )
 
