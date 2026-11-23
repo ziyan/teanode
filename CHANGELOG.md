@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.7] - 2026-11-23
+
+### Changed
+
+- A mail, memory page, transaction, recording or photo shown above a message you sent opens when you tap it, on the dashboard, iPhone and Android. (#771)
+
+### Fixed
+
+- On the iPhone and Android, the setting that keeps a subscription's mail out of the Inbox is called "Keep out of the Inbox" instead of "Mute". (#770)
+
 ## [0.230.6] - 2026-11-23
 
 ### Security
