@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.6] - 2026-11-23
+
+### Security
+
+- The server is built with Go 1.26.11, which fixes a flaw in its HTTP handling. (#759)
+
 ## [0.230.5] - 2026-11-23
 
 ### Fixed
