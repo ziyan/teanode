@@ -11,6 +11,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	_ "github.com/ziyan/teanode/internal/agent/tools/all"
 	"github.com/ziyan/teanode/internal/api/v1api/apigraph"
+	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -176,5 +177,32 @@ func TestEveryNotificationKindIsNamedOnEverySurface(test *testing.T) {
 		if !strings.Contains(swift, `case "`+kind+`": String(localized:`) {
 			test.Errorf("the iPhone app does not name the kind %q in TeaNodeApp.swift", kind)
 		}
+	}
+}
+
+// A phone's platform is one field with one name wherever phones are listed:
+// the command line's, the dashboard's and the agent's documents all ask for
+// phonePlatform, which the API names the same.
+func TestPhonePlatformIsOneNameOnEverySurface(test *testing.T) {
+	test.Parallel()
+
+	source, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "pages", "settings", "phones.tsx"))
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(string(source), "phoneModel phonePlatform phoneModelName") {
+		test.Error("the dashboard's phone documents do not ask for phonePlatform")
+	}
+	// The command line and the agent's tool share the client's documents.
+	for name, document := range map[string]string{"list": client.DocumentListAgentPhones, "test": client.DocumentTestAgentPhone, "update": client.DocumentUpdateAgentPhone} {
+		if !strings.Contains(document, "phonePlatform") {
+			test.Errorf("the %s document does not ask for phonePlatform", name)
+		}
+	}
+	if _, isFound := reflect.TypeFor[client.AgentPhone]().FieldByName("PhonePlatform"); !isFound {
+		test.Error("the client's phone has no PhonePlatform")
+	}
+	if _, isFound := reflect.TypeFor[apigraph.AgentPhoneView]().FieldByName("PhonePlatform"); !isFound {
+		test.Error("the API's phone has no PhonePlatform")
 	}
 }

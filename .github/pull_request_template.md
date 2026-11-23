@@ -40,3 +40,5 @@ block as it came.
 - [ ] `make lint` passes, including the local naming checks if installed
 - [ ] A decision record in `docs/decisions/` if this makes a choice worth explaining later
 - [ ] For a change to `ios/`: the iOS checks passed and their screenshots looked at
+- [ ] For a change to `android/`: the Android checks passed and their screenshots looked at
+- [ ] Every surface has it: dashboard, agent tools, command line, iPhone app, Android app (or the one left out is named, with its follow-up)

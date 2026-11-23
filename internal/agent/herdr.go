@@ -464,12 +464,14 @@ func (self *Agent) ComputerHerdrChanged(agentId string, connection DeviceConnect
 			self.tellHerdrQuestion(agentId, found, &event)
 		}()
 	case computer.HerdrEventKindAnswered:
-		// A question that went needs nothing more here: the Coding page and
-		// screen read the session again, and nothing was written anywhere
-		// that would need to say it went.
+		// A question that went settles its card in the feed, as answered on
+		// the computer unless the card was answered from the feed already.
 		self.waitGroup.Add(1)
 		go func() {
 			defer self.waitGroup.Done()
+			if err := self.SettleFeedItemsOfSession(self.ctx, agentId, found.name, event.HerdrSession.PaneID, event.AnswerText); err != nil {
+				log.Warningf("cannot settle the feed cards of %q on %q: %s", event.HerdrSession.PaneID, found.name, err)
+			}
 			self.acknowledgeHerdr(self.currentComputer(agentId, found), event.HerdrEventID)
 		}()
 	case computer.HerdrEventKindSettled:
@@ -526,9 +528,46 @@ func (self *Agent) tellHerdrQuestion(agentId string, attached *attachedComputer,
 		self.backgroundMutex.Unlock()
 		if !isKnown {
 			self.notifyPhones(agentId, models.NotificationQuestion, herdrQuestionContent(attached.name, session))
+			// The same question as a card in the feed, which the options
+			// answer without a turn. The phone is told once, above.
+			if _, _, err := self.PostFeedItem(self.ctx, &FeedPost{AgentID: agentId, Item: herdrFeedItem(attached.name, session)}); err != nil {
+				log.Warningf("cannot post the question of %q on %q to the feed: %s", paneNameOf(session), attached.name, err)
+			}
 		}
 	}
 	self.acknowledgeHerdr(self.currentComputer(agentId, attached), event.HerdrEventID)
+}
+
+// herdrFeedItem is a session's question as a card: a decision with one choice
+// for each option, answered by the option's number. A question that takes
+// several options or words of its own has one choice, which opens the session.
+// The card is named by the computer, the pane and the question's fingerprint,
+// so the same question said again is the same card, and the fingerprint is
+// read back from the end of the key when an option is chosen.
+func herdrFeedItem(computerName string, session *computer.HerdrSession) *models.AgentFeedItem {
+	question := session.Question
+	paneName := paneNameOf(session)
+	item := &models.AgentFeedItem{
+		FeedItemKind: models.FeedItemDecision, FeedSourceKind: models.FeedSourceCodingSession,
+		FeedSourceID: computerName + "/" + session.PaneID,
+		CoalesceKey:  computerName + "/" + session.PaneID + "/" + question.QuestionFingerprint,
+		Title:        fmt.Sprintf("%s on %s asks", paneName, computerName),
+		Body:         question.QuestionText, PictureSymbol: "terminal", FeedUrgency: models.FeedUrgencyNow,
+	}
+	if question.IsMultipleChoice || question.IsFromTranscript || len(question.Options) == 0 || len(question.Options) > models.FeedChoicesMost {
+		item.Choices = []models.FeedChoice{{ChoiceKey: "open", ChoiceLabel: "Open session", ChoiceRole: models.FeedChoiceOpen}}
+		return item
+	}
+	for _, option := range question.Options {
+		label := strings.TrimSpace(option.OptionLabel)
+		if label == "" {
+			label = fmt.Sprintf("Option %d", option.OptionNumber)
+		}
+		item.Choices = append(item.Choices, models.FeedChoice{
+			ChoiceKey: models.FeedChoiceKeyOption(option.OptionNumber), ChoiceLabel: label, ChoiceRole: models.FeedChoiceAction,
+		})
+	}
+	return item
 }
 
 // What a phone is told when a session asks: which session, on which

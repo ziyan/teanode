@@ -418,7 +418,7 @@ it('says the visits cannot be seen while the phone location is set to While Usin
   renderAt('/location')
 
   expect(await screen.findByText("You can't see anyone's visits")).toBeTruthy()
-  expect(screen.getByText(/Location is set to While Using on your iPhone/)).toBeTruthy()
+  expect(screen.getByText(/Location is set to While Using on your phone/)).toBeTruthy()
   expect(screen.queryByText('You see less of some people')).toBeNull()
 })
 
@@ -552,7 +552,7 @@ it('sets Location up when no position is recorded, and not again after Not now',
   answerWith({ own: { latestPoint: null } })
   const first = renderAt('/location')
 
-  expect(await screen.findByText('Install the TeaNode app on your iPhone')).toBeTruthy()
+  expect(await screen.findByText('Install the TeaNode app on your phone')).toBeTruthy()
   expect(screen.getByText('This is home')).toBeTruthy()
   // The map is there with the setup, which stands under it.
   const map = screen.getByTestId('map')
@@ -560,13 +560,13 @@ it('sets Location up when no position is recorded, and not again after Not now',
   expect(map.compareDocumentPosition(screen.getByText('This is home')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
   fireEvent.click(screen.getByRole('button', { name: 'Not now' }))
-  expect(screen.queryByText('Install the TeaNode app on your iPhone')).toBeNull()
+  expect(screen.queryByText('Install the TeaNode app on your phone')).toBeNull()
   expect(screen.getByTestId('map')).toBeTruthy()
 
   first.unmount()
   renderAt('/location')
   expect(await screen.findByTestId('map')).toBeTruthy()
-  expect(screen.queryByText('Install the TeaNode app on your iPhone')).toBeNull()
+  expect(screen.queryByText('Install the TeaNode app on your phone')).toBeNull()
 })
 
 it('marks home from the browser position, and offers to share with a family', async () => {
@@ -816,14 +816,14 @@ it('says where place names come from in the setup, and gives the install row no 
   answerWith({ own: { latestPoint: null } })
   renderAt('/location')
   expect(await screen.findByText(/Place names come from OpenStreetMap: your server sends the position/)).toBeTruthy()
-  const installRow = screen.getByText('Install the TeaNode app on your iPhone').closest('.settings-row')
+  const installRow = screen.getByText('Install the TeaNode app on your phone').closest('.settings-row')
   expect(installRow?.querySelector('.tag')).toBeNull()
 })
 
 it('puts the setup row for the phone app behind a button, not a link', async () => {
   answerWith({ own: { latestPoint: null } })
   renderAt('/location')
-  expect(await screen.findByRole('button', { name: 'Set up the iPhone app' })).toBeTruthy()
+  expect(await screen.findByRole('button', { name: 'Set up the phone app' })).toBeTruthy()
   expect(screen.queryByRole('link')).toBeNull()
 })
 
@@ -922,7 +922,7 @@ it('says plainly when the browser is sure only to 850 m, offers the typed addres
   const dialog = await screen.findByRole('alertdialog')
   expect(
     await within(dialog).findByText(
-      'Your browser can only place you within 850 m. A computer has no GPS; your iPhone is exact.',
+      'Your browser can only place you within 850 m. A computer has no GPS; your phone is exact.',
     ),
   ).toBeTruthy()
   expect(within(dialog).getByRole('button', { name: 'Type my address' })).toBeTruthy()
@@ -1022,7 +1022,7 @@ it('sets Location up for someone who joins a family that already shares, keeping
   renderAt('/location')
 
   expect(await screen.findByTestId('map')).toBeTruthy()
-  expect(await screen.findByText('Install the TeaNode app on your iPhone')).toBeTruthy()
+  expect(await screen.findByText('Install the TeaNode app on your phone')).toBeTruthy()
   expect(await screen.findByText('Person B')).toBeTruthy()
 })
 
@@ -1219,7 +1219,7 @@ it('does not offer to keep a typed address for home, and says to use the phone o
   fireEvent.click(within(chooser).getByRole('button', { name: 'Search' }))
   expect(
     await within(chooser).findByText(
-      'Not found on the map. Use where I am now on your iPhone, or make home and move its pin.',
+      'Not found on the map. Use where I am now on your phone, or make home and move its pin.',
     ),
   ).toBeTruthy()
   expect(within(chooser).queryByRole('button', { name: 'Keep this address as typed' })).toBeNull()

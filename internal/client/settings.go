@@ -53,7 +53,7 @@ const settingsSelection = `{
 		browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
 		mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl headless readOnly disabled timeout enabled }
 		finance { offeredProviders plaid { environment clientId hasSecret countryCodes products } }
-		push { enabled relayUrl relay { enabled apnsKeyId apnsTeamId hasApnsKey apnsTopic } }
+		push { enabled relayUrl relay { enabled apnsKeyId apnsTeamId hasApnsKey apnsTopic hasFcmServiceAccount } }
 		works families kinds
 	}
 }`

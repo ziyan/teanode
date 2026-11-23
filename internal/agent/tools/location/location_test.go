@@ -131,7 +131,7 @@ func TestNowAnswersWhatIsKeptWhereNobodyCanBeAsked(t *testing.T) {
 	}
 
 	nothing := &routing{answers: map[string]string{"GetLocation": `{"userId":"u-ada","username":"ada","shareLevel":"owner","latestPoint":null,"openVisit":null}`}}
-	if _, _, err := act(t, runOf(nothing), "now", `{}`, false); err == nil || !strings.Contains(err.Error(), "iPhone") {
+	if _, _, err := act(t, runOf(nothing), "now", `{}`, false); err == nil || !strings.Contains(err.Error(), "phone") {
 		t.Errorf("nothing kept should point at the app: %v", err)
 	}
 }

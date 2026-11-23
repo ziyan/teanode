@@ -250,6 +250,7 @@ func TestStartingModel(t *testing.T) {
 		{"discord", AskSettings{Surface: "discord", Agent: agent, Message: "hi"}, "p:small"},
 		{"voice", AskSettings{Surface: "voice", Agent: agent, Message: "hi"}, "p:spoken"},
 		{"a call in the app", AskSettings{Surface: "ios_voice", Agent: agent, Message: "hi"}, "p:spoken"},
+		{"a call in the android app", AskSettings{Surface: "android_voice", Agent: agent, Message: "hi"}, "p:spoken"},
 		{"cli", AskSettings{Surface: "cli", Agent: agent, Message: "hi"}, ""},
 		{"api", AskSettings{Surface: "api", Agent: agent, Message: "hi"}, ""},
 		{"mail", AskSettings{Surface: "mail", Agent: agent, Message: "hi"}, ""},

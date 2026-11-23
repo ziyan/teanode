@@ -210,17 +210,17 @@ func TestOnlyTheRelayThatSealedARegistrationCanUseIt(test *testing.T) {
 
 func TestTheRelayWritesWhatAppleShows(test *testing.T) {
 	apple, client, _ := newFakeApple(test)
-	relay, err := NewRelay(client)
+	relay, err := NewRelay(client, nil)
 	if err != nil {
 		test.Fatalf("NewRelay: %s", err)
 	}
 	now := time.Now()
 	for _, token := range []string{"", "not-hex", "abc", strings.Repeat("g", 64)} {
-		if _, err := relay.Register(token, false, "", now); err == nil {
+		if _, err := relay.Register(token, false, "", "", now); err == nil {
 			test.Errorf("%q was registered", token)
 		}
 	}
-	sealed, err := relay.Register(strings.ToUpper(testDeviceToken), false, "", now)
+	sealed, err := relay.Register(strings.ToUpper(testDeviceToken), false, "", "", now)
 	if err != nil {
 		test.Fatalf("Register: %s", err)
 	}
@@ -321,15 +321,15 @@ func TestALongBodyIsShortenedToFit(test *testing.T) {
 // so the relay writes it from a state alone and refuses anything with words.
 func TestALiveActivityIsToldAStateAndNothingElse(test *testing.T) {
 	apple, client, _ := newFakeApple(test)
-	relay, err := NewRelay(client)
+	relay, err := NewRelay(client, nil)
 	if err != nil {
 		test.Fatalf("NewRelay: %s", err)
 	}
 	now := time.Now()
-	if _, err := relay.Register(testDeviceToken, false, "carrier-pigeon", now); !errors.Is(err, ErrRefused) {
+	if _, err := relay.Register(testDeviceToken, false, "carrier-pigeon", "", now); !errors.Is(err, ErrRefused) {
 		test.Errorf("a registration for a push type nobody relays came back as %v", err)
 	}
-	activity, err := relay.Register(testDeviceToken, false, PushTypeLiveActivity, now)
+	activity, err := relay.Register(testDeviceToken, false, PushTypeLiveActivity, "", now)
 	if err != nil {
 		test.Fatalf("Register: %s", err)
 	}
@@ -370,7 +370,7 @@ func TestALiveActivityIsToldAStateAndNothingElse(test *testing.T) {
 			test.Errorf("%+v to a Live Activity came back as %v", forged, err)
 		}
 	}
-	phone, _ := relay.Register(testDeviceToken, false, "", now)
+	phone, _ := relay.Register(testDeviceToken, false, "", "", now)
 	if err := relay.Send(context.Background(), phone, &Delivery{ActivityState: "working"}); !errors.Is(err, ErrRefused) {
 		test.Errorf("a state sent to the phone came back as %v", err)
 	}
@@ -382,12 +382,12 @@ func TestALiveActivityIsToldAStateAndNothingElse(test *testing.T) {
 // when that is missing or not believable.
 func TestALiveActivityIsStampedWithWhenItsStateChanged(test *testing.T) {
 	apple, client, _ := newFakeApple(test)
-	relay, err := NewRelay(client)
+	relay, err := NewRelay(client, nil)
 	if err != nil {
 		test.Fatalf("NewRelay: %s", err)
 	}
 	now := time.Now()
-	activity, err := relay.Register(testDeviceToken, false, PushTypeLiveActivity, now)
+	activity, err := relay.Register(testDeviceToken, false, PushTypeLiveActivity, "", now)
 	if err != nil {
 		test.Fatalf("Register: %s", err)
 	}
@@ -420,7 +420,7 @@ func TestALiveActivityIsStampedWithWhenItsStateChanged(test *testing.T) {
 		}
 	}
 	// The phone's own alerts carry no state, and so no time of one.
-	phone, _ := relay.Register(testDeviceToken, false, "", now)
+	phone, _ := relay.Register(testDeviceToken, false, "", "", now)
 	if err := relay.Send(context.Background(), phone, &Delivery{ActivityChangedAt: now}); !errors.Is(err, ErrRefused) {
 		test.Errorf("a state's time sent to the phone came back as %v", err)
 	}
@@ -431,12 +431,12 @@ func TestALiveActivityIsStampedWithWhenItsStateChanged(test *testing.T) {
 // stops trying soon.
 func TestAVoIPPushCarriesOnlyTheSealedContentToTheVoIPTopic(test *testing.T) {
 	apple, client, _ := newFakeApple(test)
-	relay, err := NewRelay(client)
+	relay, err := NewRelay(client, nil)
 	if err != nil {
 		test.Fatalf("NewRelay: %s", err)
 	}
 	now := time.Now()
-	voip, err := relay.Register(testDeviceToken, false, PushTypeVoIP, now)
+	voip, err := relay.Register(testDeviceToken, false, PushTypeVoIP, "", now)
 	if err != nil {
 		test.Fatalf("a voip registration was refused: %s", err)
 	}

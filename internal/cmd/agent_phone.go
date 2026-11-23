@@ -125,11 +125,11 @@ func runAgentPhoneList(ctx context.Context, command *cli.Command) error {
 			reach = "last failed: " + forTerminal(phone.LastDeliveryError)
 		}
 		rows = append(rows, []string{
-			phone.ID, forTerminal(phone.PhoneName), forTerminal(phone.PhoneModelName), strings.Join(phone.NotificationKinds, ","),
+			phone.ID, forTerminal(phone.PhoneName), forTerminal(phone.PhonePlatform), forTerminal(phone.PhoneModelName), strings.Join(phone.NotificationKinds, ","),
 			reach, formatTime(phone.LastSeenAt),
 		})
 	}
-	return printTable([]string{"ID", "NAME", "MODEL", "TOLD ABOUT", "NOTIFICATIONS", "LAST SEEN"}, rows)
+	return printTable([]string{"ID", "NAME", "PLATFORM", "MODEL", "TOLD ABOUT", "NOTIFICATIONS", "LAST SEEN"}, rows)
 }
 
 func runAgentPhoneRename(ctx context.Context, command *cli.Command) error {

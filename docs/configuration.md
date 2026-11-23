@@ -1775,8 +1775,8 @@ app. A server that is itself the relay sends to itself without the network.
 ### `agent.push.relay`
 
 Makes this server a relay for every TeaNode server's phones. Only for the
-operator who holds the TeaNode app's Apple push key; everybody else leaves it
-off.
+operator who holds the TeaNode app's Apple push key or Firebase service
+account; everybody else leaves it off.
 
 **`enabled`**: Serves the relay's two endpoints, `/api/v1/push/registrations`
 and `/api/v1/push/notifications`. Off by default, and they answer 404.
@@ -1792,6 +1792,14 @@ it is replaced each phone is sent nothing until the app next starts and
 registers again.
 
 **`apnsTopic`**: The app's bundle identifier. Empty means `com.teanode.app`.
+
+**`fcmServiceAccount`**: The Firebase project's service account, the whole
+JSON file the Firebase console hands out under Project settings, Service
+accounts, which lets the relay send to the Android app through Firebase Cloud
+Messaging. A secret. Empty serves no Android phones. A relay needs this, the
+Apple key, or both; without the Apple key it seals the registrations it hands
+out with this account's key, so replacing the account makes each phone
+register again when its app next starts.
 
 ### `agent.tools`
 

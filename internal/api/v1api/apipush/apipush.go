@@ -1,5 +1,5 @@
 // Package apipush serves the push relay: what a TeaNode server does when the
-// operator holds the TeaNode app's Apple push key and turns
+// operator holds the TeaNode app's push credentials (its Apple push key, its Firebase service account, or both) and turns
 // agent.push.relay.enabled on.
 //
 // Two endpoints, neither needing a credential, because the relay serves
@@ -8,7 +8,7 @@
 //   - POST /api/v1/push/registrations: a phone registers its device token and
 //     gets back a sealed registration, which it hands its own server.
 //   - POST /api/v1/push/notifications: a server sends a notification with a
-//     phone's sealed registration, and the relay passes it to Apple.
+//     phone's sealed registration, and the relay passes it to Apple (iPhones) or Firebase (Android).
 //
 // The relay stores nothing and cannot read what it passes on (see
 // internal/push). What it guards is its own capacity and its standing with
@@ -61,6 +61,10 @@ type relayComponent struct {
 	// server of its own.
 	buildAPNs func(keyID, teamID, topic, keyPEM string) (*push.APNs, error)
 
+	// buildFCM makes the client that reaches Firebase from the service
+	// account's JSON; a test points it at a server of its own.
+	buildFCM func(serviceAccountJSON string) (*push.FCM, error)
+
 	mutex sync.Mutex
 	// relay is built from the configuration it was built for, and rebuilt
 	// when the key changes.
@@ -79,6 +83,7 @@ func New(configuration config.Store) (web.Component, error) {
 		registrationsOverall:   ratelimit.NewRegistry(20, 200, 1, 10*time.Minute),
 		notificationsOverall:   ratelimit.NewRegistry(200, 2000, 1, 10*time.Minute),
 		buildAPNs:              push.NewAPNs,
+		buildFCM:               push.NewFCM,
 	}, nil
 }
 
@@ -93,10 +98,10 @@ func (self *relayComponent) AddRoutes(router *mux.Router) error {
 func (self *relayComponent) currentRelay() (*push.Relay, error) {
 	current := self.configuration.Current()
 	settings := current.Agent.Push.Relay
-	if !settings.Enabled || !settings.HasKey() {
+	if !settings.Enabled || !settings.CanRelay() {
 		return nil, nil
 	}
-	sum := sha256.Sum256([]byte(settings.APNSKeyID + "\x00" + settings.APNSTeamID + "\x00" + settings.ResolvedTopic() + "\x00" + settings.APNSKey))
+	sum := sha256.Sum256([]byte(settings.APNSKeyID + "\x00" + settings.APNSTeamID + "\x00" + settings.ResolvedTopic() + "\x00" + settings.APNSKey + "\x00" + settings.FCMServiceAccount))
 	fingerprint := hex.EncodeToString(sum[:])
 
 	self.mutex.Lock()
@@ -104,11 +109,21 @@ func (self *relayComponent) currentRelay() (*push.Relay, error) {
 	if self.relay != nil && self.builtFor == fingerprint {
 		return self.relay, nil
 	}
-	apns, err := self.buildAPNs(settings.APNSKeyID, settings.APNSTeamID, settings.ResolvedTopic(), settings.APNSKey)
-	if err != nil {
-		return nil, err
+	var apns *push.APNs
+	if settings.HasAPNSKey() {
+		var err error
+		if apns, err = self.buildAPNs(settings.APNSKeyID, settings.APNSTeamID, settings.ResolvedTopic(), settings.APNSKey); err != nil {
+			return nil, err
+		}
 	}
-	relay, err := push.NewRelay(apns)
+	var fcm *push.FCM
+	if settings.HasFCMServiceAccount() {
+		var err error
+		if fcm, err = self.buildFCM(settings.FCMServiceAccount); err != nil {
+			return nil, err
+		}
+	}
+	relay, err := push.NewRelay(apns, fcm)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +149,7 @@ func (self *relayComponent) registerView(response http.ResponseWriter, request *
 		writeError(response, http.StatusBadRequest, push.ErrorCodeRefused, "the body is not a registration")
 		return
 	}
-	sealed, err := relay.Register(asked.DeviceToken, asked.IsSandbox, asked.PushType, time.Now())
+	sealed, err := relay.Register(asked.DeviceToken, asked.IsSandbox, asked.PushType, asked.Platform, time.Now())
 	if err != nil {
 		writeError(response, http.StatusBadRequest, push.ErrorCodeRefused, err.Error())
 		return
@@ -182,8 +197,8 @@ func (self *relayComponent) deliverView(response http.ResponseWriter, request *h
 	default:
 		// The kind of failure, never a registration, a token or what was
 		// sent; the caller is told only that Apple was not reached.
-		log.Warningf("could not pass a notification to Apple: %s", err)
-		writeError(response, http.StatusBadGateway, push.ErrorCodeUnreached, "Apple could not be reached; try again later")
+		log.Warningf("could not pass a notification to Apple or Firebase: %s", err)
+		writeError(response, http.StatusBadGateway, push.ErrorCodeUnreached, "Apple or Firebase could not be reached; try again later")
 	}
 }
 

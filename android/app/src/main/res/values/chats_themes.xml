@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window the share sheet's page is drawn over: see-through, so the app that shared shows behind it. -->
+    <style name="Theme.TeaNode.Share" parent="Theme.TeaNode">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

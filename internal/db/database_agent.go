@@ -182,6 +182,9 @@ type agentModel struct {
 	AlertQuietEnd   string `gorm:"column:alert_quiet_end"`
 	AlertDailyMost  int    `gorm:"column:alert_daily_most"`
 
+	// Where what the agent says unasked goes. See migration 0276.
+	FeedDestination string `gorm:"column:feed_destination"`
+
 	// The day and time of the weekly look around. See migration 0191.
 	LookAroundWeekday string `gorm:"column:look_around_weekday"`
 	LookAroundTime    string `gorm:"column:look_around_time"`
@@ -273,6 +276,7 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		AlertQuietStart:        model.AlertQuietStart,
 		AlertQuietEnd:          model.AlertQuietEnd,
 		AlertDailyMost:         model.AlertDailyMost,
+		FeedDestination:        model.FeedDestination,
 		LookAroundWeekday:      model.LookAroundWeekday,
 		LookAroundTime:         model.LookAroundTime,
 		ReportingCurrencyCode:  model.ReportingCurrencyCode,
@@ -353,6 +357,7 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		AlertQuietStart:        agent.AlertQuietStart,
 		AlertQuietEnd:          agent.AlertQuietEnd,
 		AlertDailyMost:         agent.AlertDailyMost,
+		FeedDestination:        agent.FeedDestination,
 		LookAroundWeekday:      agent.LookAroundWeekday,
 		LookAroundTime:         agent.LookAroundTime,
 		ReportingCurrencyCode:  agent.ReportingCurrencyCode,
@@ -482,6 +487,9 @@ func (self *transaction) CreateAgent(agent *models.Agent) (*models.Agent, error)
 	// says they should know until the person says otherwise. A Go false
 	// here is the zero value nobody chose, not a choice.
 	created.IsMemoryCheckEnabled, created.IsIdeasEnabled, created.IsAlertsEnabled = true, true, true
+	if created.FeedDestination == "" {
+		created.FeedDestination = models.FeedDestinationFeed
+	}
 	model, err := agentToModel(&created)
 	if err != nil {
 		return nil, err
@@ -554,6 +562,7 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"alert_quiet_start":       model.AlertQuietStart,
 			"alert_quiet_end":         model.AlertQuietEnd,
 			"alert_daily_most":        model.AlertDailyMost,
+			"feed_destination":        model.FeedDestination,
 			"look_around_weekday":     model.LookAroundWeekday,
 			"look_around_time":        model.LookAroundTime,
 			"reporting_currency_code": model.ReportingCurrencyCode,

@@ -18,6 +18,9 @@ func TestSurfaces(t *testing.T) {
 	}{
 		{"drawer", true, "Markdown renders", true},
 		{"phone", true, "no tables", true},
+		{"ios", true, "no table wider than a phone", true},
+		{"android", true, "no table wider than a phone", true},
+		{"android_voice", true, "listening, not reading", true},
 		{"voice", true, "listening, not reading", true},
 		{"cli", true, "A terminal", false},
 		{"api", true, "A terminal", false},
@@ -251,5 +254,29 @@ func TestTheAskersNameIsQuotedInThePrompt(test *testing.T) {
 	}
 	if owner := run.withAsker(&chatPromptFacts{IsMemberTurn: false}); owner.AskerName != "" {
 		test.Errorf("an owner turn has no asker: %q", owner.AskerName)
+	}
+}
+
+// The Android app is the iPhone app's equal: a typed turn is the person's
+// own and quick, a call is spoken, and reactions are drawn on it.
+func TestTheAndroidAppIsASurfaceLikeTheIPhones(test *testing.T) {
+	for _, pair := range [][2]string{{"ios", "android"}, {"ios_voice", "android_voice"}} {
+		iphone, android := surfaceOf(pair[0]), surfaceOf(pair[1])
+		if android.canShowPages != iphone.canShowPages || android.canLocate != iphone.canLocate || android.hasReactions != iphone.hasReactions ||
+			android.hasSuggestedReplies != iphone.hasSuggestedReplies {
+			test.Errorf("%s differs from %s in what it can draw", pair[1], pair[0])
+		}
+		if !strings.Contains(android.situationLine, "Android") {
+			test.Errorf("%s says %q", pair[1], android.situationLine)
+		}
+		if isAppSurface(pair[0]) != isAppSurface(pair[1]) || !isAppSurface(pair[1]) {
+			test.Errorf("%s is not an app surface", pair[1])
+		}
+	}
+	if !isSpokenSurface("android_voice") || isSpokenSurface("android") {
+		test.Error("only the call is spoken")
+	}
+	if !isQuickSurface("android") || isQuickSurface("android_voice") != isQuickSurface("ios_voice") {
+		test.Error("a typed turn in the app is quick")
 	}
 }

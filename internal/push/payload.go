@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -31,7 +32,7 @@ const PhoneKeyBytes = 32
 // Content is a notification as the phone shows it, before encryption.
 type Content struct {
 	// NotificationKind is what this is: alert, herdr_question,
-	// goal_needs_you, speak_first, approval, question, answer, circle, chat,
+	// goal_needs_you, speak_first, feed, approval, question, answer, circle, chat,
 	// skill_share_call, photo, location, shopping, journalEveningQuestion or test.
 	NotificationKind string `json:"notificationKind"`
 
@@ -62,6 +63,15 @@ type Content struct {
 
 	// ThreadID groups notifications on the lock screen.
 	ThreadID string `json:"threadId,omitempty"`
+
+	// FeedItemID is, for a feed notification (notificationKind feed), the
+	// card to open. A decision's choices are its buttons, as feed:<choice
+	// key>, which the phone sends to ChooseAgentFeedItem.
+	FeedItemID string `json:"feedItemId,omitempty"`
+
+	// IsQuiet says the notification is shown without sound, for a brief that
+	// is ready rather than something that cannot wait.
+	IsQuiet bool `json:"isQuiet,omitempty"`
 
 	// For a coding session's question: where to send the answer.
 	Computer            string `json:"computer,omitempty"`
@@ -237,6 +247,69 @@ func (self *Delivery) voipNotification(now time.Time) (*Notification, error) {
 		return nil, ErrTooLarge
 	}
 	return &Notification{PushType: PushTypeVoIP, Priority: 10, ExpiresAt: expiresAt, Payload: payload}, nil
+}
+
+// fcmMessage is the delivery as Firebase takes it for an Android phone: data
+// only, the sealed content and what the app needs before it has decrypted
+// anything. There is nothing for the system to draw, so the app does, after
+// decrypting; the relay and Google never see the words.
+//
+// A ring (the phone's voip registration) is a call-kind message of high
+// priority that lives only voipLifetime, for the app to show a full-screen
+// incoming call; it is never collapsed with another, as two calls are two
+// rings. An ordinary alert is high priority too, since a chat message that
+// waits for the phone to wake is late.
+func (self *Delivery) fcmMessage(pushType string, now time.Time) (*FCMMessage, error) {
+	if pushType == PushTypeLiveActivity {
+		return self.turnFCMMessage(now)
+	}
+	lifetime, lifetimeMost, pushKind := deliveryLifetime, deliveryLifetimeMost, FCMPushKindNotification
+	if pushType == PushTypeVoIP {
+		lifetime, lifetimeMost, pushKind = voipLifetime, voipLifetimeMost, FCMPushKindCall
+	}
+	expiresAt, err := self.sealedExpiry(now, lifetime, lifetimeMost)
+	if err != nil {
+		return nil, err
+	}
+	message := &FCMMessage{
+		Data:           map[string]string{FCMDataSealed: self.Sealed, FCMDataPushKind: pushKind},
+		IsHighPriority: true,
+		TimeToLive:     expiresAt.Sub(now),
+	}
+	if pushType != PushTypeVoIP {
+		message.CollapseKey = self.CollapseID
+		if self.ThreadID != "" {
+			message.Data[FCMDataThreadID] = self.ThreadID
+		}
+	}
+	if fcmDataBytes(message.Data) > payloadBytesMost {
+		return nil, ErrTooLarge
+	}
+	return message, nil
+}
+
+// turnFCMMessage is the delivery as Firebase takes it for an Android phone's
+// Live Activity registration: the one word of the turn's state, as a Live
+// Activity is told, and nothing else. Only the newest state matters, so a
+// state that has not been delivered yet is replaced by the next.
+func (self *Delivery) turnFCMMessage(now time.Time) (*FCMMessage, error) {
+	if self.Sealed != "" || self.ThreadID != "" || self.CollapseID != "" {
+		return nil, fmt.Errorf("%w: a turn is told a state and nothing else", ErrRefused)
+	}
+	if !activityStates[self.ActivityState] {
+		return nil, fmt.Errorf("%w: %q is not a state a turn shows", ErrRefused, self.ActivityState)
+	}
+	return &FCMMessage{
+		Data: map[string]string{
+			FCMDataPushKind:          FCMPushKindTurn,
+			FCMDataActivityState:     self.ActivityState,
+			FCMDataIsActivityEnded:   strconv.FormatBool(self.IsActivityEnded),
+			FCMDataActivityChangedAt: strconv.FormatInt(self.activityTimestamp(now), 10),
+		},
+		IsHighPriority: true,
+		CollapseKey:    "turn",
+		TimeToLive:     deliveryLifetime,
+	}, nil
 }
 
 // activityNotification is the delivery as Apple takes it for a Live

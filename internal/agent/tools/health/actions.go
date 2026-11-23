@@ -36,7 +36,7 @@ const (
 // let the agent read their Health data. It is an answer, not an error, so that
 // the model tells the person where the switch is rather than trying again.
 const notAllowedWords = "The person has not let you read their Health data. " +
-	"They can turn on \"Let the agent read Health data\" in the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings, and then ask again. " +
+	"They can turn on \"Let the agent read Health data\" in the Settings tab of the Health page on the dashboard, or in Health in the TeaNode phone app's Settings, and then ask again. " +
 	"You can offer to open it with set_up."
 
 // unattendedWords is the whole answer of every action that reads Health in a
@@ -208,7 +208,7 @@ var runTypes = withGate(func(ctx context.Context, call *tools.Call, here *scope)
 	}
 	answer := map[string]any{"types": rows}
 	if len(rows) == 0 {
-		answer["note"] = "no Health data is kept yet: the person turns on Health in the TeaNode app on their iPhone"
+		answer["note"] = "no Health data is kept yet: the person turns on Health in the TeaNode app on their phone"
 	}
 
 	// The facts about the person that the Health app keeps once help answer
@@ -411,9 +411,9 @@ const (
 
 // setUpWords is where Health comes from, which is all there is to say about
 // setting it up: the phone does the reading.
-const setUpWords = "Health is in the side menu of the dashboard, and in the TeaNode app on their iPhone, which copies the Health data to their server. " +
-	"They turn on Health in the app's Settings and allow the Health data they want on Apple's Health permissions screen. " +
-	"Letting you read it is a separate switch, \"Let the agent read Health data\", in the Settings tab of the Health page on the dashboard, or in Health in the iPhone app's Settings."
+const setUpWords = "Health is in the side menu of the dashboard, and in the TeaNode app on their phone, which copies the Health data to their server. " +
+	"They turn on Health in the app's Settings and allow the Health data they want on Apple's Health permissions screen (iPhone) or the Health Connect permissions screen (Android). " +
+	"Letting you read it is a separate switch, \"Let the agent read Health data\", in the Settings tab of the Health page on the dashboard, or in Health in the TeaNode phone app's Settings."
 
 // runSetUp takes the dashboard the person reads this in to the Health page,
 // or says where to find it where there is no dashboard to take. It reads no

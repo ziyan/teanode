@@ -38,11 +38,15 @@ A feature is done when all of these hold, not when the code compiles.
   files or screens. Build on it or settle an order instead of colliding.
   Rebase onto `main` before opening, and renumber a migration if `main` took
   its number meanwhile.
-- **Every surface, the same behavior.** A capability ships on the dashboard,
-  the agent's tools, the command line and the iPhone app together, through
-  the same GraphQL operation, with the same names and the same refusals. The
-  parity tests check the command line and tool names against the operation's;
-  the iPhone app follows `ios/DESIGN.md`.
+- **Every surface, the same behavior.** Every feature, new or changed, ships
+  on all five surfaces together, in the same pull request: the dashboard,
+  the agent's tools, the command line, the iPhone app and the Android app.
+  All five go through the same GraphQL operation, with the same names, the
+  same fields and the same refusals. A feature missing from one of them is
+  not done, and a pull request that leaves one out says which and why, and
+  opens the follow-up before it merges. The parity tests check the command
+  line and tool names against the operation's; the iPhone app follows
+  `ios/DESIGN.md`, the Android app `android/README.md`.
 - **Follow the closest existing feature.** Copy the shape of its tables,
   operations, job, tool entries and pages, and reuse the words it already
   uses for the same idea. A new word for an old idea, or a convention no
@@ -140,6 +144,26 @@ accent, every string in the String Catalog in all three languages.
   is tried with a swipe right that starts on a row, on a picture and on a
   sideways strip.
 
+## The Android app
+
+`android/` holds it: `kit`, plain Kotlin that mirrors `ios/TeaNodeKit`, and
+`app`, Jetpack Compose with Material 3. `android/README.md` says how to build
+it and how a section is laid out.
+
+- **It does what the iPhone app does.** A change to a screen in `ios/` makes
+  the same change in `android/`, with the same GraphQL documents, the same
+  states and the same words, drawn the Android way (Material components,
+  the system back gesture, snackbars). Port the logic and its tests into
+  `kit` first; a screen only draws it.
+- **The server goes first,** for the same reason as the iPhone app: testers
+  get a new build within minutes.
+- **Every screen has a demo.** Screens are photographed by Robolectric and
+  Roborazzi against the demo server, in light and dark, with no emulator.
+  A new screen adds its demo data and its screenshot test, and somebody
+  opens the pictures before the pull request merges.
+- **Every string in three languages:** `values/`, `values-zh-rCN/` and
+  `values-ja/`, with the iPhone app's words.
+
 ## Comments
 
 Explain **why**, not what. The what is in the code underneath.
@@ -177,7 +201,7 @@ person could do, no more and no less, without making them do it twice.
 - **Proactive by default, easy to stop.** Something the agent does on its
   own (following a bill, a weekly look around town) is on without setup, and
   each kind of it can be stopped from the place it shows up, with the tools,
-  the dashboard, the command line and the iPhone app agreeing on what is
+  the dashboard, the command line and both phone apps agreeing on what is
   stopped.
 - **The person's language is for the person.** The dashboard's language sets
   the language of conversations with the person, not of the runs nobody

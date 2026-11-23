@@ -202,7 +202,7 @@ move a day for somebody reading it from further west.
 A person marks an event private with `Fields.IsPrivate`, which writes
 `CLASS:PRIVATE` (true) or removes the `CLASS` line (false, which also clears a
 `CONFIDENTIAL` a phone wrote). Leaving it out leaves the line alone. The
-dashboard, the iPhone app, `calendar add --private` and the agent's `is_private`
+dashboard, the TeaNode phone app, `calendar add --private` and the agent's `is_private`
 argument all send `isPrivate` to `SaveCalendarEvent`, and an event the owner
 reads carries `isPrivate`; what everybody else sees is decided in `Redact`.
 
@@ -611,7 +611,7 @@ only calendar that is made on request is a circle's own (`CreateCircleCalendar`)
 
 **A circle's calendar is managed by the circle's admins.** `SaveCalendar` on a
 circle's calendar (the Circles page's pencil beside its Calendar panel, the
-calendars sheet in the iPhone app, `teanode calendar set --calendar <id>`, the
+calendars sheet in the TeaNode phone app, `teanode calendar set --calendar <id>`, the
 tool's `set` with `circle`) and `DeleteCircleCalendar` (the trash can beside
 it, the sheet's Delete the calendar, `teanode calendar circle-delete
 <circle-id>`, the tool's `circle_delete`) refuse a member who is not an admin in

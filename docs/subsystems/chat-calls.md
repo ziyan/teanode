@@ -112,7 +112,7 @@ an app show a call for every VoIP push, so one sent to a phone not ringing
 flashes a call on its screen. The phone that answers or declines names itself
 (`agentPhoneId` on `JoinChatCall` and `DeclineChatCall`) and is not told; a
 member who joins without having been rung, or an answered person when the
-call ends, is told nothing. A phone whose app registered no VoIP token gets an alert instead. A
+call ends, is told nothing. An Android phone registers its Firebase token the same way, as a `voip` registration, and is rung with a high priority data message whose `pushKind` is `call` (see `phone-push.md`): the app shows a full-screen incoming call, and a `call_ended` message stops it. A phone whose app registered no VoIP token gets an alert instead. A
 dashboard tab rings from `ChatCallEvents`.
 
 ## Transcripts

@@ -857,7 +857,7 @@ func (self *AskRun) IsStartedByPerson() bool {
 	switch self.settings.Surface {
 	case "schedule", "mail":
 		return self.settings.IsPersonsSchedule
-	case "drawer", "extension", "page", "voice", "ios", "ios_voice", "siri", "phone", "cli", "api":
+	case "drawer", "extension", "page", "voice", "ios", "ios_voice", "android", "android_voice", "siri", "phone", "cli", "api":
 		if self.settings.IsAnswerToCard {
 			// The answer to a card starts nothing of its own: the turn is
 			// theirs only if the one that raised the card was (the card keeps
@@ -1863,7 +1863,7 @@ func historyLimit(contextLength int) int {
 // isSpokenSurface says a turn was spoken, in the drawer's voice mode or on
 // a call in the app, so its answer is read aloud.
 func isSpokenSurface(surfaceName string) bool {
-	return surfaceName == "voice" || surfaceName == "ios_voice"
+	return surfaceName == "voice" || surfaceName == "ios_voice" || surfaceName == "android_voice"
 }
 
 // isQuickSurface says a turn on the surface is a person's own typed
@@ -1872,7 +1872,7 @@ func isSpokenSurface(surfaceName string) bool {
 // run the agent started for itself.
 func isQuickSurface(surfaceName string) bool {
 	switch surfaceName {
-	case "drawer", "extension", "page", "phone", "ios", "siri":
+	case "drawer", "extension", "page", "phone", "ios", "android", "siri":
 		return true
 	}
 	for _, kind := range models.AgentChannelKinds {

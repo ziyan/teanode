@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The leaf alone, for themed icons, which draw one color. Drawn from docs/images/logo.svg, scaled into the adaptive icon's safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.12890625" android:scaleY="0.12890625" android:translateX="21.0" android:translateY="21.0">
+        <group android:translateY="-610.51967">
+            <path android:fillColor="#FF000000" android:pathData="M 511.99979,910.51965 A 212.00003,212.00003 0 0 1 299.99976,1122.5197 212.00003,212.00003 0 0 1 87.999725,910.51965 212.00003,212.00003 0 0 1 299.99976,698.51962 212.00003,212.00003 0 0 1 511.99979,910.51965 Z m -88.00003,-88 A 212.00002,212.00002 0 0 1 211.99974,1034.5197 212.00002,212.00002 0 0 1 -2.746582e-4,822.51965 212.00002,212.00002 0 0 1 211.99974,610.51964 212.00002,212.00002 0 0 1 423.99976,822.51965 Z m -212.00002,-212 h 300 v 300 h -300 z M -2.6999999e-4,822.51971 H 299.99973 V 1122.5197 H -2.6999999e-4 Z" />
+        </group>
+    </group>
+</vector>

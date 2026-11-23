@@ -1484,7 +1484,7 @@ func (self *graph) searchCenter(tx db.Transaction, userId string, arguments Sear
 	}
 	if center == nil {
 		return 0, 0, fmt.Errorf("%w: there is no position to search around: give latitudeDegrees and longitudeDegrees, "+
-			"or a placeId, or report a location first (the TeaNode app on the iPhone does)", api.ErrInvalidArguments)
+			"or a placeId, or report a location first (the TeaNode app on the phone does)", api.ErrInvalidArguments)
 	}
 	return center.LatitudeDegrees, center.LongitudeDegrees, nil
 }

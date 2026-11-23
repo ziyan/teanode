@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shell_link_no_longer_shared">This page is no longer shared with you</string>
+    <string name="shell_link_already_connected">This phone is already connected to %1$s.</string>
+</resources>

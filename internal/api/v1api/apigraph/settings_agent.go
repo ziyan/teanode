@@ -284,6 +284,10 @@ type AgentPushRelaySettings struct {
 	APNSTeamID string `json:"apnsTeamId"`
 	HasAPNSKey bool   `json:"hasApnsKey"`
 	APNSTopic  string `json:"apnsTopic"`
+
+	// HasFCMServiceAccount says the Firebase service account is set, in
+	// place of the account itself
+	HasFCMServiceAccount bool `json:"hasFcmServiceAccount"`
 }
 
 // AgentToolsSettings is the operator's policy over the catalog.
@@ -484,6 +488,8 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 				APNSTeamID: agent.Push.Relay.APNSTeamID,
 				HasAPNSKey: agent.Push.Relay.APNSKey != "",
 				APNSTopic:  agent.Push.Relay.APNSTopic,
+
+				HasFCMServiceAccount: agent.Push.Relay.FCMServiceAccount != "",
 			},
 		},
 		Families: config.AgentToolFamilies,
@@ -749,6 +755,8 @@ type AgentPushRelayParameters struct {
 	APNSTeamID *string `json:"apnsTeamId"`
 	APNSKey    *string `json:"apnsKey"`
 	APNSTopic  *string `json:"apnsTopic"`
+
+	FCMServiceAccount *string `json:"fcmServiceAccount"`
 }
 
 // AgentToolsParameters change the tool policy.
@@ -1059,6 +1067,7 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 			applyString(&push.Relay.APNSTeamID, relay.APNSTeamID)
 			applySecret(&push.Relay.APNSKey, relay.APNSKey)
 			applyString(&push.Relay.APNSTopic, relay.APNSTopic)
+			applySecret(&push.Relay.FCMServiceAccount, relay.FCMServiceAccount)
 		}
 	}
 	if parameters.Tools != nil {

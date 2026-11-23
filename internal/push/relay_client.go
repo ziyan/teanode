@@ -27,6 +27,11 @@ type RegisterRequest struct {
 	// PushTypeLiveActivity, one Live Activity's push token, or PushTypeVoIP,
 	// the token PushKit gives the app for incoming calls.
 	PushType string `json:"pushType,omitempty"`
+
+	// Platform is PlatformIOS, which is the default and what a phone that
+	// registered before Android was served is, or PlatformAndroid, whose
+	// DeviceToken is the FCM registration token.
+	Platform string `json:"platform,omitempty"`
 }
 
 // RegisterResponse is the sealed registration the phone hands its server.

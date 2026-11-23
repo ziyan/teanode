@@ -10,8 +10,9 @@ import (
 )
 
 type AppUpdateQuery interface {
-	// The newest iPhone app on a channel, testflight or appstore, for the
-	// app to compare with what it is. Nothing when the channel has none yet,
+	// The newest TeaNode app on a channel, testflight or appstore for the
+	// iPhone app and android for the Android app, for the app to compare
+	// with what it is. Nothing when the channel has none yet,
 	// or when this server does not look for releases
 	GetAppUpdate(ctx context.Context, arguments GetAppUpdateArguments) (*appupdate.Update, error)
 }

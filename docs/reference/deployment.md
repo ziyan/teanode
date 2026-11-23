@@ -213,18 +213,42 @@ an upgrade were a thing you did on a day you chose.
 ## What your server relies on beyond your own machines
 
 Your mail, models, storage and backups are yours. A few things are not,
-because the iPhone app is published once for everybody:
+because the iPhone and Android apps are published once for everybody:
 
 - **Phone notifications go through `https://mail.teanode.com`.** Apple
-  delivers to an app only from the push key of the account that publishes
-  it, so every server sends through that relay, and the app registers each
-  phone there. What a server sends is encrypted for the phone before it
+  and Google deliver to an app only from the push credential of the account
+  that publishes it, so every server sends through that relay, and the app
+  registers each phone there, iPhone or Android. What a server sends is encrypted for the phone before it
   leaves, and the relay keeps nothing, so it learns only that a phone was
   sent something. Live Activities on the lock screen travel the same way.
   If the relay cannot be reached, phones get no notifications until it can;
   everything else works. `agent.push.relayUrl` names another relay, which
   helps only with an app you build and sign with a push key of your own (see
   `agent.push` and `agent.push.relay` in `docs/configuration.md`).
+
+  **Running a relay for an Android app.** A relay reaches Android phones
+  through Firebase Cloud Messaging, beside Apple. In the Firebase console of
+  the project the app is registered in, open Project settings, Service
+  accounts, and generate a new private key: that JSON file is the credential
+  (the account needs the Firebase Cloud Messaging API enabled and the role
+  "Firebase Cloud Messaging API Admin", or "Firebase Admin SDK Administrator
+  Service Agent", which the console's own service account already has). Set
+  it as `agent.push.relay.fcmServiceAccount`, from a pipe so it does not land
+  in your shell history (a piped secret is one line, so the file is made
+  compact first):
+
+      jq -c . service-account.json | teanode settings set agent \
+        'push:={"relay":{"enabled":true,"fcmServiceAccount":"-"}}'
+
+  It is a secret, redacted wherever the Apple key is. Leave it empty and the
+  relay refuses Android registrations; leave the Apple key empty and it
+  refuses iPhones. A relay that gains Android keeps every iPhone registration
+  it handed out. Replacing the Firebase credential of a relay that has no
+  Apple key makes its phones register again the next time their apps start.
+  Check it with `teanode agent phone test <phone-id>` on a connected Android
+  phone. The Android app asks its server for updates on the `android` channel,
+  which the server reads from the release asset `android-update-channel/android.json`
+  of `ziyan/teanode` (`teanode upgrade app android` shows what it reads).
 - **Connecting a phone by its code uses `https://teanode.com/app/connect`.**
   The code a server shows is that address, which the app claims, so a phone's
   camera opens the app. The server's address and the code follow the `#`,
@@ -428,11 +452,11 @@ agent under Settings → Your agent.
 
 For remote access, put port 8080 behind a TLS reverse proxy and set its
 addresses as trusted proxies, so that secure cookies and profile downloads
-use the right origin. The iPhone app needs that HTTPS address. Mail DNS
+use the right origin. The phone apps (iPhone and Android) need that HTTPS address. Mail DNS
 checks appear only for hosted mail, and mail can be added later in
 Server → Setup without losing anything.
 
-### Photos and the iPhone app
+### Photos and the phone apps
 
 Photos is on from the first start, with nothing to choose and no restart: it
 costs no disk until somebody uploads. The welcome page that asks for a model
@@ -441,7 +465,7 @@ rail has a **Photos** row for everybody who may use it.
 
 1. Open **Photos** and upload from the page, or with
    `teanode photo upload <folder>` from a computer.
-2. Back up an iPhone: install the TeaNode app, sign in with this server's
+2. Back up a phone (iPhone or Android): install the TeaNode app, sign in with this server's
    address, then open Settings, **Photo backup** and turn it on. The empty
    library and **Settings → Devices** say the same, with this server's address
    filled in.
@@ -455,7 +479,8 @@ The iPhone app only signs in over https, with one exception: plain `http://` is
 accepted for `localhost`, `127.0.0.1`, `::1` and `*.localhost`, which a phone
 cannot reach, because they name the phone itself. The assistant compose file
 publishes port 8080 on the loopback interface alone, so a phone cannot reach
-it, and a plain `http://` address on the local network is refused by the app.
+it, and a plain `http://` address on the local network is refused by the app (the Android app
+refuses plain `http://` as well).
 Put a TLS reverse proxy in front of 8080 on a name such as `photos.example.com` with a certificate from a certificate
 authority the phone trusts (Caddy, nginx with Let's Encrypt, a tunnel
 service), list the proxy's address under `trustedProxies` (see

@@ -531,6 +531,8 @@ type agentScheduleModel struct {
 	Enabled        bool       `gorm:"column:enabled"`
 	LastRunAt      *time.Time `gorm:"column:last_run_at"`
 	NextRunAt      *time.Time `gorm:"column:next_run_at"`
+	// IsNotifiedWhenPosted is whether a run's first card notifies. See migration 0276.
+	IsNotifiedWhenPosted bool `gorm:"column:is_notified_when_posted"`
 	// MailConditions and MailArrivals are NULL for a schedule on a clock.
 	MailConditions []byte `gorm:"column:mail_conditions;type:jsonb"`
 	MailArrivals   []byte `gorm:"column:mail_arrivals;type:jsonb"`
@@ -539,7 +541,7 @@ type agentScheduleModel struct {
 func (agentScheduleModel) TableName() string { return "agent_schedule" }
 
 func scheduleToModel(schedule *models.AgentSchedule) (*agentScheduleModel, error) {
-	model := &agentScheduleModel{ID: schedule.ID, CreatedAt: schedule.CreatedAt, ModifiedAt: schedule.ModifiedAt, AgentID: schedule.AgentID, Name: schedule.Name, Cron: schedule.Cron, Prompt: schedule.Prompt, WrittenBy: schedule.WrittenBy, Deliver: schedule.Deliver, ConversationID: schedule.ConversationID, Enabled: schedule.Enabled, LastRunAt: schedule.LastRunAt, NextRunAt: schedule.NextRunAt}
+	model := &agentScheduleModel{ID: schedule.ID, CreatedAt: schedule.CreatedAt, ModifiedAt: schedule.ModifiedAt, AgentID: schedule.AgentID, Name: schedule.Name, Cron: schedule.Cron, Prompt: schedule.Prompt, WrittenBy: schedule.WrittenBy, Deliver: schedule.Deliver, ConversationID: schedule.ConversationID, Enabled: schedule.Enabled, LastRunAt: schedule.LastRunAt, NextRunAt: schedule.NextRunAt, IsNotifiedWhenPosted: schedule.IsNotifiedWhenPosted}
 	var err error
 	if len(schedule.MailConditions) > 0 {
 		if model.MailConditions, err = json.Marshal(schedule.MailConditions); err != nil {
@@ -555,7 +557,7 @@ func scheduleToModel(schedule *models.AgentSchedule) (*agentScheduleModel, error
 }
 
 func (self *agentScheduleModel) toModel() (*models.AgentSchedule, error) {
-	schedule := &models.AgentSchedule{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Name: self.Name, Cron: self.Cron, Prompt: self.Prompt, WrittenBy: self.WrittenBy, Deliver: self.Deliver, ConversationID: self.ConversationID, Enabled: self.Enabled, LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt}
+	schedule := &models.AgentSchedule{ID: self.ID, CreatedAt: self.CreatedAt, ModifiedAt: self.ModifiedAt, AgentID: self.AgentID, Name: self.Name, Cron: self.Cron, Prompt: self.Prompt, WrittenBy: self.WrittenBy, Deliver: self.Deliver, ConversationID: self.ConversationID, Enabled: self.Enabled, LastRunAt: self.LastRunAt, NextRunAt: self.NextRunAt, IsNotifiedWhenPosted: self.IsNotifiedWhenPosted}
 	if err := decodeJSON(self.MailConditions, &schedule.MailConditions); err != nil {
 		return nil, fmt.Errorf("db: the mail conditions of schedule %q: %w", self.ID, err)
 	}

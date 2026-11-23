@@ -174,7 +174,7 @@ it('points the Photos step at the iPhone backup once Photos runs, and not before
   renderSetup('/manage/server/setup?choose=photos')
   await screen.findByText(/Photos is running/)
   const photosStep = step('Open Photos')
-  expect(within(photosStep).getByRole('link', { name: 'Back up an iPhone' }).getAttribute('href')).toBe(
+  expect(within(photosStep).getByRole('link', { name: 'Back up a phone' }).getAttribute('href')).toBe(
     '/settings/devices',
   )
   expect(within(photosStep).getByRole('link', { name: 'Open Photos' }).getAttribute('href')).toBe('/photos')
@@ -182,7 +182,7 @@ it('points the Photos step at the iPhone backup once Photos runs, and not before
   answer({ selected: { isPhotosEnabled: true }, pendingRestart: ['services'] })
   renderSetup('/manage/server/setup?choose=photos')
   await screen.findByText(/Photos can be opened once the server has restarted/)
-  expect(screen.queryByRole('link', { name: 'Back up an iPhone' })).toBeNull()
+  expect(screen.queryByRole('link', { name: 'Back up a phone' })).toBeNull()
 })
 
 it('shows the note about keeping data only when something is turned off', async () => {

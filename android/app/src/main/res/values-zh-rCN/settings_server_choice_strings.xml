@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_server_footer_identity">本服务器如何称呼自己，以及记录多少日志。</string>
+    <string name="settings_server_footer_smtp">本服务器对连接进来的一方所接受的范围。以下每一项都会在每封邮件或每次连接时读取，因此修改会在下一次生效。</string>
+    <string name="settings_server_footer_resolver">本服务器检查域名已发布的记录时，如何进行 DNS 查询。每次检查时读取，修改在下一次检查生效。</string>
+    <string name="settings_server_footer_session">登录本控制台后能保持多久。</string>
+    <string name="settings_server_footer_passkey">本服务器如何向验证器介绍自己。通行密钥绑定在下面这个名字上，改动它会让已经注册的所有通行密钥失效。</string>
+    <string name="settings_server_footer_listen">本服务器绑定的地址。每一项都写作 host:port，主机留空表示本机的所有地址。</string>
+    <string name="settings_server_footer_storage">邮件写在哪里，以及一直投递失败的邮件保留多久。</string>
+    <string name="settings_server_footer_geoip">可选的 MaxMind 数据库，从磁盘读取，把邮件来源地址换算成国家。整个过程不向外发送任何内容。</string>
+    <string name="settings_server_footer_places">地点名称来自 OpenStreetMap：您的服务器会把每个新地点的位置发送给地点服务商，以查询它的名称。关闭后，地点会沿用所在城市的名称，用户仍可自己为地点命名。</string>
+    <string name="settings_server_footer_relay">把外发邮件交给某一台邮件服务器，而不是按 MX 记录直接投递。几乎所有家用宽带都会封锁出站 25 端口，中继则走提交端口。通过服务商发信也用这个：SES、Postmark、Resend 都提供 SMTP 接入点，而且邮件会带着本服务器已经加好的签名送达。</string>
+    <string name="settings_server_footer_proxy">让本服务器自身的 SMTP 会话经由另一个地址发出。中继以另一种方式解决同样的问题：中继把邮件交给别人的邮件服务器，而这里仍按 MX 查询投递，只是换了出口。端口 25 被封或地址被列入黑名单时，两者都可以应对，且无需同时使用。</string>
+    <string name="settings_server_footer_s3">每封已存邮件副本的存放位置。仅当多个实例共用此数据库时才需要，因为这是它们互相读取对方收到的邮件的方式。</string>
+    <string name="settings_server_footer_certificates">这样，连接某个域名的发信方拿到的证书就是它请求的名称，而不是另一个域名的名称。每个名称都必须能通过 80 端口访问本服务器才能签发证书。关闭后将停止续期，已签发的证书在到期前仍继续使用。</string>
+    <string name="settings_server_footer_route53">使用 AWS 托管区域完成 dns-01 验证。仅在需要通配符证书，或 80 端口不可达时才需要。</string>
+    <string name="settings_server_footer_antivirus">使用 ClamAV 扫描收到的邮件。</string>
+    <string name="settings_server_footer_antispam">使用 SpamAssassin 为收到的邮件评分。</string>
+    <string name="settings_server_footer_sso">通过 OpenID Connect 提供方（Entra ID、Okta、Google、Keycloak、Authentik 等）登录，这里列出的每个提供方都会在登录页显示一个按钮。用户在提供方的群组会让他们加入这里以其命名的群组。</string>
+    <string name="settings_server_footer_log_level">写入日志的详细程度。notice 是日常默认值；debug 的量非常大，用来定位具体问题，不适合长期开着。</string>
+    <string name="settings_server_footer_challenge">如何证明域名归你所有。http-01 需要 HTTP 监听能从公网的 80 端口访问；dns-01 需要 Route53 求解器，也是唯一能申请通配符证书的方式。</string>
+    <string name="settings_server_footer_restart">这些设置只在服务器启动时读取一次。保存会记录下修改，但服务器仍在使用启动时读到的值，直到重启为止。</string>
+    <string name="settings_server_restart_on_about">在“关于”页面重启</string>
+    <string name="settings_server_label_log_level">日志级别</string>
+    <string name="settings_server_label_provider">地点名称服务商</string>
+    <string name="settings_server_label_encryption">加密</string>
+    <string name="settings_server_label_challenge">验证方式</string>
+    <string name="settings_server_label_engine">筛选</string>
+    <string name="settings_server_choice_places_nominatim">Nominatim（OpenStreetMap）</string>
+    <string name="settings_server_choice_places_photon">Photon（OpenStreetMap 数据）</string>
+    <string name="settings_server_choice_places_off">关闭：以所在城市命名地点</string>
+    <string name="settings_server_choice_relay_starttls">STARTTLS（587、2525）</string>
+    <string name="settings_server_choice_relay_tls">TLS（465）</string>
+    <string name="settings_server_choice_relay_none">不强制</string>
+    <string name="settings_server_choice_engine_builtin">内置，在本服务器内评分</string>
+    <string name="settings_server_choice_engine_spamd">外部 SpamAssassin 守护进程</string>
+</resources>

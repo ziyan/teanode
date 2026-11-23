@@ -32,6 +32,7 @@ type PhotoSource string
 
 const (
 	PhotoSourceIPhone       PhotoSource = "iphone"
+	PhotoSourceAndroid      PhotoSource = "android"
 	PhotoSourceDashboard    PhotoSource = "dashboard"
 	PhotoSourceCommandLine  PhotoSource = "commandLine"
 	PhotoSourceConversation PhotoSource = "conversation"
@@ -45,7 +46,7 @@ const (
 // IsValid says whether the server knows this source.
 func (self PhotoSource) IsValid() bool {
 	switch self {
-	case PhotoSourceIPhone, PhotoSourceDashboard, PhotoSourceCommandLine, PhotoSourceConversation, PhotoSourceMail, PhotoSourceComputer, PhotoSourceShared:
+	case PhotoSourceIPhone, PhotoSourceAndroid, PhotoSourceDashboard, PhotoSourceCommandLine, PhotoSourceConversation, PhotoSourceMail, PhotoSourceComputer, PhotoSourceShared:
 		return true
 	}
 	return false

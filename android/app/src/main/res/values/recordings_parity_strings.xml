@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recordings_corrected_transcript">Corrected transcript</string>
+    <string name="recordings_edit_unconfirmed">This edit has an unconfirmed response. Retry the same edit before changing its text.</string>
+    <string name="recordings_original_transcript">Original transcript</string>
+    <string name="recordings_retry_edit">Retry edit</string>
+    <string name="recordings_passage_corrected">Passage corrected.</string>
+    <string name="recordings_label_unconfirmed">This label has an unconfirmed response. Retry the same label before changing it.</string>
+    <string name="recordings_upload_deleted_on_server">This recording was deleted on the server. Its local original was kept.</string>
+    <string name="recordings_upload_not_verified">The upload was not verified. Keep the original and retry.</string>
+    <string name="recordings_local_original_changed">The local original changed. Keep it and try importing again.</string>
+    <string name="recordings_compatible_audio_preview">Compatible audio preview</string>
+    <string name="recordings_audio_preview_note">Audio preview prepared locally; original unchanged.</string>
+    <string name="recordings_preparing_compatible_audio">Preparing compatible audio preview</string>
+</resources>

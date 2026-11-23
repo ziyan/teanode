@@ -19,7 +19,7 @@ import (
 	"github.com/ziyan/teanode/internal/util/graphapi"
 )
 
-// A person's Apple Health data, copied from their iPhone to their own server:
+// A person's Apple Health data, copied from their phone to their own server:
 // the readings (samples), each day's summary of a kind of reading, the paths
 // of workouts, and the facts about the person that HealthKit keeps once. What
 // each kind of data is called and which group of the Health app it is in is
@@ -423,7 +423,7 @@ type SetHealthShareArguments struct {
 
 type ReportHealthArguments struct {
 	// AgentPhoneID is accepted and ignored: a reading does not record which
-	// install sent it. The iPhone app still sends it, so the argument stays.
+	// install sent it. The TeaNode phone app still sends it, so the argument stays.
 	AgentPhoneID string `json:"agentPhoneId" graphapi:"nullable"`
 
 	// HealthErasedAt is the last time the person erased all of their Health
@@ -575,7 +575,7 @@ func (self *graph) requireHealthPerson(ctx context.Context) (*api.Principal, err
 
 // healthOnATap is what a call is told when only a person's own tap may make
 // it. It begins with api.TapRequiredPhrase, which the command line recognizes.
-const healthOnATap = api.TapRequiredPhrase + ": turning on the agent's access to Health, and sharing more Health with anybody, are done on the Settings tab of the Health page on the dashboard or in Health in the iPhone app's Settings, not from a command line or an API token"
+const healthOnATap = api.TapRequiredPhrase + ": turning on the agent's access to Health, and sharing more Health with anybody, are done on the Settings tab of the Health page on the dashboard or in Health in the TeaNode phone app's Settings, not from a command line or an API token"
 
 // healthReach is whose Health a call is about, and which of it the caller may
 // read.

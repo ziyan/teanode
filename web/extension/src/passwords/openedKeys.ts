@@ -512,7 +512,7 @@ export async function openItems(
 const itemsNeedingNewKey = new WeakSet<object>()
 
 export const NEEDS_NEW_KEY_WORDS =
-  'Open Passwords on the dashboard or in the iPhone app first: this item needs a new key.'
+  'Open Passwords on the dashboard or in the TeaNode phone app first: this item needs a new key.'
 
 export function doesItemNeedNewKey(item: PasswordItem): boolean {
   return itemsNeedingNewKey.has(item)

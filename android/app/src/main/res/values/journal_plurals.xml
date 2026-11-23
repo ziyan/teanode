@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="journal_photos_count">
+        <item quantity="one">%1$d photo</item>
+        <item quantity="other">%1$d photos</item>
+    </plurals>
+    <plurals name="journal_projects">
+        <item quantity="one">%1$d project</item>
+        <item quantity="other">%1$d projects</item>
+    </plurals>
+    <plurals name="journal_stretches_of_work">
+        <item quantity="one">%1$d stretch of work</item>
+        <item quantity="other">%1$d stretches of work</item>
+    </plurals>
+    <plurals name="journal_n_meetings">
+        <item quantity="one">%1$d meeting</item>
+        <item quantity="other">%1$d meetings</item>
+    </plurals>
+    <plurals name="journal_n_messages">
+        <item quantity="one">%1$d message</item>
+        <item quantity="other">%1$d messages</item>
+    </plurals>
+</resources>

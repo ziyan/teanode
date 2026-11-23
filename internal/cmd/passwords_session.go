@@ -351,7 +351,7 @@ func readSetUpPasswords(ctx context.Context, connection *client.Client) (*client
 		return nil, err
 	}
 	if setup == nil || !setup.IsSetUp {
-		return nil, errors.New("you have not set Passwords up yet; 'teanode passwords setup' does it (or the Passwords page on the dashboard, or the iPhone app)")
+		return nil, errors.New("you have not set Passwords up yet; 'teanode passwords setup' does it (or the Passwords page on the dashboard, or the TeaNode phone app)")
 	}
 	return setup, nil
 }

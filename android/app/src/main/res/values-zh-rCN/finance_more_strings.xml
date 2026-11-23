@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="finance_tap_photo_full_size">点按照片可查看原图。</string>
+    <string name="finance_has_its_photo">附有照片</string>
+    <string name="finance_open_original">打开原件</string>
+    <string name="finance_investment_income">投资收入</string>
+    <string name="finance_investment_footer">这一年的 1099 报告的内容：利息、股息和出售的盈亏。</string>
+    <string name="finance_investment_preview_title">账户的利息和股息</string>
+    <string name="finance_investment_preview_footer">应税利息至今 %1$s，到 12 月 31 日 %2$s；应税股息至今 %3$s，到 12 月 31 日 %4$s。在 1099 到来之前计入；在 1099-DIV 注明合格股息之前，股息按普通股息计算。IRA、HSA 等收入不征税的账户不计入。</string>
+    <string name="finance_interest">利息</string>
+    <string name="finance_dividends">股息</string>
+    <string name="finance_not_taxed">不征税</string>
+    <string name="finance_tax_exempt_interest">免税利息</string>
+    <string name="finance_ordinary_dividends">普通股息</string>
+    <string name="finance_qualified_dividends">合格股息（普通股息的一部分）</string>
+    <string name="finance_capital_gain_distributions">资本利得分配</string>
+    <string name="finance_short_term_gain_or_loss">短期盈亏</string>
+    <string name="finance_long_term_gain_or_loss">长期盈亏</string>
+    <string name="finance_federal_income_tax_withheld">预扣联邦所得税</string>
+    <string name="finance_foreign_tax_paid">已付外国税</string>
+    <string name="finance_exchange_rate_note">1 %1$s = %2$s %3$s</string>
+    <string name="finance_tax_adding">正在添加</string>
+    <string name="finance_tax_uploading">正在上传…</string>
+    <string name="finance_tax_reading">正在读取…</string>
+    <string name="finance_tax_still_reading">仍在读取。下拉刷新，或查看其他年份。</string>
+    <string name="finance_tax_hide">隐藏</string>
+    <string name="finance_tax_add_documents">添加税务文件</string>
+    <string name="finance_tax_add_photo_library">照片图库</string>
+    <string name="finance_tax_add_camera">相机</string>
+    <string name="finance_tax_add_files">文件</string>
+    <plurals name="finance_tax_reading_documents">
+        <item quantity="other">正在读取 %d 份文件</item>
+    </plurals>
+    <string name="finance_valued_by">估值方式</string>
+    <string name="finance_valued_by_you">你</string>
+    <string name="finance_valued_by_agent_estimate">助手估算</string>
+    <string name="finance_valued_by_agent_reading">助手读取</string>
+    <string name="finance_what_to_estimate_from">估算依据</string>
+    <string name="finance_budget_from_month">起始月份（%1$s）</string>
+    <string name="finance_budget_changes_past_months">这会更改已经过去的月份。</string>
+    <string name="finance_end_this_budget">结束此预算</string>
+    <string name="finance_budget_ended">预算已结束</string>
+    <string name="finance_choose_an_account">选择账户</string>
+    <string name="finance_measured_by">衡量方式</string>
+    <string name="finance_manage_left_out_over_limit">另外略去 %1$d 条：一次最多保存 %2$d 条支出规则</string>
+    <plurals name="finance_manage_left_out_too_generic">
+        <item quantity="other">略去 %d 条：太短或太笼统，不适合做规则</item>
+    </plurals>
+    <plurals name="finance_manage_left_out_changing_number">
+        <item quantity="other">略去 %d 条：其中的数字每次都不同</item>
+    </plurals>
+</resources>
