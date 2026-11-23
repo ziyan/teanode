@@ -50,7 +50,22 @@ function changedFields(
   after: Record<string, unknown> | null | undefined,
 ): string[] {
   const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])
-  return [...keys].filter((key) => JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key])).sort()
+  return [...keys].filter((key) => comparable(before?.[key]) !== comparable(after?.[key])).sort()
+}
+
+// A field as it is compared: missing, null, an empty list and an empty
+// object are all unset, so an older row that wrote an empty list on one side
+// and null on the other does not show a change that was never made.
+function comparable(value: unknown): string {
+  if (
+    value === undefined ||
+    value === null ||
+    (Array.isArray(value) && value.length === 0) ||
+    (typeof value === 'object' && !Array.isArray(value) && Object.keys(value as object).length === 0)
+  ) {
+    return ''
+  }
+  return JSON.stringify(value)
 }
 
 // A value as a line of text. Objects and lists are printed as JSON, because
@@ -140,7 +155,10 @@ export function AuditTab() {
             <>
               {event.actorLabel || event.actorKind}
               {event.impersonatorLabel ? (
-                <span className="muted"> {t('access.audit.impersonatedBy', { username: event.impersonatorLabel })}</span>
+                <span className="muted">
+                  {' '}
+                  {t('access.audit.impersonatedBy', { username: event.impersonatorLabel })}
+                </span>
               ) : null}
               {/* The person's agent acting for them: the row names the
                   person, and this says it was not their hand. */}

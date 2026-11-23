@@ -119,6 +119,11 @@ func (self *transaction) applyMutation(resourceType models.AuditResourceType, re
 		return err
 	}
 
+	principal := PrincipalFromContext(self.ctx)
+	if principal.ActorKind == "" {
+		principal.ActorKind = models.AuditActorSystem
+	}
+
 	encodedBefore, err := encodeForAudit(before)
 	if err != nil {
 		return fmt.Errorf("db: cannot record the audit event for %s %s: %w", resourceType, resourceId, err)
@@ -127,14 +132,17 @@ func (self *transaction) applyMutation(resourceType models.AuditResourceType, re
 	if err != nil {
 		return fmt.Errorf("db: cannot record the audit event for %s %s: %w", resourceType, resourceId, err)
 	}
-	if action == models.AuditActionUpdate && bytes.Equal(encodedBefore, encodedAfter) {
-		return nil
+	if action == models.AuditActionUpdate {
+		var changed bool
+		encodedBefore, encodedAfter, changed, err = changedAuditFields(resourceType, principal.ActorKind, encodedBefore, encodedAfter)
+		if err != nil {
+			return fmt.Errorf("db: cannot record the audit event for %s %s: %w", resourceType, resourceId, err)
+		}
+		if !changed {
+			return nil
+		}
 	}
 
-	principal := PrincipalFromContext(self.ctx)
-	if principal.ActorKind == "" {
-		principal.ActorKind = models.AuditActorSystem
-	}
 	event := &auditEventModel{
 		ID:          security.NewULID(),
 		CreatedAt:   time.Now(),
@@ -234,4 +242,127 @@ func (self *transaction) CountAuditEvents(options *AuditOptions) (int64, error) 
 func (self *transaction) ScavengeAuditEvents(before time.Time) (int64, error) {
 	result := self.tx.Where("\"created_at\" < ?", before).Delete(&auditEventModel{})
 	return result.RowsAffected, result.Error
+}
+
+// auditBookkeepingFields are the fields of a resource that the server writes
+// on its own account as it works, so an update of only these says nothing a
+// person or an operator acts on: an agent's dream finished, a credential was
+// used. They are never recorded, alone or beside a real change.
+var auditBookkeepingFields = map[models.AuditResourceType][]string{
+	models.AuditResourceAgent: {
+		"dreamedAt", "decayedAt", "dreamBootstrap", "followUpBackfilledAt", "spokeFirstAt", "onboardedAt",
+	},
+	models.AuditResourceUser:               {"timezoneSeenAt"},
+	models.AuditResourceSyncCredential:     {"lastUsedAt"},
+	models.AuditResourceMailboxAppPassword: {"lastUsedAt"},
+}
+
+// auditSystemBookkeepingFields are fields that are bookkeeping only when the
+// server wrote them: the matcher pairing receipt lines with purchases. The
+// same change by a person or by their agent is the person's decision and is
+// recorded.
+var auditSystemBookkeepingFields = map[models.AuditResourceType][]string{
+	models.AuditResourceFinanceReceipt: {"receiptMatches"},
+}
+
+// auditContextFields are fields that name the change itself, such as the
+// event a password item's row was written for. They are kept beside the
+// changed fields of an update, and never make one by themselves.
+var auditContextFields = []string{"event"}
+
+// changedAuditFields reduces an update to what changed. Both sides are read
+// as objects and a field that is absent, null, an empty list or an empty
+// object counts as unset, so a nil slice on one side and an empty slice on
+// the other is no change. Bookkeeping fields are dropped. What comes back is
+// only the changed fields on each side, and false when there are none.
+func changedAuditFields(resourceType models.AuditResourceType, actorKind models.AuditActorKind, encodedBefore, encodedAfter []byte) ([]byte, []byte, bool, error) {
+	beforeFields, err := auditFieldsOf(encodedBefore)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	afterFields, err := auditFieldsOf(encodedAfter)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	ignored := map[string]bool{}
+	for _, field := range auditBookkeepingFields[resourceType] {
+		ignored[field] = true
+	}
+	if actorKind == models.AuditActorSystem {
+		for _, field := range auditSystemBookkeepingFields[resourceType] {
+			ignored[field] = true
+		}
+	}
+	changedBefore := map[string]json.RawMessage{}
+	changedAfter := map[string]json.RawMessage{}
+	for field, beforeValue := range beforeFields {
+		if !ignored[field] && !bytes.Equal(beforeValue, afterFields[field]) {
+			changedBefore[field] = beforeValue
+		}
+	}
+	for field, afterValue := range afterFields {
+		if !ignored[field] && !bytes.Equal(afterValue, beforeFields[field]) {
+			changedAfter[field] = afterValue
+		}
+	}
+	if len(changedBefore) == 0 && len(changedAfter) == 0 {
+		return nil, nil, false, nil
+	}
+	// What the change was called says what happened even when it is the same
+	// word on both sides, so it stays with whatever else changed.
+	for _, field := range auditContextFields {
+		if _, isKept := beforeFields[field]; isKept && changedBefore[field] == nil {
+			changedBefore[field] = beforeFields[field]
+		}
+		if _, isKept := afterFields[field]; isKept && changedAfter[field] == nil {
+			changedAfter[field] = afterFields[field]
+		}
+	}
+	reducedBefore, err := json.Marshal(changedBefore)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	reducedAfter, err := json.Marshal(changedAfter)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	return reducedBefore, reducedAfter, true, nil
+}
+
+// auditFieldsOf is an encoded row as its set fields, each compacted so that
+// equal values compare equal as bytes. A value that is not an object has no
+// fields.
+func auditFieldsOf(encoded []byte) (map[string]json.RawMessage, error) {
+	fields := map[string]json.RawMessage{}
+	if len(encoded) == 0 {
+		return fields, nil
+	}
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &parsed); err != nil {
+		return fields, nil
+	}
+	for field, raw := range parsed {
+		var value any
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, err
+		}
+		switch typed := value.(type) {
+		case nil:
+			continue
+		case []any:
+			if len(typed) == 0 {
+				continue
+			}
+		case map[string]any:
+			if len(typed) == 0 {
+				continue
+			}
+		}
+		compact, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		fields[field] = compact
+	}
+	return fields, nil
 }
