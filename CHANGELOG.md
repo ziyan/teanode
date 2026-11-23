@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.230.4] - 2026-11-23
+
+### Changed
+
+- The dashboard's button that opens the chat drawer shows a chat bubble. (#768)
+
 ## [0.230.3] - 2026-11-23
 
 ### Fixed
