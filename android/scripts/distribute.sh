@@ -54,7 +54,9 @@ done
 cp "${SECRETS_DIRECTORY}/google-services.json" android/app/google-services.json
 trap 'rm -f android/app/google-services.json' EXIT
 
-VERSION_CODE="$(( ( $(date -u +%s) - $(date -u -d 2026-01-01 +%s) ) / 60 ))"
+# Minutes since 2026-01-01 UTC (1767225600), written as a number so the
+# script does not depend on GNU date.
+VERSION_CODE="$(( ( $(date -u +%s) - 1767225600 ) / 60 ))"
 (cd android && TEANODE_ANDROID_SIGNING_DIRECTORY="${SECRETS_DIRECTORY}" \
     ./gradlew --no-daemon -q :app:assembleRelease -PteanodeVersionCode="${VERSION_CODE}")
 APK_FILE=android/app/build/outputs/apk/release/app-release.apk
