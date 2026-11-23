@@ -43,10 +43,11 @@ extension OperatorAccess {
 }
 
 /// ServerSettingsTab is one tab of the dashboard's Server page, in its
-/// order: what this instance is, what is still missing, then the settings in
-/// the order mail moves through them.
+/// order: what this instance is, what is still missing, what the database
+/// and the files hold, then the settings in the order mail moves through
+/// them.
 public enum ServerSettingsTab: String, CaseIterable, Sendable, Identifiable {
-    case about, setup, identity, mail, sending, listeners, certificates, storage, resolver, scanning, spam, sessions, sso
+    case about, setup, usage, identity, mail, sending, listeners, certificates, storage, resolver, scanning, spam, sessions, sso
 
     public var id: String { rawValue }
 

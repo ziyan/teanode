@@ -9065,28 +9065,6 @@
         }
       }
     },
-    "Agent suggestions": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Suggestions"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "提案"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "建议"
-          }
-        }
-      }
-    },
     "Agents": {
       "localizations": {
         "ja": {
@@ -11669,22 +11647,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "在固定类别（%@）之外，你可以声明自己的类别，每个附一句说明。它们在规则中与固定类别一样可用。"
-          }
-        }
-      }
-    },
-    "Besides introducing itself, your agent may start a conversation on its own, at most once a day.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自己紹介のほかに、エージェントが自分から会話を始めることがあります。多くても一日に一度です。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "除了自我介绍，你的助手还可以主动开启对话，每天最多一次。"
           }
         }
       }
@@ -21673,22 +21635,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "想法"
-          }
-        }
-      }
-    },
-    "Ideas to try, and checks of what it remembers, offered on its own.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "試せるアイデアや、覚えていることの確認を、エージェントが自分から提案します。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你的助手会主动提出可以尝试的想法，以及对它所记内容的核对。"
           }
         }
       }
@@ -32213,22 +32159,6 @@
         }
       }
     },
-    "Posted to the feed": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "投稿日時"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发布时间"
-          }
-        }
-      }
-    },
     "Posted to %@": {
       "localizations": {
         "ja": {
@@ -38155,22 +38085,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "做梦可用的每日预算份额（默认 0.3）"
-          }
-        }
-      }
-    },
-    "Share of the day goals at their own pace may spend (0.5 by default)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自分のペースで進む目標が使える 1 日の予算の割合（既定 0.5）"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自主推进的目标可用的每日预算份额（默认 0.5）"
           }
         }
       }
@@ -49780,22 +49694,6 @@
         }
       }
     },
-    "Your agent will not make suggestions on its own.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "エージェントが自分から提案しないようにしました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "助手不会主动提出建议。"
-          }
-        }
-      }
-    },
     "Your agent will not tell you about your mail unasked.": {
       "localizations": {
         "ja": {
@@ -49808,22 +49706,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "代理不会主动告诉你邮件里的事。"
-          }
-        }
-      }
-    },
-    "Your agent will make suggestions.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "エージェントが自分から提案するようにしました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "助手会主动提出建议。"
           }
         }
       }
@@ -61580,22 +61462,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "头像"
-          }
-        }
-      }
-    },
-    "Picture from the page": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ページの画像"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "网页图片"
           }
         }
       }
@@ -80270,28 +80136,6 @@
         }
       }
     },
-    "Card: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Card: %@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "カード：%@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "卡片：%@"
-          }
-        }
-      }
-    },
     "Card brand": {
       "localizations": {
         "ja": {
@@ -96715,6 +96559,604 @@
         }
       }
     },
+    "%@ is projected to fill on %@, in about %lld days.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@は %2$@ に満杯になる見込みです（約 %3$lld 日後）。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@预计在 %2$@ 写满，约 %3$lld 天后。"
+          }
+        }
+      }
+    },
+    "Disks": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "磁盘"
+          }
+        }
+      }
+    },
+    "Database by area": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "データベース（用途別）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数据库，按用途"
+          }
+        }
+      }
+    },
+    "Files by kind": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイル（種類別）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件，按类型"
+          }
+        }
+      }
+    },
+    "Files by person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイル（人別）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件，按人"
+          }
+        }
+      }
+    },
+    "Database": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "データベース"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数据库"
+          }
+        }
+      }
+    },
+    "Nothing stored.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存されているものはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有存储内容。"
+          }
+        }
+      }
+    },
+    "Disk usage": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスク使用量"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "磁盘用量"
+          }
+        }
+      }
+    },
+    "Full on %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に満杯"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 写满"
+          }
+        }
+      }
+    },
+    "Not growing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "増加していません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有增长"
+          }
+        }
+      }
+    },
+    "Not enough history yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "履歴がまだ足りません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史记录还不够"
+          }
+        }
+      }
+    },
+    "%@ free of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@ 中 %1$@ が空き"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共 %2$@，剩余 %1$@"
+          }
+        }
+      }
+    },
+    "Not measured": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未測定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未测量"
+          }
+        }
+      }
+    },
+    "Nothing sampled in this range.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この期間のサンプルはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个时间范围内没有采样。"
+          }
+        }
+      }
+    },
+    "Storage over time": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ストレージ使用量の推移"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "存储用量变化"
+          }
+        }
+      }
+    },
+    "At this rate": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペースでは"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按这个速度"
+          }
+        }
+      }
+    },
+    "In 30 days": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30 日後"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30 天后"
+          }
+        }
+      }
+    },
+    "In 90 days": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "90 日後"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "90 天后"
+          }
+        }
+      }
+    },
+    "In 365 days": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "365 日後"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "365 天后"
+          }
+        }
+      }
+    },
+    "Files in an object store are not counted in the growth.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オブジェクトストア内のファイルは増加量に含まれません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对象存储中的文件不计入增长。"
+          }
+        }
+      }
+    },
+    "Tables": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テーブル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表"
+          }
+        }
+      }
+    },
+    "The data directory disk": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "データディレクトリのディスク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数据目录所在磁盘"
+          }
+        }
+      }
+    },
+    "The file storage disk": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルストレージのディスク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件存储所在磁盘"
+          }
+        }
+      }
+    },
+    "The object store": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オブジェクトストア"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对象存储"
+          }
+        }
+      }
+    },
+    "Memory and knowledge": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メモリと知識"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记忆与知识"
+          }
+        }
+      }
+    },
+    "Search indexes and vectors": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索インデックスとベクトル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索索引与向量"
+          }
+        }
+      }
+    },
+    "Photo originals": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真のオリジナル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片原图"
+          }
+        }
+      }
+    },
+    "Photo previews": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真のプレビュー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片预览"
+          }
+        }
+      }
+    },
+    "Recording originals": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音のオリジナル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音原文件"
+          }
+        }
+      }
+    },
+    "Recording audio": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音の音声データ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音音频片段"
+          }
+        }
+      }
+    },
+    "Mail messages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールメッセージ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮件正文"
+          }
+        }
+      }
+    },
+    "Agent attachments": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの添付ファイル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手附件"
+          }
+        }
+      }
+    },
+    "The rest": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其余"
+          }
+        }
+      }
+    },
+    "Not tied to a person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "特定の人に属さないもの"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不属于任何人"
+          }
+        }
+      }
+    },
+    "Posted to the feed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投稿日時"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布时间"
+          }
+        }
+      }
+    },
+    "Picture from the page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページの画像"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网页图片"
+          }
+        }
+      }
+    },
+    "Card: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Card: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カード：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卡片：%@"
+          }
+        }
+      }
+    },
     "Feed": {
       "localizations": {
         "ja": {
@@ -97451,6 +97893,70 @@
         }
       }
     },
+    "Keep out of the Inbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信トレイに入れない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不再进入收件箱"
+          }
+        }
+      }
+    },
+    "Let back into the Inbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信トレイに戻す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复进入收件箱"
+          }
+        }
+      }
+    },
+    "Out of the Inbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信トレイに入れない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不进入收件箱"
+          }
+        }
+      }
+    },
+    "Keep out of the Inbox instead": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代わりに受信トレイに入れない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改为不再进入收件箱"
+          }
+        }
+      }
+    },
     "Add a time": {
       "localizations": {
         "ja": {
@@ -97815,70 +98321,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已暂停"
-          }
-        }
-      }
-    },
-    "Keep out of the Inbox": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "受信トレイに入れない"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不再进入收件箱"
-          }
-        }
-      }
-    },
-    "Let back into the Inbox": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "受信トレイに戻す"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "恢复进入收件箱"
-          }
-        }
-      }
-    },
-    "Out of the Inbox": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "受信トレイに入れない"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不进入收件箱"
-          }
-        }
-      }
-    },
-    "Keep out of the Inbox instead": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "代わりに受信トレイに入れない"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "改为不再进入收件箱"
           }
         }
       }
@@ -98327,6 +98769,108 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索此清单"
+          }
+        }
+      }
+    },
+    "Agent suggestions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggestions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提案"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建议"
+          }
+        }
+      }
+    },
+    "Besides introducing itself, your agent may start a conversation on its own, at most once a day.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自己紹介のほかに、エージェントが自分から会話を始めることがあります。多くても一日に一度です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "除了自我介绍，你的助手还可以主动开启对话，每天最多一次。"
+          }
+        }
+      }
+    },
+    "Ideas to try, and checks of what it remembers, offered on its own.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "試せるアイデアや、覚えていることの確認を、エージェントが自分から提案します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手会主动提出可以尝试的想法，以及对它所记内容的核对。"
+          }
+        }
+      }
+    },
+    "Share of the day goals at their own pace may spend (0.5 by default)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のペースで進む目標が使える 1 日の予算の割合（既定 0.5）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自主推进的目标可用的每日预算份额（默认 0.5）"
+          }
+        }
+      }
+    },
+    "Your agent will not make suggestions on its own.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが自分から提案しないようにしました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手不会主动提出建议。"
+          }
+        }
+      }
+    },
+    "Your agent will make suggestions.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントが自分から提案するようにしました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手会主动提出建议。"
           }
         }
       }

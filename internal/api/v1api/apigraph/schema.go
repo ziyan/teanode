@@ -47,6 +47,7 @@ type Query interface {
 	AgentSettingsQuery
 	AgentQuery
 	AgentAdminQuery
+	StorageQuery
 	AgentAskQuery
 	AgentMemoryQuery
 	AgentGraphQuery

@@ -319,8 +319,20 @@ private struct ServerSettingsRows: View {
         }
         ForEach(Self.groups) { group in
             let shownRows = group.rows.filter { tabs.contains($0.tab) }
-            if !shownRows.isEmpty {
+            // What is used and when a disk fills sits first under Storage,
+            // beside where the messages and files are kept, as on the
+            // dashboard's Storage tab.
+            let isUsageShown = group.rows.contains(.messageStorage) && tabs.contains(.usage)
+            if !shownRows.isEmpty || isUsageShown {
                 Section {
+                    if isUsageShown {
+                        NavigationLink {
+                            StorageUsageView(connection: model.connection)
+                        } label: {
+                            Label("Disk usage", systemImage: "internaldrive")
+                                .foregroundStyle(.primary)
+                        }
+                    }
                     ForEach(shownRows, id: \.self) { settingsRow in
                         row(settingsRow)
                     }

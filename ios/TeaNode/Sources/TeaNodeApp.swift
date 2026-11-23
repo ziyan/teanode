@@ -854,6 +854,7 @@ struct SettingsForm: View {
                 case "goal-when-editor": GoalWhenEditorDemoScreen(connection: connection)
                 case "agent-usage": AgentUsageView(connection: connection)
                 case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
+                case "storage-usage": StorageUsageView(connection: connection)
                 case "circles": CirclesView(connection: connection)
                 case "sharing": SharingView(connection: connection)
                 case "circle-detail", "circle-detail-operator", "circle-detail-photos": CircleDetailDemoScreen(connection: connection)

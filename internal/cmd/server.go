@@ -41,6 +41,21 @@ func NewServerCommand() *cli.Command {
 				Action: runServerAddresses,
 			},
 			{
+				Name:  "storage",
+				Usage: "what the database and the files hold, its growth, and when a disk fills",
+				Description: "The database by area, the files by kind or by person, a line fitted through\n" +
+					"the last thirty days of daily samples, and each measured disk with the day\n" +
+					"it fills at the rate its own use grew. A disk that fills within thirty days is marked, as the\n" +
+					"operators are warned. Needs server:manage.",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "by", Usage: "area (the database), kind (the files) or person (the files); area by default"},
+					&cli.StringFlag{Name: "since", Usage: "history from when, as a date or a duration like 72h; the last thirty days by default"},
+					&cli.BoolFlag{Name: "history", Usage: "also list each day's sample"},
+				},
+				Action: runServerStorage,
+			},
+			{
 				Name:  "identity",
 				Usage: "how outgoing mail identifies itself, and whether a strict receiver would believe it",
 				Description: "The address mail leaves from, whether its reverse name resolves back to\n" +
@@ -84,6 +99,136 @@ func runServerStatus(ctx context.Context, command *cli.Command) error {
 		{"supervision", status.Supervision + restarting},
 		{"needs restart for", pending},
 	})
+}
+
+func runServerStorage(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	since, err := parseSince(command.String("since"))
+	if err != nil {
+		return err
+	}
+	usage, err := client.ReadStorageUsage(ctx, connection, since, command.String("by"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(usage)
+	}
+	return printStorageUsage(command, usage)
+}
+
+// storageWords are the kinds of file as an operator reads them.
+var storageWords = map[string]string{
+	"photoOriginal":     "photo originals",
+	"photoPreview":      "photo previews",
+	"recordingOriginal": "recording originals",
+	"recordingDerived":  "recording audio",
+	"mail":              "mail messages",
+	"agentAttachment":   "agent attachments",
+	"dataDirectory":     "data directory",
+	"fileDirectory":     "file storage",
+	"objectStore":       "object store",
+}
+
+func storageWordsFor(key string) string {
+	if words, isKnown := storageWords[key]; isKnown {
+		return words
+	}
+	return key
+}
+
+// describeStorageBytes writes a size in 1024-based units, one decimal from a
+// megabyte up, as the server's own warning does.
+func describeStorageBytes(sizeBytes int64) string {
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	size := float64(sizeBytes)
+	index := 0
+	for size >= 1024 && index < len(units)-1 {
+		size /= 1024
+		index++
+	}
+	if index < 2 {
+		return fmt.Sprintf("%.0f %s", size, units[index])
+	}
+	return fmt.Sprintf("%.1f %s", size, units[index])
+}
+
+func printStorageUsage(command *cli.Command, usage *client.StorageUsage) error {
+	for _, disk := range usage.Disks {
+		if disk.IsProjectedFull && disk.ProjectedFullOn != nil && disk.DaysUntilFull != nil {
+			fmt.Printf("warning: the %s disk is projected to fill in about %.0f days, on %s\n", storageWordsFor(disk.DiskLabel), *disk.DaysUntilFull, *disk.ProjectedFullOn)
+		}
+	}
+	growth := "not enough samples yet"
+	if usage.Growth.IsGrowthProjectable {
+		growth = fmt.Sprintf("%s a day over %d days of samples", describeStorageBytes(int64(usage.Growth.GrowthBytesPerDay)), usage.Growth.GrowthSampleCount)
+	}
+	fields := [][2]string{
+		{"database", describeStorageBytes(usage.DatabaseSizeBytes)},
+		{"files", describeStorageBytes(usage.FileSizeBytes)},
+		{"total", describeStorageBytes(usage.TotalSizeBytes)},
+		{"growth", growth},
+	}
+	if usage.Growth.IsGrowthProjectable {
+		fields = append(fields,
+			[2]string{"in 30 days", describeStorageBytes(usage.Growth.ProjectedSize30DaysBytes)},
+			[2]string{"in 90 days", describeStorageBytes(usage.Growth.ProjectedSize90DaysBytes)},
+			[2]string{"in 365 days", describeStorageBytes(usage.Growth.ProjectedSize365DaysBytes)})
+		if !usage.Growth.AreFilesCounted {
+			fields = append(fields, [2]string{"", "the files are in an object store and are not counted in the growth"})
+		}
+	}
+	if err := printFields(fields); err != nil {
+		return err
+	}
+
+	fmt.Println()
+	diskRows := [][]string{}
+	for _, disk := range usage.Disks {
+		if !disk.IsDiskMeasured || disk.DiskTotalBytes == nil || disk.DiskFreeBytes == nil || disk.DiskUsedBytes == nil {
+			diskRows = append(diskRows, []string{storageWordsFor(disk.DiskLabel), "not measured", "", "", ""})
+			continue
+		}
+		fullOn := ""
+		if disk.ProjectedFullOn != nil {
+			fullOn = *disk.ProjectedFullOn
+		}
+		diskRows = append(diskRows, []string{storageWordsFor(disk.DiskLabel), describeStorageBytes(*disk.DiskTotalBytes), describeStorageBytes(*disk.DiskUsedBytes), describeStorageBytes(*disk.DiskFreeBytes), fullOn})
+	}
+	if err := printTable([]string{"DISK", "TOTAL", "USED", "FREE", "FULL ON"}, diskRows); err != nil {
+		return err
+	}
+
+	fmt.Println()
+	rows := [][]string{}
+	for _, row := range usage.UsageRows {
+		label := row.RowLabel
+		switch usage.BreakdownBy {
+		case "kind":
+			label = storageWordsFor(row.RowKey)
+		case "person":
+			if row.RowKey == "" {
+				label = "not tied to a person"
+			}
+		}
+		rows = append(rows, []string{label, describeStorageBytes(row.RowSizeBytes)})
+	}
+	if err := printTable([]string{strings.ToUpper(usage.BreakdownBy), "SIZE"}, rows); err != nil {
+		return err
+	}
+
+	if command.Bool("history") {
+		fmt.Println()
+		days := [][]string{}
+		for _, day := range usage.HistoryDays {
+			days = append(days, []string{day.SampledOn, describeStorageBytes(day.DatabaseSizeBytes), describeStorageBytes(day.FileSizeBytes), describeStorageBytes(day.TotalSizeBytes)})
+		}
+		return printTable([]string{"DAY", "DATABASE", "FILES", "TOTAL"}, days)
+	}
+	return nil
 }
 
 func runServerRestart(ctx context.Context, command *cli.Command) error {

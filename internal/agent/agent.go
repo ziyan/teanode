@@ -146,6 +146,7 @@ type Agent struct {
 	lastRecordingReferenceReconciliation time.Time
 	lastDescribe                         time.Time
 	lastPriceCheck                       time.Time
+	lastStorageSample                    time.Time
 	lastPlaceNaming                      time.Time
 	lastRemember                         time.Time
 	lastIngest                           time.Time
@@ -177,6 +178,7 @@ type Agent struct {
 	lastEvaluate    time.Time
 	describing      atomic.Bool
 	checkingPrices  atomic.Bool
+	samplingStorage atomic.Bool
 	namingPlaces    atomic.Bool
 
 	// transcribingVoiceMessages is set while the sweep is writing the words
@@ -550,6 +552,8 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	// person's, and naming them asks a provider, not a model.
 	self.namePlacesInBackground(ctx, now)
 	self.sweepVoiceMessages(ctx, now)
+	// The storage sample and its warning are the operator's, and need no model.
+	self.sampleStorageInBackground(ctx, now)
 	if !configuration.Agent.Enabled {
 		return nil
 	}
