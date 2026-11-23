@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.233.0] - 2026-11-23
+
+### Changed
+
+- Goals that run at their own pace now spend at most a share of the agent's daily budget between them (`agent.limits.goalShare`, half by default), in place of the 48 turns a day and 20 goals in progress. (#781)
+- One Suggestions switch in the agent's settings replaces the switches for ideas and memory checks. (#781)
+- A goal that needs you, or is done, now appears in the feed when the feed is where your agent tells you things. (#781)
+
+### Removed
+
+- The `agent.limits.goalTurnsPerDay` and `agent.limits.goalsInProgress` settings; a configuration that has them still loads. (#781)
+
 ## [0.232.0] - 2026-11-23
 
 ### Changed
