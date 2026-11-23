@@ -57,6 +57,7 @@ fun ShellPolling(currentSection: AppSection?) {
     val facts by session.facts.collectAsState()
     val latestFacts by rememberUpdatedState(facts)
     val latestSection by rememberUpdatedState(currentSection)
+    com.teanode.app.feed.FeedBadge(isOffered = facts.isAvailable(AppSection.Feed))
     LaunchedEffect(connection) {
         if (session.isDemo) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {

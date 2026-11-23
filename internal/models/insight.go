@@ -620,6 +620,19 @@ type AgentReference struct {
 	QuotedRole     string `json:"quotedRole,omitempty" graphapi:"nullable"`
 	QuotedText     string `json:"quotedText,omitempty" graphapi:"nullable"`
 
+	// FeedItemID points at a card of the agent's feed instead: the person
+	// pressed Discuss on it, or chose an action on it. FeedItemTitle is what
+	// the chip shows; the server fills it in from the stored card whatever
+	// the client sent, and drops the reference when the card is not the
+	// person's.
+	FeedItemID    string `json:"feedItemId,omitempty" graphapi:"nullable"`
+	FeedItemTitle string `json:"feedItemTitle,omitempty" graphapi:"nullable"`
+
+	// FeedItemContext is what the model is told about the card in the turn
+	// it was pointed at: read from the database when the turn is kept, and
+	// never stored.
+	FeedItemContext string `json:"-"`
+
 	// FinanceTransactionContext is what the model is told about the
 	// finance transaction in the turn it was pointed at: read from the
 	// database when the turn is kept, and never stored, so an earlier

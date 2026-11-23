@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="section_feed">Feed</string>
     <string name="section_agent">Chats</string>
     <string name="section_goals">Goals</string>
     <string name="section_ideas">Ideas</string>

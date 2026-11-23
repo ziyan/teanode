@@ -208,6 +208,9 @@ func translateError(err error) error {
 		return nil
 	case errors.Is(err, db.ErrNotFound):
 		return api.ErrNotFound
+	case errors.Is(err, agent.ErrFeedRefused):
+		// What the caller can fix, in the words that say what.
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	case errors.Is(err, db.ErrAlreadyExists):
 		return api.ErrAlreadyExists
 	case errors.Is(err, db.ErrInvalidArguments):

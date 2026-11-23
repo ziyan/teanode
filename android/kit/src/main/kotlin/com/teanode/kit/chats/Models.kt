@@ -66,6 +66,9 @@ data class AgentReference(
     val recordingTitle: String? = null,
     val photoId: String? = null,
     val photoTitle: String? = null,
+    /** A card of the feed the person pressed Discuss on, with its headline for the chip; the server reads the card again from the stored row. */
+    val feedItemId: String? = null,
+    val feedItemTitle: String? = null,
     val financeTransactionId: String? = null,
     val postedOn: String? = null,
     val amount: String? = null,
@@ -85,6 +88,7 @@ data class AgentReference(
         get() {
             if (!recordingTitle.isNullOrEmpty()) return recordingTitle
             if (!photoTitle.isNullOrEmpty()) return photoTitle
+            if (!feedItemTitle.isNullOrEmpty()) return feedItemTitle
             if (!subject.isNullOrEmpty()) return subject
             if (!name.isNullOrEmpty()) return name
             if (!path.isNullOrEmpty()) return path
@@ -102,6 +106,9 @@ data class AgentReference(
 
         /** A photo the message asks about. The server words the title again from the stored photo. */
         fun photo(photoId: String, photoTitle: String) = AgentReference(photoId = photoId, photoTitle = photoTitle)
+
+        /** A card of the feed the message is about, attached when Discuss is pressed on it. */
+        fun feedItem(feedItemId: String, feedItemTitle: String) = AgentReference(feedItemId = feedItemId, feedItemTitle = feedItemTitle)
 
         /** A page of the agent's knowledge the message asks about. */
         fun knowledgePage(path: String, name: String) = AgentReference(path = path, name = name)

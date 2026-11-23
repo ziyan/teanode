@@ -121,6 +121,12 @@ type Image struct {
 // keeps from it. A picture of another kind, one over ImageMaximumBytes, or one
 // that cannot be decoded is ErrNotPicture.
 func (self *Fetcher) FetchImage(ctx context.Context, address string) (*Image, error) {
+	return self.FetchImageScaled(ctx, address, ImageMaximumWidthPixels)
+}
+
+// FetchImageScaled is FetchImage keeping the picture up to widthPixels wide,
+// for a picture shown larger than a preview card.
+func (self *Fetcher) FetchImageScaled(ctx context.Context, address string, widthPixels int) (*Image, error) {
 	target, err := safefetch.ParseTarget(address)
 	if err != nil {
 		return nil, err
@@ -134,7 +140,7 @@ func (self *Fetcher) FetchImage(ctx context.Context, address string) (*Image, er
 	if err != nil {
 		return nil, err
 	}
-	return KeepImage(timed, body)
+	return KeepImageScaled(timed, body, widthPixels)
 }
 
 // KeepImage makes the picture this server keeps from a picture's bytes, as
@@ -142,6 +148,12 @@ func (self *Fetcher) FetchImage(ctx context.Context, address string) (*Image, er
 // as a shopping item's. One that is too large or cannot be decoded is
 // ErrNotPicture.
 func KeepImage(ctx context.Context, body []byte) (*Image, error) {
+	return KeepImageScaled(ctx, body, ImageMaximumWidthPixels)
+}
+
+// KeepImageScaled is KeepImage keeping the picture's long side up to
+// longSidePixels.
+func KeepImageScaled(ctx context.Context, body []byte, longSidePixels int) (*Image, error) {
 	select {
 	case imageDecodes <- struct{}{}:
 		defer func() { <-imageDecodes }()
@@ -159,7 +171,7 @@ func KeepImage(ctx context.Context, body []byte) (*Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrNotPicture, err)
 	}
-	scaled := picture.Scale(decoded, ImageMaximumWidthPixels)
+	scaled := picture.Scale(decoded, longSidePixels)
 	content, err := picture.EncodeJPEG(scaled, imageJPEGQuality)
 	if err != nil {
 		return nil, err

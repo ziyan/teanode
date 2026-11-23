@@ -66,6 +66,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.teanode.app.R
+import com.teanode.app.shell.icon
+import com.teanode.kit.AppSection
 import com.teanode.app.ui.components.AvatarView
 import com.teanode.kit.TeaNodeJson
 import com.teanode.kit.chats.AgentConversation
@@ -510,6 +512,7 @@ fun ReferenceBar(reference: AgentReference, model: ConversationModel, agentTitle
         reference.path != null -> ReferenceStrip(Icons.Outlined.Psychology, reference.name ?: reference.path!!, reference.path!!, drop)
         reference.recordingId != null -> ReferenceStrip(Icons.Outlined.GraphicEq, reference.label, "", drop)
         reference.photoId != null -> ReferenceStrip(Icons.Outlined.Image, reference.label.ifEmpty { stringResource(R.string.chats_photo) }, "", drop)
+        reference.feedItemId != null -> ReferenceStrip(AppSection.Feed.icon, stringResource(R.string.chats_feed_item_reference, reference.feedItemTitle.orEmpty()), "", drop)
         reference.financeTransactionId != null -> ReferenceStrip(
             Icons.Outlined.CreditCard, reference.merchantName?.takeIf { name -> name.isNotEmpty() } ?: reference.description.orEmpty(),
             listOfNotNull(reference.amount?.let { amount -> "$amount ${reference.currencyCode.orEmpty()}".trim() }, reference.postedOn).filter { part -> part.isNotEmpty() }.joinToString(" · "),

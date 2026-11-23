@@ -296,7 +296,7 @@ func (self *Agent) backgroundSubagent(ctx context.Context, run *Run, work *model
 		return "", nil, err
 	}
 	request := work.WorkRequest
-	conversation, err := self.createSubagentRun(ctx, run.Agent.ID, work.Title)
+	conversation, err := self.createSubagentRun(ctx, run.Agent.ID, work.Title, work.ConversationID)
 	if err != nil {
 		return "", nil, err
 	}

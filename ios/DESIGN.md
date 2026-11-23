@@ -91,6 +91,14 @@ its pull request is opened.
   a hairline edge. A small secondary header says what the card is; answers
   are rows with a radio or a check, not buttons of their own; actions are
   standard capsule buttons of equal width, the prominent one first.
+- A feed card is the grouped surface on the grouped page
+  (`secondarySystemGroupedBackground` on `systemGroupedBackground`), a 20 point
+  corner, a hairline edge and, in light mode, a soft shadow. Its words use the
+  card's whole width. Above the headline, a header line names it: a small badge
+  (the card's symbol in white on a rounded square of the color of its kind,
+  never green), where it is from and, at the right, when. Its choices are equal
+  capsules side by side when their labels fit, and its footer is heart and
+  Discuss at the left and information at the right.
 - A card that only shows something (a file, a picture, a page the agent made)
   has no buttons. A tap on its picture, or on the card when it has nothing
   else to tap, does the main thing (open it); the rest (Save, Share, Copy)
@@ -187,14 +195,14 @@ its pull request is opened.
 ## Navigation
 
 - The app is a `TabView` (`.tabViewStyle(.sidebarAdaptable)`) of icons only:
-  three parts the person chooses (Chats, Mail and Photos at first; More's
+  three parts the person chooses (Feed, Chats and Mail at first; More's
   Edit button changes them, kept on the device), More and Search
   (`Tab(role: .search)`), five in all: a sixth makes iOS add a More of its
   own over ours. On the iPad the sidebar is arranged with the system's own
   customization (`TabViewCustomization`). A tab's name is its accessibility label, so no
   title shows under an icon. The bar shrinks to a pill while a list scrolls
   (`.tabBarMinimizeBehavior(.onScrollDown)`).
-- A tab with something waiting has a badge: unread chats on Chats, coding
+- A tab with something waiting has a badge: unread cards on Feed, unread chats on Chats, coding
   sessions that ask on More (where Coding is).
 - Each part keeps its own navigation inside it, never in a side menu.
   Chats opens on the list of conversations, and a conversation is pushed on it.

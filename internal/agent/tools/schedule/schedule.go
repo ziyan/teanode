@@ -32,9 +32,10 @@ func init() {
 						"operator": tools.EnumProperty("how to compare", "contains", "equals", "matches"),
 						"value":    tools.StringProperty("what to compare with"),
 					})),
-					"prompt":  tools.StringProperty("what to do, as the person would say it"),
-					"deliver": tools.EnumProperty("where the answer goes: drawer is a turn of yours in this conversation when the time comes; mail is a message to the person", "drawer", "mail"),
-					"enabled": tools.BooleanProperty("on"),
+					"prompt":                  tools.StringProperty("what to do, as the person would say it"),
+					"deliver":                 tools.EnumProperty("where the answer goes: feed, the default, posts cards to the person's feed (post them with the feed tool, or what you answer becomes one card); drawer is a turn of yours in this conversation when the time comes; mail is a message to the person", "feed", "drawer", "mail"),
+					"is_notified_when_posted": tools.BooleanProperty("for deliver feed: send one quiet notification, \"<name> is ready\", when the first card of a run is posted; for a daily brief"),
+					"enabled":                 tools.BooleanProperty("on"),
 				}, "action"),
 				Preview: tools.PreviewOf(func(call struct {
 					Action  string                        `json:"action"`
@@ -76,15 +77,17 @@ func init() {
 }
 
 type scheduleArguments struct {
-	Action     string                        `json:"action"`
-	ID         string                        `json:"id"`
-	Name       string                        `json:"name"`
-	Cron       string                        `json:"cron"`
-	OnMail     []models.MailboxRuleCondition `json:"on_mail"`
-	Prompt     string                        `json:"prompt"`
-	Deliver    string                        `json:"deliver"`
-	Enabled    *bool                         `json:"enabled"`
-	ScheduleID string                        `json:"schedule_id"`
+	Action  string                        `json:"action"`
+	ID      string                        `json:"id"`
+	Name    string                        `json:"name"`
+	Cron    string                        `json:"cron"`
+	OnMail  []models.MailboxRuleCondition `json:"on_mail"`
+	Prompt  string                        `json:"prompt"`
+	Deliver string                        `json:"deliver"`
+
+	IsNotifiedWhenPosted *bool  `json:"is_notified_when_posted"`
+	Enabled              *bool  `json:"enabled"`
+	ScheduleID           string `json:"schedule_id"`
 }
 
 // passwordsNotice is said to the model when it makes or rewords a schedule
@@ -131,7 +134,7 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 	agentId := run.Agent().ID
 	location := tools.Location(run.Owner())
 	describe := func(schedule *models.AgentSchedule) map[string]any {
-		row := map[string]any{"id": schedule.ID, "name": schedule.Name, "prompt": schedule.Prompt, "deliver": schedule.Deliver, "enabled": schedule.Enabled}
+		row := map[string]any{"id": schedule.ID, "name": schedule.Name, "prompt": schedule.Prompt, "deliver": schedule.Deliver, "enabled": schedule.Enabled, "is_notified_when_posted": schedule.IsNotifiedWhenPosted}
 		if schedule.IsMailTriggered() {
 			row["on_mail"] = schedule.MailConditions
 			row["runs"] = "whenever mail arrives " + MailConditionsInWords(schedule.MailConditions)
@@ -189,12 +192,15 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		// runs are the goal's turns; by mail it would reach the person on
 		// every run, which a goal never does.
 		deliver := arguments.Deliver
+		if deliver == "" {
+			deliver = models.DefaultScheduleDeliver(run.Agent())
+		}
 		if here := run.Conversation(); here.IsGoal() {
 			deliver = models.AgentDeliverDrawer
 		}
 		var created *models.AgentSchedule
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-			created, err = tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: agentId, Name: arguments.Name, Cron: arguments.Cron, MailConditions: arguments.OnMail, Prompt: arguments.Prompt, WrittenBy: models.WrittenByAgent, Deliver: deliver, ConversationID: conversationId, Enabled: arguments.Enabled == nil || *arguments.Enabled, NextRunAt: next})
+			created, err = tx.CreateAgentSchedule(&models.AgentSchedule{AgentID: agentId, Name: arguments.Name, Cron: arguments.Cron, MailConditions: arguments.OnMail, Prompt: arguments.Prompt, WrittenBy: models.WrittenByAgent, Deliver: deliver, ConversationID: conversationId, Enabled: arguments.Enabled == nil || *arguments.Enabled, NextRunAt: next, IsNotifiedWhenPosted: arguments.IsNotifiedWhenPosted != nil && *arguments.IsNotifiedWhenPosted})
 			return err
 		}); err != nil {
 			return nil, err
@@ -248,6 +254,9 @@ func runScheduleTool(ctx context.Context, call *tools.Call) (*tools.Result, erro
 				if arguments.Enabled != nil {
 					schedule.Enabled = *arguments.Enabled
 					schedule.WrittenBy = models.WrittenByAgent
+				}
+				if arguments.IsNotifiedWhenPosted != nil {
+					schedule.IsNotifiedWhenPosted = *arguments.IsNotifiedWhenPosted
 				}
 				switch {
 				case len(arguments.OnMail) > 0 && arguments.Cron != "":
