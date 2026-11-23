@@ -667,12 +667,24 @@
                 sizes.map { #"{"sizeKey":"\#($0.0)","sizeBytes":\#(($0.1 * gigabyte) + day * gigabyte / 40)}"# }.joined(separator: ",")
             }
             var days: [String] = []
+            // Dated from today, so the history sits inside the screen's
+            // default range and the projected day is still ahead.
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+            let dayFormatter = DateFormatter()
+            dayFormatter.calendar = calendar
+            dayFormatter.timeZone = calendar.timeZone
+            dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+            dayFormatter.dateFormat = "yyyy-MM-dd"
+            func demoDay(_ offset: Int) -> String {
+                dayFormatter.string(from: calendar.date(byAdding: .day, value: offset, to: Date()) ?? Date())
+            }
             for day in 0..<14 {
                 let databaseBytes = (71 * gigabyte) + Int64(day) * gigabyte / 4
                 let fileBytes = (263 * gigabyte) + Int64(day) * gigabyte / 2
                 let breakdown = isByPerson ? "" : pairs(isByKindDemo(body) ? kindGigabytes : areaGigabytes, day: Int64(day))
                 days.append(
-                    #"{"sampledOn":"2026-10-\#(String(format: "%02d", day + 1))","databaseSizeBytes":\#(databaseBytes),"fileSizeBytes":\#(fileBytes),"totalSizeBytes":\#(databaseBytes + fileBytes),"breakdownSizes":[\#(breakdown)]}"#)
+                    #"{"sampledOn":"\#(demoDay(day - 13))","databaseSizeBytes":\#(databaseBytes),"fileSizeBytes":\#(fileBytes),"totalSizeBytes":\#(databaseBytes + fileBytes),"breakdownSizes":[\#(breakdown)]}"#)
             }
             let rows: String
             if isByPerson {
@@ -693,7 +705,7 @@
                   "usageRows":[\#(rows)],
                   "historyDays":[\#(days.joined(separator: ","))],
                   "disks":[
-                    {"diskLabel":"dataDirectory","isDiskMeasured":true,"diskTotalBytes":\#(400 * gigabyte),"diskFreeBytes":\#(40 * gigabyte),"diskUsedBytes":\#(360 * gigabyte),"projectedFullOn":"2026-10-30","daysUntilFull":20,"isProjectedFull":true},
+                    {"diskLabel":"dataDirectory","isDiskMeasured":true,"diskTotalBytes":\#(400 * gigabyte),"diskFreeBytes":\#(40 * gigabyte),"diskUsedBytes":\#(360 * gigabyte),"projectedFullOn":"\#(demoDay(20))","daysUntilFull":20,"isProjectedFull":true},
                     {"diskLabel":"objectStore","isDiskMeasured":false,"diskTotalBytes":null,"diskFreeBytes":null,"diskUsedBytes":null,"projectedFullOn":null,"daysUntilFull":null,"isProjectedFull":false}],
                   "growth":{"growthSampleCount":14,"isGrowthProjectable":true,"growthBytesPerDay":\#(gigabyte * 3 / 4),"currentSizeBytes":\#(341 * gigabyte),
                     "projectedSize30DaysBytes":\#(363 * gigabyte),"projectedSize90DaysBytes":\#(409 * gigabyte),"projectedSize365DaysBytes":\#(615 * gigabyte),"areFilesCounted":true}}}}

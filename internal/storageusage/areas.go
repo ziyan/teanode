@@ -55,9 +55,9 @@ var areaTables = map[Area][]string{
 		"agent_source_secret", "agent_source_type", "agent_symbol",
 	},
 	AreaConversations: {
-		"agent_attachment", "agent_computer_attachment", "agent_conversation", "agent_interaction", "agent_message",
-		"agent_message_reaction", "agent_turn", "chat", "chat_call", "chat_call_member", "chat_member", "chat_message",
-		"chat_reaction",
+		"agent_attachment", "agent_computer_attachment", "agent_conversation", "agent_feed_item", "agent_interaction",
+		"agent_message", "agent_message_reaction", "agent_turn", "chat", "chat_call", "chat_call_member", "chat_member",
+		"chat_message", "chat_reaction",
 	},
 	AreaPhotos: {
 		"photo", "photo_album", "photo_album_item", "photo_album_share", "photo_blob", "photo_client_alias",
