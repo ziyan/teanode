@@ -7,6 +7,7 @@ import com.teanode.kit.Account
 import com.teanode.kit.AccountRing
 import com.teanode.kit.account.AccountProfile
 import com.teanode.kit.account.accountProfile
+import com.teanode.kit.photos.revokePhotoBackupCredential
 import com.teanode.kit.AppSection
 import com.teanode.kit.ConnectLink
 import com.teanode.kit.Connection
@@ -26,6 +27,7 @@ import com.teanode.kit.accessSession
 import com.teanode.kit.serviceCapabilities
 import com.teanode.kit.username
 import com.teanode.app.R
+import com.teanode.app.photos.PhotoBackupSettings
 import com.teanode.app.ui.theme.AppearanceChoice
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -337,9 +339,16 @@ class AppSession(
      * next one to use.
      */
     fun signOut(endedBecause: String? = null) {
-        val leaving = activeConnection.value?.account
+        val leavingConnection = activeConnection.value
+        val leaving = leavingConnection?.account
+        // Read before the account's files are erased below: the photo backup passwords to take back on the server.
+        val backupCredentialIds = if (leaving != null && !isDemo) backupCredentialIdsToRevoke(leaving) else emptySet()
         scope.launch {
-            if (leaving != null && endedBecause == null) SignIn(leaving.server, transport).revoke(leaving)
+            if (leavingConnection != null && endedBecause == null) {
+                // While the sign-in still can, as the iPhone app does: backup goes with the sign-in.
+                revokeBackupCredentials(leavingConnection, backupCredentialIds)
+                SignIn(leavingConnection.account.server, transport).revoke(leavingConnection.account)
+            }
         }
         val gone = leaving?.server?.host.orEmpty()
         runCatching { store.delete() }
@@ -359,6 +368,14 @@ class AppSession(
     }
 
     private val otherConnections = HashMap<String, Connection>()
+
+    /** Lets go of the account's photo backup password here and says which ones are to be taken back on the server. */
+    private fun backupCredentialIdsToRevoke(account: Account): Set<String> =
+        runCatching { PhotoBackupSettings(context, account.accountKey).run { forgetCredential(); unrevokedCredentialIds } }.getOrDefault(emptySet())
+
+    private suspend fun revokeBackupCredentials(connection: Connection, credentialIds: Set<String>) {
+        for (credentialId in credentialIds) runCatching { connection.revokePhotoBackupCredential(credentialId) }
+    }
 
     /** The connection of an account in the list, kept for the ones not in use, so their own profiles and pictures can be read. */
     fun connectionFor(account: Account): Connection =
@@ -391,9 +408,14 @@ class AppSession(
             signOut()
             return
         }
+        val backupCredentialIds = if (!isDemo) backupCredentialIdsToRevoke(other) else emptySet()
+        val leavingConnection = connectionFor(other)
         synchronized(otherConnections) { otherConnections.remove(other.accountKey) }
         profiles.update { known -> known - other.accountKey }
-        scope.launch { SignIn(other.server, transport).revoke(other) }
+        scope.launch {
+            revokeBackupCredentials(leavingConnection, backupCredentialIds)
+            SignIn(other.server, transport).revoke(other)
+        }
         store.remove(other.accountKey)
         if (!isDemo) AccountEraser(context, secrets).erase(other, isLastAccount = false)
         accountRing.value = store.accounts()

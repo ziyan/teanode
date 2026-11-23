@@ -157,7 +157,7 @@ fun PhotoBackupScreen(onBack: () -> Unit, statusOverride: PhotoBackupStatus? = n
         ConfirmationDialog(
             title = stringResource(R.string.photos_backup_turn_off_title), confirmLabel = stringResource(R.string.photos_backup_turn_off), isDestructive = true,
             text = stringResource(R.string.photos_backup_turn_off_text),
-            onConfirm = { isTurningOff = false; settings.isEnabled = false; isEnabled = false; PhotoBackupScheduler.cancel(context); settings.forgetCredential() }, onDismiss = { isTurningOff = false },
+            onConfirm = { isTurningOff = false; settings.isEnabled = false; isEnabled = false; PhotoBackupScheduler.cancel(context); settings.forgetCredential(); scope.launch { settings.revokeForgottenCredentials(connection) } }, onDismiss = { isTurningOff = false },
         )
     }
 }
