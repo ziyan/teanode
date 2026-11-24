@@ -283,7 +283,7 @@ struct AgentSettingsView: View {
                     Text("This deletes your agent and everything it learned: memories, conversations, run records, and every mailbox's insights and summaries. Your mail is untouched.")
                 }
         } footer: {
-            Text("Removes the agent with its memory, conversations, schedules and connections. Your mail is untouched.")
+            Text("Removes the agent with its memory, conversations, goals and connections. Your mail is untouched.")
         }
     }
 }
@@ -906,7 +906,7 @@ struct AgentUnattendedView: View {
                     }
                 }
             } footer: {
-                Text("What your agent may do without asking, in a schedule, a goal or overnight, when there is nobody to confirm. Anything not ticked is refused then, and your agent tells you what it would have done. Mail sorting and replies drafted from incoming mail only ever read, whatever is ticked.")
+                Text("What your agent may do without asking, in a goal or overnight, when there is nobody to confirm. Anything not ticked is refused then, and your agent tells you what it would have done. Mail sorting and replies drafted from incoming mail only ever read, whatever is ticked.")
             }
         }
         .navigationTitle("When you are not there")

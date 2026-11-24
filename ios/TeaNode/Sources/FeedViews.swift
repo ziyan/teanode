@@ -728,7 +728,7 @@ struct FeedList: View {
         } else if model.items.isEmpty, model.feedStackKey != nil || app.appUpdates.updateToOffer == nil {
             ContentUnavailableView(
                 "Nothing in your feed yet", systemImage: "newspaper",
-                description: Text("Goals, schedules and alerts post here. Ask your agent to keep a feed of what you care about."))
+                description: Text("Goals and alerts post here. Ask your agent to keep a feed of what you care about."))
         }
     }
 
@@ -1217,7 +1217,7 @@ enum FeedInformationAction {
     case openGoals
 }
 
-/// FeedInformationSheet says why a card is in the feed (which goal, schedule
+/// FeedInformationSheet says why a card is in the feed (which goal
 /// or alert made it), when it was posted and updated, and lists its sources.
 /// It also holds "Show less like this" and Dismiss, which close the card.
 struct FeedInformationSheet: View {
@@ -1287,7 +1287,6 @@ struct FeedInformationSheet: View {
     private var sourceSentence: String {
         switch item.feedSourceKind {
         case "goal": String(localized: "A goal of yours posted it.")
-        case "schedule": String(localized: "A schedule of yours posted it.")
         case "alert": String(localized: "Your agent thought you should know.")
         case "coding_session": String(localized: "A coding session asked you.")
         default: String(localized: "Your agent posted it.")
@@ -1301,7 +1300,7 @@ extension AgentFeedItem {
     /// Invented cards for the previews: a weather card with facts, a decision
     /// still to answer, and one answered with its outcome.
     fileprivate static let previewWeather = AgentFeedItem(
-        feedItemId: "preview-weather", feedSourceKind: "schedule", feedSourceTitle: "Morning weather", title: "Sunny and mild",
+        feedItemId: "preview-weather", feedSourceKind: "goal", feedSourceTitle: "Morning weather", title: "Sunny and mild",
         body: "Highs near **21 degrees**, with a light breeze. [Hourly forecast](https://weather.example.com/town)", pictureSymbol: "cloud.sun",
         factRows: [
             AgentFeedFact(factLabel: "High", factValue: "21 degrees"), AgentFeedFact(factLabel: "Low", factValue: "11 degrees"),

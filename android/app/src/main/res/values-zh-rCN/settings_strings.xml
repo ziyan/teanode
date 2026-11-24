@@ -54,7 +54,7 @@
     <string name="settings_agent_events_next_month">未来一个月有 %d 个日程</string>
     <string name="settings_agent_forget">忘记一切</string>
     <string name="settings_agent_forget_detail">这会删除你的助手及其学到的一切：记忆、对话、运行记录，以及每个邮箱的洞察和摘要。你的邮件不受影响。</string>
-    <string name="settings_agent_forget_footer">删除助手及其记忆、对话、计划和连接。你的邮件不受影响。</string>
+    <string name="settings_agent_forget_footer">删除助手及其记忆、对话、目标和连接。你的邮件不受影响。</string>
     <string name="settings_agent_forgotten">你的智能体已移除。</string>
     <string name="settings_agent_greeting">问候语</string>
     <string name="settings_agent_guidance">何时以及如何回复</string>
@@ -128,7 +128,7 @@
     <string name="settings_agent_when">时间</string>
     <string name="settings_agent_when_always">总是</string>
     <string name="settings_agent_when_away">你不在时</string>
-    <string name="settings_agent_when_away_footer">在计划任务、目标或夜间运行中，没有人可以确认时，你的助手可以不经询问去做的事。未勾选的事那时会被拒绝，助手会告诉你它本来要做什么。整理来信和根据来信起草回复，无论如何设置都只读。</string>
+    <string name="settings_agent_when_away_footer">在目标或夜间运行中，没有人可以确认时，你的助手可以不经询问去做的事。未勾选的事那时会被拒绝，助手会告诉你它本来要做什么。整理来信和根据来信起草回复，无论如何设置都只读。</string>
     <string name="settings_agent_when_away_only">仅在外出自动回复开启时</string>
     <string name="settings_agent_when_outside_hours">工作时间以外</string>
     <string name="settings_agent_whole_family">此类别的所有工具</string>

@@ -2,7 +2,7 @@
 <resources>
     <string name="feed_title">フィード</string>
     <string name="feed_empty_title">フィードにはまだ何もありません</string>
-    <string name="feed_empty_description">目標、スケジュール、アラートがここに投稿されます。気になることのフィードをエージェントに頼んでみましょう。</string>
+    <string name="feed_empty_description">目標とアラートがここに投稿されます。気になることのフィードをエージェントに頼んでみましょう。</string>
     <string name="feed_working">エージェントが対応中です…</string>
     <string name="feed_like">いいね</string>
     <string name="feed_unlike">いいねを取り消す</string>
@@ -19,7 +19,6 @@
     <string name="feed_info_footer">どちらもこのカードをフィードから外します。「減らす」を選ぶと、似たカードの投稿を減らすようエージェントにも伝わります。</string>
     <string name="feed_info_done">完了</string>
     <string name="feed_source_goal">あなたの目標が投稿しました。</string>
-    <string name="feed_source_schedule">あなたのスケジュールが投稿しました。</string>
     <string name="feed_source_alert">エージェントがお知らせすべきだと判断しました。</string>
     <string name="feed_source_coding_session">コーディングセッションから質問があります。</string>
     <string name="feed_source_agent">エージェントが投稿しました。</string>

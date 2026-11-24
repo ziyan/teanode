@@ -145,7 +145,7 @@
     <string name="settings_activity_runs_one">%d 次运行</string>
     <string name="settings_activity_runs_many">%d 次运行</string>
     <string name="settings_activity_nothing">还没有。</string>
-    <string name="settings_activity_runs_footer">助手自行完成的运行（分类、回复、查找、计划任务），最新在前。打开一条可阅读它做了什么并就此提问。</string>
+    <string name="settings_activity_runs_footer">助手自行完成的运行（分类、回复、查找、目标），最新在前。打开一条可阅读它做了什么并就此提问。</string>
     <string name="settings_activity_dream_runs_footer">%s 那次梦境整理的运行记录：它对模型的每一次调用，最新的在前。打开一条即可阅读。</string>
     <string name="settings_activity_dream_at">%s 的梦</string>
     <string name="settings_activity_show_all">显示全部</string>

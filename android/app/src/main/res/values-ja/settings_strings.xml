@@ -54,7 +54,7 @@
     <string name="settings_agent_events_next_month">今後1か月に%d件の予定</string>
     <string name="settings_agent_forget">すべて忘れる</string>
     <string name="settings_agent_forget_detail">エージェントと学んだことすべて（記憶、会話、実行記録、各メールボックスの分析と要約）を削除します。メールはそのままです。</string>
-    <string name="settings_agent_forget_footer">エージェントを記憶、会話、予定、接続ごと削除します。メールはそのままです。</string>
+    <string name="settings_agent_forget_footer">エージェントを記憶、会話、目標、接続ごと削除します。メールはそのままです。</string>
     <string name="settings_agent_forgotten">エージェントを削除しました。</string>
     <string name="settings_agent_greeting">書き出し</string>
     <string name="settings_agent_guidance">いつ、どう返信するか</string>
@@ -128,7 +128,7 @@
     <string name="settings_agent_when">日時</string>
     <string name="settings_agent_when_always">常に</string>
     <string name="settings_agent_when_away">不在のとき</string>
-    <string name="settings_agent_when_away_footer">スケジュール、目標、夜間の処理など、確認できる人がいないときに、尋ねずに行ってよいこと。チェックしていないものはその場合は行わず、何をするつもりだったかを伝えます。届いたメールの分類や返信の下書きは、設定にかかわらず読むだけです。</string>
+    <string name="settings_agent_when_away_footer">目標や夜間の処理など、確認できる人がいないときに、尋ねずに行ってよいこと。チェックしていないものはその場合は行わず、何をするつもりだったかを伝えます。届いたメールの分類や返信の下書きは、設定にかかわらず読むだけです。</string>
     <string name="settings_agent_when_away_only">不在時の自動返信が有効な間だけ</string>
     <string name="settings_agent_when_outside_hours">勤務時間外</string>
     <string name="settings_agent_whole_family">このグループのすべてのツール</string>

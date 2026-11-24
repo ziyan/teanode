@@ -34255,18 +34255,18 @@
         }
       }
     },
-    "Reminders and scheduled runs": {
+    "Goals at set times or on mail": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "リマインダーと予約実行"
+            "value": "決まった時刻やメール受信時に動く目標"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "提醒与计划运行"
+            "value": "定时或收到邮件时运行的目标"
           }
         }
       }
@@ -34889,18 +34889,18 @@
         }
       }
     },
-    "Removes the agent with its memory, conversations, schedules and connections. Your mail is untouched.": {
+    "Removes the agent with its memory, conversations, goals and connections. Your mail is untouched.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "エージェントを記憶、会話、予定、接続ごと削除します。メールはそのままです。"
+            "value": "エージェントを記憶、会話、目標、接続ごと削除します。メールはそのままです。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除助手及其记忆、对话、计划和连接。你的邮件不受影响。"
+            "value": "删除助手及其记忆、对话、目标和连接。你的邮件不受影响。"
           }
         }
       }
@@ -36921,18 +36921,18 @@
         }
       }
     },
-    "Scheduled runs": {
+    "Goals at set times": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "予約実行"
+            "value": "時刻指定の目標"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "计划运行"
+            "value": "定时目标"
           }
         }
       }
@@ -43168,18 +43168,18 @@
         }
       }
     },
-    "The runs your agent made on its own (sorting, answering, looking things up, its schedules), newest first. Open one to read what it did and ask about it.": {
+    "The runs your agent made on its own (sorting, answering, looking things up, its goals), newest first. Open one to read what it did and ask about it.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "エージェントが自分で行った実行（仕分け、返信、調査、スケジュール）を新しい順に。開くと内容を読み、質問できます。"
+            "value": "エージェントが自分で行った実行（仕分け、返信、調査、目標）を新しい順に。開くと内容を読み、質問できます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "助手自行完成的运行（分类、回复、查找、计划任务），最新在前。打开一条可阅读它做了什么并就此提问。"
+            "value": "助手自行完成的运行（分类、回复、查找、目标），最新在前。打开一条可阅读它做了什么并就此提问。"
           }
         }
       }
@@ -48142,18 +48142,18 @@
         }
       }
     },
-    "What your agent may do without asking, in a schedule, a goal or overnight, when there is nobody to confirm. Anything not ticked is refused then, and your agent tells you what it would have done. Mail sorting and replies drafted from incoming mail only ever read, whatever is ticked.": {
+    "What your agent may do without asking, in a goal or overnight, when there is nobody to confirm. Anything not ticked is refused then, and your agent tells you what it would have done. Mail sorting and replies drafted from incoming mail only ever read, whatever is ticked.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "スケジュール、目標、夜間の処理など、確認できる人がいないときに、尋ねずに行ってよいこと。チェックしていないものはその場合は行わず、何をするつもりだったかを伝えます。届いたメールの分類や返信の下書きは、設定にかかわらず読むだけです。"
+            "value": "目標や夜間の処理など、確認できる人がいないときに、尋ねずに行ってよいこと。チェックしていないものはその場合は行わず、何をするつもりだったかを伝えます。届いたメールの分類や返信の下書きは、設定にかかわらず読むだけです。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在计划任务、目标或夜间运行中，没有人可以确认时，你的助手可以不经询问去做的事。未勾选的事那时会被拒绝，助手会告诉你它本来要做什么。整理来信和根据来信起草回复，无论如何设置都只读。"
+            "value": "在目标或夜间运行中，没有人可以确认时，你的助手可以不经询问去做的事。未勾选的事那时会被拒绝，助手会告诉你它本来要做什么。整理来信和根据来信起草回复，无论如何设置都只读。"
           }
         }
       }
@@ -97285,18 +97285,18 @@
         }
       }
     },
-    "Goals, schedules and alerts post here. Ask your agent to keep a feed of what you care about.": {
+    "Goals and alerts post here. Ask your agent to keep a feed of what you care about.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "目標、スケジュール、アラートがここに投稿されます。気になることのフィードをエージェントに頼んでみましょう。"
+            "value": "目標とアラートがここに投稿されます。気になることのフィードをエージェントに頼んでみましょう。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "目标、日程和提醒会发布到这里。你可以让助手为你关注的内容保持一份动态。"
+            "value": "目标和提醒会发布到这里。你可以让助手为你关注的内容保持一份动态。"
           }
         }
       }
@@ -97489,22 +97489,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "这是你的某个目标发布的。"
-          }
-        }
-      }
-    },
-    "A schedule of yours posted it.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "あなたのスケジュールが投稿しました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这是你的某个日程发布的。"
           }
         }
       }

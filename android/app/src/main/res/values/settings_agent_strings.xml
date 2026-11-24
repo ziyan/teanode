@@ -145,7 +145,7 @@
     <string name="settings_activity_runs_one">%d run</string>
     <string name="settings_activity_runs_many">%d runs</string>
     <string name="settings_activity_nothing">Nothing yet.</string>
-    <string name="settings_activity_runs_footer">The runs your agent made on its own (sorting, answering, looking things up, its schedules), newest first. Open one to read what it did and ask about it.</string>
+    <string name="settings_activity_runs_footer">The runs your agent made on its own (sorting, answering, looking things up, its goals), newest first. Open one to read what it did and ask about it.</string>
     <string name="settings_activity_dream_runs_footer">The runs of the dream at %s: every call it made to a model, newest first. Open one to read it.</string>
     <string name="settings_activity_dream_at">Dream at %s</string>
     <string name="settings_activity_show_all">Show all</string>

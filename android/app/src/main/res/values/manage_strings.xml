@@ -67,7 +67,7 @@
     <string name="manage_feature_knowledge">Knowledge: read the sources people point their agent at</string>
     <string name="manage_feature_remember">Remember: file what a conversation taught once it goes quiet</string>
     <string name="manage_feature_research">Research: looking things up for a message</string>
-    <string name="manage_feature_schedules">Reminders and scheduled runs</string>
+    <string name="manage_feature_schedules">Goals at set times or on mail</string>
     <string name="manage_feature_search">Search by meaning</string>
     <string name="manage_feature_skills">Skills: the tools an operator installs from the skill registry</string>
     <string name="manage_feature_subagents">Subagents: a turn may hand a piece of work to a run of its own</string>
@@ -152,7 +152,7 @@
     <string name="manage_model_research">Research</string>
     <string name="manage_model_same_as_default">Same as the default (fast for sorting, summaries and compaction)</string>
     <string name="manage_model_scan">Reading and filing: dreams, the ingest, the remember run</string>
-    <string name="manage_model_schedule">Scheduled runs</string>
+    <string name="manage_model_schedule">Goals at set times</string>
     <string name="manage_model_summarize">Summaries</string>
     <string name="manage_model_synthesize">Judgment across pages: overviews, reflections, a survey\'s pages</string>
     <string name="manage_model_synthesize_none">Same as research (the default when research is not set)</string>

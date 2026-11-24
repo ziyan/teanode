@@ -67,7 +67,7 @@
     <string name="manage_feature_knowledge">知识：阅读用户指定的来源</string>
     <string name="manage_feature_remember">记忆：对话安静后整理其中所学</string>
     <string name="manage_feature_research">调研：为邮件查找信息</string>
-    <string name="manage_feature_schedules">提醒与计划运行</string>
+    <string name="manage_feature_schedules">定时或收到邮件时运行的目标</string>
     <string name="manage_feature_search">语义搜索</string>
     <string name="manage_feature_skills">技能：运营者从技能注册表安装的工具</string>
     <string name="manage_feature_subagents">子助手：一次对话可以把一件工作交给独立的运行</string>
@@ -152,7 +152,7 @@
     <string name="manage_model_research">调研</string>
     <string name="manage_model_same_as_default">与默认相同（分类、摘要和压缩用快速模型）</string>
     <string name="manage_model_scan">阅读与整理：做梦、导入、记忆整理</string>
-    <string name="manage_model_schedule">计划运行</string>
+    <string name="manage_model_schedule">定时目标</string>
     <string name="manage_model_summarize">摘要</string>
     <string name="manage_model_synthesize">跨页面的判断：概述、反思、调查的各个页面</string>
     <string name="manage_model_synthesize_none">与研究相同（未设置研究时用默认模型）</string>
