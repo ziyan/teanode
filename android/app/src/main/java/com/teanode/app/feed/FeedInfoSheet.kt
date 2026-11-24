@@ -29,7 +29,7 @@ import com.teanode.app.ui.components.TeaNodeSectionHeader
 import com.teanode.kit.feed.AgentFeedItemView
 
 /**
- * The information sheet of a card (ios FeedInformationSheet): why it is in the feed (which goal, schedule or alert
+ * The information sheet of a card (ios FeedInformationSheet): why it is in the feed (which goal or alert
  * made it, with "Open Goals" for a goal's), when it was posted and updated, its sources, and "Show less like this" and
  * Dismiss, either of which takes the card out of the feed.
  */
@@ -45,7 +45,6 @@ fun FeedInfoSheet(item: AgentFeedItemView, actions: FeedActions, onDismiss: () -
     val sourceSentence = stringResource(
         when (item.feedSourceKind) {
             "goal" -> R.string.feed_source_goal
-            "schedule" -> R.string.feed_source_schedule
             "alert" -> R.string.feed_source_alert
             "coding_session" -> R.string.feed_source_coding_session
             else -> R.string.feed_source_agent

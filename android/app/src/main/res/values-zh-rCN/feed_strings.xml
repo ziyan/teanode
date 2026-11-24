@@ -19,7 +19,6 @@
     <string name="feed_info_footer">两者都会把这张卡片从动态中移除。选择减少类似内容还会告诉你的助手少发布这类卡片。</string>
     <string name="feed_info_done">完成</string>
     <string name="feed_source_goal">这是你的某个目标发布的。</string>
-    <string name="feed_source_schedule">这是你的某个日程发布的。</string>
     <string name="feed_source_alert">你的助手认为你应该知道。</string>
     <string name="feed_source_coding_session">有一个编程会话在向你提问。</string>
     <string name="feed_source_agent">这是你的助手发布的。</string>

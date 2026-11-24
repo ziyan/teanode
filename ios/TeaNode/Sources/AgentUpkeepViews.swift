@@ -3496,7 +3496,7 @@ struct AgentActivityView: View {
                     "The runs of the dream at \(dreamStartedAt.map { UpkeepWords.when($0) } ?? ""): every call it made to a model, newest first. Open one to read it."
                 )
             } else {
-                Text("The runs your agent made on its own (sorting, answering, looking things up, its schedules), newest first. Open one to read what it did and ask about it.")
+                Text("The runs your agent made on its own (sorting, answering, looking things up, its goals), newest first. Open one to read what it did and ask about it.")
             }
         }
     }

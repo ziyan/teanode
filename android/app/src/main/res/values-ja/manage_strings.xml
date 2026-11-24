@@ -67,7 +67,7 @@
     <string name="manage_feature_knowledge">知識：指定された情報源を読む</string>
     <string name="manage_feature_remember">記憶：会話が静かになったら学んだことを整理する</string>
     <string name="manage_feature_research">調査: メッセージについて調べる</string>
-    <string name="manage_feature_schedules">リマインダーと予約実行</string>
+    <string name="manage_feature_schedules">決まった時刻やメール受信時に動く目標</string>
     <string name="manage_feature_search">意味で検索する</string>
     <string name="manage_feature_skills">スキル：運用者がスキルレジストリから導入したツール</string>
     <string name="manage_feature_subagents">サブエージェント：一つのターンが仕事を別の実行に渡せる</string>
@@ -152,7 +152,7 @@
     <string name="manage_model_research">調査</string>
     <string name="manage_model_same_as_default">既定と同じ（仕分け・要約・圧縮は高速モデル）</string>
     <string name="manage_model_scan">読み取りと整理：夢、取り込み、記憶の整理</string>
-    <string name="manage_model_schedule">予約実行</string>
+    <string name="manage_model_schedule">時刻指定の目標</string>
     <string name="manage_model_summarize">要約</string>
     <string name="manage_model_synthesize">ページをまたぐ判断：概要、振り返り、調査の各ページ</string>
     <string name="manage_model_synthesize_none">リサーチと同じ（リサーチ未設定なら既定）</string>

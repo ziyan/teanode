@@ -1570,7 +1570,7 @@ export const en = {
   'agent.saved': 'Saved.',
   'agent.activity': 'What it did',
   'agent.activityHint':
-    'The runs your agent made on its own — sorting, answering, looking things up, its schedules — newest first. Open one to read what it did and ask about it.',
+    'The runs your agent made on its own (sorting, answering, looking things up, its goals), newest first. Open one to read what it did and ask about it.',
   'agent.noActivity': 'Nothing yet.',
   'agent.open': 'Open',
   'agent.findMemory': 'Find a memory…',
@@ -1650,7 +1650,7 @@ export const en = {
   'agent.askModelDefault': "The server's choice",
   'agent.unattended': 'When you are not there',
   'agent.unattendedHint':
-    'What your agent may do without asking, in a schedule, a goal or overnight, when there is nobody to confirm. Anything not ticked is refused then, and your agent tells you what it would have done. Mail sorting and replies drafted from incoming mail only ever read, whatever is ticked.',
+    'What your agent may do without asking, in a goal or overnight, when there is nobody to confirm. Anything not ticked is refused then, and your agent tells you what it would have done. Mail sorting and replies drafted from incoming mail only ever read, whatever is ticked.',
   'agent.unattended.outward': 'Speak for you',
   'agent.unattended.outwardHint': 'Send mail, post a message or reply as you, or act in your browser tab.',
   'agent.unattended.money': 'Spend or move money',
@@ -1673,7 +1673,7 @@ export const en = {
     'Remove {name}? Mail already sorted into it keeps the label; new mail is sorted without it.',
   'agent.revokeConfirm': 'Take {name} away from the agent? Queued work for it is cancelled; what it has sorted stays.',
   'agent.forgetHint':
-    'Removes the agent with its memory, conversations, schedules and connections. Your mail is untouched.',
+    'Removes the agent with its memory, conversations, goals and connections. Your mail is untouched.',
   'agent.policyUsual': 'As usual',
   'agent.policyAsk': 'Ask me first',
   'agent.confirmToolsHint':
@@ -1851,7 +1851,7 @@ export const en = {
   'agentSettings.work.summarize': 'Summaries',
   'agentSettings.work.reply': 'Replies',
   'agentSettings.work.ask': 'Conversations',
-  'agentSettings.work.schedule': 'Scheduled runs',
+  'agentSettings.work.schedule': 'Goals at set times',
   'agentSettings.work.compact': 'Compaction',
   'agentSettings.work.scan': 'Reading and filing: dreams, the ingest, the remember run',
   'agentSettings.modelChoices': 'Models a person may pick for their conversations (comma-separated; empty = none)',
@@ -1865,7 +1865,7 @@ export const en = {
   'agentSettings.feature.research': 'Research: looking things up for a message',
   'agentSettings.feature.autoReply': "Answering mail on a person's behalf",
   'agentSettings.feature.ask': 'Talking to the agent',
-  'agentSettings.feature.schedules': 'Reminders and scheduled runs',
+  'agentSettings.feature.schedules': 'Goals at set times or on mail',
   'agentSettings.feature.browser': 'The browser',
   'agentSettings.feature.connectedServers': 'Connected servers',
   'agentSettings.feature.computer': "The person's own computer, attached with `teanode computer`",
@@ -5592,7 +5592,7 @@ export const en = {
   'services.routing': 'Receive, send and forward mail for your domains.',
   'services.mailboxes': 'Keep mail here and read it in the dashboard or a mail app. Requires mail routing.',
   'services.calendar': 'Keep and sync calendar events, without needing an email account.',
-  'services.reminders': 'Keep and sync your reminders. Assistant schedules and goals are separate.',
+  'services.reminders': "Keep and sync your reminders. Your agent's goals are separate.",
   'services.contacts': 'Keep and sync your address book, without needing an email account.',
   'services.review': 'Review your choices',
   'services.preserve':
