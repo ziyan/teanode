@@ -12,6 +12,7 @@ import {
   ChatIcon,
   CarIcon,
   CartIcon,
+  CloseIcon,
   CodeIcon,
   HeartIcon,
   HomeIcon,
@@ -164,9 +165,16 @@ const LIKE_ITEM = `mutation ($feedItemId: String!, $isLiked: Boolean!) {
 const SHOW_LESS_ITEM = `mutation ($feedItemId: String!) {
   ShowLessLikeAgentFeedItem(feedItemId: $feedItemId) { ${ITEM_FIELDS} }
 }`
-const DISMISS_ITEM = `mutation ($feedItemId: String!) {
-  DismissAgentFeedItem(feedItemId: $feedItemId) { ${ITEM_FIELDS} }
+const DISMISS_ITEMS = `mutation ($feedItemIds: [String!], $feedStackKey: String, $isEveryReadCard: Boolean) {
+  DismissAgentFeedItems(feedItemIds: $feedItemIds, feedStackKey: $feedStackKey, isEveryReadCard: $isEveryReadCard)
 }`
+const RESTORE_ITEMS = `mutation ($feedItemIds: [String!]!) {
+  RestoreAgentFeedItems(feedItemIds: $feedItemIds)
+}`
+
+// Which cards a dismissal closes: the ones named, a stack's, or every read one.
+// Exactly one is given, as the operation wants.
+type DismissSelection = { feedItemIds: string[] } | { feedStackKey: string } | { isEveryReadCard: true }
 const MARK_READ = `mutation ($feedItemIds: [String!]!) { MarkAgentFeedRead(feedItemIds: $feedItemIds) }`
 const DISCUSS_ITEM = `mutation ($feedItemId: String!) { DiscussAgentFeedItem(feedItemId: $feedItemId) }`
 
@@ -258,7 +266,7 @@ function codingSessionPath(feedSourceId: string): string {
 }
 
 export function FeedPage() {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const toast = useToast()
   const [feedItems, setFeedItems] = useState<FeedItem[] | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
@@ -471,6 +479,45 @@ export function FeedPage() {
     })
   }, [])
 
+  // dismissItems closes cards and offers Undo, which brings back exactly the
+  // cards this call closed. The list is read again, so a stack whose top card
+  // went shows its next card, and the events that follow say the same.
+  const dismissItems = useCallback(
+    async (selection: DismissSelection) => {
+      try {
+        const answer = await graphql<{ DismissAgentFeedItems: string[] }>(DISMISS_ITEMS, selection)
+        const dismissedIds = answer.DismissAgentFeedItems
+        if (dismissedIds.length === 0) {
+          toastRef.current.done(t('feed.nothingToDismiss'))
+          return
+        }
+        const gone = new Set(dismissedIds)
+        setFeedItems((previous) => {
+          const remaining = previous ? previous.filter((item) => !gone.has(item.feedItemId)) : previous
+          feedItemCountRef.current = remaining?.length ?? 0
+          return remaining
+        })
+        void loadRef.current(true)
+        toastRef.current.done(plural(dismissedIds.length, { one: 'feed.dismissedOne', other: 'feed.dismissedOther' }), {
+          label: t('common.undo'),
+          run: async () => {
+            try {
+              await graphql(RESTORE_ITEMS, { feedItemIds: dismissedIds })
+              await loadRef.current(true)
+            } catch (caught) {
+              toastRef.current.failure(caught, t('feed.actionFailed'))
+            }
+          },
+        })
+      } catch (caught) {
+        toastRef.current.failure(caught, t('feed.actionFailed'))
+      }
+    },
+    // The translation functions change with the language only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+
   if (feedItems === null) {
     return (
       <>
@@ -481,6 +528,13 @@ export function FeedPage() {
   }
   return (
     <div className="feed-page">
+      {feedItems.length > 0 && (
+        <div className="feed-header">
+          <button type="button" onClick={() => void dismissItems({ isEveryReadCard: true })}>
+            {t('feed.dismissRead')}
+          </button>
+        </div>
+      )}
       {feedItems.length === 0 ? (
         <SettingsEmpty>{t('feed.empty')}</SettingsEmpty>
       ) : (
@@ -519,6 +573,7 @@ export function FeedPage() {
                   onSeen={markSeen}
                   onChanged={replaceItem}
                   onRemoved={removeItem}
+                  onDismissItems={dismissItems}
                   stack={isStack ? { isOpen, onToggle: () => toggleStack(item.feedStackKey) } : undefined}
                 />
                 {isStack && (
@@ -530,6 +585,7 @@ export function FeedPage() {
                     loadCount={loadCount}
                     readItemIds={readItemIds}
                     onSeen={markSeen}
+                    onDismissItems={dismissItems}
                   />
                 )}
               </li>
@@ -554,6 +610,7 @@ function FeedCard({
   onSeen,
   onChanged,
   onRemoved,
+  onDismissItems,
   stack,
 }: {
   item: FeedItem
@@ -561,6 +618,7 @@ function FeedCard({
   onSeen: (feedItemId: string) => void
   onChanged: (item: FeedItem) => void
   onRemoved: (feedItemId: string) => void
+  onDismissItems: (selection: DismissSelection) => Promise<void>
   // Present on the top card of a stack: whether the rest is shown and how to toggle it.
   stack?: { isOpen: boolean; onToggle: () => void }
 }) {
@@ -652,10 +710,11 @@ function FeedCard({
 
   const dismiss = () =>
     run(async () => {
-      await graphql(DISMISS_ITEM, { feedItemId: item.feedItemId })
       setIsInfoOpen(false)
-      onRemoved(item.feedItemId)
+      await onDismissItems({ feedItemIds: [item.feedItemId] })
     })
+
+  const dismissStack = () => run(() => onDismissItems({ feedStackKey: item.feedStackKey }))
 
   const showLess = () =>
     run(async () => {
@@ -703,7 +762,20 @@ function FeedCard({
             {headerLabel}
           </p>
         )}
-        <h3 className="feed-title">{item.title}</h3>
+        <div className="feed-head">
+          <h3 className="feed-title">{item.title}</h3>
+          <Tooltip label={t('feed.dismiss')}>
+            <button
+              type="button"
+              className="icon-action feed-dismiss"
+              aria-label={`${item.title}: ${t('feed.dismiss')}`}
+              disabled={isBusy}
+              onClick={() => void dismiss()}
+            >
+              <CloseIcon size={16} />
+            </button>
+          </Tooltip>
+        </div>
         {layout ? (
           <FeedLayoutContent layout={layout} rowMediaByIndex={rowMediaByIndex} />
         ) : (
@@ -788,21 +860,26 @@ function FeedCard({
         </div>
       </div>
       {stack && item.stackItemCount > 1 && (
-        <button type="button" className="feed-stack-row" aria-expanded={stack.isOpen} onClick={stack.onToggle}>
-          <span>
-            {stack.isOpen
-              ? t('feed.stackCollapse')
-              : item.feedStackTitle || item.feedSourceTitle
-                ? t('feed.stackMore', {
-                    count: item.stackItemCount - 1,
-                    source: item.feedStackTitle || item.feedSourceTitle,
-                  })
-                : t('feed.stackMoreUnnamed', { count: item.stackItemCount - 1 })}
-          </span>
-          {!stack.isOpen && item.stackUnreadCount > 0 && (
-            <span className="muted feed-stack-unread">{t('feed.unreadCount', { count: item.stackUnreadCount })}</span>
-          )}
-        </button>
+        <div className="feed-stack-actions">
+          <button type="button" className="feed-stack-row" aria-expanded={stack.isOpen} onClick={stack.onToggle}>
+            <span>
+              {stack.isOpen
+                ? t('feed.stackCollapse')
+                : item.feedStackTitle || item.feedSourceTitle
+                  ? t('feed.stackMore', {
+                      count: item.stackItemCount - 1,
+                      source: item.feedStackTitle || item.feedSourceTitle,
+                    })
+                  : t('feed.stackMoreUnnamed', { count: item.stackItemCount - 1 })}
+            </span>
+            {!stack.isOpen && item.stackUnreadCount > 0 && (
+              <span className="muted feed-stack-unread">{t('feed.unreadCount', { count: item.stackUnreadCount })}</span>
+            )}
+          </button>
+          <button type="button" className="feed-dismiss-all" disabled={isBusy} onClick={() => void dismissStack()}>
+            {t('feed.dismissAll', { count: item.stackItemCount })}
+          </button>
+        </div>
       )}
       {isInfoOpen && (
         <FeedInfoDialog
@@ -934,6 +1011,7 @@ function FeedStack({
   loadCount,
   readItemIds,
   onSeen,
+  onDismissItems,
 }: {
   feedStackKey: string
   topFeedItemId: string
@@ -945,6 +1023,7 @@ function FeedStack({
   loadCount: number
   readItemIds: Set<string>
   onSeen: (feedItemId: string) => void
+  onDismissItems: (selection: DismissSelection) => Promise<void>
 }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -1071,6 +1150,7 @@ function FeedStack({
             <FeedCard
               item={readItemIds.has(item.feedItemId) ? { ...item, isRead: true } : item}
               isFresh={!item.isRead}
+              onDismissItems={onDismissItems}
               onSeen={isOpen ? onSeen : ignoreSeen}
               onChanged={(updated) =>
                 setFeedItems((previous) =>

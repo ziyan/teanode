@@ -252,14 +252,86 @@ it('says where a card came from, with its links, and can show less of it', async
 })
 
 it('dismisses a card from its info dialog', async () => {
+  let isDismissed = false
   execute.mockImplementation(async (document: string) => {
-    if (document.includes('DismissAgentFeedItem')) return { DismissAgentFeedItem: feedItem('card-frost') }
-    return listing([feedItem('card-frost')])
+    if (document.includes('DismissAgentFeedItems')) {
+      isDismissed = true
+      return { DismissAgentFeedItems: ['card-frost'] }
+    }
+    return listing(isDismissed ? [] : [feedItem('card-frost')])
   })
   drawFeed()
   fireEvent.click(await screen.findByRole('button', { name: /Why this is here/ }))
   fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Dismiss' }))
   await waitFor(() => expect(screen.queryByText('Frost tonight card-frost')).toBeNull())
+  expect(execute).toHaveBeenCalledWith(expect.stringContaining('DismissAgentFeedItems'), {
+    feedItemIds: ['card-frost'],
+  })
+})
+
+// What the toast of a dismissal was given: its words and its one action.
+function lastToast() {
+  const [message, action] = notices.done.mock.calls[notices.done.mock.calls.length - 1] as [
+    string,
+    { label: string; run: () => Promise<void> },
+  ]
+  return { message, action }
+}
+
+it('dismisses a card with its own button and brings it back with Undo', async () => {
+  let isDismissed = false
+  execute.mockImplementation(async (document: string) => {
+    if (document.includes('DismissAgentFeedItems')) {
+      isDismissed = true
+      return { DismissAgentFeedItems: ['card-frost'] }
+    }
+    if (document.includes('RestoreAgentFeedItems')) {
+      isDismissed = false
+      return { RestoreAgentFeedItems: ['card-frost'] }
+    }
+    return listing(isDismissed ? [] : [feedItem('card-frost')])
+  })
+  drawFeed()
+  fireEvent.click(await screen.findByRole('button', { name: 'Frost tonight card-frost: Dismiss' }))
+  await waitFor(() => expect(screen.queryByText('Frost tonight card-frost')).toBeNull())
+  expect(execute).toHaveBeenCalledWith(expect.stringContaining('DismissAgentFeedItems'), {
+    feedItemIds: ['card-frost'],
+  })
+  const { message, action } = lastToast()
+  expect(message).toBe('Dismissed 1 card.')
+  expect(action.label).toBe('Undo')
+  await act(async () => {
+    await action.run()
+  })
+  expect(execute).toHaveBeenCalledWith(expect.stringContaining('RestoreAgentFeedItems'), {
+    feedItemIds: ['card-frost'],
+  })
+  expect(await screen.findByText('Frost tonight card-frost')).toBeTruthy()
+})
+
+it('dismisses every read card from the feed header, and says when there are none', async () => {
+  let dismissedIds = ['card-one', 'card-two']
+  let isDismissed = false
+  execute.mockImplementation(async (document: string) => {
+    if (document.includes('DismissAgentFeedItems')) {
+      const answer = { DismissAgentFeedItems: dismissedIds }
+      isDismissed = true
+      return answer
+    }
+    const unread = feedItem('card-new', { isRead: false })
+    return listing(isDismissed ? [unread] : [feedItem('card-one'), feedItem('card-two'), unread], null, 1)
+  })
+  drawFeed()
+  await screen.findByText('Frost tonight card-new')
+  fireEvent.click(screen.getByRole('button', { name: 'Dismiss read' }))
+  await waitFor(() => expect(screen.queryByText('Frost tonight card-one')).toBeNull())
+  expect(execute).toHaveBeenCalledWith(expect.stringContaining('DismissAgentFeedItems'), { isEveryReadCard: true })
+  expect(screen.getByText('Frost tonight card-new')).toBeTruthy()
+  expect(lastToast().message).toBe('Dismissed 2 cards.')
+
+  dismissedIds = []
+  fireEvent.click(screen.getByRole('button', { name: 'Dismiss read' }))
+  await waitFor(() => expect(lastToast().message).toBe('Nothing to dismiss.'))
 })
 
 it('does not draw a source link that is not a web address', async () => {
@@ -369,6 +441,26 @@ it('draws a stack as its top card with a row saying how many more', async () => 
   const room = tucked.closest('.feed-stack-rest') as HTMLElement
   expect(room.getAttribute('aria-hidden')).toBe('true')
   expect(room.inert).toBe(true)
+})
+
+it('dismisses a whole stack with Dismiss all, counting its cards', async () => {
+  let isDismissed = false
+  execute.mockImplementation(async (document: string) => {
+    if (document.includes('DismissAgentFeedItems')) {
+      isDismissed = true
+      return { DismissAgentFeedItems: ['news-top', 'news-second', 'news-third'] }
+    }
+    if (document.includes('ListAgentFeedStack')) return stackListing([stackTop])
+    return listing(isDismissed ? [feedItem('alone')] : [stackTop, feedItem('alone')])
+  })
+  drawFeed()
+  fireEvent.click(await screen.findByRole('button', { name: 'Dismiss all 3' }))
+  await waitFor(() => expect(screen.queryByText('Newest story')).toBeNull())
+  expect(execute).toHaveBeenCalledWith(expect.stringContaining('DismissAgentFeedItems'), {
+    feedStackKey: 'goal:news',
+  })
+  expect(screen.getByText('Frost tonight alone')).toBeTruthy()
+  expect(lastToast().message).toBe('Dismissed 3 cards.')
 })
 
 it('opens a stack in place with its other cards, pages it and collapses it', async () => {
