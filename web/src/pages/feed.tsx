@@ -340,12 +340,28 @@ export function FeedPage() {
   // to the top and the unread count changes with it.
   const loadRef = useRef(load)
   loadRef.current = load
+  // A batch of changes (a stack or every read card dismissed, a restore)
+  // arrives as one event a card; they are read once, a moment after the last.
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scheduleReload = useCallback(() => {
+    if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
+    reloadTimerRef.current = setTimeout(() => {
+      reloadTimerRef.current = null
+      void loadRef.current(true)
+    }, 250)
+  }, [])
+  useEffect(
+    () => () => {
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
+    },
+    [],
+  )
   useEffect(
     () =>
       subscribe<{ AgentFeedChanged: { feedItemId: string; feedChange: string; unreadCount: number } }>(
         AGENT_FEED_CHANGED,
         {},
-        () => void loadRef.current(true),
+        () => scheduleReload(),
         undefined,
         {
           // What changed while the socket was down is read before the event
@@ -355,7 +371,7 @@ export function FeedPage() {
           },
         },
       ),
-    [],
+    [scheduleReload],
   )
 
   // A turn that follows a choice may still be running when the card is first
@@ -489,7 +505,7 @@ export function FeedPage() {
         const dismissedIds = answer.DismissAgentFeedItems
         if (dismissedIds.length === 0) {
           toastRef.current.done(t('feed.nothingToDismiss'))
-          return
+          return true
         }
         const gone = new Set(dismissedIds)
         setFeedItems((previous) => {
@@ -509,8 +525,10 @@ export function FeedPage() {
             }
           },
         })
+        return true
       } catch (caught) {
         toastRef.current.failure(caught, t('feed.actionFailed'))
+        return false
       }
     },
     // The translation functions change with the language only.
@@ -618,7 +636,7 @@ function FeedCard({
   onSeen: (feedItemId: string) => void
   onChanged: (item: FeedItem) => void
   onRemoved: (feedItemId: string) => void
-  onDismissItems: (selection: DismissSelection) => Promise<void>
+  onDismissItems: (selection: DismissSelection) => Promise<boolean>
   // Present on the top card of a stack: whether the rest is shown and how to toggle it.
   stack?: { isOpen: boolean; onToggle: () => void }
 }) {
@@ -710,11 +728,15 @@ function FeedCard({
 
   const dismiss = () =>
     run(async () => {
-      setIsInfoOpen(false)
-      await onDismissItems({ feedItemIds: [item.feedItemId] })
+      // The sheet closes once the card is gone; a failure leaves it open
+      // beside the message saying so.
+      if (await onDismissItems({ feedItemIds: [item.feedItemId] })) setIsInfoOpen(false)
     })
 
-  const dismissStack = () => run(() => onDismissItems({ feedStackKey: item.feedStackKey }))
+  const dismissStack = () =>
+    run(async () => {
+      await onDismissItems({ feedStackKey: item.feedStackKey })
+    })
 
   const showLess = () =>
     run(async () => {
@@ -1023,7 +1045,7 @@ function FeedStack({
   loadCount: number
   readItemIds: Set<string>
   onSeen: (feedItemId: string) => void
-  onDismissItems: (selection: DismissSelection) => Promise<void>
+  onDismissItems: (selection: DismissSelection) => Promise<boolean>
 }) {
   const { t } = useTranslation()
   const toast = useToast()
