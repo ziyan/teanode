@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.235.0] - 2026-11-24
+
+### Added
+
+- Dismiss a feed card with one gesture (a swipe on Android, a long press on iPhone, a button on the dashboard), dismiss a whole stack or every read card, and undo it. (#787)
+
 ## [0.234.3] - 2026-11-24
 
 ### Fixed
