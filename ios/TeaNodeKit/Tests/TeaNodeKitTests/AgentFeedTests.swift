@@ -55,7 +55,7 @@ final class AgentFeedTests: XCTestCase {
     func testTheDocumentsNameTheServersOperations() {
         let operations: [String: String] = [
             "agentFeed": "ListAgentFeed", "agentFeedStack": "ListAgentFeedStack", "chooseAgentFeedItem": "ChooseAgentFeedItem", "likeAgentFeedItem": "LikeAgentFeedItem",
-            "showLessLikeAgentFeedItem": "ShowLessLikeAgentFeedItem", "dismissAgentFeedItem": "DismissAgentFeedItem",
+            "showLessLikeAgentFeedItem": "ShowLessLikeAgentFeedItem", "dismissAgentFeedItems": "DismissAgentFeedItems", "restoreAgentFeedItems": "RestoreAgentFeedItems",
             "markAgentFeedRead": "MarkAgentFeedRead", "discussAgentFeedItem": "DiscussAgentFeedItem", "agentFeedEvents": "AgentFeedChanged",
         ]
         XCTAssertEqual(Set(Documents.agentFeedDocuments.keys), Set(operations.keys))
@@ -357,15 +357,30 @@ final class AgentFeedTests: XCTestCase {
     func testLikingShowingLessAndDismissingAnswerWithTheCard() async throws {
         let card = #"{"feedItemId":"card-1","title":"Sunny and mild","isLiked":true,"isDismissed":true}"#
         let (connection, fake) = connection(
-            answering: #"{"data":{"LikeAgentFeedItem":\#(card),"ShowLessLikeAgentFeedItem":\#(card),"DismissAgentFeedItem":\#(card)}}"#)
+            answering: #"{"data":{"LikeAgentFeedItem":\#(card),"ShowLessLikeAgentFeedItem":\#(card)}}"#)
         let liked = try await connection.likeAgentFeedItem("card-1", isLiked: true)
         XCTAssertTrue(liked.isLiked)
         XCTAssertEqual(try sentVariables(fake.sent[0])["isLiked"], .bool(true))
         let lessLikeThis = try await connection.showLessLikeAgentFeedItem("card-1")
         XCTAssertTrue(lessLikeThis.isDismissed)
-        let dismissed = try await connection.dismissAgentFeedItem("card-1")
-        XCTAssertTrue(dismissed.isDismissed)
-        XCTAssertEqual(try sentVariables(fake.sent[2])["feedItemId"], .string("card-1"))
+    }
+
+    func testDismissingSendsExactlyOneSelectorAndReturnsTheDismissedIds() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"DismissAgentFeedItems":["card-1","card-2"]}}"#)
+        let byIds = try await connection.dismissAgentFeedItems(.feedItemIds(["card-1", "card-2", "card-3"]))
+        XCTAssertEqual(byIds, ["card-1", "card-2"])
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["feedItemIds": .array([.string("card-1"), .string("card-2"), .string("card-3")])])
+        _ = try await connection.dismissAgentFeedItems(.feedStackKey("stack-1"))
+        XCTAssertEqual(try sentVariables(fake.sent[1]), ["feedStackKey": .string("stack-1")])
+        _ = try await connection.dismissAgentFeedItems(.everyReadCard)
+        XCTAssertEqual(try sentVariables(fake.sent[2]), ["isEveryReadCard": .bool(true)])
+    }
+
+    func testRestoringSendsTheIdsAndReturnsTheRestoredOnes() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"RestoreAgentFeedItems":["card-1"]}}"#)
+        let restored = try await connection.restoreAgentFeedItems(["card-1", "card-2"])
+        XCTAssertEqual(restored, ["card-1"])
+        XCTAssertEqual(try sentVariables(fake.sent[0])["feedItemIds"], .array([.string("card-1"), .string("card-2")]))
     }
 
     func testMarkingReadSendsTheIdsAndReturnsHowManyWereNew() async throws {
