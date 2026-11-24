@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.234.2] - 2026-11-24
+
+### Fixed
+
+- On the iPhone and Android apps, Years and Months open at once and scrolling back through older photos stays smooth, because the apps read only the part of the library on screen. (#785)
+- On Android, choosing a year or month opens the photos at that place. (#785)
+
 ## [0.234.1] - 2026-11-23
 
 ### Fixed
