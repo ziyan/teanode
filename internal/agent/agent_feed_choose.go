@@ -309,7 +309,7 @@ func (self *Agent) ShowLessLikeFeedItem(ctx context.Context, agentId string, ite
 		if err := self.rememberFeedPreference(tx, agentId, item, text); err != nil {
 			return err
 		}
-		if _, err := tx.DismissAgentFeedItem(item.ID, time.Now()); err != nil {
+		if _, err := tx.DismissAgentFeedItems(item.UserID, &db.FeedDismissSelection{FeedItemIDs: []string{item.ID}}, time.Now()); err != nil {
 			return err
 		}
 		var err error

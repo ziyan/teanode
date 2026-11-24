@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -82,12 +83,33 @@ type FeedOperation interface {
 	// were newly read.
 	MarkAgentFeedItemsRead(userId string, feedItemIds []string, now time.Time) (int, error)
 
-	// DismissAgentFeedItem closes a card, and says whether it was open.
-	DismissAgentFeedItem(feedItemId string, now time.Time) (bool, error)
+	// DismissAgentFeedItems closes the person's cards the selection names
+	// and answers the ones this call closed; a card already closed is left
+	// out. A selection by every read card leaves out a decision still waiting
+	// for an answer.
+	DismissAgentFeedItems(userId string, selection *FeedDismissSelection, now time.Time) ([]*models.AgentFeedItem, error)
+
+	// RestoreAgentFeedItems brings back the person's dismissed cards and
+	// answers the ones this call brought back. A card a choice settled stays
+	// closed.
+	RestoreAgentFeedItems(userId string, feedItemIds []string, now time.Time) ([]*models.AgentFeedItem, error)
 
 	// ExpireAgentFeedItems deletes cards that expired before the time, and
 	// says how many.
 	ExpireAgentFeedItems(before time.Time) (int64, error)
+}
+
+// FeedDismissSelection says which cards to dismiss: exactly one of its three
+// fields is set.
+type FeedDismissSelection struct {
+	// FeedItemIDs are those cards.
+	FeedItemIDs []string
+
+	// FeedStackKey is every open card of that stack.
+	FeedStackKey string
+
+	// IsEveryReadCard is every card that is read and has no open choice.
+	IsEveryReadCard bool
 }
 
 type agentFeedItemModel struct {
@@ -495,10 +517,46 @@ func (self *transaction) MarkAgentFeedItemsRead(userId string, feedItemIds []str
 	return int(result.RowsAffected), result.Error
 }
 
-func (self *transaction) DismissAgentFeedItem(feedItemId string, now time.Time) (bool, error) {
-	result := self.tx.Model(&agentFeedItemModel{}).Where(`"id" = ? AND "dismissed_at" IS NULL`, feedItemId).
-		Updates(map[string]any{"dismissed_at": now, "read_at": gorm.Expr(`COALESCE("read_at", ?::timestamptz)`, now), "updated_at": now})
-	return result.RowsAffected == 1, result.Error
+func (self *transaction) DismissAgentFeedItems(userId string, selection *FeedDismissSelection, now time.Time) ([]*models.AgentFeedItem, error) {
+	query := self.tx.Where(`"user_id" = ? AND "dismissed_at" IS NULL`, userId)
+	switch {
+	case len(selection.FeedItemIDs) > 0:
+		query = query.Where(`"id" IN ?`, selection.FeedItemIDs)
+	case selection.FeedStackKey != "":
+		query = query.Where(`"feed_stack_key" = ?`, selection.FeedStackKey)
+	case selection.IsEveryReadCard:
+		query = query.Where(`"read_at" IS NOT NULL AND NOT ("feed_item_kind" = ? AND jsonb_array_length("choices") > 0 AND "chosen_choice_key" IS NULL)`, string(models.FeedItemDecision))
+	default:
+		return []*models.AgentFeedItem{}, nil
+	}
+	return updateFeedItems(query, map[string]any{"dismissed_at": now, "read_at": gorm.Expr(`COALESCE("read_at", ?::timestamptz)`, now), "updated_at": now})
+}
+
+func (self *transaction) RestoreAgentFeedItems(userId string, feedItemIds []string, now time.Time) ([]*models.AgentFeedItem, error) {
+	if len(feedItemIds) == 0 {
+		return []*models.AgentFeedItem{}, nil
+	}
+	query := self.tx.Where(`"user_id" = ? AND "id" IN ? AND "dismissed_at" IS NOT NULL AND "chosen_choice_key" IS NULL`, userId, feedItemIds)
+	return updateFeedItems(query, map[string]any{"dismissed_at": nil, "updated_at": now})
+}
+
+// updateFeedItems changes the cards the query selects and answers them as
+// they are after the change, oldest first.
+func updateFeedItems(query *gorm.DB, changes map[string]any) ([]*models.AgentFeedItem, error) {
+	var changed []agentFeedItemModel
+	if err := query.Model(&changed).Clauses(clause.Returning{}).Updates(changes).Error; err != nil {
+		return nil, err
+	}
+	sort.SliceStable(changed, func(first, second int) bool { return changed[first].CreatedAt.Before(changed[second].CreatedAt) })
+	items := make([]*models.AgentFeedItem, 0, len(changed))
+	for index := range changed {
+		item, err := changed[index].toModel()
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func (self *transaction) ExpireAgentFeedItems(before time.Time) (int64, error) {

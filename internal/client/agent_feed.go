@@ -140,8 +140,11 @@ const (
 	DocumentShowLessLikeAgentFeedItem = `mutation ($feedItemId: String!) {
 		ShowLessLikeAgentFeedItem(feedItemId: $feedItemId) { ` + feedItemFields + ` }
 	}`
-	DocumentDismissAgentFeedItem = `mutation ($feedItemId: String!) {
-		DismissAgentFeedItem(feedItemId: $feedItemId) { ` + feedItemFields + ` }
+	DocumentDismissAgentFeedItems = `mutation ($feedItemIds: [String!], $feedStackKey: String, $isEveryReadCard: Boolean) {
+		DismissAgentFeedItems(feedItemIds: $feedItemIds, feedStackKey: $feedStackKey, isEveryReadCard: $isEveryReadCard)
+	}`
+	DocumentRestoreAgentFeedItems = `mutation ($feedItemIds: [String!]!) {
+		RestoreAgentFeedItems(feedItemIds: $feedItemIds)
 	}`
 	DocumentMarkAgentFeedRead = `mutation ($feedItemIds: [String!]!) {
 		MarkAgentFeedRead(feedItemIds: $feedItemIds)
@@ -234,15 +237,38 @@ func ShowLessLikeAgentFeedItem(ctx context.Context, connection *Client, feedItem
 	return result.ShowLessLikeAgentFeedItem, nil
 }
 
-// DismissAgentFeedItem closes a card.
-func DismissAgentFeedItem(ctx context.Context, connection *Client, feedItemId string) (*AgentFeedItem, error) {
+// DismissAgentFeedItems closes cards, named by id, by stack or all the read
+// ones (give exactly one), and answers the ids it closed.
+func DismissAgentFeedItems(ctx context.Context, connection *Client, feedItemIds []string, feedStackKey string, isEveryReadCard bool) ([]string, error) {
 	var result struct {
-		DismissAgentFeedItem *AgentFeedItem `json:"DismissAgentFeedItem"`
+		DismissAgentFeedItems []string `json:"DismissAgentFeedItems"`
 	}
-	if err := connection.Execute(ctx, DocumentDismissAgentFeedItem, map[string]any{"feedItemId": feedItemId}, &result); err != nil {
+	variables := map[string]any{}
+	if len(feedItemIds) > 0 {
+		variables["feedItemIds"] = feedItemIds
+	}
+	if feedStackKey != "" {
+		variables["feedStackKey"] = feedStackKey
+	}
+	if isEveryReadCard {
+		variables["isEveryReadCard"] = true
+	}
+	if err := connection.Execute(ctx, DocumentDismissAgentFeedItems, variables, &result); err != nil {
 		return nil, err
 	}
-	return result.DismissAgentFeedItem, nil
+	return result.DismissAgentFeedItems, nil
+}
+
+// RestoreAgentFeedItems brings dismissed cards back and answers the ids it
+// restored.
+func RestoreAgentFeedItems(ctx context.Context, connection *Client, feedItemIds []string) ([]string, error) {
+	var result struct {
+		RestoreAgentFeedItems []string `json:"RestoreAgentFeedItems"`
+	}
+	if err := connection.Execute(ctx, DocumentRestoreAgentFeedItems, map[string]any{"feedItemIds": feedItemIds}, &result); err != nil {
+		return nil, err
+	}
+	return result.RestoreAgentFeedItems, nil
 }
 
 // MarkAgentFeedRead marks cards read and says how many were newly read.

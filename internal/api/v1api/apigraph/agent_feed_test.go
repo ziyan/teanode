@@ -124,8 +124,8 @@ func TestAGoalsNewsCardsStackAndNameTheGoal(t *testing.T) {
 		if after.UnreadCount != 2 {
 			t.Fatalf("unread after reading two: %d", after.UnreadCount)
 		}
-		dismissed, err := world.resolver.DismissAgentFeedItem(ctx, AgentFeedItemArguments{FeedItemID: decision.FeedItemID})
-		if err != nil || !dismissed.IsDismissed {
+		dismissed, err := world.resolver.DismissAgentFeedItems(ctx, DismissAgentFeedItemsArguments{FeedItemIDs: []string{decision.FeedItemID}})
+		if err != nil || len(dismissed) != 1 || dismissed[0] != decision.FeedItemID {
 			t.Fatalf("dismiss: %+v %v", dismissed, err)
 		}
 		discussed, err := world.resolver.DiscussAgentFeedItem(ctx, AgentFeedItemArguments{FeedItemID: top.FeedItemID})
@@ -163,6 +163,88 @@ func TestAPostCanChangeACardAndRefusesABadLayout(t *testing.T) {
 		good, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: "Good", CardLayout: "weather", LayoutContent: `{"placeName":"Springfield","currentTemperature":12,"temperatureUnit":"C","conditionText":"Cloudy"}`})
 		if err != nil || good.FeedCardLayout != "weather" || good.LayoutContent == "" {
 			t.Fatalf("a weather card: %+v %v", good, err)
+		}
+	})
+}
+
+// Dismiss takes exactly one of ids, a stack or every read card, refuses
+// another person's id as a whole, keeps a decision that waits when every read
+// card goes, and each card is announced; restore brings back what the person
+// dismissed and not what a choice settled.
+func TestDismissingAndRestoringFeedCards(t *testing.T) {
+	world := newFeedWorld(t)
+	var strangerCardId string
+	world.within(world.stranger, func(ctx context.Context) {
+		card, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: "Somebody else's"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		strangerCardId = card.FeedItemID
+	})
+	world.within(world.person, func(ctx context.Context) {
+		post := func(title, stackKey string) *AgentFeedItemView {
+			view, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: title, StackKey: stackKey})
+			if err != nil {
+				t.Fatalf("post %s: %s", title, err)
+			}
+			return view
+		}
+		single, read := post("Single", ""), post("Read", "")
+		stackedOne, stackedTwo := post("Stacked one", "evening-brief"), post("Stacked two", "evening-brief")
+		decision, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{
+			Title: "Decide", FeedItemKind: "decision", Choices: []models.FeedChoice{{ChoiceKey: "go", ChoiceLabel: "Go", ChoiceRole: models.FeedChoiceAction}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		isTrue := true
+		stackKey := "evening-brief"
+
+		for name, arguments := range map[string]DismissAgentFeedItemsArguments{
+			"none":      {},
+			"two":       {FeedItemIDs: []string{single.FeedItemID}, FeedStackKey: &stackKey},
+			"false":     {IsEveryReadCard: new(bool)},
+			"too many":  {FeedItemIDs: make([]string, feedChangeMost+1)},
+			"a strange": {FeedItemIDs: []string{single.FeedItemID, strangerCardId}},
+		} {
+			if dismissed, err := world.resolver.DismissAgentFeedItems(ctx, arguments); err == nil {
+				t.Fatalf("%s was accepted: %v", name, dismissed)
+			}
+		}
+		if still, _ := world.resolver.GetAgentFeedItem(ctx, AgentFeedItemArguments{FeedItemID: single.FeedItemID}); still.IsDismissed {
+			t.Fatal("a refused dismissal still closed a card")
+		}
+
+		dismissed, err := world.resolver.DismissAgentFeedItems(ctx, DismissAgentFeedItemsArguments{FeedStackKey: &stackKey})
+		if err != nil || len(dismissed) != 2 {
+			t.Fatalf("the stack: %v %v", dismissed, err)
+		}
+		if _, err := world.resolver.MarkAgentFeedRead(ctx, MarkAgentFeedReadArguments{FeedItemIDs: []string{read.FeedItemID, decision.FeedItemID}}); err != nil {
+			t.Fatal(err)
+		}
+		dismissed, err = world.resolver.DismissAgentFeedItems(ctx, DismissAgentFeedItemsArguments{IsEveryReadCard: &isTrue})
+		if err != nil || len(dismissed) != 1 || dismissed[0] != read.FeedItemID {
+			t.Fatalf("every read card keeps the waiting decision and the unread card: %v %v", dismissed, err)
+		}
+		page, err := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{})
+		if err != nil || len(page.FeedItems) != 2 {
+			t.Fatalf("the unread card and the decision stay: %+v %v", page, err)
+		}
+
+		restored, err := world.resolver.RestoreAgentFeedItems(ctx, RestoreAgentFeedItemsArguments{FeedItemIDs: []string{stackedOne.FeedItemID, stackedTwo.FeedItemID, single.FeedItemID}})
+		if err != nil || len(restored) != 2 {
+			t.Fatalf("restore brings back the two dismissed: %v %v", restored, err)
+		}
+		if _, err := world.resolver.RestoreAgentFeedItems(ctx, RestoreAgentFeedItemsArguments{FeedItemIDs: []string{strangerCardId}}); err == nil {
+			t.Fatal("another person's card was restored")
+		}
+		if page, _ := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{}); len(page.FeedItems) != 3 {
+			t.Fatalf("after the restore: %d", len(page.FeedItems))
+		}
+	})
+	world.within(world.stranger, func(ctx context.Context) {
+		if page, _ := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{}); len(page.FeedItems) != 1 {
+			t.Fatalf("the stranger's own card is untouched: %+v", page)
 		}
 	})
 }
