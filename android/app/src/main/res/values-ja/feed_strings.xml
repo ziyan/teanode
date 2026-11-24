@@ -53,4 +53,11 @@
     <string name="feed_kind_report">レポート</string>
     <string name="feed_kind_idea">アイデア</string>
     <string name="feed_kind_update">お知らせ</string>
+    <string name="feed_dismiss_all">すべて閉じる（%1$d）</string>
+    <string name="feed_dismiss_read">既読を閉じる</string>
+    <string name="feed_undo">元に戻す</string>
+    <string name="feed_more_actions">その他の操作</string>
+    <plurals name="feed_dismissed_count">
+        <item quantity="other">%1$d 件のカードを閉じました</item>
+    </plurals>
 </resources>

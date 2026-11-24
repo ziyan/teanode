@@ -28,9 +28,9 @@ func init() {
 					"To ask them something, add choices: each a choice_key, a choice_label (what the button says) and a choice_role of action (you carry it out when they press it), dismiss (it closes the card and nothing more) or discuss. Nothing waits on the card: carry on, and the answer reaches you as their message in the main conversation. " +
 					"A card is drawn in one of four layouts, always with a plain body as well: text (the default); list for news stories, chat mentions, review requests and issues, or mail worth reading, with layout_content {listRows: [{rowTitle, rowDetail, rowMeta (the source, or the channel and time), rowSymbol, rowUrl (http or https), rowRecordReference}]}, at most 10 rows; weather for weather, with {placeName, currentTemperature, temperatureUnit (C or F), conditionText, conditionSymbol, highTemperature, lowTemperature, hourlyForecast: [{forecastHour (ISO time), forecastTemperature, forecastSymbol, precipitationChancePercent}]}, at most 12 hours; agenda for a day plan in time order, with {agendaEntries: [{startsAt, endsAt (ISO times), agendaTitle, agendaEntryKind (meeting, focus, task or break), agendaDetail, agendaRecordReference}]}. " +
 					"A brief is one run that posts several cards that belong together: give them stack_title once (\"Morning brief, Wed Nov 19\") and stack_position (the summary at 0, then 1, 2, in reading order); a goal's cards of one run stack by themselves. " +
-					"`update` changes a card you posted, by feed_item_id, where it stands. `withdraw` takes one back when it no longer holds. `list` shows what is in the feed, to find an id or to see what you already said.",
+					"`update` changes a card you posted, by feed_item_id, where it stands. `withdraw` takes one back when it no longer holds. `dismiss` and `restore` are for when the person asks (\"clear my feed\", \"bring that back\"), never on your own: dismiss closes the cards in feed_item_ids, or every card of a stack_key, or every_read cards the person has read (a decision still waiting for an answer is kept); restore brings feed_item_ids back. `list` shows what is in the feed, to find an id or to see what you already said.",
 				Parameters: tools.Object(map[string]any{
-					"action":         tools.EnumProperty("what to do", "post", "update", "withdraw", "list"),
+					"action":         tools.EnumProperty("what to do", "post", "update", "withdraw", "dismiss", "restore", "list"),
 					"feed_item_id":   tools.StringProperty("for update and withdraw: the card, by the id list or post gave"),
 					"title":          tools.StringProperty("for post: the headline, a line"),
 					"body":           tools.StringProperty("for post and update: a few lines, Markdown, links allowed"),
@@ -41,7 +41,7 @@ func init() {
 					"stack_title":    tools.StringProperty("names the stack, once, on any of its cards: \"Morning brief, Wed Nov 19\""),
 					"card_layout":    tools.EnumProperty("how the card is drawn; the body is still filled in", "text", "list", "weather", "agenda"),
 					"layout_content": map[string]any{"type": "object", "description": "the layout's content: for list {listRows}, for weather {placeName, currentTemperature, temperatureUnit, conditionText, ...}, for agenda {agendaEntries}; see the tool's description"},
-					"stack_key":      tools.StringProperty("cards of one source pile into a stack shown as one entry; a goal's cards stack by their source on their own, so name one only to stack cards of your own posting; a card with choices that act never stacks"),
+					"stack_key":      tools.StringProperty("for dismiss: the stack to close. For post: cards of one source pile into a stack shown as one entry; a goal's cards stack by their source on their own, so name one only to stack cards of your own posting; a card with choices that act never stacks"),
 					"coalesce_key":   tools.StringProperty("a later post with the same key replaces this card; use one for a subject that changes, and never for two different things"),
 					"fact_rows": tools.ArrayProperty("a short table of at most eight rows", tools.Object(map[string]any{
 						"fact_label": tools.StringProperty("the row's name"),
@@ -67,6 +67,8 @@ func init() {
 						"choice_label": tools.StringProperty("what the button says, in their language"),
 						"choice_role":  tools.EnumProperty("action: you do it when they press it; dismiss: it only closes the card; discuss: they want to talk it over", "action", "dismiss", "discuss"),
 					}, "choice_key", "choice_label", "choice_role")),
+					"feed_item_ids":     tools.ArrayProperty("for dismiss and restore: the cards, at most 500, by the ids list gave", tools.StringProperty("a card's id")),
+					"every_read":        tools.BooleanProperty("for dismiss: every card the person has read, except a decision still waiting for an answer"),
 					"include_dismissed": tools.BooleanProperty("for list: the dismissed cards too"),
 				}, "action"),
 				Guidance: "feed: post to the feed what the person did not ask for (news, a report, an idea, something they should decide) and keep the main conversation for answering them. One card per subject; `list` first when you may have posted it already. Write the card for them to read: plain words, no ids or tool names, links in the body. A choice is something you can carry out when pressed, not a way to end the card.",
@@ -125,6 +127,8 @@ type arguments struct {
 	Media            []media           `json:"media"`
 	Choices          []choice          `json:"choices"`
 	IsDismissedShown bool              `json:"include_dismissed"`
+	FeedItemIDs      []string          `json:"feed_item_ids"`
+	IsEveryRead      bool              `json:"every_read"`
 }
 
 func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -145,7 +149,27 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if feedItemId == "" {
 			return nil, fmt.Errorf("which card? give feed_item_id, from list")
 		}
-		return operate(ctx, client.DocumentDismissAgentFeedItem, map[string]any{"feedItemId": feedItemId}, "DismissAgentFeedItem", "withdrawn")
+		return operate(ctx, client.DocumentDismissAgentFeedItems, map[string]any{"feedItemIds": []string{feedItemId}}, "DismissAgentFeedItems", "withdrawn")
+	case "dismiss":
+		variables := map[string]any{}
+		if len(asked.FeedItemIDs) > 0 {
+			variables["feedItemIds"] = asked.FeedItemIDs
+		}
+		if stackKey := strings.TrimSpace(asked.StackKey); stackKey != "" {
+			variables["feedStackKey"] = stackKey
+		}
+		if asked.IsEveryRead {
+			variables["isEveryReadCard"] = true
+		}
+		if len(variables) != 1 {
+			return nil, fmt.Errorf("which cards? give exactly one of feed_item_ids, stack_key or every_read")
+		}
+		return operate(ctx, client.DocumentDismissAgentFeedItems, variables, "DismissAgentFeedItems", "closed")
+	case "restore":
+		if len(asked.FeedItemIDs) == 0 {
+			return nil, fmt.Errorf("which cards? give feed_item_ids")
+		}
+		return operate(ctx, client.DocumentRestoreAgentFeedItems, map[string]any{"feedItemIds": asked.FeedItemIDs}, "RestoreAgentFeedItems", "brought back")
 	case "post", "update":
 		variables := postVariables(&asked)
 		if action == "update" {
@@ -175,7 +199,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		return operate(ctx, client.DocumentPostAgentFeedItem, variables, "PostAgentFeedItem", note)
 	}
-	return nil, fmt.Errorf("%q is not post, update, withdraw or list", asked.Action)
+	return nil, fmt.Errorf("%q is not post, update, withdraw, dismiss, restore or list", asked.Action)
 }
 
 // postVariables is what the operation takes, from what the model gave.

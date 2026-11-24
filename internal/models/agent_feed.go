@@ -98,6 +98,7 @@ const (
 	FeedChangeReplaced  FeedChange = "replaced"
 	FeedChangeSettled   FeedChange = "settled"
 	FeedChangeDismissed FeedChange = "dismissed"
+	FeedChangeRestored  FeedChange = "restored"
 )
 
 // FeedCardLayout is how a card is drawn: text, the default, or a layout with

@@ -467,9 +467,14 @@ extension Documents {
           ShowLessLikeAgentFeedItem(feedItemId: $feedItemId) { \(agentFeedItemFields) }
         }
         """
-    public static let dismissAgentFeedItem = """
-        mutation ($feedItemId: String!) {
-          DismissAgentFeedItem(feedItemId: $feedItemId) { \(agentFeedItemFields) }
+    public static let dismissAgentFeedItems = """
+        mutation ($feedItemIds: [String!], $feedStackKey: String, $isEveryReadCard: Boolean) {
+          DismissAgentFeedItems(feedItemIds: $feedItemIds, feedStackKey: $feedStackKey, isEveryReadCard: $isEveryReadCard)
+        }
+        """
+    public static let restoreAgentFeedItems = """
+        mutation ($feedItemIds: [String!]!) {
+          RestoreAgentFeedItems(feedItemIds: $feedItemIds)
         }
         """
     public static let markAgentFeedRead = """
@@ -490,7 +495,8 @@ extension Documents {
     /// operations' names.
     public static let agentFeedDocuments: [String: String] = [
         "agentFeed": agentFeed, "agentFeedStack": agentFeedStack, "chooseAgentFeedItem": chooseAgentFeedItem, "likeAgentFeedItem": likeAgentFeedItem,
-        "showLessLikeAgentFeedItem": showLessLikeAgentFeedItem, "dismissAgentFeedItem": dismissAgentFeedItem,
+        "showLessLikeAgentFeedItem": showLessLikeAgentFeedItem, "dismissAgentFeedItems": dismissAgentFeedItems,
+        "restoreAgentFeedItems": restoreAgentFeedItems,
         "markAgentFeedRead": markAgentFeedRead, "discussAgentFeedItem": discussAgentFeedItem, "agentFeedEvents": agentFeedEvents,
     ]
 }
@@ -540,10 +546,33 @@ extension Connection {
             .ShowLessLikeAgentFeedItem
     }
 
-    public func dismissAgentFeedItem(_ feedItemId: String) async throws -> AgentFeedItem {
-        struct Answer: Decodable, Sendable { let DismissAgentFeedItem: AgentFeedItem }
-        return try await execute(Documents.dismissAgentFeedItem, variables: ["feedItemId": .string(feedItemId)], as: Answer.self)
-            .DismissAgentFeedItem
+    /// What a dismissal is asked of: these cards, every card of a stack, or
+    /// every card already read. The server takes exactly one of the three.
+    public enum AgentFeedDismissal: Sendable, Equatable {
+        case feedItemIds([String])
+        case feedStackKey(String)
+        case everyReadCard
+    }
+
+    /// Dismisses cards and returns the ids actually dismissed, which leave
+    /// out cards that were dismissed already.
+    public func dismissAgentFeedItems(_ dismissal: AgentFeedDismissal) async throws -> [String] {
+        struct Answer: Decodable, Sendable { let DismissAgentFeedItems: [String] }
+        var variables: [String: JSONValue] = [:]
+        switch dismissal {
+        case .feedItemIds(let feedItemIds): variables["feedItemIds"] = .array(feedItemIds.map { .string($0) })
+        case .feedStackKey(let feedStackKey): variables["feedStackKey"] = .string(feedStackKey)
+        case .everyReadCard: variables["isEveryReadCard"] = .bool(true)
+        }
+        return try await execute(Documents.dismissAgentFeedItems, variables: variables, as: Answer.self).DismissAgentFeedItems
+    }
+
+    /// Brings back cards that were dismissed; returns the ids restored.
+    public func restoreAgentFeedItems(_ feedItemIds: [String]) async throws -> [String] {
+        struct Answer: Decodable, Sendable { let RestoreAgentFeedItems: [String] }
+        return try await execute(
+            Documents.restoreAgentFeedItems, variables: ["feedItemIds": .array(feedItemIds.map { .string($0) })], as: Answer.self
+        ).RestoreAgentFeedItems
     }
 
     /// Marks cards read; returns how many were newly read.

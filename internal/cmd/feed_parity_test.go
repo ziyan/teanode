@@ -13,7 +13,7 @@ import (
 )
 
 // The feed is on the API, the command line and the agent's feed tool under
-// the same names. The agent posts, changes, withdraws and lists; choosing,
+// the same names. The agent posts, changes, withdraws, dismisses, restores and lists; choosing,
 // liking, reading and discussing are the person's: a card is the person's to
 // answer, and a like is what the agent learns from, so the agent does not
 // press its own buttons.
@@ -38,7 +38,8 @@ func TestFeedParity(test *testing.T) {
 		"ChooseAgentFeedItem":       {"choose", ""},
 		"LikeAgentFeedItem":         {"like", ""},
 		"ShowLessLikeAgentFeedItem": {"less", ""},
-		"DismissAgentFeedItem":      {"dismiss", "withdraw"},
+		"DismissAgentFeedItems":     {"dismiss", "dismiss"},
+		"RestoreAgentFeedItems":     {"restore", "restore"},
 		"MarkAgentFeedRead":         {"read", ""},
 		"DiscussAgentFeedItem":      {"discuss", ""},
 		"PostAgentFeedItem":         {"post", "post"},
@@ -88,7 +89,7 @@ func TestFeedParity(test *testing.T) {
 	}
 	// An action of the tool is an operation, or the update of a post by id.
 	for action := range actions {
-		known := action == "update" // PostAgentFeedItem with feedItemId
+		known := action == "update" || action == "withdraw" // PostAgentFeedItem with feedItemId; DismissAgentFeedItems of one card
 		for _, names := range table {
 			known = known || names.action == action
 		}

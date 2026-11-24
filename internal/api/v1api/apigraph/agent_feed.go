@@ -54,9 +54,20 @@ type AgentFeedMutation interface {
 	// and dismiss it. Needs agent:use.
 	ShowLessLikeAgentFeedItem(ctx context.Context, arguments AgentFeedItemArguments) (*AgentFeedItemView, error)
 
-	// Close a card: it leaves the list, and the question behind a decision
-	// is stopped. Needs agent:use.
-	DismissAgentFeedItem(ctx context.Context, arguments AgentFeedItemArguments) (*AgentFeedItemView, error)
+	// Close cards, and answer the ids this call closed (one already closed is
+	// left out). Give exactly one of feedItemIds (at most 500 of the
+	// caller's own cards), feedStackKey (every open card of that stack) or
+	// isEveryReadCard (every read card, except a decision still waiting for
+	// an answer). The cards leave the list, and the question behind a
+	// decision is stopped. Each card is announced to open feeds as
+	// dismissed. Needs agent:use.
+	DismissAgentFeedItems(ctx context.Context, arguments DismissAgentFeedItemsArguments) ([]string, error)
+
+	// Bring back cards the caller dismissed (at most 500) and answer the ids
+	// brought back. A card a choice settled stays closed. Each card is
+	// announced to open feeds as restored. The question a dismissal stopped
+	// stays stopped. Needs agent:use.
+	RestoreAgentFeedItems(ctx context.Context, arguments RestoreAgentFeedItemsArguments) ([]string, error)
 
 	// Mark cards read, and say how many were newly read. Needs agent:use.
 	MarkAgentFeedRead(ctx context.Context, arguments MarkAgentFeedReadArguments) (int, error)
@@ -122,6 +133,23 @@ type ChooseAgentFeedItemArguments struct {
 type LikeAgentFeedItemArguments struct {
 	FeedItemID string `json:"feedItemId"`
 	IsLiked    bool   `json:"isLiked"`
+}
+
+// DismissAgentFeedItemsArguments say which cards to close: exactly one field.
+type DismissAgentFeedItemsArguments struct {
+	// Those cards, at most 500
+	FeedItemIDs []string `json:"feedItemIds" graphapi:"nullable"`
+
+	// Every open card of that stack
+	FeedStackKey *string `json:"feedStackKey" graphapi:"nullable"`
+
+	// True for every read card that has no open choice
+	IsEveryReadCard *bool `json:"isEveryReadCard" graphapi:"nullable"`
+}
+
+// RestoreAgentFeedItemsArguments name the cards to bring back.
+type RestoreAgentFeedItemsArguments struct {
+	FeedItemIDs []string `json:"feedItemIds"`
 }
 
 // MarkAgentFeedReadArguments name the cards read.
@@ -247,7 +275,7 @@ type AgentFeedPageView struct {
 type AgentFeedChangeView struct {
 	FeedItemID string `json:"feedItemId"`
 
-	// FeedChange is posted, replaced, settled or dismissed.
+	// FeedChange is posted, replaced, settled, dismissed or restored.
 	FeedChange  string `json:"feedChange"`
 	UnreadCount int    `json:"unreadCount"`
 }
@@ -324,6 +352,9 @@ type AgentFeedItemView struct {
 const (
 	feedPageDefault = 30
 	feedPageMost    = 100
+
+	// feedChangeMost is how many cards one dismissal or restore names.
+	feedChangeMost = 500
 )
 
 // feedItemView is a card as the API answers, with the name of the goal that
@@ -598,35 +629,87 @@ func (self *graph) ShowLessLikeAgentFeedItem(ctx context.Context, arguments Agen
 	return feedItemView(tx, dismissed)
 }
 
-func (self *graph) DismissAgentFeedItem(ctx context.Context, arguments AgentFeedItemArguments) (*AgentFeedItemView, error) {
+func (self *graph) DismissAgentFeedItems(ctx context.Context, arguments DismissAgentFeedItemsArguments) ([]string, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
 	tx := self.transaction(ctx)
-	item, err := self.ownFeedItem(tx, found, arguments.FeedItemID)
-	if err != nil {
-		return nil, err
-	}
-	isDismissed, err := tx.DismissAgentFeedItem(item.ID, time.Now())
-	if err != nil {
-		return nil, err
-	}
-	if isDismissed && item.InteractionID != "" {
-		if _, err := tx.ClaimAgentInteraction(item.InteractionID, models.InteractionStopped); err != nil {
-			return nil, err
+	selection := &db.FeedDismissSelection{}
+	givenCount := 0
+	if len(arguments.FeedItemIDs) > 0 {
+		givenCount++
+		if len(arguments.FeedItemIDs) > feedChangeMost {
+			return nil, fmt.Errorf("%w: at most %d cards at once", api.ErrInvalidArguments, feedChangeMost)
+		}
+		// Every card must be the caller's own, or none is dismissed.
+		for _, feedItemId := range arguments.FeedItemIDs {
+			item, err := self.ownFeedItem(tx, found, feedItemId)
+			if err != nil {
+				return nil, err
+			}
+			selection.FeedItemIDs = append(selection.FeedItemIDs, item.ID)
 		}
 	}
-	dismissed, err := tx.GetAgentFeedItem(item.ID)
+	if arguments.FeedStackKey != nil && strings.TrimSpace(*arguments.FeedStackKey) != "" {
+		givenCount++
+		selection.FeedStackKey = strings.TrimSpace(*arguments.FeedStackKey)
+	}
+	if arguments.IsEveryReadCard != nil && *arguments.IsEveryReadCard {
+		givenCount++
+		selection.IsEveryReadCard = true
+	}
+	if givenCount != 1 {
+		return nil, fmt.Errorf("%w: give exactly one of feedItemIds, feedStackKey or isEveryReadCard", api.ErrInvalidArguments)
+	}
+	dismissed, err := tx.DismissAgentFeedItems(found.UserID, selection, time.Now())
 	if err != nil {
 		return nil, err
 	}
-	if isDismissed {
-		if err := self.announceFeedChange(tx, dismissed, models.FeedChangeDismissed); err != nil {
+	dismissedIds := make([]string, 0, len(dismissed))
+	for _, item := range dismissed {
+		if item.InteractionID != "" {
+			if _, err := tx.ClaimAgentInteraction(item.InteractionID, models.InteractionStopped); err != nil {
+				return nil, err
+			}
+		}
+		if err := self.announceFeedChange(tx, item, models.FeedChangeDismissed); err != nil {
 			return nil, err
 		}
+		dismissedIds = append(dismissedIds, item.ID)
 	}
-	return feedItemView(tx, dismissed)
+	return dismissedIds, nil
+}
+
+func (self *graph) RestoreAgentFeedItems(ctx context.Context, arguments RestoreAgentFeedItemsArguments) ([]string, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(arguments.FeedItemIDs) > feedChangeMost {
+		return nil, fmt.Errorf("%w: at most %d cards at once", api.ErrInvalidArguments, feedChangeMost)
+	}
+	tx := self.transaction(ctx)
+	feedItemIds := make([]string, 0, len(arguments.FeedItemIDs))
+	for _, feedItemId := range arguments.FeedItemIDs {
+		item, err := self.ownFeedItem(tx, found, feedItemId)
+		if err != nil {
+			return nil, err
+		}
+		feedItemIds = append(feedItemIds, item.ID)
+	}
+	restored, err := tx.RestoreAgentFeedItems(found.UserID, feedItemIds, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	restoredIds := make([]string, 0, len(restored))
+	for _, item := range restored {
+		if err := self.announceFeedChange(tx, item, models.FeedChangeRestored); err != nil {
+			return nil, err
+		}
+		restoredIds = append(restoredIds, item.ID)
+	}
+	return restoredIds, nil
 }
 
 // announceFeedChange tells the open feeds once the request commits.

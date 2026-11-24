@@ -301,10 +301,21 @@
                 card["isOutcomePending"] = role == "action"
                 card["isDismissed"] = role == "dismiss"
                 return #"{"data":{"ChooseAgentFeedItem":\#(feedJSON(card))}}"#
-            } else if query.contains("ShowLessLikeAgentFeedItem") || query.contains("DismissAgentFeedItem") {
+            } else if query.contains("DismissAgentFeedItems") || query.contains("RestoreAgentFeedItems") {
+                // The demo keeps no state: it answers with the ids it was given.
+                let isDismissing = query.contains("DismissAgentFeedItems")
+                var feedItemIds = variables["feedItemIds"] as? [String] ?? []
+                if let feedStackKey = variables["feedStackKey"] as? String {
+                    feedItemIds = (feedStackKey == demoBriefStackKey ? briefCards : (feedStackKey == demoNewsStackKey ? newsCards : []))
+                        .compactMap { $0["feedItemId"] as? String }
+                } else if variables["isEveryReadCard"] as? Bool == true {
+                    feedItemIds = feedCards.filter { $0["isRead"] as? Bool == true }.compactMap { $0["feedItemId"] as? String }
+                }
+                let quoted = feedItemIds.map { "\"\($0)\"" }.joined(separator: ",")
+                return #"{"data":{"\#(isDismissing ? "DismissAgentFeedItems" : "RestoreAgentFeedItems")":[\#(quoted)]}}"#
+            } else if query.contains("ShowLessLikeAgentFeedItem") {
                 card["isDismissed"] = true
-                let name = query.contains("ShowLess") ? "ShowLessLikeAgentFeedItem" : "DismissAgentFeedItem"
-                return #"{"data":{"\#(name)":\#(feedJSON(card))}}"#
+                return #"{"data":{"ShowLessLikeAgentFeedItem":\#(feedJSON(card))}}"#
             } else if query.contains("LikeAgentFeedItem") {
                 card["isLiked"] = variables["isLiked"] as? Bool ?? false
                 return #"{"data":{"LikeAgentFeedItem":\#(feedJSON(card))}}"#

@@ -42,8 +42,11 @@ feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCapti
     const val SHOW_LESS_LIKE_AGENT_FEED_ITEM = """mutation (${'$'}feedItemId: String!) {
   ShowLessLikeAgentFeedItem(feedItemId: ${'$'}feedItemId) { $FEED_ITEM_FIELDS }
 }"""
-    const val DISMISS_AGENT_FEED_ITEM = """mutation (${'$'}feedItemId: String!) {
-  DismissAgentFeedItem(feedItemId: ${'$'}feedItemId) { $FEED_ITEM_FIELDS }
+    const val DISMISS_AGENT_FEED_ITEMS = """mutation (${'$'}feedItemIds: [String!], ${'$'}feedStackKey: String, ${'$'}isEveryReadCard: Boolean) {
+  DismissAgentFeedItems(feedItemIds: ${'$'}feedItemIds, feedStackKey: ${'$'}feedStackKey, isEveryReadCard: ${'$'}isEveryReadCard)
+}"""
+    const val RESTORE_AGENT_FEED_ITEMS = """mutation (${'$'}feedItemIds: [String!]!) {
+  RestoreAgentFeedItems(feedItemIds: ${'$'}feedItemIds)
 }"""
     const val MARK_AGENT_FEED_READ = """mutation (${'$'}feedItemIds: [String!]!) {
   MarkAgentFeedRead(feedItemIds: ${'$'}feedItemIds)
@@ -297,7 +300,7 @@ data class AgentFeedPage(
     val unreadCount: Int = 0,
 )
 
-/** AgentFeedChanged is what the server says happened to a card. [feedChange] is posted, replaced, settled or dismissed. */
+/** AgentFeedChanged is what the server says happened to a card. [feedChange] is posted, replaced, settled, dismissed or restored. */
 @Serializable
 data class AgentFeedChanged(val feedItemId: String, val feedChange: String, val unreadCount: Int = 0)
 
@@ -370,7 +373,10 @@ private class LikeAgentFeedItemAnswer(val LikeAgentFeedItem: AgentFeedItemView)
 private class ShowLessLikeAgentFeedItemAnswer(val ShowLessLikeAgentFeedItem: AgentFeedItemView)
 
 @Serializable
-private class DismissAgentFeedItemAnswer(val DismissAgentFeedItem: AgentFeedItemView)
+private class DismissAgentFeedItemsAnswer(val DismissAgentFeedItems: List<String>)
+
+@Serializable
+private class RestoreAgentFeedItemsAnswer(val RestoreAgentFeedItems: List<String>)
 
 @Serializable
 private class MarkAgentFeedReadAnswer(val MarkAgentFeedRead: Int)
@@ -414,8 +420,26 @@ suspend fun Connection.likeAgentFeedItem(feedItemId: String, isLiked: Boolean): 
 suspend fun Connection.showLessLikeAgentFeedItem(feedItemId: String): AgentFeedItemView =
     execute<ShowLessLikeAgentFeedItemAnswer>(AgentFeedDocuments.SHOW_LESS_LIKE_AGENT_FEED_ITEM, mapOf("feedItemId" to JsonPrimitive(feedItemId))).ShowLessLikeAgentFeedItem
 
-suspend fun Connection.dismissAgentFeedItem(feedItemId: String): AgentFeedItemView =
-    execute<DismissAgentFeedItemAnswer>(AgentFeedDocuments.DISMISS_AGENT_FEED_ITEM, mapOf("feedItemId" to JsonPrimitive(feedItemId))).DismissAgentFeedItem
+/**
+ * Dismisses cards and answers the ids actually dismissed (cards already dismissed are left out). Exactly one of the
+ * three is given: [feedItemIds] (at most 500), every card of the stack [feedStackKey], or with [isEveryReadCard] every
+ * card that is read and has no open choice.
+ */
+suspend fun Connection.dismissAgentFeedItems(feedItemIds: List<String>? = null, feedStackKey: String? = null, isEveryReadCard: Boolean = false): List<String> {
+    require(listOf(feedItemIds != null, !feedStackKey.isNullOrEmpty(), isEveryReadCard).count { isGiven -> isGiven } == 1) { "give exactly one of feedItemIds, feedStackKey and isEveryReadCard" }
+    val variables = hashMapOf<String, JsonElement>()
+    if (feedItemIds != null) variables["feedItemIds"] = JsonArray(feedItemIds.map { feedItemId -> JsonPrimitive(feedItemId) })
+    if (!feedStackKey.isNullOrEmpty()) variables["feedStackKey"] = JsonPrimitive(feedStackKey)
+    if (isEveryReadCard) variables["isEveryReadCard"] = JsonPrimitive(true)
+    return execute<DismissAgentFeedItemsAnswer>(AgentFeedDocuments.DISMISS_AGENT_FEED_ITEMS, variables).DismissAgentFeedItems
+}
+
+/** Brings back cards that were dismissed (at most 500), except those a choice settled; answers the ids restored. */
+suspend fun Connection.restoreAgentFeedItems(feedItemIds: List<String>): List<String> =
+    execute<RestoreAgentFeedItemsAnswer>(
+        AgentFeedDocuments.RESTORE_AGENT_FEED_ITEMS,
+        mapOf("feedItemIds" to JsonArray(feedItemIds.map { feedItemId -> JsonPrimitive(feedItemId) })),
+    ).RestoreAgentFeedItems
 
 /** Marks cards read; answers how many were newly read. */
 suspend fun Connection.markAgentFeedRead(feedItemIds: List<String>): Int =

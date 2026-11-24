@@ -29,6 +29,8 @@ final class FeedModel {
     private(set) var busyFeedItemIds: Set<String> = []
     var doneText: String?
     var problemText: String?
+    /// What brings back the cards just dismissed, offered by the toast.
+    var undo: (@MainActor () async -> Void)?
 
     /// The stacks of the feed that are open in place, by stack key, and the
     /// cards each holds, newest first (or in the order the agent gave).
@@ -240,10 +242,48 @@ final class FeedModel {
         }
     }
 
+    /// Dismisses one card; the cards leave at once and the toast offers Undo.
     func dismiss(_ item: AgentFeedItem) async {
+        await dismissCards(.feedItemIds([item.feedItemId]))
+    }
+
+    /// Dismisses every card of the stack the card tops.
+    func dismissStack(_ item: AgentFeedItem) async {
+        await dismissCards(.feedStackKey(item.feedStackKey))
+    }
+
+    /// Dismisses every card that is read and waits for no answer.
+    func dismissEveryReadCard() async {
+        await dismissCards(.everyReadCard)
+    }
+
+    /// Asks the server to dismiss, takes the cards it dismissed out of the
+    /// list, reads the feed again for what is left of their stacks, and says
+    /// how many went, with a button that brings them back.
+    private func dismissCards(_ dismissal: Connection.AgentFeedDismissal) async {
         do {
-            _ = try await connection.dismissAgentFeedItem(item.feedItemId)
-            remove(item)
+            let dismissedFeedItemIds = try await connection.dismissAgentFeedItems(dismissal)
+            guard !dismissedFeedItemIds.isEmpty else {
+                doneText = String(localized: "No cards to dismiss.")
+                return
+            }
+            withAnimation { remove(feedItemIds: Set(dismissedFeedItemIds)) }
+            doneText = dismissedFeedItemIds.count == 1
+                ? String(localized: "\(dismissedFeedItemIds.count) card dismissed.")
+                : String(localized: "\(dismissedFeedItemIds.count) cards dismissed.")
+            undo = { [weak self] in await self?.restore(dismissedFeedItemIds) }
+            await load()
+        } catch is CancellationError {
+        } catch {
+            problemText = error.loadProblemText
+        }
+    }
+
+    /// Brings dismissed cards back and reads the feed again.
+    private func restore(_ feedItemIds: [String]) async {
+        do {
+            _ = try await connection.restoreAgentFeedItems(feedItemIds)
+            await load()
         } catch is CancellationError {
         } catch {
             problemText = error.loadProblemText
@@ -262,12 +302,18 @@ final class FeedModel {
     }
 
     private func remove(_ item: AgentFeedItem) {
-        let wasUnread = !item.isRead && !readFeedItemIds.contains(item.feedItemId)
-        items.removeAll { $0.feedItemId == item.feedItemId }
+        remove(feedItemIds: [item.feedItemId])
+    }
+
+    private func remove(feedItemIds: Set<String>) {
+        let unreadCountRemoved = items.filter {
+            feedItemIds.contains($0.feedItemId) && !$0.isRead && !readFeedItemIds.contains($0.feedItemId)
+        }.count
+        items.removeAll { feedItemIds.contains($0.feedItemId) }
         for feedStackKey in Array(stackItemsByKey.keys) {
-            stackItemsByKey[feedStackKey]?.removeAll { $0.feedItemId == item.feedItemId }
+            stackItemsByKey[feedStackKey]?.removeAll { feedItemIds.contains($0.feedItemId) }
         }
-        if wasUnread { unreadCount = max(0, unreadCount - 1) }
+        unreadCount = max(0, unreadCount - unreadCountRemoved)
     }
 }
 
@@ -359,7 +405,16 @@ struct FeedScreen: View {
         NavigationStack(path: $path) {
             FeedList(model: model)
                 .navigationTitle("Feed")
-                .toolbar { MoreBackButton() }
+                .toolbar {
+                    MoreBackButton()
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            Button("Dismiss Read", systemImage: "xmark.circle") { Task { await model.dismissEveryReadCard() } }
+                        } label: {
+                            Label("More", systemImage: "ellipsis")
+                        }
+                    }
+                }
                 .navigationDestination(for: FeedStackTarget.self) { target in
                     FeedStackScreen(target: target, parent: model)
                 }
@@ -501,7 +556,7 @@ struct FeedList: View {
                 }
             }
         }
-        .toast(done: $model.doneText, problem: $model.problemText)
+        .toast(done: $model.doneText, problem: $model.problemText, undo: $model.undo)
     }
 
     // MARK: Entries, and stacks open in place
@@ -529,6 +584,12 @@ struct FeedList: View {
             onShowInformation: { informedItem = item },
             onToggleStack: onToggleStack
         )
+        .contextMenu {
+            Button("Dismiss", systemImage: "xmark.circle") { Task { await model.dismiss(item) } }
+            if model.feedStackKey == nil, isStackShown, item.isStack {
+                Button("Dismiss All (\(item.stackItemCount))", systemImage: "xmark.circle.fill") { Task { await model.dismissStack(item) } }
+            }
+        }
     }
 
     /// Whether the entry is a stack of the feed that is open in place.
