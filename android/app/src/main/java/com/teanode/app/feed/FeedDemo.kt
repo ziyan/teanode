@@ -10,6 +10,9 @@ import com.teanode.kit.feed.AgentFeedItemView
 import com.teanode.kit.feed.AgentFeedMediaView
 import com.teanode.kit.feed.AgentFeedPage
 import com.teanode.kit.feed.AgentFeedSourceLink
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -322,7 +325,21 @@ val feedDemoAnswerers: List<DemoAnswerer> = listOf(
         json(cardOf((variables["feedItemId"] as? JsonPrimitive)?.content.orEmpty()).copy(isLiked = (variables["isLiked"] as? JsonPrimitive)?.content == "true"))
     },
     graphQLField("ShowLessLikeAgentFeedItem") { variables -> json(cardOf((variables["feedItemId"] as? JsonPrimitive)?.content.orEmpty()).copy(isDismissed = true)) },
-    graphQLField("DismissAgentFeedItem") { variables -> json(cardOf((variables["feedItemId"] as? JsonPrimitive)?.content.orEmpty()).copy(isDismissed = true)) },
+    // The demo keeps no record of what was dismissed: it answers with the ids the server would, and the feed is read as it was.
+    graphQLField("DismissAgentFeedItems") { variables ->
+        val feedItemIds = (variables["feedItemIds"] as? JsonArray)?.map { each -> (each as JsonPrimitive).content }
+        val feedStackKey = (variables["feedStackKey"] as? JsonPrimitive)?.content
+        val dismissedIds = when {
+            feedItemIds != null -> feedItemIds
+            !feedStackKey.isNullOrEmpty() -> stackCards(feedStackKey).map { card -> card.feedItemId }
+            else -> (demoFeedCards + demoBriefCards).filter { card -> card.isRead && !card.isAwaitingChoice }.map { card -> card.feedItemId }
+        }
+        TeaNodeJson.encodeToString(ListSerializer(String.serializer()), dismissedIds)
+    },
+    graphQLField("RestoreAgentFeedItems") { variables ->
+        val feedItemIds = (variables["feedItemIds"] as? JsonArray)?.map { each -> (each as JsonPrimitive).content }.orEmpty()
+        TeaNodeJson.encodeToString(ListSerializer(String.serializer()), feedItemIds)
+    },
     graphQLField("MarkAgentFeedRead", "1"),
     graphQLField("DiscussAgentFeedItem", "\"demo-main\""),
 )

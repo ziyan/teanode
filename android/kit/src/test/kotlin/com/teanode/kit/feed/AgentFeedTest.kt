@@ -145,13 +145,49 @@ class AgentFeedTest {
     }
 
     @Test
-    fun showingLessAndDismissingEachSendTheCard() = runBlocking {
-        val (lessConnection, lessFake) = fakeConnection { """{"data":{"ShowLessLikeAgentFeedItem":${card("a", isDismissed = true)}}}""" }
-        assertTrue(lessConnection.showLessLikeAgentFeedItem("a").isDismissed)
-        assertEquals(JsonPrimitive("a"), sentVariables(lessFake)["feedItemId"])
-        val (dismissConnection, dismissFake) = fakeConnection { """{"data":{"DismissAgentFeedItem":${card("b", isDismissed = true)}}}""" }
-        assertTrue(dismissConnection.dismissAgentFeedItem("b").isDismissed)
-        assertEquals(JsonPrimitive("b"), sentVariables(dismissFake)["feedItemId"])
+    fun showingLessSendsTheCard() = runBlocking {
+        val (connection, fake) = fakeConnection { """{"data":{"ShowLessLikeAgentFeedItem":${card("a", isDismissed = true)}}}""" }
+        assertTrue(connection.showLessLikeAgentFeedItem("a").isDismissed)
+        assertEquals(JsonPrimitive("a"), sentVariables(fake)["feedItemId"])
+    }
+
+    @Test
+    fun dismissingCardsSendsTheIdsAndAnswersTheOnesDismissed() = runBlocking {
+        val (connection, fake) = fakeConnection { """{"data":{"DismissAgentFeedItems":["a"]}}""" }
+        assertEquals(listOf("a"), connection.dismissAgentFeedItems(feedItemIds = listOf("a", "b")))
+        assertEquals(JsonArray(listOf(JsonPrimitive("a"), JsonPrimitive("b"))), sentVariables(fake)["feedItemIds"])
+        assertNull(sentVariables(fake)["feedStackKey"])
+        assertNull(sentVariables(fake)["isEveryReadCard"])
+    }
+
+    @Test
+    fun dismissingAStackSendsItsKey() = runBlocking {
+        val (connection, fake) = fakeConnection { """{"data":{"DismissAgentFeedItems":["a","b","c"]}}""" }
+        assertEquals(3, connection.dismissAgentFeedItems(feedStackKey = "goal:robots").size)
+        assertEquals(JsonPrimitive("goal:robots"), sentVariables(fake)["feedStackKey"])
+        assertNull(sentVariables(fake)["feedItemIds"])
+    }
+
+    @Test
+    fun dismissingEveryReadCardSendsTheFlagAlone() = runBlocking {
+        val (connection, fake) = fakeConnection { """{"data":{"DismissAgentFeedItems":[]}}""" }
+        assertEquals(emptyList<String>(), connection.dismissAgentFeedItems(isEveryReadCard = true))
+        assertEquals(JsonPrimitive(true), sentVariables(fake)["isEveryReadCard"])
+        assertNull(sentVariables(fake)["feedItemIds"])
+    }
+
+    @Test
+    fun dismissingNeedsExactlyOneWayToNameTheCards() = runBlocking {
+        val (connection, _) = fakeConnection { """{"data":{"DismissAgentFeedItems":[]}}""" }
+        assertTrue(runCatching { connection.dismissAgentFeedItems() }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { connection.dismissAgentFeedItems(feedItemIds = listOf("a"), isEveryReadCard = true) }.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test
+    fun restoringSendsTheIdsAndAnswersTheOnesRestored() = runBlocking {
+        val (connection, fake) = fakeConnection { """{"data":{"RestoreAgentFeedItems":["b"]}}""" }
+        assertEquals(listOf("b"), connection.restoreAgentFeedItems(listOf("a", "b")))
+        assertEquals(JsonArray(listOf(JsonPrimitive("a"), JsonPrimitive("b"))), sentVariables(fake)["feedItemIds"])
     }
 
     @Test

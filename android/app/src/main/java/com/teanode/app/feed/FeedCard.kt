@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Forum
@@ -27,6 +28,20 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -106,6 +121,7 @@ fun feedEpochMS(text: String): Long? = runCatching { Instant.parse(text).toEpoch
  * use the card's whole width. Cards are white on the grey page with a soft shadow in light mode; in dark mode the
  * lighter surface lifts them.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedCard(
     item: AgentFeedItemView,
@@ -124,20 +140,58 @@ fun FeedCard(
     val isLargeText = LocalDensity.current.fontScale >= LARGE_TEXT_SCALE
     val uriHandler = remember(actions) { object : UriHandler { override fun openUri(uri: String) = actions.followLink(uri) } }
     CompositionLocalProvider(LocalUriHandler provides uriHandler, LocalLinkOpener provides { address -> actions.followLink(address) }) {
-        Box(modifier.fillMaxWidth()) {
-            Surface(
-                // A soft shadow lifts the card off the page in light mode.
-                Modifier.fillMaxWidth().shadow(8.dp, CARD_SHAPE, ambientColor = shadowColor, spotColor = shadowColor),
-                shape = CARD_SHAPE,
-                color = cardColor,
-                border = BorderStroke(0.5.dp, edgeBorder),
-            ) {
-                Column {
-                    // The pictures sit at the card's top edge, edge to edge; the card's own shape rounds their corners.
-                    if (item.cardMedia.isNotEmpty()) FeedMediaBlock(item.cardMedia, actions)
-                    // The footer's buttons are 48 tall, room enough under the last line.
-                    Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        FeedCardContent(item, actions, isStackShown, isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
+        var isMenuOpen by remember { mutableStateOf(false) }
+        val dismissText = stringResource(R.string.feed_info_dismiss)
+        // A card swipes away either way, as a mail does; the page under it shows what the swipe does.
+        val swipeState = rememberSwipeToDismissBoxState(
+            confirmValueChange = { target ->
+                val isSwiped = target != SwipeToDismissBoxValue.Settled
+                if (isSwiped) actions.model.dismiss(item)
+                isSwiped
+            },
+        )
+        SwipeToDismissBox(
+            swipeState,
+            backgroundContent = {
+                if (swipeState.dismissDirection != SwipeToDismissBoxValue.Settled) {
+                    Box(Modifier.fillMaxSize().padding(horizontal = 24.dp), contentAlignment = if (swipeState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd) {
+                        Icon(Icons.Outlined.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            modifier = modifier.fillMaxWidth(),
+        ) {
+            Box(Modifier.fillMaxWidth()) {
+                Surface(
+                    // A soft shadow lifts the card off the page in light mode; a long press opens the card's menu.
+                    Modifier.fillMaxWidth().shadow(8.dp, CARD_SHAPE, ambientColor = shadowColor, spotColor = shadowColor)
+                        .pointerInput(item.feedItemId) { detectTapGestures(onLongPress = { isMenuOpen = true }) }
+                        .semantics { customActions = listOf(CustomAccessibilityAction(dismissText) { actions.model.dismiss(item); true }) },
+                    shape = CARD_SHAPE,
+                    color = cardColor,
+                    border = BorderStroke(0.5.dp, edgeBorder),
+                ) {
+                    Column {
+                        // The pictures sit at the card's top edge, edge to edge; the card's own shape rounds their corners.
+                        if (item.cardMedia.isNotEmpty()) FeedMediaBlock(item.cardMedia, actions)
+                        // The footer's buttons are 48 tall, room enough under the last line.
+                        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            FeedCardContent(item, actions, isStackShown, isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
+                        }
+                    }
+                }
+                DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text(dismissText) },
+                        leadingIcon = { Icon(Icons.Outlined.Close, contentDescription = null) },
+                        onClick = { isMenuOpen = false; actions.model.dismiss(item) },
+                    )
+                    if (isStackShown) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.feed_dismiss_all, item.stackItemCount)) },
+                            leadingIcon = { Icon(Icons.Outlined.Close, contentDescription = null) },
+                            onClick = { isMenuOpen = false; actions.model.dismissStack(item) },
+                        )
                     }
                 }
             }
