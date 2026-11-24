@@ -37,7 +37,7 @@ final class PhotosTests: XCTestCase {
         let answer =
             #"{"data":{"ListPhotos":["# + photoJSON(id: "p1", kind: "video", takenAt: "2026-03-10T08:00:00.123456789Z", offsetMinutes: 540, durationMS: 83_000, smallPreviewUrl: "/api/v1/photos/p1/previews/small?v=1") + "]}}"
         let (connection, fake) = try connection(answering: answer)
-        let photos = try await connection.photos(in: .favorites, beforePhotoId: "p0")
+        let photos = try await connection.photos(in: PhotoListQuery(collection: .favorites), offset: 200)
         XCTAssertEqual(photos.map(\.id), ["p1"])
         XCTAssertTrue(photos[0].isVideo)
         XCTAssertEqual(photos[0].durationMS, 83_000)
@@ -49,7 +49,8 @@ final class PhotosTests: XCTestCase {
         let body = try XCTUnwrap(fake.sent.first?.httpBody)
         let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
         let variables = try XCTUnwrap(sent["variables"] as? [String: Any])
-        XCTAssertEqual(variables["beforePhotoId"] as? String, "p0")
+        XCTAssertEqual(variables["offset"] as? Int, 200)
+        XCTAssertNil(variables["beforePhotoId"])
         XCTAssertEqual(variables["isFavorite"] as? Bool, true)
         XCTAssertEqual(variables["pageSize"] as? Int, PhotoPaging.pageSize)
         XCTAssertNil(variables["isTrashed"])
@@ -57,8 +58,8 @@ final class PhotosTests: XCTestCase {
 
     func testTheTrashAsksForTrashedPhotosOnly() async throws {
         let (connection, fake) = try connection(answering: #"{"data":{"ListPhotos":[]}}"#)
-        _ = try await connection.photos(in: .trash)
-        _ = try await connection.photos(in: .library)
+        _ = try await connection.photos(in: PhotoListQuery(collection: .trash), offset: 0)
+        _ = try await connection.photos(in: PhotoListQuery(), offset: 0)
         let variables = try fake.sent.map { request -> [String: Any] in
             let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(request.httpBody)) as? [String: Any])
             return try XCTUnwrap(sent["variables"] as? [String: Any])
@@ -227,18 +228,6 @@ final class PhotosTests: XCTestCase {
         XCTAssertEqual(PhotoTimeline.durationText(milliseconds: 3_600_000), "1:00:00")
         XCTAssertEqual(PhotoTimeline.durationText(milliseconds: 3_725_000), "1:02:05")
         XCTAssertEqual(PhotoTimeline.durationText(milliseconds: -5), "0:00")
-    }
-
-    func testTheNextPageStartsNearTheEndOfWhatIsLoaded() throws {
-        let photos = try (0..<100).map { try photo("p\($0)") }
-        XCTAssertFalse(PhotoPaging.shouldLoadMore(whenShowing: "p10", in: photos, loadAhead: 30))
-        XCTAssertTrue(PhotoPaging.shouldLoadMore(whenShowing: "p70", in: photos, loadAhead: 30))
-        XCTAssertTrue(PhotoPaging.shouldLoadMore(whenShowing: "p99", in: photos, loadAhead: 30))
-        XCTAssertFalse(PhotoPaging.shouldLoadMore(whenShowing: "missing", in: photos, loadAhead: 30))
-        XCTAssertTrue(PhotoPaging.hasMore(afterPageOf: 200))
-        XCTAssertFalse(PhotoPaging.hasMore(afterPageOf: 199))
-        let page = try [photo("p99"), photo("p100")]
-        XCTAssertEqual(PhotoPaging.appending(page, to: photos).count, 101)
     }
 }
 

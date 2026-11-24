@@ -197,10 +197,10 @@ final class PhotoPeopleTests: XCTestCase {
 
     func testThePhotosOfAPersonAreAskedForByTheirGroup() async throws {
         let (connection, fake) = try connection { _ in #"{"data":{"ListPhotos":[]}}"# }
-        _ = try await connection.photos(inFaceGroup: "g1", beforePhotoId: "p9")
+        _ = try await connection.photos(in: PhotoListQuery(photoFaceGroupId: "g1"), offset: 400)
         let sent = try variables(of: try XCTUnwrap(fake.sent.first))
         XCTAssertEqual(sent["faceGroupId"] as? String, "g1")
-        XCTAssertEqual(sent["beforePhotoId"] as? String, "p9")
+        XCTAssertEqual(sent["offset"] as? Int, 400)
         XCTAssertNil(sent["albumId"])
     }
 

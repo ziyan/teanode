@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
@@ -49,7 +49,7 @@ private val currentThumbnailSide = 56.dp
  * little larger. A tap shows that photo, and the strip keeps the one on screen in view as the pager moves.
  */
 @Composable
-fun PhotoThumbnailStrip(photos: List<Photo>, currentIndex: Int, onChoose: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun PhotoThumbnailStrip(photoCount: Int, photoAt: (Int) -> Photo?, currentIndex: Int, onChoose: (Int) -> Unit, modifier: Modifier = Modifier) {
     val state = rememberLazyListState()
     LaunchedEffect(currentIndex) {
         // The photo on screen goes in the middle: scrolling to an item puts it at the start, so back off by what fits before it.
@@ -61,11 +61,12 @@ fun PhotoThumbnailStrip(photos: List<Photo>, currentIndex: Int, onChoose: (Int) 
         state = state, modifier = modifier.fillMaxWidth().height(currentThumbnailSide + 16.dp).semantics { contentDescription = description },
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        itemsIndexed(photos, key = { _, photo -> photo.id }) { index, photo ->
+        items(count = photoCount, key = { index -> index }) { index ->
+            val photo = photoAt(index)
             val isCurrent = index == currentIndex
             val side = if (isCurrent) currentThumbnailSide else thumbnailSide
-            val picture = rememberServerPicture(photo.gridPreviewPath)
-            val label = photoDescription(photo)
+            val picture = rememberServerPicture(photo?.gridPreviewPath)
+            val label = photo?.let { held -> photoDescription(held) }.orEmpty()
             Box(
                 Modifier.size(side).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.12f))
                     .semantics { contentDescription = label; selected = isCurrent }

@@ -22,7 +22,8 @@ struct PhotoViewer: View {
     /// do: the tab keeps its own model, so a viewer opened from a
     /// conversation does not offer it.
     let canShowNearby: Bool
-    @State private var currentPhotoId: String?
+    /// The place in the list of the photo on screen.
+    @State private var currentPlace: Int?
     @State private var isZoomed = false
     @State private var isShowingInfo = false
     @State private var isConfirmingTrash = false
@@ -47,7 +48,7 @@ struct PhotoViewer: View {
         self.model = model
         self.listKey = listKey
         self.canShowNearby = canShowNearby
-        _currentPhotoId = State(initialValue: openedPhotoId)
+        _currentPlace = State(initialValue: model.listing(listKey)?.window.place(of: openedPhotoId))
         #if DEBUG
             // `-TeaNodeScreen photos-viewer-described`, `photos-viewer-info`, `photos-viewer-failed` and `photos-shared-info` open Info over the viewer.
             if DemoServer.isRequested,
@@ -63,8 +64,9 @@ struct PhotoViewer: View {
         #endif
     }
 
-    private var photos: [Photo] { model.photos(in: listKey) }
-    private var current: Photo? { photos.first { $0.id == currentPhotoId } }
+    private var listing: PhotoListing? { model.listing(listKey) }
+    private var totalCount: Int { listing?.totalCount ?? 0 }
+    private var current: Photo? { currentPlace.flatMap { listing?.photo(at: $0) } }
 
     /// Whether the bars show: not after a tap that hid them, and not while the
     /// picture is being pulled down.
@@ -97,10 +99,16 @@ struct PhotoViewer: View {
         // down and show the library under the viewer.
         .presentationBackground(.clear)
         .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText, buttons: Bindable(model).doneButtons)
-        .onChange(of: currentPhotoId) { _, photoId in
+        .onChange(of: currentPlace, initial: true) { _, place in
             isZoomed = false
-            guard let photoId else { return }
-            Task { await model.loadMoreIfNeeded(showing: photoId, in: listKey) }
+            guard let place else { return }
+            model.showWindow(around: place, in: listKey)
+        }
+        // A photo whose date was changed is somewhere else in the list: the viewer goes with it.
+        .onChange(of: model.movedPhoto) { _, moved in
+            guard let moved, moved.listKey == listKey else { return }
+            model.movedPhoto = nil
+            currentPlace = moved.place
         }
         .onDisappear { model.dropPhotosNoLongerFavorite() }
     }
@@ -114,7 +122,7 @@ struct PhotoViewer: View {
                 .offset(y: closeDragOffsetPoints)
                 .scaleEffect(closeDragScale)
             if !isChromeHidden {
-                PhotoThumbnailStrip(photos: photos, currentPhotoId: $currentPhotoId, model: model)
+                PhotoThumbnailStrip(listing: listing, currentPlace: $currentPlace, model: model)
                     .opacity(closeDragOffsetPoints == 0 ? 1 : 0)
                     .transition(.opacity)
             }
@@ -133,10 +141,8 @@ struct PhotoViewer: View {
         GeometryReader { proxy in
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 0) {
-                    ForEach(photos) { photo in
-                        PhotoPage(
-                            photo: photo, model: model, isCurrent: photo.id == currentPhotoId, isZoomed: $isZoomed, isChromeHidden: isChromeHidden,
-                            onSingleTap: { toggleChrome() }, onSetChromeHidden: { isHidden in setChromeHidden(isHidden) })
+                    ForEach(0..<totalCount, id: \.self) { place in
+                        pagerPage(at: place)
                             // A page is as tall as the room the pager has, not taller. A horizontal scroll view is
                             // the container only along its scrolling direction, so `containerRelativeFrame(.vertical)`
                             // measured the screen instead: each page ran about a hundred points past the pager's
@@ -144,16 +150,31 @@ struct PhotoViewer: View {
                             // a page draws at its foot, such as a video's controls, was cut off there.
                             .containerRelativeFrame(.horizontal)
                             .frame(height: proxy.size.height)
-                            .id(photo.id)
                     }
                 }
                 .scrollTargetLayout()
             }
             .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $currentPhotoId)
+            .scrollPosition(id: $currentPlace)
             .scrollIndicators(.hidden)
             // A zoomed picture is panned with the same drag that pages.
             .scrollDisabled(isZoomed)
+        }
+    }
+
+    /// The page of one place in the list: its photo, or a spinner on black while
+    /// the page it is on is being read.
+    @ViewBuilder
+    private func pagerPage(at place: Int) -> some View {
+        if let photo = listing?.photo(at: place) {
+            PhotoPage(
+                photo: photo, model: model, isCurrent: place == currentPlace, isZoomed: $isZoomed, isChromeHidden: isChromeHidden,
+                onSingleTap: { toggleChrome() }, onSetChromeHidden: { isHidden in setChromeHidden(isHidden) })
+        } else {
+            ProgressView()
+                .tint(.white)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("Loading")
         }
     }
 
@@ -256,9 +277,9 @@ struct PhotoViewer: View {
                         // somebody else's only when they manage it.
                         if album.canCallerRemove(current) {
                             Button("Remove from album", systemImage: "rectangle.stack.badge.minus") {
-                                let next = neighbor(of: current)
+                                let place = currentPlace
                                 Task {
-                                    if await model.remove([current], fromAlbum: albumId) { leave(movingTo: next) }
+                                    if await model.remove([current], fromAlbum: albumId) { leave(afterRemovingPhotoAt: place) }
                                 }
                             }
                         }
@@ -273,9 +294,9 @@ struct PhotoViewer: View {
                 // check-tab-bars: allow, the viewer is a full screen cover, with no tab bar under it
                 ToolbarItem(placement: .bottomBar) {
                     Button("Restore", systemImage: "arrow.uturn.backward") {
-                        let next = neighbor(of: current)
+                        let place = currentPlace
                         Task {
-                            if await model.restore(current) { leave(movingTo: next) }
+                            if await model.restore(current) { leave(afterRemovingPhotoAt: place) }
                         }
                     }
                 }
@@ -289,9 +310,9 @@ struct PhotoViewer: View {
                         .tint(.red)
                         .confirmationDialog("Delete this photo forever?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                             Button("Delete forever", role: .destructive) {
-                                let next = neighbor(of: current)
+                                let place = currentPlace
                                 Task {
-                                    if await model.deleteForever(current) { leave(movingTo: next) }
+                                    if await model.deleteForever(current) { leave(afterRemovingPhotoAt: place) }
                                 }
                             }
                         } message: {
@@ -348,9 +369,9 @@ struct PhotoViewer: View {
                         .tint(.red)
                         .confirmationDialog("Move this photo to the Trash?", isPresented: $isConfirmingTrash, titleVisibility: .visible) {
                             Button("Move to Trash", role: .destructive) {
-                                let next = neighbor(of: current)
+                                let place = currentPlace
                                 Task {
-                                    if await model.moveToTrash(current) { leave(movingTo: next) }
+                                    if await model.moveToTrash(current) { leave(afterRemovingPhotoAt: place) }
                                 }
                             }
                         }
@@ -439,23 +460,18 @@ struct PhotoViewer: View {
         dismiss()
     }
 
-    /// The photo that takes the place of one about to leave the list: the one
-    /// after it, or else the one before.
-    private func neighbor(of photo: Photo) -> String? {
-        let listed = photos
-        guard let index = listed.firstIndex(where: { $0.id == photo.id }) else { return nil }
-        if index + 1 < listed.count { return listed[index + 1].id }
-        return index > 0 ? listed[index - 1].id : nil
-    }
-
-    /// Goes on to the photo that took the place of the one that left, or
-    /// closes the viewer when it was the last.
-    private func leave(movingTo photoId: String?) {
-        if let photoId, photos.contains(where: { $0.id == photoId }) {
-            currentPhotoId = photoId
-        } else {
+    /// Goes on to the photo that took the place of the one that left, which is
+    /// the one that followed it, or the one before when it was the last, and
+    /// closes the viewer when none is left.
+    private func leave(afterRemovingPhotoAt place: Int?) {
+        let remainingCount = model.listing(listKey)?.totalCount ?? 0
+        guard let place, remainingCount > 0 else {
             dismiss()
+            return
         }
+        let nextPlace = min(place, remainingCount - 1)
+        currentPlace = nextPlace
+        model.showWindow(around: nextPlace, in: listKey)
     }
 }
 
@@ -464,8 +480,8 @@ struct PhotoViewer: View {
 /// photo, and the strip keeps the one on screen in the middle as the pager
 /// moves.
 struct PhotoThumbnailStrip: View {
-    let photos: [Photo]
-    @Binding var currentPhotoId: String?
+    let listing: PhotoListing?
+    @Binding var currentPlace: Int?
     let model: PhotosModel
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
 
@@ -484,9 +500,8 @@ struct PhotoThumbnailStrip: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 2) {
-                    ForEach(photos) { photo in
-                        thumbnailButton(for: photo)
-                            .id(photo.id)
+                    ForEach(0..<(listing?.totalCount ?? 0), id: \.self) { place in
+                        thumbnail(at: place)
                     }
                 }
                 .padding(.horizontal)
@@ -494,21 +509,35 @@ struct PhotoThumbnailStrip: View {
             .scrollIndicators(.hidden)
             .frame(height: Self.currentThumbnailSidePoints + 8)
             .onAppear {
-                guard let currentPhotoId else { return }
-                proxy.scrollTo(currentPhotoId, anchor: .center)
+                guard let currentPlace else { return }
+                proxy.scrollTo(currentPlace, anchor: .center)
             }
-            .onChange(of: currentPhotoId) { _, photoId in
-                guard let photoId else { return }
-                withAnimation(scrollAnimation) { proxy.scrollTo(photoId, anchor: .center) }
+            .onChange(of: currentPlace) { _, place in
+                guard let place else { return }
+                withAnimation(scrollAnimation) { proxy.scrollTo(place, anchor: .center) }
             }
         }
     }
 
-    private func thumbnailButton(for photo: Photo) -> some View {
-        let isCurrent = photo.id == currentPhotoId
+    /// The square of one place: the photo's picture, or a plain square until its page is read.
+    @ViewBuilder
+    private func thumbnail(at place: Int) -> some View {
+        if let photo = listing?.photo(at: place) {
+            thumbnailButton(for: photo, at: place)
+        } else {
+            let side = place == currentPlace ? Self.currentThumbnailSidePoints : Self.thumbnailSidePoints
+            Color(.tertiarySystemFill)
+                .frame(width: side, height: side)
+                .clipShape(.rect(cornerRadius: 3))
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func thumbnailButton(for photo: Photo, at place: Int) -> some View {
+        let isCurrent = place == currentPlace
         let side = isCurrent ? Self.currentThumbnailSidePoints : Self.thumbnailSidePoints
         return Button {
-            currentPhotoId = photo.id
+            currentPlace = place
         } label: {
             PhotoThumbnailImage(photo: photo, model: model)
                 .frame(width: side, height: side)
@@ -670,7 +699,7 @@ struct PhotoPage: View {
         .task(id: photo.viewerPreviewPath) {
             await loadPicture()
         }
-        .task(id: isCurrent) {
+        .task(id: "\(photo.id) \(isCurrent)") {
             await loadVideo()
         }
         .task(id: hideTimerKey) {

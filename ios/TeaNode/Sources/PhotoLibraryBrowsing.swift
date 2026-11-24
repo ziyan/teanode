@@ -101,103 +101,201 @@ struct PhotoScaleSegments: View {
     }
 }
 
-/// PhotoOverviewItem is one month or one year in the library's Months and
-/// Years: its name, the photo that stands for it, and the newest photo in it,
-/// which the grid is scrolled to when it is pressed.
-struct PhotoOverviewItem: Identifiable {
-    let id: String
-    let coverPhoto: Photo?
-    let title: String
-    let newestPhotoId: String?
+/// PhotoPeriodReading is what asking the server about one year or month came
+/// to: the photo that stands for it and how many photos it has, or that it has none.
+enum PhotoPeriodReading: Equatable {
+    case summary(PhotoPeriodSummary)
+    case empty
+}
 
-    init(month: PhotoMonth) {
-        id = month.id
-        coverPhoto = month.coverPhoto
-        title = month.titleText() ?? String(localized: "Unknown date")
-        newestPhotoId = month.photos.first?.id
+/// PhotoOverviewReader reads the Years or Months of one list a period at a
+/// time, as the tiles come near the screen: the years the list spans first,
+/// then for each period its newest photo and how many it has. It asks for a few
+/// periods at once, however many tiles are on screen.
+@MainActor
+@Observable
+final class PhotoOverviewReader {
+    /// How many periods are asked of the server at once.
+    static let mostReadsAtOnce = 6
+
+    private let connection: Connection
+    let list: PhotoListQuery
+    /// The years the list has photos in; nil until read.
+    private(set) var yearSpan: PhotoYearSpan?
+    private(set) var failureText: String?
+    /// What each period read so far came to, by the period's id.
+    private(set) var readings: [String: PhotoPeriodReading] = [:]
+    @ObservationIgnored private var readCount = 0
+    @ObservationIgnored private var waitingReads: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored private var periodIdsBeingRead: Set<String> = []
+
+    init(connection: Connection, list: PhotoListQuery) {
+        self.connection = connection
+        self.list = list
     }
 
-    init(year: PhotoYear) {
-        id = year.id
-        coverPhoto = year.coverPhoto
-        title = year.titleText() ?? String(localized: "Unknown date")
-        newestPhotoId = year.photos.first?.id
+    /// Reads the years the list spans, unless they have been read.
+    func readYearSpan() async {
+        guard yearSpan == nil else { return }
+        do {
+            yearSpan = try await connection.photoYearSpan(of: list)
+            failureText = nil
+        } catch {
+            guard !Task.isCancelled else { return }
+            failureText = AppModel.shared.describe(error)
+        }
+    }
+
+    /// Reads one period, unless it has been read or is being read. A failure
+    /// leaves it unread, to be tried again when its tile next comes on screen.
+    func read(_ period: PhotoPeriod) async {
+        guard readings[period.id] == nil, !periodIdsBeingRead.contains(period.id) else { return }
+        periodIdsBeingRead.insert(period.id)
+        defer { periodIdsBeingRead.remove(period.id) }
+        await waitForTurn()
+        defer { finishTurn() }
+        guard !Task.isCancelled else { return }
+        do {
+            if let summary = try await connection.photoPeriodSummary(of: list, period: period) {
+                readings[period.id] = .summary(summary)
+            } else {
+                readings[period.id] = .empty
+            }
+        } catch {
+            // The tile asks again when it comes back on screen.
+        }
+    }
+
+    private func waitForTurn() async {
+        if readCount < Self.mostReadsAtOnce {
+            readCount += 1
+            return
+        }
+        await withCheckedContinuation { waitingReads.append($0) }
+    }
+
+    private func finishTurn() {
+        if waitingReads.isEmpty {
+            readCount -= 1
+        } else {
+            waitingReads.removeFirst().resume()
+        }
     }
 }
 
-/// PhotoOverviewList is the Months and Years of the library: a large picture
-/// for each, edge to edge, with its name over the bottom. Only the photos read
-/// so far are in it; while the last one is on screen the next page is read.
+/// PhotoOverviewList is the Months and Years of a list: a large picture for
+/// each period, edge to edge, with its name and how many photos it holds over the
+/// bottom. The server is asked for a period when its tile comes near the
+/// screen, so the list does not read the photos of the years it shows. A period
+/// with no photos shows nothing.
 struct PhotoOverviewList: View {
-    let items: [PhotoOverviewItem]
-    let aspectRatio: CGFloat
-    let titleFont: Font
-    let listing: PhotoListing
+    enum Kind {
+        case years, months
+
+        var aspectRatio: CGFloat { self == .years ? 1 : 1.6 }
+        var titleFont: Font { self == .years ? .largeTitle.bold() : .title2.bold() }
+    }
+
+    let kind: Kind
     let listKey: PhotoListKey
     let model: PhotosModel
-    let onOpen: (PhotoOverviewItem) -> Void
-    @State private var isLastItemShown = false
+    let onOpen: (PhotoPeriod) -> Void
+    @State private var reader: PhotoOverviewReader?
 
-    /// Changes whenever another page has been read while the last picture is on
-    /// screen, which asks for the page after it; nil while it is not on screen.
-    private var loadTrigger: Int? { isLastItemShown ? listing.photos.count : nil }
+    private func periods(in span: PhotoYearSpan) -> [PhotoPeriod] {
+        switch kind {
+        case .years: PhotoPeriod.years(newestYear: span.newestYear, oldestYear: span.oldestYear).compactMap { PhotoPeriod(year: $0) }
+        case .months: PhotoPeriod.months(newestYear: span.newestYear, oldestYear: span.oldestYear)
+        }
+    }
 
     var body: some View {
-        LazyVStack(spacing: 1) {
-            ForEach(items) { item in
-                PhotoOverviewTile(item: item, aspectRatio: aspectRatio, titleFont: titleFont, model: model) {
-                    onOpen(item)
-                }
-                .onAppear {
-                    if item.id == items.last?.id { isLastItemShown = true }
-                }
-                .onDisappear {
-                    if item.id == items.last?.id { isLastItemShown = false }
+        content
+            .task(id: model.overviewVersion) {
+                reader = model.overviewReader(for: listKey)
+                await reader?.readYearSpan()
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let reader, let span = reader.yearSpan {
+            LazyVStack(spacing: 1) {
+                ForEach(periods(in: span)) { period in
+                    PhotoPeriodTile(period: period, kind: kind, reader: reader, model: model, onOpen: onOpen)
                 }
             }
-        }
-        .task(id: loadTrigger) {
-            guard loadTrigger != nil, let lastPhotoId = listing.photos.last?.id else { return }
-            await model.loadMoreIfNeeded(showing: lastPhotoId, in: listKey)
+        } else if let failureText = reader?.failureText {
+            PhotosFailedView(failureText: failureText) {
+                Task { await reader?.readYearSpan() }
+            }
+            .frame(maxWidth: .infinity, minHeight: 320)
+        } else {
+            ProgressView()
+                .frame(maxWidth: .infinity, minHeight: 320)
         }
     }
 }
 
-/// PhotoOverviewTile is one month or year: a picture across the width, with
-/// the name over a shade at the bottom left.
-struct PhotoOverviewTile: View {
-    let item: PhotoOverviewItem
-    let aspectRatio: CGFloat
-    let titleFont: Font
+/// PhotoPeriodTile is one month or year: a picture across the width, with
+/// the name over a shade at the bottom left and how many photos it holds under
+/// it. It asks for its period when it appears, and shows a plain square, with
+/// its name, until the answer comes.
+struct PhotoPeriodTile: View {
+    let period: PhotoPeriod
+    let kind: PhotoOverviewList.Kind
+    let reader: PhotoOverviewReader
     let model: PhotosModel
-    let onOpen: () -> Void
+    let onOpen: (PhotoPeriod) -> Void
+
+    private var titleText: String { period.titleText() ?? String(localized: "Unknown date") }
 
     var body: some View {
-        Button(action: onOpen) {
+        switch reader.readings[period.id] {
+        case .empty:
+            EmptyView()
+        case .summary(let summary):
+            tile(summary: summary)
+        case nil:
+            tile(summary: nil)
+                .task(id: ObjectIdentifier(reader)) { await reader.read(period) }
+        }
+    }
+
+    private func tile(summary: PhotoPeriodSummary?) -> some View {
+        Button {
+            onOpen(period)
+        } label: {
             Color(.secondarySystemBackground)
-                .aspectRatio(aspectRatio, contentMode: .fit)
+                .aspectRatio(kind.aspectRatio, contentMode: .fit)
                 .overlay {
-                    if let coverPhoto = item.coverPhoto {
-                        PhotoThumbnailImage(photo: coverPhoto, model: model, isLarge: true)
+                    if let summary {
+                        PhotoThumbnailImage(photo: summary.coverPhoto, model: model, isLarge: true)
                     }
                 }
                 .overlay(alignment: .bottomLeading) {
                     // Light text on a shade, whatever the picture under it is.
-                    Text(item.title)
-                        .font(titleFont)
-                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.5), radius: 3)
-                        .lineLimit(2)
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .top, endPoint: .bottom))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(titleText)
+                            .font(kind.titleFont)
+                            .lineLimit(2)
+                        if let summary {
+                            Text(PhotoAlbumWords.photoCount(summary.photoCount))
+                                .font(.subheadline)
+                        }
+                    }
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.5), radius: 3)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .top, endPoint: .bottom))
                 }
                 .clipped()
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(item.title)
+        .accessibilityLabel(summary.map { "\(titleText), \(PhotoAlbumWords.photoCount($0.photoCount))" } ?? titleText)
     }
 }
 

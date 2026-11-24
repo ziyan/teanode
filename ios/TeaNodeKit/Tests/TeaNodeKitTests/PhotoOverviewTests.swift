@@ -15,66 +15,9 @@ final class PhotoOverviewTests: XCTestCase {
         return try JSONDecoder().decode(Photo.self, from: Data(json.utf8))
     }
 
-    func testPhotosAreGroupedInMonthsInTheOrderOfTheList() throws {
-        let photos = [
-            try photo("a", takenAt: "2026-10-15T10:00:00Z"),
-            try photo("b", takenAt: "2026-10-02T10:00:00Z"),
-            try photo("c", takenAt: "2026-09-30T10:00:00Z"),
-            try photo("d", takenAt: "2025-10-30T10:00:00Z"),
-        ]
-        let months = PhotoOverview.months(photos, phoneTimeZone: utc)
-        XCTAssertEqual(months.map(\.id), ["2026-10", "2026-09", "2025-10"])
-        XCTAssertEqual(months.map { $0.photos.map(\.id) }, [["a", "b"], ["c"], ["d"]])
-        XCTAssertEqual(months.map(\.year), [2026, 2026, 2025])
-        XCTAssertEqual(months.map(\.month), [10, 9, 10])
-    }
-
-    func testAMonthIsReadOnTheWallClockWhereThePhotoWasTaken() throws {
-        // 23:30 UTC on the last day of September is already October in Tokyo.
-        let inTokyo = try photo("tokyo", takenAt: "2026-09-30T23:30:00Z", offsetMinutes: 540)
-        let inLosAngeles = try photo("la", takenAt: "2026-09-30T23:30:00Z", offsetMinutes: -480)
-        let months = PhotoOverview.months([inTokyo, inLosAngeles], phoneTimeZone: utc)
-        XCTAssertEqual(months.map(\.id), ["2026-10", "2026-09"])
-        XCTAssertEqual(months.map { $0.photos.map(\.id) }, [["tokyo"], ["la"]])
-    }
-
-    func testPhotosAreGroupedInYears() throws {
-        let photos = [
-            try photo("a", takenAt: "2026-10-15T10:00:00Z"),
-            try photo("b", takenAt: "2026-01-02T10:00:00Z"),
-            try photo("c", takenAt: "2025-12-31T10:00:00Z"),
-        ]
-        let years = PhotoOverview.years(photos, phoneTimeZone: utc)
-        XCTAssertEqual(years.map(\.id), ["2026", "2025"])
-        XCTAssertEqual(years.map { $0.photos.map(\.id) }, [["a", "b"], ["c"]])
-        XCTAssertEqual(years.map(\.year), [2026, 2025])
-    }
-
-    func testPhotosWithNoDateAtAllAreAGroupOfTheirOwn() throws {
+    func testPhotosWithNoDateAtAllHaveNoDateRange() throws {
         let undated = try photo("x", takenAt: nil, offsetMinutes: nil, createdAt: "not a time")
-        let months = PhotoOverview.months([try photo("a", takenAt: "2026-10-15T10:00:00Z"), undated], phoneTimeZone: utc)
-        XCTAssertEqual(months.map(\.id), ["2026-10", "unknown"])
-        XCTAssertNil(months[1].titleText(locale: english))
-        XCTAssertNil(PhotoOverview.years([undated], phoneTimeZone: utc).first?.titleText(locale: english))
         XCTAssertNil(PhotoOverview.dateRangeText(of: [undated], phoneTimeZone: utc, locale: english))
-    }
-
-    func testTheCoverIsTheNewestPhotoThatHasAPreview() throws {
-        let photos = [
-            try photo("a", takenAt: "2026-10-15T10:00:00Z"),
-            try photo("b", takenAt: "2026-10-14T10:00:00Z", smallPreviewUrl: "/small/b"),
-            try photo("c", takenAt: "2026-10-13T10:00:00Z", smallPreviewUrl: "/small/c"),
-        ]
-        XCTAssertEqual(PhotoOverview.months(photos, phoneTimeZone: utc).first?.coverPhoto?.id, "b")
-        XCTAssertEqual(PhotoOverview.years(photos, phoneTimeZone: utc).first?.coverPhoto?.id, "b")
-        let waiting = [try photo("a", takenAt: "2026-10-15T10:00:00Z")]
-        XCTAssertEqual(PhotoOverview.months(waiting, phoneTimeZone: utc).first?.coverPhoto?.id, "a")
-    }
-
-    func testMonthsAndYearsAreTitledByTheirName() throws {
-        let photos = [try photo("a", takenAt: "2026-10-15T10:00:00Z")]
-        XCTAssertEqual(PhotoOverview.months(photos, phoneTimeZone: utc).first?.titleText(locale: english), "October 2026")
-        XCTAssertEqual(PhotoOverview.years(photos, phoneTimeZone: utc).first?.titleText(locale: english), "2026")
     }
 
     func testTheDateRangeNamesTheFirstAndLastDay() throws {

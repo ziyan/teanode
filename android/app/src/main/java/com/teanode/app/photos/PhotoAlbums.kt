@@ -64,6 +64,7 @@ import com.teanode.kit.photos.Photo
 import com.teanode.kit.photos.PhotoAlbum
 import com.teanode.kit.photos.PhotoAlbumSections
 import com.teanode.kit.photos.PhotoAlbumSuggestion
+import com.teanode.kit.photos.PhotoListQuery
 import com.teanode.kit.photos.PhotoTimeline
 import com.teanode.kit.photos.createPhotoAlbum
 import com.teanode.kit.photos.deletePhotoAlbum
@@ -229,12 +230,12 @@ fun AlbumScreen(photoAlbumId: String, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     val albumLoad = rememberLoad(photoAlbumId) { connection.photoAlbums().first { candidate -> candidate.id == photoAlbumId } }
-    val list = rememberPhotoList(PhotoListSource.Album(photoAlbumId))
+    val list = rememberPhotoWindow(PhotoListQuery(photoAlbumId = photoAlbumId))
     var album by remember { mutableStateOf<PhotoAlbum?>(null) }
     LaunchedEffect(albumLoad.value) { albumLoad.value?.let { loaded -> album = loaded } }
     var isSelecting by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(emptySet<String>()) }
-    var openedPhotoId by remember { mutableStateOf<String?>(null) }
+    var openedIndex by remember { mutableStateOf<Int?>(null) }
     var isMenuOpen by remember { mutableStateOf(false) }
     var isRenaming by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
@@ -257,7 +258,7 @@ fun AlbumScreen(photoAlbumId: String, onBack: () -> Unit) {
                     IconButton(onClick = { isMenuOpen = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.photos_more)) }
                     DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
                         if (current.canCallerContribute) DropdownMenuItem(text = { Text(stringResource(R.string.photos_add_photos)) }, onClick = { isMenuOpen = false; isAddingPhotos = true })
-                        if (list.photos.isNotEmpty()) DropdownMenuItem(text = { Text(stringResource(R.string.photos_select)) }, onClick = { isMenuOpen = false; isSelecting = true })
+                        if (list.totalCount > 0) DropdownMenuItem(text = { Text(stringResource(R.string.photos_select)) }, onClick = { isMenuOpen = false; isSelecting = true })
                         if (current.isOwnedByCaller && current.circleId == null) DropdownMenuItem(text = { Text(stringResource(R.string.photos_rename_album)) }, onClick = { isMenuOpen = false; isRenaming = true })
                         if (current.canCallerShare) DropdownMenuItem(text = { Text(stringResource(R.string.photos_share)) }, onClick = { isMenuOpen = false; navigator.navigate(Routes.child(AppSection.Photos, "album/$photoAlbumId/shares")) })
                         if (current.canCallerManage) DropdownMenuItem(text = { Text(stringResource(R.string.photos_delete_album), color = MaterialTheme.colorScheme.error) }, onClick = { isMenuOpen = false; isDeleting = true })
@@ -285,26 +286,27 @@ fun AlbumScreen(photoAlbumId: String, onBack: () -> Unit) {
             when {
                 list.error != null && !list.isLoaded -> ErrorState(stringResource(R.string.photos_cannot_load), onRetry = { list.retry() })
                 !list.isLoaded -> LoadingState()
-                list.photos.isEmpty() -> EmptyState(
+                list.totalCount == 0 -> EmptyState(
                     Icons.Outlined.PhotoLibrary, stringResource(R.string.photos_empty_album),
                     description = stringResource(if (current?.canCallerContribute == true) R.string.photos_empty_album_text_own else R.string.photos_empty_album_text_shared),
                     actionLabel = if (current?.canCallerContribute == true) stringResource(R.string.photos_add_photos) else null,
                     onAction = { isAddingPhotos = true },
                 )
-                else -> PhotoGrid(
-                    PhotoGridContent.Days(PhotoTimeline.days(list.photos)), selectedIds, isSelecting,
-                    onOpen = { photo -> openedPhotoId = photo.id },
+                else -> PhotoWindowGrid(
+                    list, selectedIds, isSelecting,
+                    onOpen = { index, _ -> openedIndex = index },
                     onToggleSelected = { photo -> isSelecting = true; selectedIds = if (photo.id in selectedIds) selectedIds - photo.id else selectedIds + photo.id },
-                    onShowed = { photo -> list.showed(photo.id) }, state = rememberLazyGridState(),
+                    state = rememberLazyGridState(),
                 )
             }
         }
     }
-    val opened = list.photos.firstOrNull { photo -> photo.id == openedPhotoId }
-            if (opened != null) {
-                androidx.activity.compose.BackHandler { openedPhotoId = null }
+    val openedAt = openedIndex
+            if (openedAt != null) {
+                androidx.activity.compose.BackHandler { openedIndex = null }
                 PhotoViewer(
-                    photos = list.photos, initialPhotoId = opened.id, onClose = { openedPhotoId = null }, library = null,
+                    photoCount = list.totalCount, photoAt = { index -> list.window.photo(index) }, initialIndex = openedAt,
+                    onShowed = { index -> list.showed(index) }, onClose = { openedIndex = null }, library = null,
                     onPhotoChanged = { photo -> list.replace(photo) }, onPhotosGone = { ids -> list.remove(ids); albumLoad.refresh() },
                     album = current, onAlbumChanged = { updated -> album = updated },
                 )

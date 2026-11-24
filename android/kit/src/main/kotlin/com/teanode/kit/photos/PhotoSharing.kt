@@ -56,6 +56,12 @@ data class PhotoFilter(
     /** A first day after the last day finds nothing: the screen says so rather than listing nothing. */
     val isRangeBackwards: Boolean get() = firstDay != null && lastDay != null && firstDay > lastDay
 
+    /** The first moment the filter keeps, whether it came from a moment or from a first day. */
+    fun firstTakenAfter(zone: ZoneId = ZoneId.systemDefault()): Instant? = takenAfter ?: firstDay?.atStartOfDay(zone)?.toInstant()
+
+    /** The first moment after the ones the filter keeps. */
+    fun firstTakenBefore(zone: ZoneId = ZoneId.systemDefault()): Instant? = takenBefore ?: lastDay?.plusDays(1)?.atStartOfDay(zone)?.toInstant()
+
     /** The variables the server's ListPhotos takes for this filter. */
     fun variables(zone: ZoneId = ZoneId.systemDefault()): Map<String, JsonElement> {
         val variables = mutableMapOf<String, JsonElement>()

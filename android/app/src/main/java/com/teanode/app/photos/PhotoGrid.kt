@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -33,7 +35,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,16 +55,18 @@ import com.teanode.app.R
 import com.teanode.app.ui.components.rememberServerPicture
 import com.teanode.kit.photos.Photo
 import com.teanode.kit.photos.PhotoDay
-import com.teanode.kit.photos.PhotoMonth
 import com.teanode.kit.photos.PhotoOverview
+import com.teanode.kit.photos.PhotoPeriod
+import com.teanode.kit.photos.PhotoPeriods
 import com.teanode.kit.photos.PhotoTimeline
 import com.teanode.kit.photos.PhotoTrashDay
-import com.teanode.kit.photos.PhotoYear
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 
-/** The three scales the library is looked at in: a card a year, a card a month, or every day's photos. */
+/** The three scales the library is looked at in: a card a year, a card a month, or every photo. */
 enum class PhotoScale { Years, Months, All }
 
 /** What a grid is made of: photos in days, a day a header, or the Trash in days with their time left. */
@@ -139,7 +146,7 @@ fun dayHeadingText(day: PhotoDay): String {
     return DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).withLocale(Locale.getDefault()).format(date)
 }
 
-/** The photos of a list in a grid of days (or the Trash in days with their time left), a page loaded as it is scrolled to. */
+/** The photos of a list held whole in a grid of days (the Trash, with their time left, or a search's ranked results). */
 @Composable
 fun PhotoGrid(
     content: PhotoGridContent,
@@ -210,42 +217,121 @@ private fun TrashDayHeader(day: PhotoTrashDay) {
     }
 }
 
-/** The Years or Months view: a card a year or month, with its cover, its name and how many photos it holds. */
+/** One place of a window whose photo is not read yet: a square of the size of a photo's, so the grid does not move when it fills in. */
 @Composable
-fun PhotoOverviewGrid(
-    years: List<PhotoYear>?,
-    months: List<PhotoMonth>?,
-    onOpenYear: (PhotoYear) -> Unit,
-    onOpenMonth: (PhotoMonth) -> Unit,
+fun PhotoPlaceholderCell(modifier: Modifier = Modifier) {
+    Box(modifier.aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant))
+}
+
+/**
+ * The photos of a window in a grid over every place of the list, 0 until its count: the photo at a place, or a
+ * placeholder while its page is not read. The pages near the first place on screen are read as it moves.
+ */
+@Composable
+fun PhotoWindowGrid(
+    controller: PhotoWindowController,
+    selectedIds: Set<String>,
+    isSelecting: Boolean,
+    onOpen: (Int, Photo) -> Unit,
+    onToggleSelected: (Photo) -> Unit,
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(8.dp),
+    state: LazyGridState = rememberLazyGridState(),
+    contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    LazyVerticalGrid(GridCells.Fixed(2), modifier = modifier.fillMaxSize(), contentPadding = contentPadding) {
-        years?.let { list ->
-            items(list, key = { year -> year.id }) { year ->
-                OverviewCard(year.coverPhoto, year.titleText() ?: stringResource(R.string.photos_unknown_date), year.photos.size, Modifier.padding(4.dp)) { onOpenYear(year) }
-            }
-        }
-        months?.let { list ->
-            items(list, key = { month -> month.id }) { month ->
-                OverviewCard(month.coverPhoto, month.titleText() ?: stringResource(R.string.photos_unknown_date), month.photos.size, Modifier.padding(4.dp)) { onOpenMonth(month) }
+    val totalCount by remember(controller) { derivedStateOf { controller.window.totalCount } }
+    LaunchedEffect(controller, state) {
+        snapshotFlow { state.firstVisibleItemIndex }.collect { index -> controller.showed(index) }
+    }
+    LazyVerticalGrid(GridCells.Adaptive(minSize = 96.dp), modifier = modifier.fillMaxSize(), state = state, contentPadding = contentPadding) {
+        items(count = totalCount, key = { index -> index }) { index ->
+            val photo = controller.window.photo(index)
+            if (photo == null) {
+                PhotoPlaceholderCell(Modifier.padding(1.dp))
+            } else {
+                PhotoCell(
+                    photo, isSelecting, photo.id in selectedIds,
+                    onClick = { if (isSelecting) onToggleSelected(photo) else onOpen(index, photo) },
+                    onLongClick = { onToggleSelected(photo) },
+                    modifier = Modifier.padding(1.dp),
+                )
             }
         }
     }
 }
 
+/** The Years or Months view: a card a year, or a section a year with a card a month, each read when it comes near the screen. */
 @Composable
-private fun OverviewCard(cover: Photo?, title: String, photoCount: Int, modifier: Modifier, onClick: () -> Unit) {
+fun PhotoOverviewGrid(
+    controller: PhotoOverviewController,
+    isMonths: Boolean,
+    onChoose: (PhotoPeriod) -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(8.dp),
+) {
+    val years = controller.span?.years.orEmpty()
+    if (isMonths) {
+        LazyColumn(modifier = modifier.fillMaxSize(), contentPadding = contentPadding) {
+            items(years, key = { year -> year }) { year -> YearOfMonths(controller, year, onChoose) }
+        }
+    } else {
+        LazyVerticalGrid(GridCells.Fixed(2), modifier = modifier.fillMaxSize(), contentPadding = contentPadding) {
+            items(years, key = { year -> year }) { year ->
+                val id = PhotoPeriods.id(year, null)
+                LaunchedEffect(controller, year) { controller.read(year, null) }
+                val period = controller.periods[id]
+                when {
+                    period != null -> OverviewCard(period.coverPhoto, year.toString(), period.photoCount, Modifier.padding(4.dp)) { onChoose(period) }
+                    controller.periods.containsKey(id) -> OverviewCard(null, year.toString(), 0, Modifier.padding(4.dp), onClick = null)
+                    else -> OverviewCard(null, year.toString(), null, Modifier.padding(4.dp), onClick = null)
+                }
+            }
+        }
+    }
+}
+
+/** A year of the Months view: its months that hold photos, newest first, two to a row, once they are read. */
+@Composable
+private fun YearOfMonths(controller: PhotoOverviewController, year: Int, onChoose: (PhotoPeriod) -> Unit) {
+    LaunchedEffect(controller, year) {
+        coroutineScope { for (monthIndex in PhotoPeriods.monthIndexesNewestFirst) launch { controller.read(year, monthIndex) } }
+    }
+    val ids = PhotoPeriods.monthIndexesNewestFirst.map { monthIndex -> PhotoPeriods.id(year, monthIndex) }
+    val isPending = ids.any { id -> !controller.periods.containsKey(id) }
+    val periods = ids.mapNotNull { id -> controller.periods[id] }
+    if (!isPending && periods.isEmpty()) return
+    androidx.compose.foundation.layout.Column {
+        Text(year.toString(), style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() }.padding(horizontal = 8.dp, vertical = 12.dp))
+        for (row in periods.chunked(2)) {
+            Row {
+                for (period in row) {
+                    OverviewCard(period.coverPhoto, PhotoPeriods.monthText(period.monthIndex ?: 0), period.photoCount, Modifier.weight(1f).padding(4.dp)) { onChoose(period) }
+                }
+                if (row.size == 1) Box(Modifier.weight(1f).padding(4.dp))
+            }
+        }
+        if (isPending) Row {
+            OverviewCard(null, "", null, Modifier.weight(1f).padding(4.dp), onClick = null)
+            OverviewCard(null, "", null, Modifier.weight(1f).padding(4.dp), onClick = null)
+        }
+    }
+}
+
+/** A card of the overview: the cover, the name and how many photos it holds; the count is null while it is read. */
+@Composable
+private fun OverviewCard(cover: Photo?, title: String, photoCount: Int?, modifier: Modifier, onClick: (() -> Unit)?) {
     val picture = rememberServerPicture(cover?.gridPreviewPath)
-    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant).combinedClickable(role = Role.Button, onClick = onClick)) {
+    val clickable = if (onClick != null) Modifier.combinedClickable(role = Role.Button, onClick = onClick) else Modifier
+    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant).then(clickable)) {
         if (picture != null) Image(picture, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)))))
-        androidx.compose.foundation.layout.Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
-            Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 2)
-            Text(
-                androidx.compose.ui.res.pluralStringResource(R.plurals.photos_item_count, photoCount, photoCount), color = Color.White.copy(alpha = 0.85f),
-                style = MaterialTheme.typography.bodySmall,
-            )
+        if (photoCount != null) {
+            Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)))))
+            androidx.compose.foundation.layout.Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
+                Text(title, color = if (picture != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleMedium, maxLines = 2)
+                Text(
+                    androidx.compose.ui.res.pluralStringResource(R.plurals.photos_item_count, photoCount, photoCount),
+                    color = if (picture != null) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }

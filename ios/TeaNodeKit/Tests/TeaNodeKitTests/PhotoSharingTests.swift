@@ -250,11 +250,11 @@ final class PhotoSharingTests: XCTestCase {
 
     func testTheLibraryIsListedWithTheFilter() async throws {
         let (connection, fake) = try connection { _ in (200, #"{"data":{"ListPhotos":[]}}"#) }
-        _ = try await connection.photos(in: .library, filter: PhotoFilter(photoKindFilter: .livePhoto))
+        _ = try await connection.photos(in: PhotoListQuery(filter: PhotoFilter(photoKindFilter: .livePhoto)), offset: 0)
         let sent = try variables(of: try XCTUnwrap(fake.sent.last))
         XCTAssertEqual(sent["photoKind"] as? String, "livePhoto")
         XCTAssertNil(sent["takenAfter"])
-        _ = try await connection.photos(in: .library)
+        _ = try await connection.photos(in: PhotoListQuery(), offset: 0)
         XCTAssertNil(try variables(of: try XCTUnwrap(fake.sent.last))["photoKind"])
         XCTAssertTrue(Documents.listPhotos.contains("$photoKind: String"))
     }
@@ -297,46 +297,6 @@ final class PhotoSharingTests: XCTestCase {
     func testTheLibraryCountsItsVideosAmongItsPhotos() {
         let library = PhotoLibrary(photoCount: 120, videoCount: 4, favoriteCount: 0, trashedCount: 0, usedBytes: 0, trashRetentionDays: 30)
         XCTAssertEqual(library.itemCount, 124)
-    }
-
-    // MARK: Placing a photo whose date changed
-
-    private func photo(_ id: String, takenAt: String) throws -> Photo {
-        let json = photoJSON(id).replacingOccurrences(of: #""takenAt":"2026-03-10T14:42:00Z""#, with: #""takenAt":"\#(takenAt)""#)
-        return try JSONDecoder().decode(Photo.self, from: Data(json.utf8))
-    }
-
-    func testAPhotoIsListedNewestFirstAndALargerIdFirstAtTheSameMoment() throws {
-        let newer = try photo("a", takenAt: "2026-03-11T00:00:00Z")
-        let older = try photo("b", takenAt: "2026-03-10T00:00:00Z")
-        let sameMomentLargerId = try photo("c", takenAt: "2026-03-10T00:00:00Z")
-        XCTAssertEqual(PhotoTimeline.sorted([older, sameMomentLargerId, newer]).map(\.id), ["a", "c", "b"])
-    }
-
-    func testAPhotoWithANewDateGoesToItsPlaceAmongThoseHeld() throws {
-        let held = try [photo("a", takenAt: "2026-03-14T00:00:00Z"), photo("b", takenAt: "2026-03-13T00:00:00Z"), photo("c", takenAt: "2026-03-12T00:00:00Z")]
-        let moved = try photo("c", takenAt: "2026-03-15T00:00:00Z")
-        let placement = PhotoPlacement.place(moved, in: held, pageCursorPhotoId: nil, hasMore: true)
-        XCTAssertEqual(placement.photos.map(\.id), ["c", "a", "b"])
-        XCTAssertEqual(placement.pageCursorPhotoId, "b", "the last photo held, which was c, is no longer the one the next page follows")
-        XCTAssertFalse(placement.isBeyondHeldPhotos)
-    }
-
-    func testAPhotoMovedPastTheEndOfAListWithMorePagesWaitsForThePageItBelongsTo() throws {
-        let held = try [photo("a", takenAt: "2026-03-14T00:00:00Z"), photo("b", takenAt: "2026-03-13T00:00:00Z"), photo("c", takenAt: "2026-03-12T00:00:00Z")]
-        let moved = try photo("a", takenAt: "2020-01-01T00:00:00Z")
-        let placement = PhotoPlacement.place(moved, in: held, pageCursorPhotoId: nil, hasMore: true)
-        XCTAssertEqual(placement.photos.map(\.id), ["b", "c", "a"])
-        XCTAssertEqual(placement.pageCursorPhotoId, "c", "the next page still follows the photo the server has last among those read")
-        XCTAssertTrue(placement.isBeyondHeldPhotos)
-        XCTAssertFalse(PhotoPlacement.place(moved, in: held, pageCursorPhotoId: nil, hasMore: false).isBeyondHeldPhotos)
-    }
-
-    func testAPhotoThatIsNotHeldLeavesTheListAsItWas() throws {
-        let held = try [photo("a", takenAt: "2026-03-14T00:00:00Z")]
-        let placement = PhotoPlacement.place(try photo("z", takenAt: "2026-03-15T00:00:00Z"), in: held, pageCursorPhotoId: nil, hasMore: true)
-        XCTAssertEqual(placement.photos, held)
-        XCTAssertEqual(placement.pageCursorPhotoId, "a")
     }
 
     // MARK: Changing a date
