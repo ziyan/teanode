@@ -1570,7 +1570,7 @@ export const en = {
   'agent.saved': 'Saved.',
   'agent.activity': 'What it did',
   'agent.activityHint':
-    'The runs your agent made on its own — sorting, answering, looking things up, its goals — newest first. Open one to read what it did and ask about it.',
+    'The runs your agent made on its own (sorting, answering, looking things up, its goals), newest first. Open one to read what it did and ask about it.',
   'agent.noActivity': 'Nothing yet.',
   'agent.open': 'Open',
   'agent.findMemory': 'Find a memory…',
