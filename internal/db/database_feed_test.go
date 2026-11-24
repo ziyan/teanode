@@ -267,6 +267,15 @@ func TestDismissingCardsByIdsStackAndReadAndRestoringThem(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// The agent may put choices on any kind of card: an alert that waits
+		// for its answer is kept by every read card as a decision is.
+		alertCard := newTestCard(userId, agentId, "A new device signed in")
+		alertCard.FeedItemKind = models.FeedItemAlert
+		alertCard.Choices = []models.FeedChoice{{ChoiceKey: "me", ChoiceLabel: "That was me", ChoiceRole: models.FeedChoiceDismiss}}
+		waitingAlert, _, err := tx.UpsertAgentFeedItem(alertCard, start)
+		if err != nil {
+			t.Fatal(err)
+		}
 		strangers, _, err := tx.UpsertAgentFeedItem(newTestCard(otherUserId, otherAgentId, "Somebody else's"), start)
 		if err != nil {
 			t.Fatal(err)
@@ -301,7 +310,7 @@ func TestDismissingCardsByIdsStackAndReadAndRestoringThem(t *testing.T) {
 
 		// Every read card: the unread card stays, so does the decision that
 		// waits, though it is read.
-		if _, err := tx.MarkAgentFeedItemsRead(userId, []string{second.ID, decision.ID}, now); err != nil {
+		if _, err := tx.MarkAgentFeedItemsRead(userId, []string{second.ID, decision.ID, waitingAlert.ID}, now); err != nil {
 			t.Fatal(err)
 		}
 		dismissed, err = tx.DismissAgentFeedItems(userId, &db.FeedDismissSelection{IsEveryReadCard: true}, now)
@@ -313,6 +322,9 @@ func TestDismissingCardsByIdsStackAndReadAndRestoringThem(t *testing.T) {
 		}
 		if remaining, _ := tx.GetAgentFeedItem(decision.ID); remaining.DismissedAt != nil {
 			t.Fatal("a decision still waiting was dismissed with the read ones")
+		}
+		if remaining, _ := tx.GetAgentFeedItem(waitingAlert.ID); remaining.DismissedAt != nil {
+			t.Fatal("an alert still waiting for its answer was dismissed with the read ones")
 		}
 
 		// Restore: a dismissed card comes back, a settled one stays closed,
@@ -333,8 +345,18 @@ func TestDismissingCardsByIdsStackAndReadAndRestoringThem(t *testing.T) {
 		if brought, _ := tx.GetAgentFeedItem(first.ID); brought.DismissedAt != nil {
 			t.Fatal("the restored card is still dismissed")
 		}
-		if visible, _, _ := tx.ListAgentFeedItems(userId, nil, 10, false, now); len(visible) != 2 {
-			t.Fatalf("the restored and the unread card are in the list: %d", len(visible))
+		if visible, _, _ := tx.ListAgentFeedItems(userId, nil, 10, false, now); len(visible) != 3 {
+			t.Fatalf("the restored, the unread and the waiting alert card are in the list: %d", len(visible))
+		}
+
+		// A card past its expiry is out of the feed: it is not dismissed,
+		// and a dismissed one is not brought back.
+		afterExpiry := start.Add(time.Duration(models.FeedExpiryDays+1) * 24 * time.Hour)
+		if expired, err := tx.DismissAgentFeedItems(userId, &db.FeedDismissSelection{FeedItemIDs: []string{third.ID}}, afterExpiry); err != nil || len(expired) != 0 {
+			t.Fatalf("an expired card was dismissed: %+v %v", expired, err)
+		}
+		if expired, err := tx.RestoreAgentFeedItems(userId, []string{stackedOne.ID}, afterExpiry); err != nil || len(expired) != 0 {
+			t.Fatalf("an expired card was restored: %+v %v", expired, err)
 		}
 	})
 }

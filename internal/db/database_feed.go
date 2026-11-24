@@ -518,14 +518,18 @@ func (self *transaction) MarkAgentFeedItemsRead(userId string, feedItemIds []str
 }
 
 func (self *transaction) DismissAgentFeedItems(userId string, selection *FeedDismissSelection, now time.Time) ([]*models.AgentFeedItem, error) {
-	query := self.tx.Where(`"user_id" = ? AND "dismissed_at" IS NULL`, userId)
+	// A card past its expiry is out of the feed already, though not yet
+	// deleted: it is neither dismissed nor announced.
+	query := self.tx.Where(`"user_id" = ? AND "dismissed_at" IS NULL AND ("expires_at" IS NULL OR "expires_at" > ?)`, userId, now)
 	switch {
 	case len(selection.FeedItemIDs) > 0:
 		query = query.Where(`"id" IN ?`, selection.FeedItemIDs)
 	case selection.FeedStackKey != "":
 		query = query.Where(`"feed_stack_key" = ?`, selection.FeedStackKey)
 	case selection.IsEveryReadCard:
-		query = query.Where(`"read_at" IS NOT NULL AND NOT ("feed_item_kind" = ? AND jsonb_array_length("choices") > 0 AND "chosen_choice_key" IS NULL)`, string(models.FeedItemDecision))
+		// A card still waiting for an answer stays, whatever its kind: the
+		// agent may put choices on any card.
+		query = query.Where(`"read_at" IS NOT NULL AND NOT (jsonb_array_length("choices") > 0 AND "chosen_choice_key" IS NULL)`)
 	default:
 		return []*models.AgentFeedItem{}, nil
 	}
@@ -536,7 +540,8 @@ func (self *transaction) RestoreAgentFeedItems(userId string, feedItemIds []stri
 	if len(feedItemIds) == 0 {
 		return []*models.AgentFeedItem{}, nil
 	}
-	query := self.tx.Where(`"user_id" = ? AND "id" IN ? AND "dismissed_at" IS NOT NULL AND "chosen_choice_key" IS NULL`, userId, feedItemIds)
+	query := self.tx.Where(`"user_id" = ? AND "id" IN ? AND "dismissed_at" IS NOT NULL AND "chosen_choice_key" IS NULL AND ("expires_at" IS NULL OR "expires_at" > ?)`,
+		userId, feedItemIds, now)
 	return updateFeedItems(query, map[string]any{"dismissed_at": nil, "updated_at": now})
 }
 
