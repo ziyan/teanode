@@ -606,7 +606,8 @@ have made.
 | `teanode agent feed choose <card-id> <choice-key>` | press a button of a card; a card is answered once. An action says your choice in your main conversation as your own message with the card attached; a dismiss only closes it; a coding session's option answers the session |
 | `teanode agent feed like\|unlike <card-id>` | tell the agent you want more like it, or take that back |
 | `teanode agent feed less <card-id>` | show less like this: the agent remembers, and the card is dismissed |
-| `teanode agent feed dismiss <card-id>` | close a card |
+| `teanode agent feed dismiss [<card-id>...] [--stack KEY] [--read]` | close cards: the ones named, every open card of a stack, or every read card (a decision still waiting for an answer is kept); give exactly one, and it prints how many were closed |
+| `teanode agent feed restore <card-id>...` | bring dismissed cards back (one a choice settled stays closed), and print how many |
 | `teanode agent feed read <card-id>...` | mark cards read |
 | `teanode agent feed discuss <card-id>` | print the id of the main conversation to talk about a card in |
 | `teanode agent feed post --title ... [--body ...] [--kind ...] [--symbol ...] [--urgency now\|today\|whenever] [--coalesce-key ...] [--stack ...] [--stack-position N] [--stack-title ...] [--layout list\|weather\|agenda --layout-content JSON] [--fact label=value]... [--link url[=title]]... [--photo id[=caption]]... [--picture url[=caption]]... [--choice key=Label[:role]]... [--card ID]` | post a card of your own to your feed, or with `--card` change one where it stands; the same coalesce key replaces a card, and a page already in an open card of the last 30 days is refused. `--photo` shows one of your photos or videos on the card and `--picture` the picture of a page, which the server fetches; without either, the card shows its first link's picture |

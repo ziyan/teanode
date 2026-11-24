@@ -136,6 +136,23 @@ speaking first and what goals post back to the main conversation.
   conversation (`DiscussAgentFeedItem` answers the main conversation's id and
   marks the card read) or the session.
 
+## Dismissing and restoring
+
+`DismissAgentFeedItems` closes cards: exactly one of `feedItemIds` (at most
+500, each the caller's own, or none is closed), `feedStackKey` (every open card
+of that stack) or `isEveryReadCard` (every read card that is not a decision
+still waiting for an answer). It answers the ids this call closed, leaves out
+cards already closed, stops the durable question behind a decision, and sends
+one `dismissed` event per card. `RestoreAgentFeedItems` (at most 500 ids)
+brings back dismissed cards and answers the ids restored, with one `restored`
+event each; a card a choice settled stays closed, and a question a dismissal
+stopped stays stopped, though the card's buttons still work because they post
+to the main conversation. Every surface offers Undo after a dismissal, which
+is a restore of the ids the dismissal answered. The agent's `feed` tool has
+`dismiss` and `restore` actions for when the person asks, and `teanode agent
+feed dismiss` and `restore` do the same. The dashboard has a dismiss button on
+each card, Dismiss all on a stack and Dismiss read above the list.
+
 ## Liking
 
 A like or an unlike is written to the agent's memory as a preference on the
@@ -146,7 +163,7 @@ the card. Goals read that page before choosing what to post.
 
 `ListAgentFeed` pages newest first with a cursor. `unreadCount` counts cards,
 not entries. `agentFeedChanged` (subscription field `AgentFeedChanged`) says a
-card was posted, replaced, settled or dismissed, with the unread count; it
+card was posted, replaced, settled, dismissed or restored, with the unread count; it
 travels by `pg_notify` on the `feed_event` channel like the shopping and call
 events.
 
