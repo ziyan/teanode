@@ -20,7 +20,7 @@ func newAgentFeedCommand() *cli.Command {
 		Description: "The feed is a list of cards, newest first: a headline, a few lines, sometimes a short table of facts\n" +
 			"and buttons. 'list' prints them, 'show' one, 'choose' presses a button of a decision, 'like' and 'unlike'\n" +
 			"tell the agent what you want more of, 'less' asks for fewer like it and dismisses the card, 'dismiss'\n" +
-			"closes one, 'read' marks cards read, 'discuss' prints the id of the main conversation to talk about a\n" +
+			"closes cards (named, a stack's, or every read one), 'restore' brings them back, 'read' marks cards read, 'discuss' prints the id of the main conversation to talk about a\n" +
 			"card in, and 'post' puts a card of your own in the feed.",
 		Commands: []*cli.Command{
 			{
@@ -81,11 +81,23 @@ func newAgentFeedCommand() *cli.Command {
 				Action:    runAgentFeedLess,
 			},
 			{
-				Name:      "dismiss",
-				Usage:     "close a card",
-				ArgsUsage: "<card-id>",
+				Name:        "dismiss",
+				Usage:       "close cards: the ones named, a stack's, or every read one",
+				ArgsUsage:   "[<card-id>...]",
+				Description: "Give card ids, or --stack with a stack key, or --read; exactly one of the three. A decision still waiting for an answer is not closed by --read.",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "stack", Usage: "close every open card of this stack"},
+					&cli.BoolFlag{Name: "read", Usage: "close every card you have read that has no open choice"},
+					JSONFlag(),
+				},
+				Action: runAgentFeedDismiss,
+			},
+			{
+				Name:      "restore",
+				Usage:     "bring dismissed cards back; one a choice settled stays closed",
+				ArgsUsage: "<card-id>...",
 				Flags:     []cli.Flag{JSONFlag()},
-				Action:    runAgentFeedDismiss,
+				Action:    runAgentFeedRestore,
 			},
 			{
 				Name:      "read",
@@ -336,19 +348,55 @@ func runAgentFeedLess(ctx context.Context, command *cli.Command) error {
 }
 
 func runAgentFeedDismiss(ctx context.Context, command *cli.Command) error {
-	feedItemId, err := feedCardArgument(command, "teanode agent feed dismiss <card-id>", 1)
-	if err != nil {
-		return err
+	feedItemIds := command.Args().Slice()
+	feedStackKey := strings.TrimSpace(command.String("stack"))
+	isEveryReadCard := command.Bool("read")
+	givenCount := 0
+	for _, isGiven := range []bool{len(feedItemIds) > 0, feedStackKey != "", isEveryReadCard} {
+		if isGiven {
+			givenCount++
+		}
+	}
+	if givenCount != 1 {
+		return usage("which? usage: teanode agent feed dismiss <card-id>... or --stack <stack-key> or --read, exactly one")
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	item, err := client.DismissAgentFeedItem(ctx, connection, feedItemId)
+	dismissedIds, err := client.DismissAgentFeedItems(ctx, connection, feedItemIds, feedStackKey, isEveryReadCard)
 	if err != nil {
 		return describeError(command, err)
 	}
-	return printFeedItem(command, item)
+	return printFeedChangeCount(command, "dismissed", dismissedIds)
+}
+
+func runAgentFeedRestore(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 1 {
+		return usage("which? usage: teanode agent feed restore <card-id>...")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	restoredIds, err := client.RestoreAgentFeedItems(ctx, connection, command.Args().Slice())
+	if err != nil {
+		return describeError(command, err)
+	}
+	return printFeedChangeCount(command, "restored", restoredIds)
+}
+
+// printFeedChangeCount says how many cards a dismissal or restore changed
+// and which.
+func printFeedChangeCount(command *cli.Command, verb string, feedItemIds []string) error {
+	if feedItemIds == nil {
+		feedItemIds = []string{}
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"feedItemIds": feedItemIds, verb + "Count": len(feedItemIds)})
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%d %s\n", len(feedItemIds), verb)
+	return nil
 }
 
 func runAgentFeedRead(ctx context.Context, command *cli.Command) error {

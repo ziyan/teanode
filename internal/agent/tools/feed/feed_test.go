@@ -24,7 +24,7 @@ func (self *recordedOperations) Permissions() *models.EffectivePermissions {
 func (self *recordedOperations) Execute(_ context.Context, document string, variables map[string]any, response any) error {
 	self.documents = append(self.documents, document)
 	self.variables = append(self.variables, variables)
-	return json.Unmarshal([]byte(`{"PostAgentFeedItem":{"feedItemId":"card-1"},"DismissAgentFeedItem":{"feedItemId":"card-1"},"ListAgentFeed":{"feedItems":[],"unreadCount":0}}`), response)
+	return json.Unmarshal([]byte(`{"PostAgentFeedItem":{"feedItemId":"card-1"},"DismissAgentFeedItems":["card-1"],"RestoreAgentFeedItems":["card-1"],"ListAgentFeed":{"feedItems":[],"unreadCount":0}}`), response)
 }
 
 type feedRun struct {
@@ -90,6 +90,41 @@ func TestACardPostedInTheMainConversationNamesNoSource(t *testing.T) {
 	}
 }
 
+// Dismiss takes exactly one of ids, a stack or every read card, and restore
+// takes ids; each goes through the operation the apps call.
+func TestTheFeedToolDismissesAndRestores(t *testing.T) {
+	operations := &recordedOperations{}
+	ctx := tools.WithRun(context.Background(), &feedRun{operations: operations})
+	for _, arguments := range []string{
+		`{"action":"dismiss","feed_item_ids":["card-1","card-2"]}`,
+		`{"action":"dismiss","stack_key":"morning-brief"}`,
+		`{"action":"dismiss","every_read":true}`,
+		`{"action":"restore","feed_item_ids":["card-1"]}`,
+	} {
+		if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(arguments)}); err != nil {
+			t.Fatalf("%s: %s", arguments, err)
+		}
+	}
+	if len(operations.documents) != 4 || !strings.Contains(operations.documents[0], "DismissAgentFeedItems") || !strings.Contains(operations.documents[3], "RestoreAgentFeedItems") {
+		t.Fatalf("documents: %+v", operations.documents)
+	}
+	if ids, _ := operations.variables[0]["feedItemIds"].([]string); len(ids) != 2 {
+		t.Fatalf("ids: %+v", operations.variables[0])
+	}
+	if operations.variables[1]["feedStackKey"] != "morning-brief" || operations.variables[2]["isEveryReadCard"] != true {
+		t.Fatalf("variables: %+v", operations.variables)
+	}
+	for _, arguments := range []string{
+		`{"action":"dismiss"}`,
+		`{"action":"dismiss","every_read":true,"stack_key":"morning-brief"}`,
+		`{"action":"restore"}`,
+	} {
+		if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(arguments)}); err == nil {
+			t.Fatalf("%s was accepted", arguments)
+		}
+	}
+}
+
 func TestTheFeedToolUpdatesWithdrawsAndLists(t *testing.T) {
 	operations := &recordedOperations{}
 	ctx := tools.WithRun(context.Background(), &feedRun{operations: operations})
@@ -98,7 +133,7 @@ func TestTheFeedToolUpdatesWithdrawsAndLists(t *testing.T) {
 			t.Fatalf("%s: %s", arguments, err)
 		}
 	}
-	if len(operations.documents) != 3 || operations.variables[0]["feedItemId"] != "card-1" || !strings.Contains(operations.documents[1], "DismissAgentFeedItem") || !strings.Contains(operations.documents[2], "ListAgentFeed") {
+	if len(operations.documents) != 3 || operations.variables[0]["feedItemId"] != "card-1" || !strings.Contains(operations.documents[1], "DismissAgentFeedItems") || !strings.Contains(operations.documents[2], "ListAgentFeed") {
 		t.Fatalf("documents: %+v", operations.documents)
 	}
 	if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"update","body":"x"}`)}); err == nil {
