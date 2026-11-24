@@ -5592,7 +5592,7 @@ export const en = {
   'services.routing': 'Receive, send and forward mail for your domains.',
   'services.mailboxes': 'Keep mail here and read it in the dashboard or a mail app. Requires mail routing.',
   'services.calendar': 'Keep and sync calendar events, without needing an email account.',
-  'services.reminders': 'Keep and sync your reminders. Assistant schedules and goals are separate.',
+  'services.reminders': 'Keep and sync your reminders. Your agent\'s goals are separate.',
   'services.contacts': 'Keep and sync your address book, without needing an email account.',
   'services.review': 'Review your choices',
   'services.preserve':

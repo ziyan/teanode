@@ -5532,7 +5532,7 @@ export const ja: Catalog = {
   'services.routing': '自分のドメインでメールを受信、送信、転送します。',
   'services.mailboxes': 'メールを保存し、画面やメールアプリで読みます。メール配送が必要です。',
   'services.calendar': 'メールアカウントなしで予定を保存、同期します。',
-  'services.reminders': 'リマインダーを保存、同期します。アシスタントの定期作業や目標とは別です。',
+  'services.reminders': 'リマインダーを保存、同期します。アシスタントの目標とは別です。',
   'services.contacts': 'メールアカウントなしで連絡先を保存、同期します。',
   'services.review': '選択を確認',
   'services.preserve':

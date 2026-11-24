@@ -5327,7 +5327,7 @@ export const zh: Catalog = {
   'services.routing': '为你的域名接收、发送和转发邮件。',
   'services.mailboxes': '保存邮件，在网页或邮件应用中阅读。需要邮件收发服务。',
   'services.calendar': '无需邮件账户即可保存和同步日历。',
-  'services.reminders': '保存和同步提醒事项。助手的定期任务和目标是独立的。',
+  'services.reminders': '保存和同步提醒事项。助手的目标是独立的。',
   'services.contacts': '无需邮件账户即可保存和同步联系人。',
   'services.review': '确认选择',
   'services.preserve': '关闭服务会保留数据并暂停待处理工作。在重新启用之前，设备将无法访问。',
