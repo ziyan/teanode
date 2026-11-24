@@ -54,4 +54,12 @@
     <string name="feed_kind_report">Report</string>
     <string name="feed_kind_idea">Idea</string>
     <string name="feed_kind_update">Update</string>
+    <string name="feed_dismiss_all">Dismiss all (%1$d)</string>
+    <string name="feed_dismiss_read">Dismiss read</string>
+    <string name="feed_undo">Undo</string>
+    <string name="feed_more_actions">More actions</string>
+    <plurals name="feed_dismissed_count">
+        <item quantity="one">%1$d card dismissed</item>
+        <item quantity="other">%1$d cards dismissed</item>
+    </plurals>
 </resources>

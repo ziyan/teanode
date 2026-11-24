@@ -54,4 +54,11 @@
     <string name="feed_kind_report">报告</string>
     <string name="feed_kind_idea">想法</string>
     <string name="feed_kind_update">动态</string>
+    <string name="feed_dismiss_all">全部忽略（%1$d）</string>
+    <string name="feed_dismiss_read">忽略已读</string>
+    <string name="feed_undo">撤销</string>
+    <string name="feed_more_actions">更多操作</string>
+    <plurals name="feed_dismissed_count">
+        <item quantity="other">已忽略 %1$d 张卡片</item>
+    </plurals>
 </resources>

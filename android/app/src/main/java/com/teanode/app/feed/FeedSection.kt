@@ -22,7 +22,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -91,7 +99,23 @@ fun FeedSection() {
             readStackPage = { feedStackKey, after -> connection.agentFeedStack(feedStackKey, after = after, first = DECK_PAGE_SIZE) },
         )
     }
-    TeaNodeScreen(title = stringResource(R.string.feed_title)) { contentPadding ->
+    var isMenuOpen by remember { mutableStateOf(false) }
+    TeaNodeScreen(
+        title = stringResource(R.string.feed_title),
+        actions = {
+            Box {
+                IconButton(onClick = { isMenuOpen = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.feed_more_actions)) }
+                DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.feed_dismiss_read)) },
+                        leadingIcon = { Icon(Icons.Outlined.Close, contentDescription = null) },
+                        enabled = model.hasDismissibleReadCard,
+                        onClick = { isMenuOpen = false; model.dismissRead() },
+                    )
+                }
+            }
+        },
+    ) { contentPadding ->
         FeedListBody(model, areDecksShown = true, modifier = Modifier.padding(contentPadding), isAppUpdateShown = true)
     }
 }
@@ -145,6 +169,15 @@ internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Mo
     val actions = remember(model, navigator, linkOpener) { FeedActions(model, scope, navigator, linkOpener) }
     model.onProblem = { failure -> snackbar.showError(failure) }
     model.onDone = { text -> snackbar.show(text) }
+    // After any dismissal the cards are gone already; the snackbar says how many and offers to bring them back.
+    val resources = LocalContext.current.resources
+    model.onDismissed = { feedItemIds ->
+        snackbar.show(
+            resources.getQuantityString(R.plurals.feed_dismissed_count, feedItemIds.size, feedItemIds.size),
+            actionLabel = resources.getString(R.string.feed_undo),
+            onAction = { model.restore(feedItemIds) },
+        )
+    }
     FeedFollowing(model)
     // While a card waits for the agent to say how its answer went, the feed is read every few seconds.
     LaunchedEffect(model.hasPendingOutcome) {

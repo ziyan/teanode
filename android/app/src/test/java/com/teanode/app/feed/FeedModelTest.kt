@@ -130,14 +130,53 @@ class FeedModelTest {
     }
 
     @Test
-    fun dismissingTakesTheCardOutQuietly() {
+    fun dismissingTakesTheCardOutAtOnceAndReportsItsIdForUndo() {
         val feed = model()
         var said = ""
+        var dismissedIds = emptyList<String>()
         feed.onDone = { text -> said = text }
+        feed.onDismissed = { ids -> dismissedIds = ids }
         runBlocking { feed.load() }
         feed.dismiss(feed.list!!.feedItems.first { each -> each.feedItemId == FeedDemoIDs.WEATHER })
         assertFalse(feed.list!!.feedItems.any { each -> each.feedItemId == FeedDemoIDs.WEATHER })
+        assertEquals(listOf(FeedDemoIDs.WEATHER), dismissedIds)
         assertEquals("", said)
+    }
+
+    @Test
+    fun dismissingAStackReportsEveryCardOfIt() {
+        val feed = model()
+        var dismissedIds = emptyList<String>()
+        feed.onDismissed = { ids -> dismissedIds = ids }
+        runBlocking { feed.load() }
+        val top = feed.list!!.feedItems.first { each -> each.isStack && each.feedStackKey == FeedDemoIDs.ROBOTS_STACK_KEY }
+        feed.dismissStack(top)
+        assertEquals(4, dismissedIds.size)
+        assertTrue(top.feedItemId in dismissedIds)
+    }
+
+    @Test
+    fun dismissingReadCardsTakesOutTheReadOnesWithNoChoiceWaiting() {
+        val feed = model()
+        var dismissedIds = emptyList<String>()
+        feed.onDismissed = { ids -> dismissedIds = ids }
+        runBlocking { feed.load() }
+        val expectedIds = feed.list!!.feedItems.filter { each -> each.isRead && !each.isAwaitingChoice }.map { each -> each.feedItemId }
+        assertTrue(feed.hasDismissibleReadCard)
+        feed.dismissRead()
+        assertTrue(expectedIds.isNotEmpty())
+        assertEquals(expectedIds, dismissedIds)
+    }
+
+    @Test
+    fun restoringAsksTheServerAndReadsTheFeedAgain() {
+        val feed = model()
+        runBlocking { feed.load() }
+        val weather = feed.list!!.feedItems.first { each -> each.feedItemId == FeedDemoIDs.WEATHER }
+        feed.dismiss(weather)
+        assertFalse(feed.list!!.feedItems.any { each -> each.feedItemId == FeedDemoIDs.WEATHER })
+        feed.restore(listOf(FeedDemoIDs.WEATHER))
+        assertTrue(feed.list!!.feedItems.any { each -> each.feedItemId == FeedDemoIDs.WEATHER })
     }
 
     @Test
