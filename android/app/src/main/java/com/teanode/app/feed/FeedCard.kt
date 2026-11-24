@@ -142,13 +142,20 @@ fun FeedCard(
     CompositionLocalProvider(LocalUriHandler provides uriHandler, LocalLinkOpener provides { address -> actions.followLink(address) }) {
         var isMenuOpen by remember { mutableStateOf(false) }
         val dismissText = stringResource(R.string.feed_info_dismiss)
-        // A card swipes away either way, as a mail does; the page under it shows what the swipe does.
+        // A card swipes away either way, as a mail does; the page under it shows what the swipe does. It goes only
+        // past two fifths of its width, so a short flick while scrolling leaves it, and it is dismissed once
+        // however often the swipe settles.
+        var isSwipedAway by remember(item.feedItemId) { mutableStateOf(false) }
         val swipeState = rememberSwipeToDismissBoxState(
             confirmValueChange = { target ->
                 val isSwiped = target != SwipeToDismissBoxValue.Settled
-                if (isSwiped) actions.model.dismiss(item)
+                if (isSwiped && !isSwipedAway) {
+                    isSwipedAway = true
+                    actions.model.dismiss(item)
+                }
                 isSwiped
             },
+            positionalThreshold = { totalDistance -> totalDistance * 0.4f },
         )
         SwipeToDismissBox(
             swipeState,
