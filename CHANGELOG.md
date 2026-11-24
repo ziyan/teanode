@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.234.3] - 2026-11-24
+
+### Fixed
+
+- Screens and the agent no longer mention schedules, which goals replaced. (#786)
+
 ## [0.234.2] - 2026-11-24
 
 ### Fixed
