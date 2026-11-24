@@ -145,7 +145,7 @@
     <string name="settings_activity_runs_one">%d 件の実行</string>
     <string name="settings_activity_runs_many">%d 件の実行</string>
     <string name="settings_activity_nothing">まだありません。</string>
-    <string name="settings_activity_runs_footer">エージェントが自分で行った実行（仕分け、返信、調査、スケジュール）を新しい順に。開くと内容を読み、質問できます。</string>
+    <string name="settings_activity_runs_footer">エージェントが自分で行った実行（仕分け、返信、調査、目標）を新しい順に。開くと内容を読み、質問できます。</string>
     <string name="settings_activity_dream_runs_footer">%s の夢の実行記録：モデルへの呼び出しひとつひとつが、新しい順に並びます。開くと読めます。</string>
     <string name="settings_activity_dream_at">%s の夢</string>
     <string name="settings_activity_show_all">すべて表示</string>

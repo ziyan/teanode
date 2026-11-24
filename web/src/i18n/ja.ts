@@ -1566,7 +1566,7 @@ export const ja: Catalog = {
   'agent.saved': '保存しました。',
   'agent.activity': '行ったこと',
   'agent.activityHint':
-    'エージェントが自分で行った実行（仕分け、返信、調査、スケジュール）を新しい順に。開くと内容を読み、質問できます。',
+    'エージェントが自分で行った実行（仕分け、返信、調査、目標）を新しい順に。開くと内容を読み、質問できます。',
   'agent.noActivity': 'まだありません。',
   'agent.open': '開く',
   'agent.findMemory': '記憶を探す…',
@@ -1645,7 +1645,7 @@ export const ja: Catalog = {
   'agent.askModelDefault': 'サーバーの既定',
   'agent.unattended': '不在のとき',
   'agent.unattendedHint':
-    'スケジュール、目標、夜間の処理など、確認できる人がいないときに、尋ねずに行ってよいこと。チェックしていないものはその場合は行わず、何をするつもりだったかを伝えます。届いたメールの分類や返信の下書きは、設定にかかわらず読むだけです。',
+    '目標や夜間の処理など、確認できる人がいないときに、尋ねずに行ってよいこと。チェックしていないものはその場合は行わず、何をするつもりだったかを伝えます。届いたメールの分類や返信の下書きは、設定にかかわらず読むだけです。',
   'agent.unattended.outward': 'あなたとして発信する',
   'agent.unattended.outwardHint':
     'あなたとしてメールを送る、メッセージを投稿する、返信する、ブラウザのタブで操作する。',
@@ -1666,7 +1666,7 @@ export const ja: Catalog = {
   'agent.removeCategoryConfirm':
     '{name} を削除しますか？仕分け済みのメールはラベルを保ち、新しいメールはそれなしで仕分けられます。',
   'agent.revokeConfirm': '{name} をエージェントから外しますか？待機中の作業は取り消され、仕分け済みのものは残ります。',
-  'agent.forgetHint': 'エージェントを記憶、会話、予定、接続ごと削除します。メールはそのままです。',
+  'agent.forgetHint': 'エージェントを記憶、会話、目標、接続ごと削除します。メールはそのままです。',
   'agent.policyUsual': '通常どおり',
   'agent.policyAsk': '先に確認',
   'agent.confirmToolsHint': '常に確認が要るもの（送信、削除、外への働きかけ）に加えて、毎回尋ねるべきツール。',
@@ -1843,7 +1843,7 @@ export const ja: Catalog = {
   'agentSettings.work.summarize': '要約',
   'agentSettings.work.reply': '返信',
   'agentSettings.work.ask': '会話',
-  'agentSettings.work.schedule': '予約実行',
+  'agentSettings.work.schedule': '時刻指定の目標',
   'agentSettings.work.compact': '圧縮',
   'agentSettings.work.scan': '読み取りと整理：夢、取り込み、記憶の整理',
   'agentSettings.modelChoices': '利用者が会話用に選べるモデル(カンマ区切り。空 = なし)',
@@ -1857,7 +1857,7 @@ export const ja: Catalog = {
   'agentSettings.feature.research': '調査: メッセージについて調べる',
   'agentSettings.feature.autoReply': '本人に代わってメールに返信',
   'agentSettings.feature.ask': 'エージェントとの会話',
-  'agentSettings.feature.schedules': 'リマインダーと予約実行',
+  'agentSettings.feature.schedules': '決まった時刻やメール受信時に動く目標',
   'agentSettings.feature.browser': 'ブラウザ',
   'agentSettings.feature.connectedServers': '接続サーバー',
   'agentSettings.feature.computer': '`teanode computer` で接続した本人のコンピューター',

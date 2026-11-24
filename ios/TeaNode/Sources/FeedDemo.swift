@@ -107,13 +107,13 @@
                     choices: [("option:1", "Plain text link", "action"), ("option:2", "Underlined link", "action")], urgency: "now", hour: 6,
                     minute: 5),
                 feedCard(
-                    "feed-mail", kind: "decision", sourceKind: "schedule", sourceId: "schedule-mail", sourceTitle: "Weekly mail tidy-up",
+                    "feed-mail", kind: "decision", sourceKind: "goal", sourceId: "goal-mail", sourceTitle: "Weekly mail tidy-up",
                     title: "Tidy up your mail this week?",
                     body: "I found **42 newsletters** you have not opened in a month and 9 receipts that belong in Finance. I can file them for you.",
                     pictureSymbol: "tray.full", choices: [("approve", "Approve", "action"), ("discuss", "Discuss", "discuss"), ("later", "Not now", "dismiss")],
                     hour: 6, minute: 0),
                 feedCard(
-                    "feed-weather", kind: "update", sourceKind: "schedule", sourceId: "schedule-weather", sourceTitle: "Morning weather",
+                    "feed-weather", kind: "update", sourceKind: "goal", sourceId: "goal-weather", sourceTitle: "Morning weather",
                     title: "Rain moves in this evening", body: "Light rain from about 18:00, clearing after 22:00. [Hourly forecast](https://weather.example.com/town)",
                     pictureSymbol: "cloud.rain", facts: [("High", "16 degrees"), ("Low", "9 degrees"), ("Rain", "80 percent")],
                     links: [("Town forecast", "https://weather.example.com/town")], isLiked: true, hour: 7, minute: 0, layout: "weather",
@@ -129,7 +129,7 @@
                             caption: "A station's floors, drawn from the new data")
                     ]),
                 feedCard(
-                    "feed-video", kind: "update", sourceKind: "schedule", sourceId: "schedule-memories", sourceTitle: "Weekly memories",
+                    "feed-video", kind: "update", sourceKind: "goal", sourceId: "goal-memories", sourceTitle: "Weekly memories",
                     title: "A short clip from the harbor trip", body: "From last Thursday: the boats coming in at the market.",
                     pictureSymbol: "video", hour: 6, minute: 40,
                     media: [
@@ -155,7 +155,7 @@
                 // The newest of three news cards from one goal: the list holds the stack by its top card.
                 newsCards[0].merging(["stackItemCount": newsCards.count, "stackUnreadCount": 2] as [String: Any]) { _, stacked in stacked },
                 feedCard(
-                    "feed-report", kind: "report", sourceKind: "schedule", sourceId: "schedule-spending", sourceTitle: "Weekly spending report",
+                    "feed-report", kind: "report", sourceKind: "goal", sourceId: "goal-spending", sourceTitle: "Weekly spending report",
                     title: "Spending is 8 percent under last week",
                     body: "Groceries went up a little; eating out went down. Nothing unusual.", pictureSymbol: "chart.line.uptrend.xyaxis",
                     facts: [("This week", "$412"), ("Last week", "$448"), ("Biggest category", "Groceries")], isRead: true, daysAgo: 2,
@@ -198,7 +198,7 @@
                 isRead: Bool = false, layout: String = "text", layoutContent: Any? = nil, media: [[String: Any]] = []
             ) -> [String: Any] {
                 feedCard(
-                    feedItemId, kind: "report", sourceKind: "schedule", sourceId: "schedule-brief", sourceTitle: "Morning brief", title: title,
+                    feedItemId, kind: "report", sourceKind: "goal", sourceId: "goal-brief", sourceTitle: "Morning brief", title: title,
                     body: body, pictureSymbol: symbol, facts: facts, isRead: isRead, hour: 7, minute: 30, stackKey: demoBriefStackKey,
                     stackTitle: demoBriefTitle, stackPosition: position, layout: layout, layoutContent: layoutContent, media: media)
             }

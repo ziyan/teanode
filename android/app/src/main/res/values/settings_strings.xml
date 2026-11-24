@@ -54,7 +54,7 @@
     <string name="settings_agent_events_next_month">%d events in the next month</string>
     <string name="settings_agent_forget">Forget everything</string>
     <string name="settings_agent_forget_detail">This deletes your agent and everything it learned: memories, conversations, run records, and every mailbox\'s insights and summaries. Your mail is untouched.</string>
-    <string name="settings_agent_forget_footer">Removes the agent with its memory, conversations, schedules and connections. Your mail is untouched.</string>
+    <string name="settings_agent_forget_footer">Removes the agent with its memory, conversations, goals and connections. Your mail is untouched.</string>
     <string name="settings_agent_forgotten">Your agent was removed.</string>
     <string name="settings_agent_greeting">Greeting</string>
     <string name="settings_agent_guidance">When and how to answer</string>
@@ -128,7 +128,7 @@
     <string name="settings_agent_when">When</string>
     <string name="settings_agent_when_always">Always</string>
     <string name="settings_agent_when_away">When you are not there</string>
-    <string name="settings_agent_when_away_footer">What your agent may do without asking, in a schedule, a goal or overnight, when there is nobody to confirm. Anything not ticked is refused then, and your agent tells you what it would have done. Mail sorting and replies drafted from incoming mail only ever read, whatever is ticked.</string>
+    <string name="settings_agent_when_away_footer">What your agent may do without asking, in a goal or overnight, when there is nobody to confirm. Anything not ticked is refused then, and your agent tells you what it would have done. Mail sorting and replies drafted from incoming mail only ever read, whatever is ticked.</string>
     <string name="settings_agent_when_away_only">Only while my out-of-office reply is on</string>
     <string name="settings_agent_when_outside_hours">Outside my hours</string>
     <string name="settings_agent_whole_family">Every tool of this family</string>

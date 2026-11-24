@@ -106,7 +106,7 @@ private val briefMailContent = """{"listRows":[
   {"rowTitle":"Lake house booking confirmed","rowDetail":"June 12 to June 15, two guests.","rowMeta":"stays@example.com","rowSymbol":"envelope","rowRecordReference":{"itemId":"def456","subject":"Lake house booking confirmed"}}]}"""
 
 private fun briefCard(id: String, position: Int, title: String, body: String, symbol: String, layout: String, content: String, minutes: Long = 420) = AgentFeedItemView(
-    feedItemId = id, feedItemKind = "report", feedSourceKind = "schedule", feedSourceId = "brief", feedSourceTitle = "Morning brief", title = title, body = body, pictureSymbol = symbol,
+    feedItemId = id, feedItemKind = "report", feedSourceKind = "goal", feedSourceId = "brief", feedSourceTitle = "Morning brief", title = title, body = body, pictureSymbol = symbol,
     feedCardLayout = layout, layoutContent = content, feedStackKey = FeedDemoIDs.BRIEF_STACK_KEY, feedStackTitle = "Morning brief, Wed Nov 19", stackPosition = position,
     postedAt = minutesAgo(minutes), updatedAt = minutesAgo(minutes),
 )
@@ -144,7 +144,7 @@ private val demoPlainCards: List<AgentFeedItemView> = listOf(
         feedUrgency = "now", postedAt = minutesAgo(14), updatedAt = minutesAgo(14),
     ),
     AgentFeedItemView(
-        feedItemId = FeedDemoIDs.MAIL_ORGANIZE, feedItemKind = "mail_organize", feedSourceKind = "schedule", feedSourceTitle = "Weekly mail tidy-up",
+        feedItemId = FeedDemoIDs.MAIL_ORGANIZE, feedItemKind = "mail_organize", feedSourceKind = "goal", feedSourceTitle = "Weekly mail tidy-up",
         title = "Tidy your mail this week", body = "Forty-one newsletters and receipts reached your inbox this week. I can file them for you and keep doing it.",
         pictureSymbol = "tray.full",
         factRows = listOf(AgentFeedFactRow("New folder", "Newsletters"), AgentFeedFactRow("New folder", "Receipts"), AgentFeedFactRow("New rule", "Mail from news@example.com"), AgentFeedFactRow("Messages moved", "41")),
@@ -224,7 +224,7 @@ private val demoPlainCards: List<AgentFeedItemView> = listOf(
         isLiked = true, isRead = true, postedAt = minutesAgo(60 * 5), updatedAt = minutesAgo(60 * 5),
     ),
     AgentFeedItemView(
-        feedItemId = FeedDemoIDs.REPORT, feedItemKind = "report", feedSourceKind = "schedule", feedSourceTitle = "Monday summary", title = "Your week ahead",
+        feedItemId = FeedDemoIDs.REPORT, feedItemKind = "report", feedSourceKind = "goal", feedSourceTitle = "Monday summary", title = "Your week ahead",
         body = "Three meetings, one trip on Thursday, and a receipt that needs filing.", pictureSymbol = "calendar",
         factRows = listOf(AgentFeedFactRow("Meetings", "3"), AgentFeedFactRow("Trips", "1 on Thursday"), AgentFeedFactRow("To file", "1 receipt")),
         isRead = true, postedAt = minutesAgo(60 * 26), updatedAt = minutesAgo(60 * 26),
