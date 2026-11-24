@@ -1512,8 +1512,7 @@ export const zh: Catalog = {
   'agent.save': '保存',
   'agent.saved': '已保存。',
   'agent.activity': '它做了什么',
-  'agent.activityHint':
-    '助手自行完成的运行——分类、回复、查找、目标——最新在前。打开一条可阅读它做了什么并就此提问。',
+  'agent.activityHint': '助手自行完成的运行——分类、回复、查找、目标——最新在前。打开一条可阅读它做了什么并就此提问。',
   'agent.noActivity': '还没有。',
   'agent.open': '打开',
   'agent.findMemory': '查找记忆…',
