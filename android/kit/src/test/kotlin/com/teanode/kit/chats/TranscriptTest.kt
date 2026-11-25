@@ -35,6 +35,21 @@ class TranscriptTest {
     }
 
     @Test
+    fun aToolLineCarriesTheAgentsWordsForWhatItDoes() {
+        val transcript = Transcript(
+            messages = listOf(
+                message(
+                    "1", "2026-10-10T09:00:01Z", "assistant", "",
+                    toolCalls = listOf(AgentToolCall("c1", "mail_search", "{}", "Looking for the boiler invoice"), AgentToolCall("c2", "calendar", "{}")),
+                ),
+            ),
+        )
+        assertEquals(listOf("Looking for the boiler invoice", ""), transcript.lines.filter { line -> line.kind == Kind.Tool }.map { line -> line.intention })
+        transcript.apply(AgentEvent(kind = "tool_call", runId = "r", sequence = 1, tool = "web_search", callId = "c3", arguments = "{}", intention = "Checking tomorrow's weather"))
+        assertEquals("Checking tomorrow's weather", transcript.lines.last { line -> line.kind == Kind.Tool }.intention)
+    }
+
+    @Test
     fun anAnswerStreamsAndACardIsSettled() {
         val transcript = Transcript()
         transcript.apply(AgentEvent(kind = "text", runId = "r", sequence = 1, text = "Hel"))

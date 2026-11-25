@@ -190,6 +190,9 @@ type AgentToolCall struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
+	// Intention is the agent's words for what the call does; "" when it
+	// gave none.
+	Intention string `json:"intention"`
 }
 
 // AgentConversationView is a conversation, a page of its messages, and the
@@ -225,6 +228,7 @@ type AgentEvent struct {
 	Tool      string    `json:"tool"`
 	CallID    string    `json:"callId"`
 	Arguments string    `json:"arguments"`
+	Intention string    `json:"intention"`
 	Risk      string    `json:"risk"`
 	Note      string    `json:"note"`
 	Error     string    `json:"error"`
@@ -258,7 +262,7 @@ const (
 		AskAgent(conversationId: $conversationId, message: $message, surface: $surface, readOnly: $readOnly, attachmentIds: $attachmentIds, references: $references, effort: $effort, addressedAgentIds: $addressedAgentIds, shouldAddressOwnAgent: $shouldAddressOwnAgent, mentionedUserIds: $mentionedUserIds, isAllMentioned: $isAllMentioned, voiceMessageAttachmentId: $voiceMessageAttachmentId) { runId conversationId }
 	}`
 	DocumentReadAgentRun = `query ($runId: String!, $after: Int, $wait: Int) {
-		ReadAgentRun(runId: $runId, after: $after, wait: $wait) { runId done events { kind runId sequence text tool callId arguments risk note error at } }
+		ReadAgentRun(runId: $runId, after: $after, wait: $wait) { runId done events { kind runId sequence text tool callId arguments intention risk note error at } }
 	}`
 	DocumentResolveAgentConfirmation = `mutation ($runId: String!, $callId: String!, $approve: Boolean!) {
 		ResolveAgentConfirmation(runId: $runId, callId: $callId, approve: $approve)
@@ -271,7 +275,7 @@ const (
 	DocumentReadAgentConversation   = `query ($conversationId: String, $first: Int, $offset: Int) {
 		ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
 			conversation ` + conversationFields + `
-			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size audioDurationMS audioWaveform } references { itemId threadId subject from recordingId recordingTitle agentMessageId quotedRole quotedText } reactions { emoji reactorKind reactedAt reactorUserId reactorName } authorKind authorUserId authorName authorOwnerName authorAgentId isMine isAgentWork editedAt isDeleted isVoiceMessage transcriptText transcriptState }
+			messages { id createdAt role content name toolCallId toolCalls { id name arguments intention } usage { model kind promptTokens completionTokens } attachments { id name contentType size audioDurationMS audioWaveform } references { itemId threadId subject from recordingId recordingTitle agentMessageId quotedRole quotedText } reactions { emoji reactorKind reactedAt reactorUserId reactorName } authorKind authorUserId authorName authorOwnerName authorAgentId isMine isAgentWork editedAt isDeleted isVoiceMessage transcriptText transcriptState }
 			total
 			todos ` + todoFields + `
 		}

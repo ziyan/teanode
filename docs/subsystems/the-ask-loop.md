@@ -132,6 +132,19 @@ the turn as before.
 
 ## Running one tool call
 
+Every tool the model is offered carries one more argument, `intention`
+(`tools.WithIntention`): a few words, in the language the agent answers
+in, for what the call does ("Looking for last month's electricity bill").
+It is optional. `runTool` takes it off the arguments before anything else
+reads them (`tools.SplitIntention`), so no tool sees it, and the checks
+for a repeated call and for an approval already given treat two calls
+with different words as the same call. The cleaned words (one line, at
+most 80 characters, no markup or links, else nothing) go out on the
+`tool_call` event and on the kept tool call as `intention`. The
+dashboard, the iPhone and Android apps and the command line show them in
+place of the tool's name when the person has tool calls shown, and fall
+back to the name where there are none, as on calls kept from before.
+
 `runTool` runs one call, in order:
 
 - **Resolve the name.** Unknown but deferred answers `is not loaded; call

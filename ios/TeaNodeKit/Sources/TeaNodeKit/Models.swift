@@ -174,6 +174,9 @@ public struct AgentToolCall: Codable, Hashable, Sendable {
     public let id: String
     public let name: String
     public let arguments: String?
+    /// The agent's words for what the call does, shown in place of the
+    /// tool's name; nil on a call that gave none.
+    public var intention: String? = nil
 }
 
 /// AgentAttachment is a file a person handed the agent with a message.
@@ -329,6 +332,8 @@ public struct AgentEvent: Codable, Hashable, Sendable {
     public let tool: String?
     public let callId: String?
     public let arguments: String?
+    /// For "tool_call": the agent's words for what the call does.
+    public var intention: String? = nil
     public let risk: String?
     public let note: String?
     public let noteKind: String?
@@ -360,7 +365,7 @@ public struct AgentEvent: Codable, Hashable, Sendable {
 
     public init(
         kind: String, runId: String, sequence: Int, at: String? = nil, text: String? = nil, tool: String? = nil,
-        callId: String? = nil, arguments: String? = nil, risk: String? = nil, note: String? = nil, noteKind: String? = nil,
+        callId: String? = nil, arguments: String? = nil, intention: String? = nil, risk: String? = nil, note: String? = nil, noteKind: String? = nil,
         noteDetail: String? = nil, error: String? = nil, drawerId: String? = nil, messageId: String? = nil, emoji: String? = nil,
         reactorKind: String? = nil, reactorUserId: String? = nil, reactorName: String? = nil, userId: String? = nil,
         name: String? = nil, message: AgentMessage? = nil, isMessageCut: Bool? = nil, authorAgentId: String? = nil,
@@ -385,6 +390,7 @@ public struct AgentEvent: Codable, Hashable, Sendable {
         self.tool = tool
         self.callId = callId
         self.arguments = arguments
+        self.intention = intention
         self.risk = risk
         self.note = note
         self.noteKind = noteKind

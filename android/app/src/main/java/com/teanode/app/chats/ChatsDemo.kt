@@ -107,7 +107,7 @@ private val tableAnswer = """
 
 private fun mainMessages(): List<AgentMessage> = listOf(
     message("m1", "user", "What is on my calendar tomorrow?", 3.0),
-    message("m2", "assistant", "", 2.99, toolCalls = listOf(AgentToolCall("call-1", "calendar_read", """{"day":"tomorrow"}"""))),
+    message("m2", "assistant", "", 2.99, toolCalls = listOf(AgentToolCall("call-1", "calendar_read", """{"day":"tomorrow"}""", "Checking tomorrow's calendar"))),
     message("m3", "tool", """{"events":3}""", 2.98, toolCallId = "call-1"),
     message(
         "m4", "assistant", tableAnswer, 2.97, reactions = listOf(AgentMessageReaction("❤️", "person")),
@@ -229,7 +229,7 @@ private fun goalMessages(): List<AgentMessage> = listOf(
 
 private fun runMessages(): List<AgentMessage> = listOf(
     message("r1", "user", "[schedule] Check the mail every morning", 20.0),
-    message("r2", "assistant", "", 19.9, toolCalls = listOf(AgentToolCall("call-9", "mail_search", """{"query":"unread"}"""))),
+    message("r2", "assistant", "", 19.9, toolCalls = listOf(AgentToolCall("call-9", "mail_search", """{"query":"unread"}""", "Looking through unread mail"))),
     message("r3", "tool", """{"threads":2}""", 19.8, toolCallId = "call-9"),
     message("r4", "assistant", "Two new threads. Neither needs an answer today.", 19.7),
 )

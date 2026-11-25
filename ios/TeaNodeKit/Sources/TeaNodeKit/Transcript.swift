@@ -65,6 +65,9 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
     public var streamedText: String = ""
     /// For a tool, what it was called with.
     public var arguments: String = ""
+    /// For a tool, the agent's words for what the call does; empty on a
+    /// call that gave none, which is shown by the tool's name.
+    public var intention: String = ""
     /// For a note, whether it is waiting on something still to happen
     /// (a turn queued behind another, the conversation being folded).
     public var isPending = false
@@ -390,6 +393,7 @@ public struct Transcript: Sendable {
                         id: Self.toolId(callId: call.id), kind: .tool, text: results[call.id] ?? "", detail: call.name,
                         isDone: true, callId: call.id, at: message.createdAt)
                     line.arguments = call.arguments ?? ""
+                    line.intention = call.intention ?? ""
                     lines.append(line)
                 }
             case "note":
@@ -769,6 +773,7 @@ public struct Transcript: Sendable {
             guard !lines.contains(where: { $0.id == id }) else { return }
             var line = TranscriptLine(id: id, kind: .tool, text: "", detail: event.tool ?? "", runId: event.runId, callId: event.callId ?? "", at: event.at)
             line.arguments = event.arguments ?? ""
+            line.intention = event.intention ?? ""
             lines.append(line)
         case "tool_result":
             if let index = lines.firstIndex(where: { $0.id == Self.toolId(callId: event.callId ?? "") }) {

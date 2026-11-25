@@ -597,7 +597,7 @@ interface StoredMessage extends ChatStoredMessage {
   content: string
   name?: string
   toolCallId?: string
-  toolCalls?: { id: string; name: string; arguments: string }[]
+  toolCalls?: { id: string; name: string; arguments: string; intention?: string | null }[]
   usage?: Usage | null
   attachments?: Attachment[] | null
   references?: AgentReference[] | null
@@ -636,6 +636,9 @@ interface RunEvent {
   tool?: string
   callId?: string
   arguments?: string
+  // intention is, on a tool call, the agent's words for what the call
+  // does, shown in place of the tool's name.
+  intention?: string
   risk?: string
   note?: string
   noteKind?: string
@@ -697,6 +700,9 @@ type Line =
       note: string
       done: boolean
       arguments?: string
+  // intention is, on a tool call, the agent's words for what the call
+  // does, shown in place of the tool's name.
+  intention?: string
       result?: string
       at?: string
     }
@@ -788,7 +794,7 @@ const CONVERSATION = `
       conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt chat ${CHAT_FIELDS} }
       actingAs
       messages {
-        id createdAt role content name toolCallId toolCalls { id name arguments }
+        id createdAt role content name toolCallId toolCalls { id name arguments intention }
         usage { promptTokens completionTokens cost }
         isVoiceMessage transcriptText transcriptState
         ${CHAT_CALL_SUMMARY_FIELDS}
@@ -831,7 +837,7 @@ const ASK = `
 const FEED = `
   subscription ($conversationId: String!) {
     AgentConversationEvents(conversationId: $conversationId) {
-      kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId messageId emoji reactorKind reactorUserId reactorName userId name authorAgentId authorOwnerName isMessageCut
+      kind runId sequence at text tool callId arguments intention risk note noteKind noteDetail error drawerId messageId emoji reactorKind reactorUserId reactorName userId name authorAgentId authorOwnerName isMessageCut
       message {
         id createdAt role content
         isVoiceMessage transcriptText transcriptState
@@ -1756,6 +1762,7 @@ function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => st
             note: '',
             done: true,
             arguments: call.arguments,
+            intention: call.intention ?? undefined,
             result: results.get(call.id),
             // Timed like every other line, so the day divider does not
             // land under the tool calls that open a day.
@@ -3055,6 +3062,13 @@ async function readConversationOnce(conversationId: string, signal: AbortSignal)
 export function toolWords(tool: string): string {
   const words = (tool.split('__').pop() ?? tool).replace(/[_-]/g, ' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+// toolLineWords is what a tool line says: the agent's own words for what
+// the call does, or the tool's name where it gave none, as on a call
+// kept from before it was asked for them.
+export function toolLineWords(line: { tool: string; intention?: string }): string {
+  return line.intention?.trim() || toolWords(line.tool)
 }
 
 export function cardsOf(interactions: OpenInteraction[]): Line[] {
@@ -4397,6 +4411,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             note: '',
             done: false,
             arguments: event.arguments,
+            intention: event.intention,
             at: event.at,
           })
           return next
@@ -5545,8 +5560,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           .filter(Boolean)
           .join(' ')}
       >
-        <button type="button" className="agent-tool-toggle" onClick={() => toggleExpanded(line.key)}>
-          {line.done ? '✓' : '…'} {toolWords(line.tool)}
+        <button
+          type="button"
+          className="agent-tool-toggle"
+          title={line.intention ? toolWords(line.tool) : undefined}
+          onClick={() => toggleExpanded(line.key)}
+        >
+          {line.done ? '✓' : '…'} {toolLineWords(line)}
           {line.note ? <span className="muted"> · {line.note}</span> : null}
         </button>
         {isToolOpen(line.key) && (

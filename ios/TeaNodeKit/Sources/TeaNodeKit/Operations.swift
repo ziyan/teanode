@@ -24,7 +24,7 @@ public enum Documents {
             actingAs
             messages {
               \(messageFields)
-              toolCalls { id name arguments }
+              toolCalls { id name arguments intention }
               usage { promptTokens completionTokens cost }
             }
             total
@@ -140,13 +140,13 @@ public enum Documents {
         """
     public static let readRun = """
         query ($runId: String!, $after: Int, $wait: Int) {
-          ReadAgentRun(runId: $runId, after: $after, wait: $wait) { done events { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId } }
+          ReadAgentRun(runId: $runId, after: $after, wait: $wait) { done events { kind runId sequence at text tool callId arguments intention risk note noteKind noteDetail error drawerId } }
         }
         """
     public static let conversationEvents = """
         subscription ($conversationId: String!) {
           AgentConversationEvents(conversationId: $conversationId) {
-            kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId messageId emoji reactorKind
+            kind runId sequence at text tool callId arguments intention risk note noteKind noteDetail error drawerId messageId emoji reactorKind
             reactorUserId reactorName userId name authorAgentId authorOwnerName isMessageCut
             message { \(messageFields) }
           }

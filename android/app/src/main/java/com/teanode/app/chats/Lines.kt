@@ -91,6 +91,9 @@ fun toolWords(tool: String): String {
     return words.take(1).uppercase() + words.drop(1)
 }
 
+/** What a tool line says: the agent's own words for what the call does, or the tool's name where it gave none. */
+fun toolLineWords(line: TranscriptLine): String = line.intention.trim().ifEmpty { toolWords(line.detail) }
+
 /** What the agent's usage is called: a count of tokens and the money it cost. */
 object UsageWords {
     fun count(count: Int): String = when {
@@ -127,7 +130,7 @@ fun ToolLine(line: TranscriptLine) {
                 CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
             }
             Text(
-                if (line.resolution.isEmpty()) toolWords(line.detail) else "${toolWords(line.detail)} · ${line.resolution}", maxLines = 1,
+                if (line.resolution.isEmpty()) toolLineWords(line) else "${toolLineWords(line)} · ${line.resolution}", maxLines = 1,
                 overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f, fill = false),
             )

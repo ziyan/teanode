@@ -130,7 +130,13 @@ data class AgentTodo(val id: String, val text: String, val doneAt: String? = nul
 
 /** AgentToolCall is a tool the agent called in one round. */
 @Serializable
-data class AgentToolCall(val id: String, val name: String, val arguments: String? = null)
+data class AgentToolCall(
+    val id: String,
+    val name: String,
+    val arguments: String? = null,
+    /** The agent's words for what the call does, shown in place of the tool's name; null on a call that gave none. */
+    val intention: String? = null,
+)
 
 /** AgentAttachment is a file a person handed the agent with a message. */
 @Serializable
@@ -279,6 +285,8 @@ data class AgentEvent(
     val tool: String? = null,
     val callId: String? = null,
     val arguments: String? = null,
+    /** For "tool_call": the agent's words for what the call does. */
+    val intention: String? = null,
     val risk: String? = null,
     val note: String? = null,
     val noteKind: String? = null,

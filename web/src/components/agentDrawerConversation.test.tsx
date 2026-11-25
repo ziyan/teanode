@@ -13,6 +13,7 @@ import {
   readConversationSnapshot,
   sharedFilesOf,
   storedOpeningIndex,
+  toolLineWords,
   toolWords,
 } from './agentDrawer'
 import { hasSharedCitation, linkSharedCitations } from './dashboardPath'
@@ -72,6 +73,14 @@ it('names a tool call in words, as the iPhone does', () => {
   expect(toolWords('tool_search')).toBe('Tool search')
   expect(toolWords('skill__weather__get_weather')).toBe('Get weather')
   expect(toolWords('mail-draft')).toBe('Mail draft')
+})
+
+it('says what a tool call does in the agent\'s words, and its name when there are none', () => {
+  expect(toolLineWords({ tool: 'mail_search', intention: 'Looking for the boiler invoice' })).toBe(
+    'Looking for the boiler invoice',
+  )
+  expect(toolLineWords({ tool: 'mail_search', intention: '  ' })).toBe('Mail search')
+  expect(toolLineWords({ tool: 'mail_search' })).toBe('Mail search')
 })
 
 describe('sharedFilesOf', () => {

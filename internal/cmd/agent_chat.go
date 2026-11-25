@@ -474,7 +474,7 @@ func askOnce(ctx context.Context, command *cli.Command, connection *client.Clien
 				answered = true
 			case "tool_call":
 				if !quiet {
-					_, _ = fmt.Fprintf(command.Writer, "… %s\n", event.Tool)
+					_, _ = fmt.Fprintf(command.Writer, "… %s\n", toolCallWords(event.Tool, event.Intention))
 				}
 			case "tool_result":
 				if !quiet && event.Note != "" {
@@ -740,7 +740,7 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 				}
 			}
 			for _, call := range message.ToolCalls {
-				_, _ = fmt.Fprintf(command.Writer, "[%s] → %s %s\n", when, call.Name, call.Arguments)
+				_, _ = fmt.Fprintf(command.Writer, "[%s] → %s %s\n", when, toolCallWords(call.Name, call.Intention), call.Arguments)
 			}
 		case "tool":
 			content := message.Content
@@ -1085,4 +1085,14 @@ func transcriptOpening(content string) string {
 		return "on its own: " + firstLine
 	}
 	return "you: " + content
+}
+
+// toolCallWords is a tool call as the terminal shows it: the agent's own
+// words for what it does, with the tool after them, or the tool alone
+// where it gave none.
+func toolCallWords(tool, intention string) string {
+	if intention = strings.TrimSpace(intention); intention != "" {
+		return intention + " (" + tool + ")"
+	}
+	return tool
 }

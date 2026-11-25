@@ -752,6 +752,10 @@ type AgentToolCall struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
+	// Intention is the model's words for what the call does, as the apps
+	// show it in place of the tool's name; "" when it gave none fit to
+	// show. The arguments still carry it, as the model wrote them.
+	Intention string `json:"intention,omitempty"`
 }
 
 // AgentUsageNote is what one model call cost, on the message it produced.
