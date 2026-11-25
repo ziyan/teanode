@@ -2027,8 +2027,11 @@ struct ToolLine: View {
                     } else {
                         ProgressView().controlSize(.mini)
                     }
+                    // Two lines: the agent's words for a call are a sentence,
+                    // where a tool's name was a word or two, and one line
+                    // held only a few of them at the larger text sizes.
                     Text(line.resolution.isEmpty ? ToolWords.line(line) : "\(ToolWords.line(line)) · \(line.resolution)")
-                        .lineLimit(1)
+                        .lineLimit(2)
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
@@ -3162,3 +3165,33 @@ private struct LinkPreviewsAhead: Equatable {
     let conversationId: String?
     let lineCount: Int
 }
+
+#if DEBUG
+/// The screen `-TeaNodeScreen tool-lines` photographs: tool lines as a
+/// conversation shows them with tool calls on, one that said what it was
+/// doing, one shown by the tool's name, one still running, and one whose
+/// words are longer than the line.
+struct ToolLinesDemoScreen: View {
+    private var lines: [TranscriptLine] {
+        var said = TranscriptLine(id: "t1", kind: .tool, text: "3 messages", detail: "mail_search", isDone: true)
+        said.intention = "Looking for the boiler invoice"
+        let named = TranscriptLine(id: "t2", kind: .tool, text: "2 events", detail: "calendar", isDone: true)
+        var running = TranscriptLine(id: "t3", kind: .tool, text: "", detail: "web_search")
+        running.intention = "Checking tomorrow's weather"
+        var long = TranscriptLine(id: "t4", kind: .tool, text: "done", detail: "mail_draft", isDone: true, resolution: "drafted")
+        long.intention = "Drafting a reply that says Thursday at nine works for the visit"
+        return [said, named, running, long]
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(lines) { line in ToolLine(line: line) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+        }
+        .navigationTitle(Text(verbatim: "Tool calls"))
+    }
+}
+#endif

@@ -508,6 +508,9 @@ jobs:
           shoot goals-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab goals
           # A goal's page with its times, and the editor open on a goal that takes a turn when mail arrives.
           shoot goal-detail-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen goal-detail
+          shoot tool-lines-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen tool-lines
+          shoot tool-lines-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen tool-lines
+          shoot tool-lines-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen tool-lines
           shoot goal-detail-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen goal-detail
           shoot goal-detail-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen goal-detail
           shoot goal-when-editor-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen goal-when-editor

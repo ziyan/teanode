@@ -130,7 +130,7 @@ fun ToolLine(line: TranscriptLine) {
                 CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
             }
             Text(
-                if (line.resolution.isEmpty()) toolLineWords(line) else "${toolLineWords(line)} · ${line.resolution}", maxLines = 1,
+                if (line.resolution.isEmpty()) toolLineWords(line) else "${toolLineWords(line)} · ${line.resolution}", maxLines = 2,
                 overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f, fill = false),
             )

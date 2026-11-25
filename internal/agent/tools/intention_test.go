@@ -8,7 +8,7 @@ import (
 
 func TestEveryToolIsOfferedAnIntentionItNeedNotGive(t *testing.T) {
 	parameters := Object(map[string]any{"query": map[string]any{"type": "string"}}, "query")
-	offered := WithIntention(parameters)
+	offered := WithIntention(parameters, "Japanese")
 	properties := offered["properties"].(map[string]any)
 	if _, isOffered := properties[IntentionArgument]; !isOffered {
 		t.Fatalf("no intention offered: %v", properties)
@@ -21,10 +21,13 @@ func TestEveryToolIsOfferedAnIntentionItNeedNotGive(t *testing.T) {
 			t.Fatalf("the intention is required")
 		}
 	}
+	if described := properties[IntentionArgument].(map[string]any)["description"].(string); !strings.Contains(described, "in Japanese") {
+		t.Fatalf("the person's language is not named: %s", described)
+	}
 	if _, isChanged := parameters["properties"].(map[string]any)[IntentionArgument]; isChanged {
 		t.Fatalf("the tool's own parameters were changed")
 	}
-	if WithIntention(nil)["properties"].(map[string]any)[IntentionArgument] == nil {
+	if WithIntention(nil, "")["properties"].(map[string]any)[IntentionArgument] == nil {
 		t.Fatalf("a tool with no parameters is offered none")
 	}
 }

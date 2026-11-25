@@ -1627,6 +1627,7 @@ func (self *AskRun) turn() error {
 		}
 		overlaidAt := time.Now()
 		definitions := make([]llm.ToolDefinition, 0, len(sent))
+		intentionLanguage := languageName(Language(self.settings.Agent, self.settings.Owner))
 		for _, tool := range sent {
 			// A tool this run may only read is offered only its reading
 			// actions, so the model is not handed a verb that is refused.
@@ -1637,7 +1638,7 @@ func (self *AskRun) turn() error {
 			// apps show beside the call; it is taken off before the tool
 			// runs.
 			definition := tool.Definition()
-			definition.Parameters = tools.WithIntention(definition.Parameters)
+			definition.Parameters = tools.WithIntention(definition.Parameters, intentionLanguage)
 			definitions = append(definitions, definition)
 		}
 		// The last round is told it is the last, so that it answers. A
