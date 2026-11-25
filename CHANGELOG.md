@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.236.2] - 2026-11-25
+
+### Fixed
+
+- The words a tool call shows are in the person's language, and wrap to a second line instead of being cut to a few words at large text sizes. (#791)
+
 ## [0.236.1] - 2026-11-25
 
 ### Fixed
