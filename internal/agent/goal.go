@@ -145,7 +145,7 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		}
 		if isShareSpent {
 			tomorrow := midnight.AddDate(0, 0, 1)
-			return self.moveGoalOn(ctx, conversation.ID, tomorrow, "the goals have spent their share of today; it goes on tomorrow, or when you write")
+			return self.moveGoalOn(ctx, conversation.ID, tomorrow, goalShareSpentNote)
 		}
 	}
 
@@ -240,6 +240,12 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	if conversation, err = self.goalOwed(ctx, run, now); err != nil || conversation == nil {
 		return err
 	}
+	// The goal takes a turn again, so a note the server wrote to hold it
+	// back is over. The check-in below still reads it, from the row as it
+	// was read, so the turn knows why it was held.
+	if err := self.clearHeldBackGoalNote(ctx, conversation.ID, conversation.GoalNote); err != nil {
+		return err
+	}
 	failure, err := self.goalTurn(ctx, run, operations, conversation,
 		goalCheckIn(conversation, run.Agent, run.Owner, now, int(today)+1), nil, configuration.Agent.Limits.MaxRoundsPerAsk)
 	if errors.Is(err, errTurnRunning) {
@@ -304,7 +310,7 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		next := goalDoubled(conversation)
 		note := after.GoalNote
 		if failure != "" {
-			note = "the last turn failed: " + failure
+			note = goalTurnFailedNote + failure
 			if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 				return addGoalActivity(tx, after, models.GoalActivityFailed, "A turn failed; it tries again later", failure)
 			}); err != nil {
@@ -453,6 +459,10 @@ func goalDoubled(conversation *models.AgentConversation) time.Duration {
 
 // moveGoalOn writes when the next turn is due and what the agent, or this
 // handler, has to say about it.
+//
+// The notes the server writes here to hold a goal back are the ones
+// isHeldBackGoalNote knows, and are cleared when the goal next takes a
+// turn.
 func (self *Agent) moveGoalOn(ctx context.Context, conversationId string, next time.Time, note string) error {
 	return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		_, err := tx.UpdateAgentConversation(conversationId, func(conversation *models.AgentConversation) error {
@@ -626,4 +636,37 @@ func goalShareSpent(tx db.Transaction, configuration *config.Configuration, agen
 		return false, err
 	}
 	return float64(spent) >= float64(daily)*configuration.Agent.Limits.EffectiveGoalShare(), nil
+}
+
+// goalShareSpentNote is a goal's note while the goals have spent their
+// share of the day.
+const goalShareSpentNote = "the goals have spent their share of today; it goes on tomorrow, or when you write"
+
+// goalTurnFailedNote begins a goal's note after a turn that failed.
+const goalTurnFailedNote = "the last turn failed: "
+
+// isHeldBackGoalNote says whether a goal's note is one the server wrote to
+// hold it back, rather than one the goal or the person wrote: the share of
+// the day spent, the budget used up, a turn that failed.
+func isHeldBackGoalNote(note string) bool {
+	return note == goalShareSpentNote || strings.HasPrefix(note, goalTurnFailedNote) || strings.HasSuffix(note, budgetUsedUpWords)
+}
+
+// clearHeldBackGoalNote empties a goal's note when it is still the one the
+// server wrote to hold it back. A note written since, by the goal or the
+// person, is theirs and stays; so does the goal's own last word while it
+// was held, which the hold only stood in front of.
+func (self *Agent) clearHeldBackGoalNote(ctx context.Context, conversationId, note string) error {
+	if !isHeldBackGoalNote(note) {
+		return nil
+	}
+	return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		_, err := tx.UpdateAgentConversation(conversationId, func(conversation *models.AgentConversation) error {
+			if conversation.GoalNote == note {
+				conversation.GoalNote = ""
+			}
+			return nil
+		})
+		return err
+	})
 }
