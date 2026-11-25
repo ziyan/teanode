@@ -2027,8 +2027,11 @@ struct ToolLine: View {
                     } else {
                         ProgressView().controlSize(.mini)
                     }
+                    // Two lines: the agent's words for a call are a sentence,
+                    // where a tool's name was a word or two, and one line
+                    // held only a few of them at the larger text sizes.
                     Text(line.resolution.isEmpty ? ToolWords.line(line) : "\(ToolWords.line(line)) · \(line.resolution)")
-                        .lineLimit(1)
+                        .lineLimit(2)
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }

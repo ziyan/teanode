@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import com.teanode.app.demo.DemoHost
 import com.teanode.app.screenshots.Look
 import com.teanode.app.screenshots.PHONE_QUALIFIERS
+import com.teanode.app.screenshots.WithFontScale
 import com.teanode.app.screenshots.photograph
 import com.teanode.kit.chats.TranscriptLine
 import org.junit.Rule
@@ -41,18 +42,21 @@ class ToolLineScreenshotTest {
         ),
     )
 
-    private fun photograph(look: Look) {
+    private fun photograph(look: Look, name: String = look.fileName, fontScale: Float = 1f) {
         composeRule.setContent {
             DemoHost(appearance = look.appearance) {
-                Surface(color = MaterialTheme.colorScheme.background) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { lines.forEach { line -> ToolLine(line) } }
+                WithFontScale(fontScale) {
+                    Surface(color = MaterialTheme.colorScheme.background) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { lines.forEach { line -> ToolLine(line) } }
+                    }
                 }
             }
         }
         composeRule.waitForIdle()
-        composeRule.photograph("chats-tool-lines-${look.fileName}")
+        composeRule.photograph("chats-tool-lines-$name")
     }
 
     @Test fun `tool lines light`() = photograph(Look.Light)
     @Test fun `tool lines dark`() = photograph(Look.Dark)
+    @Test fun `tool lines at the largest text`() = photograph(Look.Light, "largest-text", 2f)
 }
