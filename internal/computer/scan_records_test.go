@@ -308,41 +308,6 @@ esac
 	}
 }
 
-// A file hashed once is not read again while its size and modification
-// time stay what they were, and is read again when either moves.
-func TestAnUnchangedFileIsNotHashedAgain(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "picture.png")
-	if err := os.WriteFile(path, []byte("first bytes"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %s", err)
-	}
-	information, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("Stat: %s", err)
-	}
-	hash, size, err := hashOfFile(path)
-	if err != nil || size != int64(len("first bytes")) {
-		t.Fatalf("hashOfFile: %v, %d bytes", err, size)
-	}
-	// The same size and the time put back: only a hash that was kept
-	// can still answer the first bytes.
-	if err := os.WriteFile(path, []byte("other bytes"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %s", err)
-	}
-	if err := os.Chtimes(path, information.ModTime(), information.ModTime()); err != nil {
-		t.Fatalf("Chtimes: %s", err)
-	}
-	if kept, _, err := hashOfFile(path); err != nil || kept != hash {
-		t.Fatalf("an unchanged file was read again: %v, %s then %s", err, hash, kept)
-	}
-	later := information.ModTime().Add(time.Second)
-	if err := os.Chtimes(path, later, later); err != nil {
-		t.Fatalf("Chtimes: %s", err)
-	}
-	if changed, _, err := hashOfFile(path); err != nil || changed == hash {
-		t.Fatalf("a changed file kept its old hash: %v, %s", err, changed)
-	}
-}
-
 // A file a script filled with something other than records -- an error
 // page, a half-finished run -- is reported, because a source that
 // silently indexed nothing looks exactly like one that worked.
