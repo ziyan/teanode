@@ -18,18 +18,25 @@ import (
 // It is taken off the call before the tool runs, so no tool sees it.
 const IntentionArgument = "intention"
 
-// intentionDescription is how the argument is described to the model.
-const intentionDescription = "What you are doing with this call, shown to the person beside it: a few words in the language you answer in, " +
-	"starting with a verb in the present continuous (\"Looking for last month's electricity bill\"). One plain line, no ids, no markdown."
+// intentionDescription is how the argument is described to the model,
+// with the person's language in it: the words are for them, and a run
+// reading a message in another language otherwise wrote them in that one.
+func intentionDescription(language string) string {
+	if strings.TrimSpace(language) == "" {
+		language = "the person's language"
+	}
+	return "What you are doing with this call, shown to the person beside it: a few words in " + language +
+		", starting with a verb in the present continuous (\"Looking for last month's electricity bill\"). One plain line, no ids, no markdown."
+}
 
 // mostIntentionRunes bounds the words. Past it they are not a label.
 const mostIntentionRunes = 80
 
 // WithIntention is a tool's parameters with the intention argument added,
 // not required: a call without it still runs and is shown by its name.
-// The parameters themselves are not changed, since a tool's are shared by
-// every run.
-func WithIntention(parameters map[string]any) map[string]any {
+// language is the person's, by name ("English"). The parameters
+// themselves are not changed, since a tool's are shared by every run.
+func WithIntention(parameters map[string]any, language string) map[string]any {
 	if parameters == nil {
 		parameters = map[string]any{"type": "object"}
 	}
@@ -42,7 +49,7 @@ func WithIntention(parameters map[string]any) map[string]any {
 	for key, value := range properties {
 		widened[key] = value
 	}
-	widened[IntentionArgument] = map[string]any{"type": "string", "description": intentionDescription}
+	widened[IntentionArgument] = map[string]any{"type": "string", "description": intentionDescription(language)}
 	copied := make(map[string]any, len(parameters)+1)
 	for key, value := range parameters {
 		copied[key] = value

@@ -849,6 +849,7 @@ struct SettingsForm: View {
                 case "activity-run": AgentActivityView(connection: connection)
                 case "daily-brief": DailyBriefView(connection: connection)
                 case "daily-brief-days": BriefDaysDemoScreen(isEmpty: false)
+                case "tool-lines": ToolLinesDemoScreen()
                 case "daily-brief-days-none": BriefDaysDemoScreen(isEmpty: true)
                 case "goal-detail": GoalDetailDemoScreen(connection: connection)
                 case "goal-when-editor": GoalWhenEditorDemoScreen(connection: connection)
