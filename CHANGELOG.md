@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.236.0] - 2026-11-25
+
+### Added
+
+- Tool calls in the drawer, the iPhone and Android apps and the command line say what the agent is doing ("Looking for last month's electricity bill") instead of the tool's name, when tool calls are shown. (#789)
+
+### Fixed
+
+- A goal that ran again after being held back (the day's share spent, the budget used up, a failed turn) no longer keeps showing that reason when its turn wrote no note of its own. (#789)
+- Asking for a goal's details from inside the goal's own turn no longer asks which goal. (#789)
+
 ## [0.235.1] - 2026-11-25
 
 ### Fixed
