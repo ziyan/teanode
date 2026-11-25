@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.235.1] - 2026-11-25
+
+### Fixed
+
+- A computer with several sources mid-scan no longer rereads and rehashes every attachment of a large mail source on each page, which kept the daemon busy reading gigabytes a minute. (#788)
+
 ## [0.235.0] - 2026-11-24
 
 ### Added
