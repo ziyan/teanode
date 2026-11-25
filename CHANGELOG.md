@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.236.1] - 2026-11-25
+
+### Fixed
+
+- A computer's daemon no longer reads every attachment of its sources again after each restart or upgrade. (#790)
+
 ## [0.236.0] - 2026-11-25
 
 ### Added
