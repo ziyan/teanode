@@ -264,6 +264,85 @@ func TestRecordsArePagedAcrossFiles(t *testing.T) {
 	}
 }
 
+// The sources of one computer take turns page by page. A page of one
+// folder in between two pages of another must not cost the other its
+// file: read again, every attachment in it is hashed again, and a large
+// one is read whole once for every page of it.
+func TestFoldersTakingTurnsKeepTheirOwnFile(t *testing.T) {
+	calls := filepath.Join(t.TempDir(), "calls")
+	script := `#!/bin/sh
+case "$1" in
+"") echo 'threads.jsonl' ;;
+threads.jsonl)
+	echo x >> ` + calls + `
+	echo '{"id":"one","kind":"page","text":"the first thread"}'
+	echo '{"id":"two","kind":"page","text":"the second thread"}'
+	;;
+esac
+`
+	counted := func() int {
+		content, _ := os.ReadFile(calls)
+		return strings.Count(string(content), "x")
+	}
+	firstRoot, first := recordsIn(t, nil)
+	writeRecordsScript(t, firstRoot, script)
+	secondRoot, second := recordsIn(t, nil)
+	writeRecordsScript(t, secondRoot, script)
+
+	page, err := first(&ScanArguments{Most: 1})
+	if err != nil || page.Next == "" {
+		t.Fatalf("the first folder's first page: %v %+v", err, page)
+	}
+	if _, err := second(&ScanArguments{Most: 1}); err != nil {
+		t.Fatalf("the second folder's first page: %s", err)
+	}
+	if counted() != 2 {
+		t.Fatalf("each folder read its file once: %d reads", counted())
+	}
+	rest, err := first(&ScanArguments{Most: 1, After: page.Next})
+	if err != nil || len(rest.Entries) != 1 {
+		t.Fatalf("the first folder's second page: %v %+v", err, rest)
+	}
+	if counted() != 2 {
+		t.Fatalf("the first folder's second page read its file again: %d reads", counted())
+	}
+}
+
+// A file hashed once is not read again while its size and modification
+// time stay what they were, and is read again when either moves.
+func TestAnUnchangedFileIsNotHashedAgain(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "picture.png")
+	if err := os.WriteFile(path, []byte("first bytes"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+	information, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %s", err)
+	}
+	hash, size, err := hashOfFile(path)
+	if err != nil || size != int64(len("first bytes")) {
+		t.Fatalf("hashOfFile: %v, %d bytes", err, size)
+	}
+	// The same size and the time put back: only a hash that was kept
+	// can still answer the first bytes.
+	if err := os.WriteFile(path, []byte("other bytes"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+	if err := os.Chtimes(path, information.ModTime(), information.ModTime()); err != nil {
+		t.Fatalf("Chtimes: %s", err)
+	}
+	if kept, _, err := hashOfFile(path); err != nil || kept != hash {
+		t.Fatalf("an unchanged file was read again: %v, %s then %s", err, hash, kept)
+	}
+	later := information.ModTime().Add(time.Second)
+	if err := os.Chtimes(path, later, later); err != nil {
+		t.Fatalf("Chtimes: %s", err)
+	}
+	if changed, _, err := hashOfFile(path); err != nil || changed == hash {
+		t.Fatalf("a changed file kept its old hash: %v, %s", err, changed)
+	}
+}
+
 // A file a script filled with something other than records -- an error
 // page, a half-finished run -- is reported, because a source that
 // silently indexed nothing looks exactly like one that worked.

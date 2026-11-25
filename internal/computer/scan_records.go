@@ -205,7 +205,7 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 		// wanted fresh, so it is where the cache is dropped. A type's
 		// too: kept, a type with one container read it once and never
 		// again.
-		forgetRecords()
+		forgetRecords(root)
 		if folder.typed == nil {
 			if err := refreshRecords(root); err != nil {
 				return nil, err
@@ -595,12 +595,17 @@ func recordTime(value string) *time.Time {
 	return &when
 }
 
-// recordEntries is readRecordsFile through a cache of one file: the last
-// file read, in the fixed order the pages walk it.
+// recordEntries is readRecordsFile through a cache of one file for each
+// folder: the last file read there, in the fixed order the pages walk it.
 //
 // The chat reader keeps the same cache for the same reason. A page
 // mid-file would otherwise read and cut the whole file again, and a
 // folder holding one large file would be read once per page of it.
+// It is one file a folder and not one file in all because the sources
+// of one computer take turns page by page: with one file in all, each
+// page of another source threw the file away, and a mailbox read as one
+// container was read whole again, every attachment hashed again, for
+// every page of it.
 // fromScript says the name is one the folder's records script listed
 // rather than a file on disk, and is read by running the script again.
 func recordEntries(ctx context.Context, folder *recordsFolder, relative string, fromScript bool) ([]ScanEntry, error) {
@@ -623,27 +628,31 @@ func recordEntries(ctx context.Context, folder *recordsFolder, relative string, 
 	// The limit is part of the key because it is part of the answer: a
 	// server that raised it wants the file it refused last night read
 	// this time, and the pass that asks is not always a new one.
-	if recordsCache.root == folder.root && recordsCache.name == relative && recordsCache.script == fromScript &&
-		recordsCache.modified.Equal(modified) && recordsCache.size == size &&
-		recordsCache.maxAttachmentBytes == folder.maxAttachmentBytes {
-		for id, postponed := range recordsCache.unread {
+	if kept := recordsCache.files[folder.root]; kept != nil && kept.name == relative && kept.script == fromScript &&
+		kept.modified.Equal(modified) && kept.size == size &&
+		kept.maxAttachmentBytes == folder.maxAttachmentBytes {
+		for id, postponed := range kept.unread {
 			folder.unread[id] = postponed
 		}
-		return recordsCache.entries, nil
+		return kept.entries, nil
 	}
 	entries, err := readRecordsAnywhere(ctx, folder, relative, fromScript)
 	if err != nil {
 		return nil, err
 	}
-	recordsCache.root, recordsCache.name, recordsCache.script = folder.root, relative, fromScript
-	recordsCache.modified, recordsCache.size, recordsCache.entries = modified, size, entries
-	recordsCache.maxAttachmentBytes = folder.maxAttachmentBytes
-	recordsCache.unread = map[string]unreadAttachment{}
+	kept := &keptRecordsFile{
+		name: relative, script: fromScript, modified: modified, size: size, entries: entries,
+		maxAttachmentBytes: folder.maxAttachmentBytes, unread: map[string]unreadAttachment{},
+	}
 	for id, postponed := range folder.unread {
 		if strings.HasPrefix(id, relative+"#") {
-			recordsCache.unread[id] = postponed
+			kept.unread[id] = postponed
 		}
 	}
+	if recordsCache.files == nil {
+		recordsCache.files = map[string]*keptRecordsFile{}
+	}
+	recordsCache.files[folder.root] = kept
 	return entries, nil
 }
 
@@ -658,20 +667,25 @@ func readRecordsAnywhere(ctx context.Context, folder *recordsFolder, relative st
 	return readRecordsFile(ctx, folder, relative)
 }
 
-// forgetRecords drops the one-file cache, which a new pass does because
-// the records script's answer carries nothing to compare it against.
-func forgetRecords() {
+// forgetRecords drops the file kept for one folder, which a new pass of
+// it does because the records script's answer carries nothing to compare
+// it against. Another folder's file stays: its pass is not over.
+func forgetRecords(root string) {
 	recordsCache.mutex.Lock()
 	defer recordsCache.mutex.Unlock()
-	recordsCache.root, recordsCache.name, recordsCache.script = "", "", false
-	recordsCache.modified, recordsCache.size, recordsCache.entries = time.Time{}, 0, nil
-	recordsCache.maxAttachmentBytes, recordsCache.unread = 0, nil
+	delete(recordsCache.files, root)
 }
 
 var recordsCache struct {
 	mutex sync.Mutex
-	root  string
-	name  string
+	// files is the last file read in each folder, by the folder's root.
+	files map[string]*keptRecordsFile
+}
+
+// keptRecordsFile is one folder's last file read, and what it was read
+// under.
+type keptRecordsFile struct {
+	name string
 	// script tells a file of that name from a name the script listed,
 	// which may be the same string in a folder holding both.
 	script   bool
@@ -1190,18 +1204,76 @@ func (self *recordsFolder) attachmentFile(said string) (string, int64, error) {
 // hashOfFile is a file's own identity and its size, read in one pass with
 // none of it held: a twenty-five megabyte picture would otherwise be in
 // memory twice before anything had decided it was worth sending.
+//
+// A file whose size and modification time are what they were when it was
+// last hashed is not read again. Every pass names every attachment of an
+// archive, and a mailbox of sixteen thousand attachments is gigabytes
+// read on each pass to learn hashes that have not changed.
 func hashOfFile(path string) (string, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", 0, err
 	}
 	defer func() { _ = file.Close() }()
+	information, err := file.Stat()
+	if err != nil {
+		return "", 0, err
+	}
+	if hash, isKept := keptHash(path, information); isKept {
+		return hash, information.Size(), nil
+	}
 	hasher := sha256.New()
 	size, err := io.Copy(hasher, file)
 	if err != nil {
 		return "", 0, err
 	}
-	return hex.EncodeToString(hasher.Sum(nil)), size, nil
+	hash := hex.EncodeToString(hasher.Sum(nil))
+	// Kept only when what was read is the file that was measured: one
+	// that grew while it was read is hashed again next time.
+	if size == information.Size() {
+		keepHash(path, information, hash)
+	}
+	return hash, size, nil
+}
+
+// fileHashesMost bounds the hashes kept. Past it they are all dropped and
+// learned again, which costs one pass's reading and nothing else.
+const fileHashesMost = 500_000
+
+var fileHashes struct {
+	mutex  sync.Mutex
+	byPath map[string]keptFileHash
+}
+
+// keptFileHash is a file's hash and the size and modification time it
+// had when it was read.
+type keptFileHash struct {
+	size     int64
+	modified time.Time
+	hash     string
+}
+
+// keptHash is the hash read the last time, when the file still has the
+// size and modification time it had then.
+func keptHash(path string, information os.FileInfo) (string, bool) {
+	fileHashes.mutex.Lock()
+	defer fileHashes.mutex.Unlock()
+	kept, isKept := fileHashes.byPath[path]
+	if !isKept || kept.size != information.Size() || !kept.modified.Equal(information.ModTime()) {
+		return "", false
+	}
+	return kept.hash, true
+}
+
+// keepHash remembers a file's hash against its size and modification
+// time.
+func keepHash(path string, information os.FileInfo, hash string) {
+	fileHashes.mutex.Lock()
+	defer fileHashes.mutex.Unlock()
+	if fileHashes.byPath == nil || len(fileHashes.byPath) >= fileHashesMost {
+		fileHashes.byPath = map[string]keptFileHash{}
+	}
+	fileHashes.byPath[path] = keptFileHash{size: information.Size(), modified: information.ModTime(), hash: hash}
 }
 
 // refusalOf is why a file was passed over, in the words the source's page
