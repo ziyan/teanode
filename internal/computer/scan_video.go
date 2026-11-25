@@ -143,7 +143,7 @@ func (self *recordsFolder) videoHash(path string) (string, bool) {
 	if content, err := os.ReadFile(remembered); err == nil && len(strings.TrimSpace(string(content))) == 64 {
 		return strings.TrimSpace(string(content)), true
 	}
-	hash, _, err := hashOfFile(path)
+	hash, _, err := hashOfFile(self.options.Home, path)
 	if err != nil {
 		return "", false
 	}

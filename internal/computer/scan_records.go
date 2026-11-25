@@ -982,7 +982,7 @@ func (self *recordsFolder) attachmentsOf(ctx context.Context, relative string, o
 			entries = append(entries, entry)
 			continue
 		}
-		hash, read, err := hashOfFile(path)
+		hash, read, err := hashOfFile(self.options.Home, path)
 		if err != nil {
 			entry.Refused = refusalOf(err)
 			entries = append(entries, entry)
@@ -1199,81 +1199,6 @@ func (self *recordsFolder) attachmentFile(said string) (string, int64, error) {
 		return "", 0, fmt.Errorf("%s is not a regular file", path)
 	}
 	return path, information.Size(), nil
-}
-
-// hashOfFile is a file's own identity and its size, read in one pass with
-// none of it held: a twenty-five megabyte picture would otherwise be in
-// memory twice before anything had decided it was worth sending.
-//
-// A file whose size and modification time are what they were when it was
-// last hashed is not read again. Every pass names every attachment of an
-// archive, and a mailbox of sixteen thousand attachments is gigabytes
-// read on each pass to learn hashes that have not changed.
-func hashOfFile(path string) (string, int64, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", 0, err
-	}
-	defer func() { _ = file.Close() }()
-	information, err := file.Stat()
-	if err != nil {
-		return "", 0, err
-	}
-	if hash, isKept := keptHash(path, information); isKept {
-		return hash, information.Size(), nil
-	}
-	hasher := sha256.New()
-	size, err := io.Copy(hasher, file)
-	if err != nil {
-		return "", 0, err
-	}
-	hash := hex.EncodeToString(hasher.Sum(nil))
-	// Kept only when what was read is the file that was measured: one
-	// that grew while it was read is hashed again next time.
-	if size == information.Size() {
-		keepHash(path, information, hash)
-	}
-	return hash, size, nil
-}
-
-// fileHashesMost bounds the hashes kept. Past it they are all dropped and
-// learned again, which costs one pass's reading and nothing else.
-const fileHashesMost = 500_000
-
-var fileHashes struct {
-	mutex  sync.Mutex
-	byPath map[string]keptFileHash
-}
-
-// keptFileHash is a file's hash and the size and modification time it
-// had when it was read.
-type keptFileHash struct {
-	size     int64
-	modified time.Time
-	hash     string
-}
-
-// keptHash is the hash read the last time, when the file still has the
-// size and modification time it had then.
-func keptHash(path string, information os.FileInfo) (string, bool) {
-	fileHashes.mutex.Lock()
-	defer fileHashes.mutex.Unlock()
-	kept, isKept := fileHashes.byPath[path]
-	if !isKept || kept.size != information.Size() || !kept.modified.Equal(information.ModTime()) {
-		return "", false
-	}
-	return kept.hash, true
-}
-
-// keepHash remembers a file's hash against its size and modification
-// time.
-func keepHash(path string, information os.FileInfo, hash string) {
-	fileHashes.mutex.Lock()
-	defer fileHashes.mutex.Unlock()
-	if fileHashes.byPath == nil || len(fileHashes.byPath) >= fileHashesMost {
-		fileHashes.byPath = map[string]keptFileHash{}
-	}
-	fileHashes.byPath[path] = keptFileHash{size: information.Size(), modified: information.ModTime(), hash: hash}
 }
 
 // refusalOf is why a file was passed over, in the words the source's page
