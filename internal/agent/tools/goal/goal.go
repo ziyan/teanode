@@ -135,6 +135,10 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	case "list":
 		return operate(ctx, client.DocumentListAgentGoals, map[string]any{}, "ListAgentGoals", "")
 	case "show":
+		// In a goal's own conversation the goal shown is that one.
+		if goalId == "" && here.IsGoal() {
+			goalId = here.ID
+		}
 		if goalId == "" {
 			return nil, fmt.Errorf("which goal? give goal_id, from list")
 		}

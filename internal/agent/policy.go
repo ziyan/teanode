@@ -105,18 +105,22 @@ func (self *Budget) Exhausted() bool {
 // exhaustedBy names what ran out, as the reason a run is deferred says
 // it, or "" while there is room. The person's own budget is looked at
 // before the server's: it is the one they can see on their page.
+// budgetUsedUpWords ends every reason exhaustedBy gives, which is how a
+// goal's note written from one is known again.
+const budgetUsedUpWords = " is used up"
+
 func (self *Budget) exhaustedBy() string {
 	if self.Limit > 0 && self.Used >= self.Limit {
-		return fmt.Sprintf("the daily budget of %d tokens is used up", self.Limit)
+		return fmt.Sprintf("the daily budget of %d tokens", self.Limit) + budgetUsedUpWords
 	}
 	if self.CostLimit > 0 && self.Cost >= self.CostLimit {
-		return fmt.Sprintf("the daily budget of %s is used up", Money(self.CostLimit, self.Currency))
+		return fmt.Sprintf("the daily budget of %s", Money(self.CostLimit, self.Currency)) + budgetUsedUpWords
 	}
 	if self.ServerLimit > 0 && self.ServerUsed >= self.ServerLimit {
-		return fmt.Sprintf("the server's monthly budget of %d tokens is used up", self.ServerLimit)
+		return fmt.Sprintf("the server's monthly budget of %d tokens", self.ServerLimit) + budgetUsedUpWords
 	}
 	if self.ServerCostLimit > 0 && self.ServerCost >= self.ServerCostLimit {
-		return fmt.Sprintf("the server's monthly budget of %s is used up", Money(self.ServerCostLimit, self.Currency))
+		return fmt.Sprintf("the server's monthly budget of %s", Money(self.ServerCostLimit, self.Currency)) + budgetUsedUpWords
 	}
 	return ""
 }

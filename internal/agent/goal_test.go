@@ -295,6 +295,37 @@ func TestGoalTurnThatSaysNothingWaitsTwiceAsLong(t *testing.T) {
 	}
 }
 
+// A note the server wrote to hold a goal back is over once the goal takes
+// a turn again, even one that says nothing; a note the goal wrote itself
+// stays until it writes another.
+func TestGoalTurnClearsTheNoteThatHeldItBack(t *testing.T) {
+	for _, held := range []struct {
+		note      string
+		isCleared bool
+	}{
+		{"the goals have spent their share of today; it goes on tomorrow, or when you write", true},
+		{"the daily budget of 1000 tokens is used up", true},
+		{"the last turn failed: the provider fell over", true},
+		{"two of five filed", false},
+	} {
+		world := startGoalWorld(t, []string{goalSilentRound}, "tell me when the build is green")
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			if _, err := tx.UpdateAgentConversation(world.conversation.ID, func(conversation *models.AgentConversation) error {
+				conversation.GoalNote = held.note
+				return nil
+			}); err != nil {
+				t.Fatalf("UpdateAgentConversation: %s", err)
+			}
+		})
+		world.runGoalTurn(t, 1)
+		after := world.read(t)
+		world.close()
+		if isCleared := after.GoalNote == ""; isCleared != held.isCleared {
+			t.Fatalf("%q after a silent turn is %q", held.note, after.GoalNote)
+		}
+	}
+}
+
 // A turn that failed moves the goal on and finishes the job.
 //
 // It used to return the failure, so the queue retried the job up to five
@@ -380,6 +411,41 @@ func TestGoalStopsAtTheGoalsShareOfTheDay(t *testing.T) {
 	// And the model was never asked: the share comes before the turn.
 	if len(*world.requests) != 0 {
 		t.Fatalf("a goal past its share asks the model nothing: %d requests", len(*world.requests))
+	}
+}
+
+// In a goal's own turn, show with no goal named shows that goal: the turn
+// is about it, and asking which goal sent the model back to list.
+func TestGoalShowInItsOwnTurnShowsThatGoal(t *testing.T) {
+	showRound := `{"id":"g5","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_5","function":{"name":"goal","arguments":"{\"action\":\"show\"}"}}]},"finish_reason":"tool_calls"}]}
+{"id":"g5","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10}}`
+	world := startGoalWorld(t, []string{showRound, goalMetRound, answerRound}, "file the invoices from last quarter")
+	defer world.close()
+
+	world.runGoalTurn(t, 1)
+	shown := ""
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		messages, err := tx.ListAgentMessages(world.read(t).ID, nil)
+		if err != nil {
+			t.Fatalf("ListAgentMessages: %s", err)
+		}
+		for _, message := range messages {
+			if message.ToolCallID == "call_5" {
+				shown = message.Content
+			}
+		}
+	})
+	if strings.Contains(shown, "which goal") {
+		t.Fatalf("show in a goal's own turn asked which goal: %q", shown)
+	}
+	world.operations.mutex.Lock()
+	defer world.operations.mutex.Unlock()
+	isAsked := false
+	for _, document := range world.operations.documents {
+		isAsked = isAsked || strings.Contains(document, "GetAgentGoal")
+	}
+	if !isAsked {
+		t.Fatalf("show in a goal's own turn never read the goal: %v", world.operations.documents)
 	}
 }
 

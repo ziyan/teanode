@@ -2027,7 +2027,7 @@ struct ToolLine: View {
                     } else {
                         ProgressView().controlSize(.mini)
                     }
-                    Text(line.resolution.isEmpty ? ToolWords.name(line.detail) : "\(ToolWords.name(line.detail)) · \(line.resolution)")
+                    Text(line.resolution.isEmpty ? ToolWords.line(line) : "\(ToolWords.line(line)) · \(line.resolution)")
                         .lineLimit(1)
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
@@ -2054,6 +2054,13 @@ enum ToolWords {
         let last = tool.components(separatedBy: "__").last ?? tool
         let words = last.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
         return words.prefix(1).uppercased() + words.dropFirst()
+    }
+
+    /// What a tool line says: the agent's own words for what the call
+    /// does, or the tool's name where it gave none.
+    static func line(_ line: TranscriptLine) -> String {
+        let intention = line.intention.trimmingCharacters(in: .whitespacesAndNewlines)
+        return intention.isEmpty ? name(line.detail) : intention
     }
 }
 

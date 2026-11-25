@@ -47,6 +47,8 @@ data class TranscriptLine(
     val streamedText: String = "",
     /** For a tool, what it was called with. */
     val arguments: String = "",
+    /** For a tool, the agent's words for what the call does; empty on a call that gave none, which is shown by the tool's name. */
+    val intention: String = "",
     /** For a note, whether it is waiting on something still to happen (a turn queued behind another, the conversation being folded). */
     val isPending: Boolean = false,
     /** The person's and the agent's reactions to it, one each at most; in a chat, one for each person who reacted. */
@@ -402,7 +404,7 @@ class Transcript(
                         storedLines.add(
                             TranscriptLine(
                                 toolId(call.id), TranscriptLine.Kind.Tool, results[call.id].orEmpty(), detail = call.name, isDone = true,
-                                callId = call.id, at = message.createdAt, arguments = call.arguments.orEmpty(),
+                                callId = call.id, at = message.createdAt, arguments = call.arguments.orEmpty(), intention = call.intention.orEmpty(),
                             ),
                         )
                     }
@@ -677,7 +679,7 @@ class Transcript(
                 val id = toolId(event.callId.orEmpty())
                 if (storedLines.any { line -> line.id == id }) return
                 storedLines.add(
-                    TranscriptLine(id, TranscriptLine.Kind.Tool, "", detail = event.tool.orEmpty(), runId = event.runId, callId = event.callId.orEmpty(), at = event.at, arguments = event.arguments.orEmpty()),
+                    TranscriptLine(id, TranscriptLine.Kind.Tool, "", detail = event.tool.orEmpty(), runId = event.runId, callId = event.callId.orEmpty(), at = event.at, arguments = event.arguments.orEmpty(), intention = event.intention.orEmpty()),
                 )
             }
             "tool_result" -> {

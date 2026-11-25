@@ -341,8 +341,12 @@ type Event struct {
 	Tool           string    `json:"tool,omitempty"`
 	CallID         string    `json:"callId,omitempty"`
 	Arguments      string    `json:"arguments,omitempty"`
-	Risk           string    `json:"risk,omitempty"`
-	Note           string    `json:"note,omitempty"`
+	// Intention is, on a tool call, the model's words for what the call
+	// does, for the apps to show in place of the tool's name; "" when it
+	// gave none fit to show.
+	Intention string `json:"intention,omitempty"`
+	Risk      string `json:"risk,omitempty"`
+	Note      string `json:"note,omitempty"`
 	// NoteKind and NoteDetail are a note's kind and detail, for a client
 	// that words it in the person's language; Note is it in English.
 	NoteKind   string `json:"noteKind,omitempty"`
@@ -1629,7 +1633,12 @@ func (self *AskRun) turn() error {
 			if self.ReadOnly() || self.settings.ReadOnlyTools[tool.Name] {
 				tool = tool.WithReadingActions()
 			}
-			definitions = append(definitions, tool.Definition())
+			// Every tool is offered the intention argument, the words the
+			// apps show beside the call; it is taken off before the tool
+			// runs.
+			definition := tool.Definition()
+			definition.Parameters = tools.WithIntention(definition.Parameters)
+			definitions = append(definitions, definition)
 		}
 		// The last round is told it is the last, so that it answers. A
 		// model that spent every round looking things up ended with a
@@ -2131,7 +2140,7 @@ func (self *AskRun) isReadingCall(configuration *config.Configuration, sent []*T
 	if tool.Family == FamilyBrowser || tool.JudgedCall != nil {
 		return false
 	}
-	arguments := json.RawMessage(toolCall.Arguments)
+	arguments, _ := tools.SplitIntention(json.RawMessage(toolCall.Arguments))
 	return tool.RiskFor(arguments) == RiskRead && !NeedsConfirmation(tool, arguments, &configuration.Agent.Tools, self.settings.Agent)
 }
 
@@ -2141,7 +2150,7 @@ func (self *AskRun) isReadingCall(configuration *config.Configuration, sent []*T
 // comes. Stopping the turn cancels ctx, which every call runs under.
 func (self *AskRun) runBatch(ctx context.Context, configuration *config.Configuration, sent, deferred []*Tool, batch []llm.ToolCall) []toolOutcome {
 	for _, toolCall := range batch {
-		self.emit(Event{Kind: EventToolCall, Tool: toolCall.Name, CallID: toolCall.ID, Arguments: toolCall.Arguments})
+		self.emit(Event{Kind: EventToolCall, Tool: toolCall.Name, CallID: toolCall.ID, Arguments: toolCall.Arguments, Intention: tools.IntentionOf(toolCall.Arguments)})
 	}
 	outcomes := make([]toolOutcome, len(batch))
 	if len(batch) == 1 {
@@ -2200,7 +2209,12 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	if !self.takeCallAllowance(tool.Name) {
 		return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "this run may call %s at most %d times and has used them all; answer with what you have"}`, tool.Name, self.settings.CallLimits[tool.Name]))}
 	}
-	call := &Call{ID: toolCall.ID, Arguments: json.RawMessage(toolCall.Arguments)}
+	// The intention is the apps' and not the tool's: a tool that reads
+	// its arguments strictly would refuse it, and the same call with other
+	// words is still the same call to the checks for a repeat and for an
+	// approval already given.
+	arguments, _ := tools.SplitIntention(json.RawMessage(toolCall.Arguments))
+	call := &Call{ID: toolCall.ID, Arguments: arguments}
 	if tool.Name == "web_fetch" {
 		if err := self.checkFetchAllowed(call.Arguments); err != nil {
 			return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": %q}`, err.Error()))}
@@ -2499,7 +2513,7 @@ func toolCallsOf(calls []llm.ToolCall) []models.AgentToolCall {
 	}
 	stored := make([]models.AgentToolCall, 0, len(calls))
 	for _, call := range calls {
-		stored = append(stored, models.AgentToolCall{ID: call.ID, Name: call.Name, Arguments: call.Arguments})
+		stored = append(stored, models.AgentToolCall{ID: call.ID, Name: call.Name, Arguments: call.Arguments, Intention: tools.IntentionOf(call.Arguments)})
 	}
 	return stored
 }
