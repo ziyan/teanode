@@ -218,9 +218,11 @@ records:
 	if len(first.Entries) != 1 || first.Next == "" || counted() != 1 {
 		t.Fatalf("the first page reads and sends one: %d entries, next %q, %d calls", len(first.Entries), first.Next, counted())
 	}
-	// Another source read in between, and what this one read is no
-	// longer held in memory.
-	forgetRecords()
+	// The program started again, and what this one read is no longer
+	// held in memory.
+	recordsCache.mutex.Lock()
+	recordsCache.files = nil
+	recordsCache.mutex.Unlock()
 	second := scan(first.Next, "pass-1")
 	if len(second.Entries) != 1 || counted() != 1 {
 		t.Fatalf("a later page answers from what was kept: %d entries, %d calls", len(second.Entries), counted())
