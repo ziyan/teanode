@@ -3181,16 +3181,14 @@ struct ToolLinesDemoScreen: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(lines) { line in ToolLine(line: line) }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(lines) { line in ToolLine(line: line) }
             }
-            .navigationTitle(Text(verbatim: "Tool calls"))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
         }
+        .navigationTitle(Text(verbatim: "Tool calls"))
     }
 }
 #endif
