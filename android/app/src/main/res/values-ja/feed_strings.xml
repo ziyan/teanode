@@ -57,6 +57,13 @@
     <string name="feed_dismiss_read">既読を閉じる</string>
     <string name="feed_undo">元に戻す</string>
     <string name="feed_more_actions">その他の操作</string>
+    <string name="feed_dismissed_cards">閉じたカード</string>
+    <string name="feed_dismissed_title">閉じたカード</string>
+    <string name="feed_dismissed_empty_title">閉じたカードはありません</string>
+    <string name="feed_dismissed_empty_description">閉じたカードは期限が切れるまで保管されます。</string>
+    <string name="feed_restore">復元</string>
+    <string name="feed_restored">カードを復元しました</string>
+    <string name="feed_info_dismissed">閉じた日時</string>
     <plurals name="feed_dismissed_count">
         <item quantity="other">%1$d 件のカードを閉じました</item>
     </plurals>

@@ -15,7 +15,7 @@
             choices: [(String, String, String)] = [], urgency: String = "whenever", isLiked: Bool = false, isRead: Bool = false,
             daysAgo: Int = 0, hour: Int, minute: Int, stackKey: String = "", stackCount: Int = 1, stackUnread: Int = 0,
             stackTitle: String = "", stackPosition: Int? = nil, layout: String = "text", layoutContent: Any? = nil,
-            media: [[String: Any]] = []
+            media: [[String: Any]] = [], dismissedHour: Int? = nil
         ) -> [String: Any] {
             let postedAt = DemoServer.demoTime(daysAgo: daysAgo, hour: hour, minute: minute)
             return [
@@ -26,7 +26,8 @@
                 "sourceLinks": links.map { ["sourceTitle": $0.0, "sourceUrl": $0.1] },
                 "choices": choices.map { ["choiceKey": $0.0, "choiceLabel": $0.1, "choiceRole": $0.2] },
                 "chosenChoiceKey": NSNull(), "chosenAt": NSNull(), "outcomeText": "", "isOutcomePending": false,
-                "feedUrgency": urgency, "isLiked": isLiked, "isRead": isRead, "isDismissed": false, "postedAt": postedAt,
+                "feedUrgency": urgency, "isLiked": isLiked, "isRead": isRead, "isDismissed": dismissedHour != nil,
+                "dismissedAt": dismissedHour.map { DemoServer.demoTime(daysAgo: 0, hour: $0, minute: 20) as Any } ?? NSNull(), "postedAt": postedAt,
                 "updatedAt": postedAt, "feedStackKey": stackKey, "stackItemCount": stackCount, "stackUnreadCount": stackUnread,
                 "feedStackTitle": stackTitle, "stackPosition": stackPosition.map { $0 as Any } ?? NSNull(),
                 "feedCardLayout": layout, "layoutContent": layoutContent.map { feedJSON($0) } ?? "", "feedMedia": media,
@@ -187,6 +188,34 @@
             ]
         }
 
+        /// The invented dismissed cards, newest dismissal first: two of them
+        /// share one stack key, so the Dismissed screen shows a deck.
+        static let demoDismissedStackKey = "goal:goal-garden"
+
+        private static var dismissedCards: [[String: Any]] {
+            [
+                feedCard(
+                    "dismissed-mail", kind: "decision", sourceKind: "goal", sourceId: "goal-mail", sourceTitle: "Weekly mail tidy-up",
+                    title: "Unsubscribe from three shops?",
+                    body: "You have not opened mail from these shops in **six months**. I can unsubscribe you from all three.",
+                    pictureSymbol: "envelope.badge", choices: [("approve", "Unsubscribe", "action"), ("later", "Not now", "dismiss")],
+                    isRead: true, daysAgo: 2, hour: 7, minute: 30, dismissedHour: 8),
+                feedCard(
+                    "dismissed-garden-1", kind: "update", sourceKind: "goal", sourceId: "goal-garden", sourceTitle: "Garden care",
+                    title: "Water the tomatoes tonight", body: "No rain is expected until Friday, and the soil is dry.",
+                    pictureSymbol: "leaf", isRead: true, daysAgo: 2, hour: 16, minute: 0, stackKey: demoDismissedStackKey, dismissedHour: 7),
+                feedCard(
+                    "dismissed-garden-2", kind: "update", sourceKind: "goal", sourceId: "goal-garden", sourceTitle: "Garden care",
+                    title: "Frost warning for Thursday", body: "Cover the young plants or bring the pots inside before dark.",
+                    pictureSymbol: "snowflake", isRead: true, daysAgo: 3, hour: 9, minute: 0, stackKey: demoDismissedStackKey, dismissedHour: 7),
+                feedCard(
+                    "dismissed-news", kind: "news", sourceKind: "goal", sourceId: "goal-trains", sourceTitle: "Rail news",
+                    title: "A new night train route is announced",
+                    body: "The route links two coastal cities and starts next spring. [Read the report](https://news.example.com/night-train)",
+                    pictureSymbol: "tram", isLiked: true, isRead: true, daysAgo: 4, hour: 12, minute: 15, dismissedHour: 6),
+            ]
+        }
+
         static let demoBriefStackKey = "brief:morning"
         static let demoBriefTitle = "Morning brief, Wed Nov 19"
 
@@ -285,7 +314,7 @@
             guard query.contains("AgentFeed") || query.contains("AgentFeedItem") else { return nil }
             let variables = requestVariables(body)
             let feedItemId = variables["feedItemId"] as? String ?? ""
-            var card = (feedCards + newsCards + briefCards).first { $0["feedItemId"] as? String == feedItemId } ?? feedCards[0]
+            var card = (feedCards + newsCards + briefCards + dismissedCards).first { $0["feedItemId"] as? String == feedItemId } ?? feedCards[0]
             if query.contains("MarkAgentFeedRead") {
                 return #"{"data":{"MarkAgentFeedRead":\#((variables["feedItemIds"] as? [String] ?? []).count)}}"#
             } else if query.contains("DiscussAgentFeedItem") {
@@ -322,6 +351,9 @@
             } else if query.contains("ListAgentFeedStack") {
                 let cards = (variables["feedStackKey"] as? String) == demoBriefStackKey ? briefCards : ((variables["feedStackKey"] as? String) == demoNewsStackKey ? newsCards : [])
                 return #"{"data":{"ListAgentFeedStack":{"feedItems":\#(feedJSON(cards)),"nextCursor":null,"unreadCount":2}}}"#
+            } else if query.contains("ListAgentFeed"), variables["isDismissedOnly"] as? Bool == true {
+                let unreadCount = feedCards.filter { $0["isRead"] as? Bool != true }.count
+                return #"{"data":{"ListAgentFeed":{"feedItems":\#(feedJSON(dismissedCards)),"nextCursor":null,"unreadCount":\#(unreadCount)}}}"#
             } else if query.contains("ListAgentFeed") {
                 let unreadCount = feedCards.filter { $0["isRead"] as? Bool != true }.count
                 return #"{"data":{"ListAgentFeed":{"feedItems":\#(feedJSON(feedCards)),"nextCursor":null,"unreadCount":\#(unreadCount)}}}"#

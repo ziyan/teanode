@@ -25827,11 +25827,20 @@ button.voice-bubble-transcribe {
   flex: none;
   margin: -4px -4px 0 0;
 }
-/* Dismiss read, above the first card, at the column's end. */
+/* Dismissed and Dismiss read, above the first card, at the column's end. */
 .feed-header {
   display: flex;
   justify-content: flex-end;
+  gap: var(--space-2);
   margin-bottom: var(--space-3);
+}
+/* The way back from the Dismissed view, at the column's start. */
+.feed-header.is-dismissed-view {
+  justify-content: flex-start;
+}
+/* A dismissed card follows a finger across; up and down stays a scroll. */
+.feed-card.is-swipeable {
+  touch-action: pan-y;
 }
 .feed-title {
   margin: 0 var(--space-4) var(--space-1) 0;

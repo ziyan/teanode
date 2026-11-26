@@ -24,14 +24,17 @@ func (self *recordedOperations) Permissions() *models.EffectivePermissions {
 func (self *recordedOperations) Execute(_ context.Context, document string, variables map[string]any, response any) error {
 	self.documents = append(self.documents, document)
 	self.variables = append(self.variables, variables)
-	return json.Unmarshal([]byte(`{"PostAgentFeedItem":{"feedItemId":"card-1"},"DismissAgentFeedItems":["card-1"],"RestoreAgentFeedItems":["card-1"],"ListAgentFeed":{"feedItems":[],"unreadCount":0}}`), response)
+	return json.Unmarshal([]byte(`{"PostAgentFeedItem":{"feedItemId":"card-1"},"DismissAgentFeedItems":["card-1"],"RestoreAgentFeedItems":["card-1"],"WithdrawAgentFeedItem":true,"ListAgentFeed":{"feedItems":[],"unreadCount":0}}`), response)
 }
 
 type feedRun struct {
 	tools.Run
 	operations   *recordedOperations
 	conversation *models.AgentConversation
+	isHeadless   bool
 }
+
+func (self *feedRun) Headless() bool { return self.isHeadless }
 
 func (self *feedRun) Agent() *models.Agent         { return &models.Agent{ID: "agent-1"} }
 func (self *feedRun) Owner() *models.User          { return &models.User{ID: "owner-1"} }
@@ -133,7 +136,7 @@ func TestTheFeedToolUpdatesWithdrawsAndLists(t *testing.T) {
 			t.Fatalf("%s: %s", arguments, err)
 		}
 	}
-	if len(operations.documents) != 3 || operations.variables[0]["feedItemId"] != "card-1" || !strings.Contains(operations.documents[1], "DismissAgentFeedItems") || !strings.Contains(operations.documents[2], "ListAgentFeed") {
+	if len(operations.documents) != 3 || operations.variables[0]["feedItemId"] != "card-1" || !strings.Contains(operations.documents[1], "WithdrawAgentFeedItem") || !strings.Contains(operations.documents[2], "ListAgentFeed") {
 		t.Fatalf("documents: %+v", operations.documents)
 	}
 	if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"update","body":"x"}`)}); err == nil {
@@ -141,5 +144,27 @@ func TestTheFeedToolUpdatesWithdrawsAndLists(t *testing.T) {
 	}
 	if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"post"}`)}); err == nil {
 		t.Fatal("a post without a title was accepted")
+	}
+}
+
+// The dismissed cards are listed on their own, and a goal's own turn cannot
+// bring back what the person dismissed, though the person's conversation can.
+func TestTheFeedToolListsTheDismissedAndAGoalTurnCannotRestore(t *testing.T) {
+	operations := &recordedOperations{}
+	ctx := tools.WithRun(context.Background(), &feedRun{operations: operations})
+	if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"list","dismissed_only":true}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if operations.variables[0]["isDismissedOnly"] != true {
+		t.Fatalf("the dismissed cards were not asked for: %+v", operations.variables[0])
+	}
+	goal := &models.AgentConversation{ID: "goal-conversation-1", Kind: models.AgentConversationGoal, Goal: "Watch the parcels"}
+	goalTurn := tools.WithRun(context.Background(), &feedRun{operations: operations, conversation: goal, isHeadless: true})
+	if _, err := feedTool(t).Run(goalTurn, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"restore","feed_item_ids":["card-1"]}`)}); err == nil || !strings.Contains(err.Error(), "cannot restore") {
+		t.Fatalf("a goal's own turn restored a card: %v", err)
+	}
+	personInGoal := tools.WithRun(context.Background(), &feedRun{operations: operations, conversation: goal})
+	if _, err := feedTool(t).Run(personInGoal, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"restore","feed_item_ids":["card-1"]}`)}); err != nil {
+		t.Fatalf("the person in a goal's conversation could not restore: %v", err)
 	}
 }

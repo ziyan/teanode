@@ -40,6 +40,7 @@ func TestFeedParity(test *testing.T) {
 		"ShowLessLikeAgentFeedItem": {"less", ""},
 		"DismissAgentFeedItems":     {"dismiss", "dismiss"},
 		"RestoreAgentFeedItems":     {"restore", "restore"},
+		"WithdrawAgentFeedItem":     {"withdraw", "withdraw"},
 		"MarkAgentFeedRead":         {"read", ""},
 		"DiscussAgentFeedItem":      {"discuss", ""},
 		"PostAgentFeedItem":         {"post", "post"},

@@ -219,6 +219,8 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
     public let isLiked: Bool
     public let isRead: Bool
     public let isDismissed: Bool
+    /// When the card was dismissed (RFC 3339); nil for a card that is not.
+    public let dismissedAt: String?
     public let postedAt: String
     public let updatedAt: String
     /// What the cards of one stack share; empty for a card that stands alone.
@@ -249,8 +251,8 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
         feedSourceTitle: String = "", runConversationId: String = "", title: String, body: String = "", pictureSymbol: String = "",
         factRows: [AgentFeedFact] = [], sourceLinks: [AgentFeedSourceLink] = [], choices: [AgentFeedChoice] = [],
         chosenChoiceKey: String? = nil, chosenAt: String? = nil, outcomeText: String = "", isOutcomePending: Bool = false,
-        feedUrgency: String = "whenever", isLiked: Bool = false, isRead: Bool = false, isDismissed: Bool = false, postedAt: String = "",
-        updatedAt: String = "", feedStackKey: String = "", stackItemCount: Int = 1, stackUnreadCount: Int = 0,
+        feedUrgency: String = "whenever", isLiked: Bool = false, isRead: Bool = false, isDismissed: Bool = false, dismissedAt: String? = nil,
+        postedAt: String = "", updatedAt: String = "", feedStackKey: String = "", stackItemCount: Int = 1, stackUnreadCount: Int = 0,
         feedStackTitle: String = "", stackPosition: Int? = nil,
         feedCardLayout: String = "text", layoutContent: String = "", feedMedia: [AgentFeedMedia] = []
     ) {
@@ -274,6 +276,7 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
         self.isLiked = isLiked
         self.isRead = isRead
         self.isDismissed = isDismissed
+        self.dismissedAt = dismissedAt
         self.postedAt = postedAt
         self.updatedAt = updatedAt
         self.feedStackKey = feedStackKey
@@ -310,6 +313,7 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
         isLiked = try container.decodeIfPresent(Bool.self, forKey: .isLiked) ?? false
         isRead = try container.decodeIfPresent(Bool.self, forKey: .isRead) ?? false
         isDismissed = try container.decodeIfPresent(Bool.self, forKey: .isDismissed) ?? false
+        dismissedAt = try container.decodeIfPresent(String.self, forKey: .dismissedAt)
         postedAt = try container.decodeIfPresent(String.self, forKey: .postedAt) ?? ""
         updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? ""
         feedStackKey = try container.decodeIfPresent(String.self, forKey: .feedStackKey) ?? ""
@@ -325,8 +329,25 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case feedItemId, feedItemKind, feedSourceKind, feedSourceId, feedSourceTitle, runConversationId, title, body, pictureSymbol
         case factRows, sourceLinks, choices, chosenChoiceKey, chosenAt, outcomeText, isOutcomePending, feedUrgency
-        case isLiked, isRead, isDismissed, postedAt, updatedAt, feedStackKey, stackItemCount, stackUnreadCount, feedStackTitle, stackPosition, feedCardLayout, layoutContent
+        case isLiked, isRead, isDismissed, dismissedAt, postedAt, updatedAt, feedStackKey, stackItemCount, stackUnreadCount, feedStackTitle, stackPosition, feedCardLayout, layoutContent
         case feedMedia
+    }
+
+    /// When the card was dismissed, for a card that is.
+    public var dismissedDate: Date? { dismissedAt.flatMap { ServerTime.date($0) } }
+
+    /// This card with the stack it tops counted as `stackItemCount` cards,
+    /// `stackUnreadCount` of them unread. A list that groups cards into decks
+    /// itself (see `AgentFeedDeck`) uses it so the top card is drawn as a deck.
+    public func withStackCounts(stackItemCount: Int, stackUnreadCount: Int) -> AgentFeedItem {
+        AgentFeedItem(
+            feedItemId: feedItemId, feedItemKind: feedItemKind, feedSourceKind: feedSourceKind, feedSourceId: feedSourceId,
+            feedSourceTitle: feedSourceTitle, runConversationId: runConversationId, title: title, body: body, pictureSymbol: pictureSymbol,
+            factRows: factRows, sourceLinks: sourceLinks, choices: choices, chosenChoiceKey: chosenChoiceKey, chosenAt: chosenAt,
+            outcomeText: outcomeText, isOutcomePending: isOutcomePending, feedUrgency: feedUrgency, isLiked: isLiked, isRead: isRead,
+            isDismissed: isDismissed, dismissedAt: dismissedAt, postedAt: postedAt, updatedAt: updatedAt, feedStackKey: feedStackKey,
+            stackItemCount: stackItemCount, stackUnreadCount: stackUnreadCount, feedStackTitle: feedStackTitle, stackPosition: stackPosition,
+            feedCardLayout: feedCardLayout, layoutContent: layoutContent, feedMedia: feedMedia)
     }
 
     /// Whether the card tops a stack of more cards from its source.
@@ -392,6 +413,48 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
     public var pictureKind: AgentFeedPictureKind { AgentFeedPictureKind.kind(of: pictureSymbol) }
 }
 
+/// AgentFeedDeck is the cards of a list that share one stack key and sit next
+/// to each other, drawn as one deck with the newest on top. The dismissed list
+/// has no folding by the server, so the client makes the decks.
+public struct AgentFeedDeck: Hashable, Sendable, Identifiable {
+    /// The deck's cards in the order the list gave them; never empty.
+    public let feedItems: [AgentFeedItem]
+
+    /// `feedItems` must not be empty.
+    public init(feedItems: [AgentFeedItem]) {
+        precondition(!feedItems.isEmpty, "a deck holds at least one card")
+        self.feedItems = feedItems
+    }
+
+    public var id: String { feedItems[0].feedItemId }
+    public var feedStackKey: String { feedItems[0].feedStackKey }
+    /// Whether the deck holds more than one card.
+    public var isDeck: Bool { feedItems.count > 1 }
+
+    /// The top card, counting the deck's cards as the stack it tops, so a card
+    /// view draws it with its "more" row.
+    public var topItem: AgentFeedItem {
+        let top = feedItems[0]
+        guard isDeck else { return top }
+        return top.withStackCounts(stackItemCount: feedItems.count, stackUnreadCount: feedItems.filter { !$0.isRead }.count)
+    }
+
+    /// Groups consecutive entries with the same non-empty stack key into
+    /// decks. A card with no key, or whose neighbours have another key, is a
+    /// deck of its own, and the order of the list is kept.
+    public static func group(_ feedItems: [AgentFeedItem]) -> [AgentFeedDeck] {
+        var runs: [[AgentFeedItem]] = []
+        for feedItem in feedItems {
+            if let last = runs.last?.first, !feedItem.feedStackKey.isEmpty, last.feedStackKey == feedItem.feedStackKey {
+                runs[runs.count - 1].append(feedItem)
+            } else {
+                runs.append([feedItem])
+            }
+        }
+        return runs.map { AgentFeedDeck(feedItems: $0) }
+    }
+}
+
 /// AgentFeedPage is a page of the feed, newest first, and how many cards the
 /// person has not read.
 public struct AgentFeedPage: Decodable, Sendable {
@@ -431,7 +494,7 @@ extension Documents {
         feedItemId feedItemKind feedSourceKind feedSourceId feedSourceTitle runConversationId title body pictureSymbol
         factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl } choices { choiceKey choiceLabel choiceRole }
         chosenChoiceKey chosenAt outcomeText isOutcomePending feedUrgency isLiked isRead isDismissed postedAt updatedAt
-        feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent
+        feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent dismissedAt
         feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }
         """
     public static let agentFeedStack = """
@@ -444,8 +507,8 @@ extension Documents {
         }
         """
     public static let agentFeed = """
-        query ($first: Int, $after: String, $includeDismissed: Boolean) {
-          ListAgentFeed(first: $first, after: $after, includeDismissed: $includeDismissed) {
+        query ($first: Int, $after: String, $includeDismissed: Boolean, $isDismissedOnly: Boolean) {
+          ListAgentFeed(first: $first, after: $after, includeDismissed: $includeDismissed, isDismissedOnly: $isDismissedOnly) {
             feedItems { \(agentFeedItemFields) }
             nextCursor
             unreadCount
@@ -503,12 +566,14 @@ extension Documents {
 
 extension Connection {
     /// A page of the feed, newest first. `after` is the previous page's
-    /// `nextCursor`.
-    public func agentFeed(after cursor: String? = nil, pageSize: Int = 30, includeDismissed: Bool = false) async throws -> AgentFeedPage {
+    /// `nextCursor`. `isDismissedOnly` lists only the dismissed cards, each
+    /// on its own, and wins over `includeDismissed`.
+    public func agentFeed(after cursor: String? = nil, pageSize: Int = 30, includeDismissed: Bool = false, isDismissedOnly: Bool = false) async throws -> AgentFeedPage {
         struct Answer: Decodable, Sendable { let ListAgentFeed: AgentFeedPage }
         var variables: [String: JSONValue] = ["first": .number(Double(pageSize))]
         if let cursor, !cursor.isEmpty { variables["after"] = .string(cursor) }
         if includeDismissed { variables["includeDismissed"] = .bool(true) }
+        if isDismissedOnly { variables["isDismissedOnly"] = .bool(true) }
         return try await execute(Documents.agentFeed, variables: variables, as: Answer.self).ListAgentFeed
     }
 

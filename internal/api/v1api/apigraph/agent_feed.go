@@ -51,7 +51,8 @@ type AgentFeedMutation interface {
 	LikeAgentFeedItem(ctx context.Context, arguments LikeAgentFeedItemArguments) (*AgentFeedItemView, error)
 
 	// Tell the agent's memory the person wants fewer cards like this one,
-	// and dismiss it. Needs agent:use.
+	// and dismiss it; on a card already dismissed only the first. Needs
+	// agent:use.
 	ShowLessLikeAgentFeedItem(ctx context.Context, arguments AgentFeedItemArguments) (*AgentFeedItemView, error)
 
 	// Close cards, and answer the ids this call closed (one already closed is
@@ -64,10 +65,18 @@ type AgentFeedMutation interface {
 	DismissAgentFeedItems(ctx context.Context, arguments DismissAgentFeedItemsArguments) ([]string, error)
 
 	// Bring back cards the caller dismissed (at most 500) and answer the ids
-	// brought back. A card a choice settled stays closed. Each card is
-	// announced to open feeds as restored. The question a dismissal stopped
-	// stays stopped. Needs agent:use.
+	// brought back, still read. A card answered "not now" (a dismiss choice)
+	// can be answered again; one answered with an action keeps its answer. A
+	// card is left out when an open card holds its coalesce key, or when it
+	// expired. Each card is announced to open feeds as restored. The question
+	// a dismissal stopped stays stopped. Needs agent:use.
 	RestoreAgentFeedItems(ctx context.Context, arguments RestoreAgentFeedItemsArguments) ([]string, error)
+
+	// Take a card back for good: it is deleted, so it is not among the
+	// dismissed cards and cannot be restored, and its question is stopped.
+	// What the feed tool's withdraw does, when a card no longer holds. It is
+	// announced to open feeds as dismissed. Needs agent:use.
+	WithdrawAgentFeedItem(ctx context.Context, arguments AgentFeedItemArguments) (bool, error)
 
 	// Mark cards read, and say how many were newly read. Needs agent:use.
 	MarkAgentFeedRead(ctx context.Context, arguments MarkAgentFeedReadArguments) (int, error)
@@ -105,6 +114,11 @@ type ListAgentFeedArguments struct {
 
 	// Dismissed cards too, which a page that shows the feed does not want
 	IncludeDismissed *bool `json:"includeDismissed" graphapi:"nullable"`
+
+	// Only the dismissed cards that have not expired, the most recently
+	// dismissed first, each card an entry of its own (stacks are not
+	// folded). Wins over includeDismissed.
+	IsDismissedOnly *bool `json:"isDismissedOnly" graphapi:"nullable"`
 }
 
 // ListAgentFeedStackArguments name a stack and page it.
@@ -323,6 +337,9 @@ type AgentFeedItemView struct {
 	IsRead      bool   `json:"isRead"`
 	IsDismissed bool   `json:"isDismissed"`
 
+	// DismissedAt is when the card was dismissed, null while it is not.
+	DismissedAt *time.Time `json:"dismissedAt" graphapi:"nullable"`
+
 	// FeedStackKey names the stack the card is in, empty for a card that
 	// stands alone. StackItemCount is how many cards the stack holds,
 	// including this one, and StackUnreadCount how many of them are unread:
@@ -379,7 +396,7 @@ func feedItemView(tx db.Transaction, item *models.AgentFeedItem) (*AgentFeedItem
 		FactRows: item.FactRows, SourceLinks: item.SourceLinks, RecordReferences: item.RecordReferences, FeedMedia: feedMediaViews(item), Choices: item.Choices,
 		ChosenChoiceKey: chosenChoiceKey, ChosenAt: item.ChosenAt,
 		OutcomeText: item.OutcomeText, IsOutcomePending: agent.IsFeedOutcomePending(item, time.Now()),
-		FeedUrgency: string(item.FeedUrgency), IsLiked: item.IsLiked, IsRead: item.ReadAt != nil, IsDismissed: item.DismissedAt != nil,
+		FeedUrgency: string(item.FeedUrgency), IsLiked: item.IsLiked, IsRead: item.ReadAt != nil, IsDismissed: item.DismissedAt != nil, DismissedAt: item.DismissedAt,
 		FeedStackKey: item.FeedStackKey, StackItemCount: 1, StackUnreadCount: unreadAlone(item),
 		FeedStackTitle: item.FeedStackTitle, StackPosition: item.StackPosition, FeedCardLayout: layoutName(item), LayoutContent: item.LayoutContent,
 		PostedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
@@ -463,7 +480,14 @@ func (self *graph) ListAgentFeed(ctx context.Context, arguments ListAgentFeedArg
 	}
 	now := time.Now()
 	tx := self.transaction(ctx)
-	items, next, err := tx.ListAgentFeedItems(found.UserID, cursor, limit, arguments.IncludeDismissed != nil && *arguments.IncludeDismissed, now)
+	isDismissedOnly := arguments.IsDismissedOnly != nil && *arguments.IsDismissedOnly
+	var items []*models.AgentFeedItem
+	var next *models.FeedCursor
+	if isDismissedOnly {
+		items, next, err = tx.ListDismissedAgentFeedItems(found.UserID, cursor, limit, now)
+	} else {
+		items, next, err = tx.ListAgentFeedItems(found.UserID, cursor, limit, arguments.IncludeDismissed != nil && *arguments.IncludeDismissed, now)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -473,7 +497,8 @@ func (self *graph) ListAgentFeed(ctx context.Context, arguments ListAgentFeedArg
 	}
 	stackKeys := []string{}
 	for _, item := range items {
-		if item.FeedStackKey != "" {
+		// A dismissed card is an entry alone, whatever its stack holds.
+		if item.FeedStackKey != "" && !isDismissedOnly {
 			stackKeys = append(stackKeys, item.FeedStackKey)
 		}
 	}
@@ -710,6 +735,30 @@ func (self *graph) RestoreAgentFeedItems(ctx context.Context, arguments RestoreA
 		restoredIds = append(restoredIds, item.ID)
 	}
 	return restoredIds, nil
+}
+
+func (self *graph) WithdrawAgentFeedItem(ctx context.Context, arguments AgentFeedItemArguments) (bool, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	tx := self.transaction(ctx)
+	item, err := self.ownFeedItem(tx, found, arguments.FeedItemID)
+	if err != nil {
+		return false, err
+	}
+	if item.InteractionID != "" && !item.IsChosen() {
+		if _, err := tx.ClaimAgentInteraction(item.InteractionID, models.InteractionStopped); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.DeleteAgentFeedItem(item.ID); err != nil {
+		return false, err
+	}
+	if err := self.announceFeedChange(tx, item, models.FeedChangeDismissed); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // announceFeedChange tells the open feeds once the request commits.

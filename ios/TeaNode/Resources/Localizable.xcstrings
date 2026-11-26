@@ -98938,6 +98938,102 @@
           }
         }
       }
+    },
+    "Dismissed Cards": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じたカード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已忽略的卡片"
+          }
+        }
+      }
+    },
+    "Nothing dismissed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じたカードはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有已忽略的卡片"
+          }
+        }
+      }
+    },
+    "Dismissed cards are kept until they expire.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じたカードは有効期限が切れるまで保管されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已忽略的卡片会保留到过期为止。"
+          }
+        }
+      }
+    },
+    "Card restored": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カードを戻しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卡片已恢复"
+          }
+        }
+      }
+    },
+    "This card could not be restored.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このカードは戻せませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法恢复这张卡片。"
+          }
+        }
+      }
+    },
+    "Puts this card back in your feed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このカードをフィードに戻します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把这张卡片放回你的信息流。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

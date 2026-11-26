@@ -151,6 +151,12 @@ const (
 	// list, and how long a settled one is.
 	FeedExpiryDays = 30
 
+	// FeedAnsweredLifetime is how long a card answered with a choice stays
+	// in the feed before it moves to the dismissed cards: long enough to see
+	// what came of the answer, short enough that the answered do not crowd
+	// out what still needs the person.
+	FeedAnsweredLifetime = 24 * time.Hour
+
 	// FeedSourceURLDays is how far back a post is refused for linking a page
 	// an open card already links.
 	FeedSourceURLDays = 30
@@ -406,9 +412,11 @@ func FeedStackKeyCodingDay(day time.Time) string {
 	return "coding:" + day.Format(time.DateOnly)
 }
 
-// FeedCursor is how far a page of the feed got.
+// FeedCursor is how far a page of the feed got: the time the page is
+// ordered by (when the card was posted, or for the dismissed cards when it
+// was dismissed) and the id of its last card.
 type FeedCursor struct {
-	CreatedAt time.Time
+	OrderedAt time.Time
 	ID        string
 }
 

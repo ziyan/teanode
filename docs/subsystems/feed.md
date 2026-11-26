@@ -144,14 +144,42 @@ of that stack) or `isEveryReadCard` (every read card that is not a decision
 still waiting for an answer). It answers the ids this call closed, leaves out
 cards already closed, stops the durable question behind a decision, and sends
 one `dismissed` event per card. `RestoreAgentFeedItems` (at most 500 ids)
-brings back dismissed cards and answers the ids restored, with one `restored`
-event each; a card a choice settled stays closed, and a question a dismissal
-stopped stays stopped, though the card's buttons still work because they post
-to the main conversation. Every surface offers Undo after a dismissal, which
-is a restore of the ids the dismissal answered. The agent's `feed` tool has
-`dismiss` and `restore` actions for when the person asks, and `teanode agent
-feed dismiss` and `restore` do the same. The dashboard has a dismiss button on
-each card, Dismiss all on a stack and Dismiss read above the list.
+brings back dismissed cards, still read, and answers the ids restored, with
+one `restored` event each. A card answered "not now" (a dismiss choice) has
+its answer cleared, so it can be answered again; one answered with an action
+keeps its answer, since the action was carried out. A card is left out when a
+card that is not dismissed holds its coalesce key (the newer word on that
+subject), or when it expired; of two dismissed cards on one subject only the
+one dismissed last comes back. A question a dismissal stopped stays stopped,
+though the card's buttons still work because they post to the main
+conversation. Every surface offers Undo after a dismissal, which is a restore
+of the ids the dismissal answered. The agent's `feed` tool has `dismiss` and
+`restore` actions for when the person asks, and a goal's own turn cannot
+restore; `teanode agent feed dismiss` and `restore` do the same. The dashboard
+has a dismiss button on each card, Dismiss all on a stack and Dismiss read
+above the list.
+
+**The dismissed cards.** `ListAgentFeed(isDismissedOnly: true)` lists the
+dismissed cards that have not expired, the most recently dismissed first, with
+a cursor on when they were dismissed. Stacks are not folded: each card is an
+entry, and the screens group neighboring entries of one stack into a deck
+themselves. Every surface has a Dismissed view (the dashboard's
+`/feed/dismissed`, the Feed menu on both phones, `teanode agent feed list
+--dismissed`, the tool's `list` with `dismissed_only`), which draws the cards
+exactly as the feed does. A dismissed card can still be liked, discussed,
+marked read and answered; it stays dismissed, and show less on it only files
+the preference. A swipe, the footer's restore button (dashboard) or Restore in
+the info sheet puts a card back.
+
+**Answered cards leave by themselves.** The server's hourly sweep dismisses a
+card a day after it was answered with a choice
+(`models.FeedAnsweredLifetime`), with a `dismissed` event, so it is found
+among the dismissed cards rather than crowding what still needs the person.
+
+**Withdrawn is gone.** The tool's `withdraw` (`WithdrawAgentFeedItem`,
+`teanode agent feed withdraw`) deletes the card: a card the agent took back
+because it no longer holds is not among the dismissed cards and cannot be put
+back.
 
 ## Liking
 

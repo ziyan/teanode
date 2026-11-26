@@ -215,6 +215,33 @@ func TestALikeIsWrittenToMemory(t *testing.T) {
 	})
 }
 
+// A dismissed card can still be answered, liked and shown less like, and
+// stays dismissed through all of it: putting it back is the person's restore.
+func TestADismissedCardCanStillBeAnsweredAndLiked(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	card := world.post(t, &models.AgentFeedItem{Title: "A new device signed in", Choices: []models.FeedChoice{
+		{ChoiceKey: "me", ChoiceLabel: "That was me", ChoiceRole: models.FeedChoiceDismiss},
+	}})
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.DismissAgentFeedItems(world.owner.ID, &db.FeedDismissSelection{FeedItemIDs: []string{card.ID}}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		card, _ = tx.GetAgentFeedItem(card.ID)
+	})
+	answered, err := world.choose(t, card, "me")
+	if err != nil || answered.ChosenChoiceKey != "me" || answered.DismissedAt == nil {
+		t.Fatalf("a dismissed card answered stays dismissed: %+v %v", answered, err)
+	}
+	liked, err := world.worker.LikeFeedItem(context.Background(), world.agent.ID, answered, true)
+	if err != nil || !liked.IsLiked || liked.DismissedAt == nil {
+		t.Fatalf("a dismissed card is liked: %+v %v", liked, err)
+	}
+	less, err := world.worker.ShowLessLikeFeedItem(context.Background(), world.agent.ID, liked)
+	if err != nil || less.DismissedAt == nil || !less.DismissedAt.Equal(*liked.DismissedAt) {
+		t.Fatalf("show less on a dismissed card only remembers: %+v %v", less, err)
+	}
+}
+
 // Three news cards from one goal list as one entry with the stack's count, and
 // a decision from the same goal stands alone.
 func TestCardsFromOneGoalStackAndADecisionStandsAlone(t *testing.T) {

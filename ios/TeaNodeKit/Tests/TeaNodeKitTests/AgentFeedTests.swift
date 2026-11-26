@@ -342,6 +342,59 @@ final class AgentFeedTests: XCTestCase {
         XCTAssertEqual(variables["first"], .number(10))
         XCTAssertEqual(variables["after"], .string("cursor-2"))
         XCTAssertEqual(variables["includeDismissed"], .bool(true))
+        XCTAssertNil(variables["isDismissedOnly"])
+    }
+
+    func testReadingTheDismissedCardsSendsTheFlagOnlyWhenAsked() async throws {
+        let (connection, fake) = connection(answering: pageJSON)
+        _ = try await connection.agentFeed(isDismissedOnly: true)
+        _ = try await connection.agentFeed()
+        XCTAssertEqual(try sentVariables(fake.sent[0])["isDismissedOnly"], .bool(true))
+        XCTAssertNil(try sentVariables(fake.sent[1])["isDismissedOnly"])
+        XCTAssertTrue(Documents.agentFeed.contains("isDismissedOnly: $isDismissedOnly"))
+    }
+
+    func testACardKnowsWhenItWasDismissed() throws {
+        let dismissed = try JSONDecoder().decode(
+            AgentFeedItem.self,
+            from: Data(#"{"feedItemId":"card-1","title":"Old","isDismissed":true,"dismissedAt":"2030-03-02T08:30:00Z"}"#.utf8))
+        XCTAssertEqual(dismissed.dismissedAt, "2030-03-02T08:30:00Z")
+        XCTAssertNotNil(dismissed.dismissedDate)
+        let open = try JSONDecoder().decode(AgentFeedItem.self, from: Data(#"{"feedItemId":"card-2","title":"New","dismissedAt":null}"#.utf8))
+        XCTAssertNil(open.dismissedAt)
+        XCTAssertNil(open.dismissedDate)
+    }
+
+    // MARK: Decks
+
+    private func deckCard(_ feedItemId: String, stackKey: String = "", isRead: Bool = true) -> AgentFeedItem {
+        AgentFeedItem(feedItemId: feedItemId, title: "Card \(feedItemId)", isRead: isRead, isDismissed: true, feedStackKey: stackKey)
+    }
+
+    func testNeighboursWithOneStackKeyBecomeADeck() {
+        let decks = AgentFeedDeck.group([
+            deckCard("a", stackKey: "goal:one"), deckCard("b", stackKey: "goal:one", isRead: false), deckCard("c"),
+            deckCard("d", stackKey: "goal:two"),
+        ])
+        XCTAssertEqual(decks.map(\.id), ["a", "c", "d"])
+        XCTAssertEqual(decks[0].feedItems.map(\.feedItemId), ["a", "b"])
+        XCTAssertTrue(decks[0].isDeck)
+        XCTAssertFalse(decks[1].isDeck)
+        XCTAssertFalse(decks[2].isDeck)
+        XCTAssertEqual(decks[0].topItem.stackItemCount, 2)
+        XCTAssertEqual(decks[0].topItem.stackUnreadCount, 1)
+        XCTAssertTrue(decks[0].topItem.isStack)
+        XCTAssertFalse(decks[2].topItem.isStack)
+    }
+
+    func testCardsWithNoKeyNeverJoinAndAnInterruptedKeyMakesTwoDecks() {
+        let alone = AgentFeedDeck.group([deckCard("a"), deckCard("b")])
+        XCTAssertEqual(alone.count, 2)
+        let split = AgentFeedDeck.group([
+            deckCard("a", stackKey: "goal:one"), deckCard("b", stackKey: "goal:two"), deckCard("c", stackKey: "goal:one"),
+        ])
+        XCTAssertEqual(split.count, 3)
+        XCTAssertTrue(AgentFeedDeck.group([]).isEmpty)
     }
 
     func testChoosingSendsTheCardAndTheChoice() async throws {

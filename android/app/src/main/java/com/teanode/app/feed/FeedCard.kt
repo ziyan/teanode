@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -141,7 +142,9 @@ fun FeedCard(
     val uriHandler = remember(actions) { object : UriHandler { override fun openUri(uri: String) = actions.followLink(uri) } }
     CompositionLocalProvider(LocalUriHandler provides uriHandler, LocalLinkOpener provides { address -> actions.followLink(address) }) {
         var isMenuOpen by remember { mutableStateOf(false) }
-        val dismissText = stringResource(R.string.feed_info_dismiss)
+        // On the dismissed screen the swipe, the menu and the accessibility action put the card back.
+        val isRestoring = actions.model.isDismissedOnly
+        val dismissText = stringResource(if (isRestoring) R.string.feed_restore else R.string.feed_info_dismiss)
         // A card swipes away either way, as a mail does; the page under it shows what the swipe does. It goes only
         // past two fifths of its width, so a short flick while scrolling leaves it, and it is dismissed once
         // however often the swipe settles.
@@ -151,7 +154,7 @@ fun FeedCard(
                 val isSwiped = target != SwipeToDismissBoxValue.Settled
                 if (isSwiped && !isSwipedAway) {
                     isSwipedAway = true
-                    actions.model.dismiss(item)
+                    actions.model.swipeAway(item)
                 }
                 isSwiped
             },
@@ -162,7 +165,7 @@ fun FeedCard(
             backgroundContent = {
                 if (swipeState.dismissDirection != SwipeToDismissBoxValue.Settled) {
                     Box(Modifier.fillMaxSize().padding(horizontal = 24.dp), contentAlignment = if (swipeState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd) {
-                        Icon(Icons.Outlined.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(if (isRestoring) Icons.Outlined.Restore else Icons.Outlined.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             },
@@ -173,7 +176,7 @@ fun FeedCard(
                     // A soft shadow lifts the card off the page in light mode; a long press opens the card's menu.
                     Modifier.fillMaxWidth().shadow(8.dp, CARD_SHAPE, ambientColor = shadowColor, spotColor = shadowColor)
                         .pointerInput(item.feedItemId) { detectTapGestures(onLongPress = { isMenuOpen = true }) }
-                        .semantics { customActions = listOf(CustomAccessibilityAction(dismissText) { actions.model.dismiss(item); true }) },
+                        .semantics { customActions = listOf(CustomAccessibilityAction(dismissText) { actions.model.swipeAway(item); true }) },
                     shape = CARD_SHAPE,
                     color = cardColor,
                     border = BorderStroke(0.5.dp, edgeBorder),
@@ -190,10 +193,10 @@ fun FeedCard(
                 DropdownMenu(expanded = isMenuOpen, onDismissRequest = { isMenuOpen = false }) {
                     DropdownMenuItem(
                         text = { Text(dismissText) },
-                        leadingIcon = { Icon(Icons.Outlined.Close, contentDescription = null) },
-                        onClick = { isMenuOpen = false; actions.model.dismiss(item) },
+                        leadingIcon = { Icon(if (isRestoring) Icons.Outlined.Restore else Icons.Outlined.Close, contentDescription = null) },
+                        onClick = { isMenuOpen = false; actions.model.swipeAway(item) },
                     )
-                    if (isStackShown) {
+                    if (isStackShown && !isRestoring) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.feed_dismiss_all, item.stackItemCount)) },
                             leadingIcon = { Icon(Icons.Outlined.Close, contentDescription = null) },
@@ -262,7 +265,7 @@ private fun FeedAnswerArea(item: AgentFeedItemView, actions: FeedActions) {
         }
         // The choice is no longer listed, but the answer is still given.
         item.isChosen -> FeedOutcome(item, actions)
-        item.choices.isNotEmpty() && !item.isDismissed -> FeedChoiceRow(Modifier.padding(top = 2.dp)) {
+        item.choices.isNotEmpty() -> FeedChoiceRow(Modifier.padding(top = 2.dp)) {
             for (choice in item.orderedChoices) FeedChoiceButton(choice, isDisabled = actions.isBusy(item)) { actions.choose(item, choice) }
         }
     }
