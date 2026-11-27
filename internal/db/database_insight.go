@@ -489,9 +489,6 @@ type MailInsightHead struct {
 }
 
 func (self *transaction) ListMailInsightHeads(mailboxId string, since time.Time, leftOutCategories []string, limit int) ([]*MailInsightHead, error) {
-	if limit <= 0 {
-		limit = 200
-	}
 	// An empty list in IN is NULL to the database, which leaves nothing.
 	leftOutClause, leftOutArguments := "", []any{}
 	if len(leftOutCategories) > 0 {
@@ -515,7 +512,7 @@ func (self *transaction) ListMailInsightHeads(mailboxId string, since time.Time,
 			WHERE "mailbox_item"."mail_id" = "mail_insight"."mail_id" AND "mailbox_folder"."mailbox_id" = ? AND "mailbox_item"."deleted" = false)
 		  AND NOT EXISTS (SELECT 1 FROM "mailbox_item" JOIN "mailbox_folder" ON "mailbox_folder"."id" = "mailbox_item"."folder_id"
 			WHERE "mailbox_item"."mail_id" = "mail_insight"."mail_id" AND "mailbox_folder"."mailbox_id" = ? AND "mailbox_folder"."kind" IN ('junk', 'trash', 'drafts', 'sent'))
-		ORDER BY "mail"."received_at" DESC LIMIT ?`, append(append([]any{mailboxId, since}, leftOutArguments...), mailboxId, mailboxId, limit)...).Scan(&rows).Error
+		ORDER BY "mail"."received_at" DESC LIMIT ?`, append(append([]any{mailboxId, since}, leftOutArguments...), mailboxId, mailboxId, limitOrAll(limit))...).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}

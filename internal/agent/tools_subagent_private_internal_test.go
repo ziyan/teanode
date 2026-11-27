@@ -2,7 +2,6 @@ package agent
 
 import (
 	"testing"
-	"time"
 )
 
 // followSubagent says whether the run called a private tool, so that the
@@ -30,7 +29,7 @@ func TestFollowSubagentSaysWhetherAPrivateToolWasCalled(t *testing.T) {
 		run.finished = true
 		run.mutex.Unlock()
 
-		answer, calls, hasPrivateCall, err := followSubagent(t.Context(), run, "run-conversation", time.Second)
+		answer, calls, hasPrivateCall, err := followSubagent(t.Context(), run, "run-conversation")
 		run.cancel()
 		if err != nil || answer != "an invented answer" || calls != len(testCase.calls) {
 			t.Errorf("%s: followSubagent = %q, %d, %v", name, answer, calls, err)

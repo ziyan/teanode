@@ -687,10 +687,37 @@ func (self *Deferral) Error() string {
 	return fmt.Sprintf("deferred until %s: %s", self.Until.Format(time.RFC3339), self.Reason)
 }
 
+// keepJobClaimed renews the claim of a job with no deadline every minute
+// until its context ends, so that the job is not taken for a lost one.
+func (self *Agent) keepJobClaimed(ctx context.Context, job *models.AgentJob) {
+	ticker := time.NewTicker(jobClaimRenewedEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+			_, err := tx.RenewAgentJobClaim(job.ID, job.ClaimID, time.Now())
+			return err
+		}); err != nil && ctx.Err() == nil {
+			log.Warningf("cannot renew the claim on %s job %s: %s", job.Kind, job.ID, err)
+		}
+	}
+}
+
 // execute runs one claimed job and records how it ended.
 func (self *Agent) execute(job *models.AgentJob, now time.Time) {
 	startedAt := time.Now()
-	ctx, cancel := context.WithTimeout(self.ctx, jobTimeout(job.Kind))
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if jobHasNoDeadline(job.Kind) {
+		ctx, cancel = context.WithCancel(self.ctx)
+		go self.keepJobClaimed(ctx, job)
+	} else {
+		ctx, cancel = context.WithTimeout(self.ctx, jobTimeout(job.Kind))
+	}
 	defer cancel()
 
 	run, err := self.resolve(ctx, job)

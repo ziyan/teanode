@@ -63,7 +63,7 @@ func TestALessonIsKeptOnlyWhenACommandBearsItOut(t *testing.T) {
 		}{AppliesWhen: "building the web dashboard", Approach: "switch to Node 20 with nvm first", Avoid: "the default Node 18",
 			Verification: "the build finished", Scope: "this laptop", VerifiedByCalls: verifiedBy, Topic: "Web Dashboard Build"})
 	}
-	kept := verifyLessons(answer, calls, "conversation-1", minimumLessonCount)
+	kept := verifyLessons(answer, calls, "conversation-1")
 	if len(kept) != 2 {
 		t.Fatalf("kept %d lessons, want the two a successful command bears out: %+v", len(kept), kept)
 	}
@@ -212,19 +212,8 @@ func TestALongWindowIsReadInParts(t *testing.T) {
 			Topic           string `json:"topic"`
 		}{AppliesWhen: "checking the relay", Approach: "read the end of relay.log", VerifiedByCalls: []int{verifiedBy}, Topic: "mail relay"})
 	}
-	kept := verifyLessons(answer, parts[1].Calls, "conversation-1", lessonsAllowedFor(parts[1].Transcript))
+	kept := verifyLessons(answer, parts[1].Calls, "conversation-1")
 	if len(kept) != 1 || !strings.Contains(kept[0].Evidence[0].Quote, "tail -n 500") {
 		t.Errorf("kept %+v, want only the lesson citing a command of this part", kept)
-	}
-}
-
-// What a call may file grows with what it read, and never falls below the
-// three a short exchange may file.
-func TestTheLessonsAllowedGrowWithWhatWasRead(t *testing.T) {
-	if allowed := lessonsAllowedFor("a short exchange"); allowed != minimumLessonCount {
-		t.Errorf("a short exchange may file %d lessons, want %d", allowed, minimumLessonCount)
-	}
-	if allowed := lessonsAllowedFor(strings.Repeat("x", lessonPartRunes)); allowed != lessonPartRunes/lessonRunes || allowed <= minimumLessonCount {
-		t.Errorf("a whole part may file %d lessons", allowed)
 	}
 }

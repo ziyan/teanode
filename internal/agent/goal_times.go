@@ -32,11 +32,6 @@ func (self *Agent) SetOperationsFactory(factory OperationsFactory) {
 	self.operations = factory
 }
 
-// GoalTimesMost is how many times one goal may keep: enough for a reminder
-// a week before and on the day beside a weekly look, and few enough that a
-// list of them is still read.
-const GoalTimesMost = 12
-
 // SettleGoalTimes checks a goal's times and says when the soonest is. A
 // distance from now ("@in 20m") becomes the moment it means, so that what is
 // stored does not move every time it is read; a moment that has passed is
@@ -85,9 +80,6 @@ func settleGoalTimes(times []string, owner *models.User, now time.Time, isPassed
 		if next == nil || at.Before(*next) {
 			next = &at
 		}
-	}
-	if len(settled) > GoalTimesMost {
-		return nil, nil, fmt.Errorf("a goal keeps at most %d times; this has %d", GoalTimesMost, len(settled))
 	}
 	return settled, next, nil
 }

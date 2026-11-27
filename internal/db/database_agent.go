@@ -59,6 +59,12 @@ type AgentOperation interface {
 	// False means that claim was released or replaced while its worker ran.
 	FinishAgentJob(jobId, claimId string, outcome *AgentJobOutcome) (bool, error)
 
+	// RenewAgentJobClaim moves the time the running claim named by claimId
+	// was taken to at, and says whether that claim still holds: a job with
+	// no deadline of its own is kept from being put back in the queue as a
+	// lost one by renewing its claim while it runs.
+	RenewAgentJobClaim(jobId, claimId string, at time.Time) (bool, error)
+
 	// RetryAgentJob returns a terminal job to the queue with a fresh failure allowance.
 	RetryAgentJob(jobId string) (bool, error)
 
@@ -819,6 +825,16 @@ func (self *transaction) FinishAgentJob(jobId, claimId string, outcome *AgentJob
 	updated := self.tx.Model(&agentJobModel{}).
 		Where("id = ? AND status = ? AND claim_id = ?", jobId, string(models.AgentJobRunning), claimId).
 		Updates(updates)
+	return updated.RowsAffected == 1, updated.Error
+}
+
+func (self *transaction) RenewAgentJobClaim(jobId, claimId string, at time.Time) (bool, error) {
+	if claimId == "" {
+		return false, ErrInvalidArguments
+	}
+	updated := self.tx.Model(&agentJobModel{}).
+		Where("id = ? AND status = ? AND claim_id = ?", jobId, string(models.AgentJobRunning), claimId).
+		Update("claimed_at", at)
 	return updated.RowsAffected == 1, updated.Error
 }
 

@@ -27,11 +27,6 @@ const (
 	// pieces are combined, never cut.
 	recordingSummaryPieceCharacters = 24000
 
-	// recordingTitleCharacters and recordingSummaryCharacters bound what is
-	// stored, whatever the model wrote.
-	recordingTitleCharacters   = 60
-	recordingSummaryCharacters = 2000
-
 	// recordingPieceNotesCharacters bounds the notes one piece may leave
 	// for the combining call.
 	recordingPieceNotesCharacters = 3000
@@ -55,7 +50,7 @@ const recordingSummaryInstructions = "You name and summarize a recording from it
 
 const recordingSummaryAnswerShape = "Answer with one JSON object and nothing else: " +
 	`{"recordingTitle": "...", "recordingSummary": "..."}. ` +
-	"recordingTitle is at most 60 characters, plain text, no quotation marks, saying what the recording is about. " +
+	"recordingTitle is a short phrase, plain text, no quotation marks, saying what the recording is about. " +
 	"recordingSummary is two to four plain sentences naming the decisions made, the questions left open and the commitments made, with who said each. " +
 	"Leave out anything the transcript does not say."
 
@@ -69,7 +64,8 @@ type recordingSummaryAnswer struct {
 }
 
 // plainRecordingText keeps what a model wrote as one run of printable text: no
-// control characters, no leading or trailing space, at most characters long.
+// control characters, no leading or trailing space, and cut to characters
+// when that is above zero.
 // Newlines survive in the summary (isMultiline) and become spaces in a title.
 func plainRecordingText(text string, characters int, isMultiline bool) string {
 	text = strings.Map(func(character rune) rune {
@@ -84,7 +80,11 @@ func plainRecordingText(text string, characters int, isMultiline bool) string {
 	if !isMultiline {
 		text = strings.Join(strings.Fields(text), " ")
 	}
-	return strings.TrimSpace(cutRunes(strings.TrimSpace(text), characters))
+	text = strings.TrimSpace(text)
+	if characters > 0 {
+		text = strings.TrimSpace(cutRunes(text, characters))
+	}
+	return text
 }
 
 // splitRecordingPieces groups transcript lines into pieces of at most
@@ -170,8 +170,8 @@ func (self *Agent) summarizeRecordingLines(ctx context.Context, run *Run, lines 
 		return nil, nil
 	}
 	summary := &recordingSummaryAnswer{
-		RecordingTitle:   plainRecordingText(strings.Trim(strings.TrimSpace(answer.Value.RecordingTitle), "\"'`"), recordingTitleCharacters, false),
-		RecordingSummary: plainRecordingText(answer.Value.RecordingSummary, recordingSummaryCharacters, true),
+		RecordingTitle:   plainRecordingText(strings.Trim(strings.TrimSpace(answer.Value.RecordingTitle), "\"'`"), 0, false),
+		RecordingSummary: plainRecordingText(answer.Value.RecordingSummary, 0, true),
 	}
 	if summary.RecordingSummary == "" {
 		return nil, nil

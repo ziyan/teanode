@@ -24,23 +24,36 @@ import (
 // instead of an item at a time -- coarser, complete, and marked so it can
 // be done again finely later.
 func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.AgentDream, budget *dreamBudget) {
-	var waiting []*models.AgentDocument
-	var backlog int64
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		limit := dreamDigest
-		if run.Agent.DreamBootstrap {
-			limit = dreamDigestBootstrap
+	previous := int64(-1)
+	for ctx.Err() == nil && budget.left() {
+		var waiting []*models.AgentDocument
+		var backlog int64
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			waiting, backlog, err = tx.ListAgentDocumentsToDigest(run.Agent.ID, chatNamesOf(run.Owner), dreamDigestPage)
+			return err
+		}); err != nil {
+			log.Warningf("cannot list what is waiting to be read: %s", err)
+			return
 		}
-		waiting, backlog, err = tx.ListAgentDocumentsToDigest(run.Agent.ID, chatNamesOf(run.Owner), limit)
-		return err
-	}); err != nil {
-		log.Warningf("cannot list what is waiting to be read: %s", err)
-		return
+		if previous < 0 {
+			record.Backlog = int(backlog)
+		}
+		// A page that left the backlog as it was read nothing: the model
+		// did not answer, or what it was shown has no words. Asking again
+		// would only repeat that.
+		if len(waiting) == 0 || (previous >= 0 && backlog >= previous) {
+			return
+		}
+		previous = backlog
+		if self.digestPage(ctx, run, record, budget, waiting) {
+			return
+		}
 	}
-	record.Backlog = int(backlog)
-	if len(waiting) == 0 {
-		return
-	}
+}
+
+// digestPage reads one page of what is waiting, and says whether the reading
+// has to stop: the allowance is gone, or the model has gone quiet.
+func (self *Agent) digestPage(ctx context.Context, run *Run, record *models.AgentDream, budget *dreamBudget, waiting []*models.AgentDocument) bool {
 	// Never coarsely. Reading titles instead of contents made pages and
 	// no facts -- twenty-eight of them with nothing on them -- and a
 	// backlog is pacing: what is not read tonight is read on a later
@@ -83,7 +96,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 		mutex.Lock()
 		halt := stopped
 		mutex.Unlock()
-		if halt || ctx.Err() != nil || !budget.left() || !budget.readingTimeLeft() {
+		if halt || ctx.Err() != nil || !budget.left() {
 			break
 		}
 		// A batch ends at twenty documents, at the source's end, or where
@@ -150,6 +163,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 		}()
 	}
 	group.Wait()
+	return stopped
 }
 
 // markTinyRead marks read, without a call, the documents that say too
@@ -224,7 +238,7 @@ func (self *Agent) digestInParts(ctx context.Context, run *Run, document *models
 	}
 	total := 0
 	for _, part := range parts {
-		if ctx.Err() != nil || !budget.left() || !budget.readingTimeLeft() {
+		if ctx.Err() != nil || !budget.left() {
 			return total, false
 		}
 		var completeWith digestCompletion
@@ -320,7 +334,7 @@ func (self *Agent) digestShown(ctx context.Context, run *Run, documents []*model
 	// A document is not the person's words for what kind a fact may be or
 	// what it may retract; only a note a source marked as theirs may ask
 	// for its facts to be remembered.
-	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, writtenByThePerson(documents), models.EvidenceDocument, request.Shown, func(transaction db.Transaction, filed whatWasFiled) error {
+	filed, err := self.fileWhatWasLearned(ctx, run, answer, nil, models.EvidenceDocument, request.Shown, func(transaction db.Transaction, filed whatWasFiled) error {
 		if complete == nil {
 			return nil
 		}
@@ -434,21 +448,6 @@ func (self *Agent) digestHalves(ctx context.Context, run *Run, documents []*mode
 		}
 	}
 	return total, true
-}
-
-// writtenByThePerson is the documents of a batch a source marked as the
-// person's own, @you: the notes that may ask for their facts to be
-// remembered. An author's name is not enough. A login, a display name or
-// a commit's author is anybody's to share or to set, and a stranger with
-// the person's name would otherwise be asking on their behalf.
-func writtenByThePerson(documents []*models.AgentDocument) map[string]bool {
-	written := map[string]bool{}
-	for _, document := range documents {
-		if isPersonAuthor(document.Author()) {
-			written[document.ID] = true
-		}
-	}
-	return written
 }
 
 // isPersonAuthor is whether an author is the mark a source gives the

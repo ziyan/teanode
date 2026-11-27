@@ -43,10 +43,6 @@ const (
 	// preparedIsAsked is set in what a check-in is handed when the person
 	// asked for the turn.
 	preparedIsAsked = "isAsked"
-
-	// speakFirstLongest is how long a spoken-first turn may run: long
-	// enough for a check of five questions answered at a person's pace.
-	speakFirstLongest = 45 * time.Minute
 )
 
 // The reasons the agent speaks first, which are also the subjects of its

@@ -34,10 +34,9 @@ import (
 //
 //   - Idempotent. A link is written once; one already there is left alone,
 //     and a statement is never turned into a proposal.
-//   - Bounded. At most recordLinksPerDreamCount new links, and each source reads
-//     only the newest of its records (a calendar, only the events starting
-//     within recordLinksEventWindow of now), so a large mailbox or a long
-//     history costs the same each time. A record older than that is not
+//   - Bounded. A mailbox, the recordings and the finance records are read
+//     as far back as the newest of them go (the counts below), so a large
+//     mailbox costs the same each time. A record older than that is not
 //     reached by this pass; it is linked by hand or by the agent.
 //   - Granted. The agent reads only what the person gave it, so a record is
 //     linked only when the same resolver the agent reads links with says it
@@ -46,9 +45,6 @@ import (
 //   - Respectful of removal. A link the person took off a page is recorded
 //     (agent_record_link_dismissal) and not made again.
 const (
-	// recordLinksPerDreamCount is the most links one dream makes.
-	recordLinksPerDreamCount = 300
-
 	// recordLinksMailItemCount is how many of the newest messages of a folder
 	// are looked at, per folder, and recordLinksRecordingCount how many of the
 	// newest recordings. recordLinksTransactionCount is the same for finance
@@ -56,10 +52,6 @@ const (
 	recordLinksMailItemCount    = 100
 	recordLinksRecordingCount   = 50
 	recordLinksTransactionCount = 200
-
-	// recordLinksEventWindow is how far either side of now an event may
-	// start to be looked at.
-	recordLinksEventWindow = 180 * 24 * time.Hour
 
 	// recordLinksNameLength is the least a name may be to be found inside
 	// the title of an event: a short word is a word of anything else too.
@@ -98,7 +90,6 @@ type recordLinkPass struct {
 	// belongs to exactly one.
 	pageByAddress map[string]*models.AgentNode
 
-	remaining     int
 	statedCount   int
 	proposedCount int
 	reader        recordlink.Reader
@@ -132,7 +123,7 @@ func (self *Agent) dreamRecordLinks(ctx context.Context, run *Run) recordLinkCou
 		{"calendars", linkCalendarParticipants},
 		{"finance", linkFinanceRecords},
 	} {
-		if ctx.Err() != nil || pass.remaining <= 0 {
+		if ctx.Err() != nil {
 			break
 		}
 		if err := source.link(ctx, run, pass); err != nil {
@@ -147,7 +138,7 @@ func (self *Agent) dreamRecordLinks(ctx context.Context, run *Run) recordLinkCou
 
 func (self *Agent) newRecordLinkPass(ctx context.Context, run *Run) (*recordLinkPass, error) {
 	pass := &recordLinkPass{
-		agent: run.Agent, owner: run.Owner, remaining: recordLinksPerDreamCount,
+		agent: run.Agent, owner: run.Owner,
 		reader: recordlink.Reader{UserID: run.Owner.ID, AgentID: run.Agent.ID, IsAgent: true},
 	}
 	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
@@ -231,9 +222,6 @@ func only(pages []*models.AgentNode) *models.AgentNode {
 // put writes one link if it is new, wanted and readable. It reports whether
 // a link was written.
 func (self *recordLinkPass) put(tx db.Transaction, link *models.AgentRecordLink) (bool, error) {
-	if self.remaining <= 0 {
-		return false, nil
-	}
 	key := models.RecordLinkKey(link.NodeID, link.RecordKind, link.RecordID, link.RecordRelation, link.PassageStartMS, link.PassageEndMS)
 	if self.dismissed[key] {
 		return false, nil
@@ -256,7 +244,6 @@ func (self *recordLinkPass) put(tx db.Transaction, link *models.AgentRecordLink)
 		return false, err
 	}
 	self.existing[key] = link.LinkStatus
-	self.remaining--
 	if link.LinkStatus == models.EdgeProposed {
 		self.proposedCount++
 	} else {
@@ -348,9 +335,6 @@ func linkContactsOfPeople(ctx context.Context, run *Run, pass *recordLinkPass) e
 		hasContactLink := pagesWithContactLink(pass)
 
 		for _, page := range pass.people {
-			if pass.remaining <= 0 {
-				return nil
-			}
 			if page.ContactID != "" || hasContactLink[page.ID] {
 				continue
 			}
@@ -487,9 +471,6 @@ func linkRecordingSpeakers(ctx context.Context, run *Run, pass *recordLinkPass) 
 			return err
 		}
 		for _, recording := range recordings {
-			if pass.remaining <= 0 {
-				return nil
-			}
 			if err := linkRecordingTurns(tx, pass, recording, pageByIdentity); err != nil {
 				return err
 			}
@@ -547,7 +528,7 @@ func linkRecordingTurns(tx db.Transaction, pass *recordLinkPass, recording *mode
 		// a new transcription) replaces the link it overlaps, so the page
 		// does not collect one link per version of the same passage.
 		overlapping, err := tx.ListAgentRecordBacklinks(pass.agent.ID, models.RecordRecordingPassage, recording.ID,
-			turn.startMS, turn.endMS, recordLinksPerDreamCount)
+			turn.startMS, turn.endMS, -1)
 		if err != nil {
 			return err
 		}
@@ -580,9 +561,6 @@ func linkRecordingTurns(tx db.Transaction, pass *recordLinkPass, recording *mode
 					older.PassageStartMS, older.PassageEndMS))
 			}
 		}
-		if pass.remaining <= 0 {
-			return nil
-		}
 	}
 	return nil
 }
@@ -609,9 +587,6 @@ func linkMailParticipants(ctx context.Context, run *Run, pass *recordLinkPass) e
 				continue
 			}
 			for _, kind := range []models.MailboxFolderKind{models.MailboxFolderKindInbox, models.MailboxFolderKindArchive, models.MailboxFolderKindSent} {
-				if pass.remaining <= 0 {
-					return nil
-				}
 				folder, err := tx.GetFolderByKind(mailbox.ID, kind)
 				if err != nil {
 					return err
@@ -741,21 +716,15 @@ func linkCalendarParticipants(ctx context.Context, run *Run, pass *recordLinkPas
 		if err != nil {
 			return err
 		}
-		now := time.Now()
 		for _, owned := range calendars {
 			if !owned.AgentGranted {
 				continue
 			}
-			// Only the window is read, not every event the calendar holds.
-			objects, err := tx.ListCalendarObjectsStartingBetween(owned.ID,
-				now.Add(-recordLinksEventWindow), now.Add(recordLinksEventWindow), db.ObjectsPerCalendar)
+			objects, err := tx.ListCalendarObjects(owned.ID)
 			if err != nil {
 				return err
 			}
 			for _, object := range objects {
-				if pass.remaining <= 0 {
-					return nil
-				}
 				if object.StartsAt.IsZero() || strings.EqualFold(object.Status, "CANCELLED") {
 					continue
 				}
@@ -883,9 +852,6 @@ func linkFinanceRecords(ctx context.Context, run *Run, pass *recordLinkPass) err
 			return err
 		}
 		for _, transactionRecord := range page.FinanceTransactions {
-			if pass.remaining <= 0 {
-				return nil
-			}
 			organization := only(organizationsNamed[normalizedName(transactionRecord.MerchantName)])
 			if organization == nil || normalizedName(transactionRecord.MerchantName) == "" {
 				continue
@@ -917,9 +883,6 @@ func linkMatchedReceipts(tx db.Transaction, pass *recordLinkPass) error {
 	}
 	for _, receipt := range receipts.FinanceReceipts {
 		for _, match := range receipt.ReceiptMatches {
-			if pass.remaining <= 0 {
-				return nil
-			}
 			links, err := tx.ListAgentRecordBacklinks(pass.agent.ID, models.RecordFinanceTransaction, match.FinanceTransactionID, 0, 0, 20)
 			if err != nil {
 				return err

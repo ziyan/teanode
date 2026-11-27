@@ -23,38 +23,18 @@ const (
 	dreamEvery = time.Minute
 
 	// Bootstrapping -- a first ingest read as fast as the machine allows
-	// -- widens the night: the reading may take most of the night rather
-	// than half, more of it, more months written up, more pages divided,
-	// and a shorter wait after the person's last word.
-	dreamDigestBootstrap = 5000
+	// -- shortens the wait after the person's last word.
+	//
 	// dreamSilences is how many batches in a row the model may leave
 	// unanswered before the night's reading stops.
 	dreamSilences       = 3
 	dreamQuietBootstrap = 5 * time.Minute
 
-	// dreamLongest is how long one night may run. The reading takes
-	// half of it at most (see halfway), so the rest is never starved.
+	// dreamLongest is how long one night may run.
 	dreamLongest = 45 * time.Minute
-
-	// dreamDigest is how many things one night reads at full resolution,
-	// and dreamConsolidate how many pages it rewrites.
-	dreamDigest      = 2000
-	dreamConsolidate = 100
 
 	// dreamBatch is how many items go into one call of the digest phase.
 	dreamBatch = 20
-
-	// digestFacts is how many facts one batch may file.
-	//
-	// A quarter of the batch, while a fact was only ever about a subject.
-	// The reading is now told that the author of every item earns a page
-	// and the one line the item shows about them, so a batch of twenty
-	// commits brings up to twenty people along with whatever they were
-	// working on -- and five between them left the people and the
-	// projects competing for the same five, which is a bar on the pages
-	// by another name. Half the batch, still under rememberFacts, the
-	// hard bound the filing itself enforces.
-	digestFacts = dreamBatch / 2
 
 	// digestSmallest is how much a document must hold to be read at all:
 	// anything, by either measure (see markTinyRead). It was two short
@@ -64,14 +44,17 @@ const (
 	// cost almost nothing to read.
 	digestSmallest = 8
 
-	// dreamEmbed is how many vectors one night writes.
-	dreamEmbed = 2000
-
 	// dormantAfter is how long a fact goes unused before it leaves the
 	// index. It stays searchable; a preference or a decision never goes
 	// dormant at all, because those are asked for by name.
 	dormantAfter = 180 * 24 * time.Hour
 )
+
+// dreamDigestPage is how many waiting documents the reading lists at a time,
+// so that the list of a large archive is never held whole. The reading asks
+// for the next page until nothing is waiting. A variable so that a test can
+// make it small.
+var dreamDigestPage = 2000
 
 // runDream is the handler for a dream job.
 func (self *Agent) runDream(ctx context.Context, run *Run) error {
@@ -161,13 +144,6 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	// share: after it, a night working through a backlog had spent
 	// everything on the reading and never looked (see dreamIdeas).
 	self.dreamIdeas(ctx, run, budget)
-	// The reading gets half of what is left of the night, never all of
-	// it: what comes after it is what makes the reading worth doing.
-	reading := 0.5
-	if run.Agent.DreamBootstrap {
-		reading = 0.7
-	}
-	budget.digestUntil = partway(ctx, time.Now(), reading)
 	self.dreamDigest(ctx, run, record, budget)
 	// The pictures after the words, and outside the reading's share of
 	// the night: what is decided here is not what to read but what is
@@ -180,8 +156,6 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	// written from the journal's months (see dreamTimeline).
 	self.dreamJournal(ctx, run, record, budget)
 	self.dreamTimeline(ctx, run, record, budget)
-	// Half of what is left, so the phases after it still run.
-	budget.consolidateUntil = halfway(ctx, time.Now())
 	self.dreamConsolidate(ctx, run, record, budget)
 	self.dreamOrganize(ctx, run, record, budget)
 	self.dreamSplit(ctx, run, record, budget)
@@ -190,15 +164,11 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 	// the night's share (see dreamRecordLinks).
 	self.dreamRecordLinks(ctx, run)
 	// Overviews after the openings are rewritten and the crowded pages
-	// divided, since both are what an overview is written from; and
-	// given half of what is left, like the openings.
-	budget.overviewUntil = halfway(ctx, time.Now())
+	// divided, since both are what an overview is written from.
 	self.dreamOverviews(ctx, run, record, budget)
 	// Themes after the overviews, so a theme made tonight is written up
 	// tomorrow from members whose overviews are as new as they get; and
 	// reflections after the themes, over the overviews the themes have.
-	// Both are bounded by count rather than by a share of the night: at
-	// most a dozen names and a handful of reflections.
 	self.dreamThemes(ctx, run, record, budget)
 	self.dreamReflect(ctx, run, record, budget)
 	self.dreamQuietHalf(ctx, run, record, time.Now())
@@ -284,11 +254,9 @@ func caughtUp(record *models.AgentDream) bool {
 }
 
 const (
-	// timelineBackfill is how many past months one night writes up, and
-	// timelineLeast how much of the person's own record a month needs
+	// timelineLeast is how much of the person's own record a month needs
 	// before it is worth a page.
-	timelineBackfill = 6
-	timelineLeast    = 5
+	timelineLeast = 5
 
 	// guessedPattern is a PostgreSQL regular expression for a page that
 	// guesses: the words a model reaches for when the record is a count
@@ -315,7 +283,7 @@ func (self *Agent) dreamEmbed(ctx context.Context, run *Run, record *models.Agen
 		log.Debugf("cannot embed the overview sections: %s", err)
 	}
 	record.Embedded += sections
-	chunks, _, err := self.embedChunks(ctx, run.Agent, dreamEmbed)
+	chunks, _, err := self.embedChunks(ctx, run.Agent, 0)
 	if err != nil {
 		log.Debugf("cannot embed what was indexed: %s", err)
 	}

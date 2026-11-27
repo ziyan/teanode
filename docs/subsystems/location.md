@@ -488,8 +488,8 @@ answers carry the untrusted mark.
 - **The journal**: for every person who has visits, one document for each ended
   day (`location:YYYY-MM-DD`), written from the visits with no model call, which
   the dream reads like any other document; and a monthly digest of how many
-  hours were spent at which places. Every run looks at the last 14 days again, so
-  a day written again after an erase of part of it, a forgotten place or a new
+  hours were spent at which places. Every run looks at every day again, back to
+  the first visit, pause or filed day, so a day written again after an erase of part of it, a forgotten place or a new
   name or label says what is left. A day whose visits are all erased has no
   document. A visit with no departure lasts until the next visit began. If no visit
   followed, it ends at the time of the latest position when that position was

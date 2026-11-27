@@ -14,25 +14,19 @@ import (
 )
 
 // Search by meaning: each message of a mailbox that searches this way gets
-// a vector when it arrives (and the newest ones when the mailbox is
+// a vector when it arrives (and every earlier one when the mailbox is
 // granted), and a search embeds its words and ranks the mailbox's vectors
-// by cosine in the server. No vector database: a personal mailbox has
-// thousands of messages, not millions, and the candidates fit in memory.
+// by cosine in the server, a page of them at a time. No vector database: a
+// personal mailbox has thousands of messages, not millions.
 
-// The bounds.
-const (
-	// embedCharacters is how much of a message goes into its vector: the
-	// subject and the start of the text, which is where the meaning is.
-	embedCharacters = 4000
+// embedCharacters is how much of a message goes into its vector: the subject
+// and the start of the text, which is where the meaning is.
+const embedCharacters = 4000
 
-	// embedCandidates is how many of a mailbox's newest vectors a search
-	// ranks.
-	embedCandidates = 3000
-
-	// embedBackfill is how many messages get vectors when a mailbox is
-	// granted with search by meaning on.
-	embedBackfill = 200
-)
+// embedPage is how many of a mailbox's vectors a search reads at a time, so
+// that only one page is in memory; a search goes on through every page. A
+// variable so that a test can make it small.
+var embedPage = 2000
 
 // embedText is what is embedded of a message.
 func embedText(message *MessageContext) string {
@@ -100,8 +94,8 @@ func (self *Agent) runEmbed(ctx context.Context, run *Run) error {
 	})
 }
 
-// backfillEmbeddings queues vectors for the newest messages without one,
-// when the mailbox searches by meaning.
+// backfillEmbeddings queues vectors for every message without one, newest
+// first, when the mailbox searches by meaning.
 func (self *Agent) backfillEmbeddings(ctx context.Context, run *Run) error {
 	configuration := run.Configuration()
 	if !run.Source.Search || !FeatureAllowed(configuration, "search") {
@@ -116,7 +110,7 @@ func (self *Agent) backfillEmbeddings(ctx context.Context, run *Run) error {
 		return err
 	}
 	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		ids, err := tx.ListMailWithoutEmbedding(run.Mailbox.ID, selection.Name, embedBackfill)
+		ids, err := tx.ListMailWithoutEmbedding(run.Mailbox.ID, selection.Name, 0)
 		if err != nil {
 			return err
 		}
@@ -141,11 +135,15 @@ func (self *Agent) meaningSearch(ctx context.Context, agent *models.Agent, mailb
 		return nil, err
 	}
 	modelName := selection.Name
-	var candidates []*db.MailEmbedding
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		candidates, err = tx.ListMailEmbeddings(mailboxId, modelName, embedCandidates)
-		return err
-	}); err != nil {
+	readPage := func(offset int) (candidates []*db.MailEmbedding, err error) {
+		err = self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			candidates, err = tx.ListMailEmbeddingsPage(mailboxId, modelName, offset, embedPage)
+			return err
+		})
+		return candidates, err
+	}
+	candidates, err := readPage(0)
+	if err != nil {
 		return nil, err
 	}
 	if len(candidates) == 0 {
@@ -164,22 +162,38 @@ func (self *Agent) meaningSearch(ctx context.Context, agent *models.Agent, mailb
 	if len(vectors) == 0 {
 		return nil, nil
 	}
-	return rankByCosine(vectors[0], candidates, limit), nil
+	var scores []mailScore
+	for offset := 0; len(candidates) > 0; {
+		scores = append(scores, scoreByCosine(vectors[0], candidates)...)
+		// Only the best that could still be asked for are carried on from
+		// page to page.
+		scores = bestScores(scores, limit)
+		offset += len(candidates)
+		if len(candidates) < embedPage {
+			break
+		}
+		if candidates, err = readPage(offset); err != nil {
+			return nil, err
+		}
+	}
+	return mailIDsOf(scores, limit), nil
 }
 
-// rankByCosine is the candidates closest to the query, best first, above a
-// floor that keeps a search for something the mailbox has none of from
-// answering with its least unrelated messages.
-func rankByCosine(query []float32, candidates []*db.MailEmbedding, limit int) []string {
-	type scored struct {
-		id    string
-		score float64
-	}
+// mailScore is how close one message is to a query.
+type mailScore struct {
+	id    string
+	score float64
+}
+
+// scoreByCosine is the candidates above a floor that keeps a search for
+// something the mailbox has none of from answering with its least unrelated
+// messages, with how close each is.
+func scoreByCosine(query []float32, candidates []*db.MailEmbedding) []mailScore {
 	queryNorm := norm(query)
 	if queryNorm == 0 {
 		return nil
 	}
-	var ranked []scored
+	var scores []mailScore
 	for _, candidate := range candidates {
 		if len(candidate.Vector) != len(query) {
 			continue
@@ -194,16 +208,32 @@ func rankByCosine(query []float32, candidates []*db.MailEmbedding, limit int) []
 		}
 		score := dot / (queryNorm * candidateNorm)
 		if score >= meaningFloor {
-			ranked = append(ranked, scored{candidate.MailID, score})
+			scores = append(scores, mailScore{candidate.MailID, score})
 		}
 	}
-	sort.SliceStable(ranked, func(left, right int) bool { return ranked[left].score > ranked[right].score })
+	return scores
+}
+
+// searchLimit is how many hits a search of this limit answers with.
+func searchLimit(limit int) int {
 	if limit <= 0 {
-		limit = 20
+		return 20
 	}
-	ids := make([]string, 0, limit)
-	for _, entry := range ranked {
-		if len(ids) >= limit {
+	return limit
+}
+
+// bestScores is the closest of the scores, best first, as many as a search
+// with this limit answers with.
+func bestScores(scores []mailScore, limit int) []mailScore {
+	sort.SliceStable(scores, func(left, right int) bool { return scores[left].score > scores[right].score })
+	return scores[:min(len(scores), searchLimit(limit))]
+}
+
+// mailIDsOf is the messages of scores that are already the best, in order.
+func mailIDsOf(scores []mailScore, limit int) []string {
+	ids := make([]string, 0, min(len(scores), searchLimit(limit)))
+	for _, entry := range scores {
+		if len(ids) >= searchLimit(limit) {
 			break
 		}
 		ids = append(ids, entry.id)

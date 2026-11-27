@@ -121,9 +121,6 @@ const overviewFactCountExpression = `(SELECT count(*) FROM "agent_fact" f
 	WHERE f."node_id" = n."id" AND NOT f."dormant" AND f."superseded_by" IS NULL AND f."kind" <> 'reflection')`
 
 func (self *transaction) ListAgentNodesForOverview(agentId string, leastFactCount, limit int) ([]*models.AgentNode, error) {
-	if limit <= 0 {
-		limit = 40
-	}
 	// The floor is the median importance of the pages with facts enough
 	// for an overview: an overview is paid for, and the half of the graph
 	// nobody reaches for is not worth one before the other half is.
@@ -144,13 +141,10 @@ func (self *transaction) ListAgentNodesForOverview(agentId string, leastFactCoun
 		SELECT n.* FROM "agent_node" n JOIN "due" ON "due"."id" = n."id"
 		WHERE NOT EXISTS (SELECT 1 FROM "due" waiting WHERE waiting."parent_id" = n."id")
 		ORDER BY n."importance" DESC, n."path" ASC
-		LIMIT ?`, agentId, leastFactCount, agentId, leastFactCount, limit))
+		LIMIT ?`, agentId, leastFactCount, agentId, leastFactCount, limitOrAll(limit)))
 }
 
 func (self *transaction) ListAgentThemesForOverview(agentId string, limit int) ([]*models.AgentNode, error) {
-	if limit <= 0 {
-		limit = 16
-	}
 	return self.nodesFrom(self.tx.Raw(`
 		WITH "due" AS (
 			SELECT n."id", n."parent_id" FROM "agent_node" n
@@ -164,7 +158,7 @@ func (self *transaction) ListAgentThemesForOverview(agentId string, limit int) (
 		SELECT n.* FROM "agent_node" n JOIN "due" ON "due"."id" = n."id"
 		WHERE NOT EXISTS (SELECT 1 FROM "due" waiting WHERE waiting."parent_id" = n."id")
 		ORDER BY n."importance" DESC, n."path" ASC
-		LIMIT ?`, agentId, limit))
+		LIMIT ?`, agentId, limitOrAll(limit)))
 }
 
 func (self *transaction) AgentNodeOverviewInputs(agentId, nodeId string) (string, error) {

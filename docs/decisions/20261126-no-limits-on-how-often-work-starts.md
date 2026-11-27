@@ -125,8 +125,8 @@ tokens and monthly cost. Every other field stops being a setting:
   are sizes the disk and the upload path are built for;
   `MaxScannedAttachmentBytes` is `computer.DefaultMaxAttachmentBytes` (25 MB);
   `messageBodyCharactersMost` (12,000), `recallTokens` (1,200),
-  `ingestChunksPerRun` (2,000), `dreamScanConcurrency` and
-  `dreamRewriteConcurrency` (one each) in the agent package; and
+  `ingestChunksPerRun` (2,000), `dreamScanConcurrency` (6) and
+  `dreamRewriteConcurrency` (4) in the agent package; and
   `WorkerConcurrency` (2).
 
 `requestTimeout` (60 seconds) cut a whole answer at a minute, and a long
@@ -167,7 +167,7 @@ None of these is a count of how often or how much work runs:
 - technical bounds: payload, attachment and prompt sizes, timeouts,
   concurrency and the browser's contexts, the loop guard that stops a turn
   calling the same failing tool three times, batch sizes, the push relay's
-  abuse limits, and `GoalTimesMost`.
+  abuse limits.
 
 ## Budget coverage
 

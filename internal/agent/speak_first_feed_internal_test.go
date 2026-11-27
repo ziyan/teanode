@@ -27,10 +27,10 @@ func (self *alertFixture) fileRoutine(t *testing.T, count int) {
 	})
 }
 
-// The weekly look at the mail is due only when the Inbox holds enough routine
-// mail, only once a week, and only for an agent whose unasked words go to the
-// feed.
-func TestTheMailOrganizeLookIsDueOnlyAboveTheThresholdAndOnlyWeekly(t *testing.T) {
+// The look at the mail is due only when the Inbox holds enough routine mail,
+// counted from mail the last look has not seen, and only for an agent whose
+// unasked words go to the feed.
+func TestTheMailOrganizeLookIsDueOnlyAboveTheThresholdAndOnlyForNewMail(t *testing.T) {
 	fixture := newAlertFixtureWith(t, "", "UTC")
 	now := time.Now()
 	onboarded := now.Add(-48 * time.Hour)
@@ -70,14 +70,21 @@ func TestTheMailOrganizeLookIsDueOnlyAboveTheThresholdAndOnlyWeekly(t *testing.T
 		t.Fatalf("%d routine messages are a pile", mailOrganizePileLeast)
 	}
 
-	// A look this week keeps the next for the next.
+	// A look has seen the pile, so the same mail does not bring another.
 	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
 		if _, err := fixture.worker.Enqueue(tx, models.AgentJobSpeakFirst, fixture.agent.ID, "", SpeakFirstMailOrganize); err != nil {
 			t.Fatal(err)
 		}
 	})
 	if isDue() {
-		t.Fatal("a second look in the same week")
+		t.Fatal("a second look at the same mail")
+	}
+
+	// Enough mail that arrives after the look is a pile of its own.
+	time.Sleep(10 * time.Millisecond)
+	fixture.fileRoutine(t, mailOrganizePileLeast)
+	if !isDue() {
+		t.Fatal("a new pile after the look is not offered")
 	}
 
 	// Mail the sorting says needs an answer is not routine.

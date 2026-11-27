@@ -166,3 +166,48 @@ func TestTheIndexCarriesTheTopThemes(t *testing.T) {
 		t.Errorf("a theme under another is put ahead of the pages: %q", joined)
 	}
 }
+
+// What the overlay could not carry is counted and the memory tool that reads it
+// is named, and nothing is said when everything found is carried.
+func TestRecallSaysHowMuchItLeftOutAndHowToReadIt(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+	worker, run := digestSplitWorld(t, database, "http://127.0.0.1:1")
+	agentId := run.Agent.ID
+	var pages []*models.AgentNode
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for index := 0; index < recallPages+3; index++ {
+			page, err := tx.PutAgentNode(&models.AgentNode{AgentID: agentId, Path: fmt.Sprintf("things/boat-%d", index), Kind: models.NodeThing, Name: fmt.Sprintf("Boat %d", index)})
+			if err != nil {
+				t.Fatalf("PutAgentNode: %s", err)
+			}
+			if _, err := tx.AddAgentFact(&models.AgentFact{AgentID: agentId, NodeID: page.ID, Kind: models.FactPlain, Text: fmt.Sprintf("Boat %d is kept at the pier.", index)}); err != nil {
+				t.Fatalf("AddAgentFact: %s", err)
+			}
+			pages = append(pages, page)
+		}
+	})
+	turn := &AskRun{agent: worker, settings: &AskSettings{Agent: run.Agent, Owner: run.Owner}, promptMemories: map[string]bool{}}
+	choose := func(found []*models.AgentNode) []*recalledBlock {
+		var blocks []*recalledBlock
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			var err error
+			if blocks, err = turn.chooseRecalled(tx, found, nil, nil); err != nil {
+				t.Fatalf("chooseRecalled: %s", err)
+			}
+		})
+		return blocks
+	}
+	blocks := choose(pages)
+	last := blocks[len(blocks)-1]
+	if last.NodeID != "" || !strings.Contains(last.Text, fmt.Sprintf("%d more pages and 0 more facts", recallPages+3-recallPagesUnhit)) || !strings.Contains(last.Text, "memory tool") {
+		t.Errorf("the overlay did not say what it left out: %q", last.Text)
+	}
+	// Pages the words did not hit are carried only up to recallPagesUnhit.
+	blocks = choose(pages[:recallPagesUnhit])
+	for _, block := range blocks {
+		if block.NodeID == "" {
+			t.Errorf("nothing was left out, yet the overlay says so: %q", block.Text)
+		}
+	}
+}

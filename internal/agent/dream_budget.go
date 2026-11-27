@@ -39,19 +39,6 @@ type dreamBudget struct {
 	// the opposite of that.
 	exhausted bool
 
-	// digestUntil is when the reading has to stop so the rest of the
-	// night gets its turn; zero means the night has no deadline.
-	digestUntil time.Time
-
-	// consolidateUntil is when rewriting pages has to stop, for the same
-	// reason: on a slower model it took the rest of the night, and the
-	// vectors and the night's own record never came.
-	consolidateUntil time.Time
-
-	// overviewUntil is when writing overviews has to stop, for the same
-	// reason again: the phases after it are what the night is for too.
-	overviewUntil time.Time
-
 	// refused is a provider that will not answer anything, because the
 	// account it bills cannot pay. Nothing the night does next changes
 	// that, so it counts as having nothing left to spend.
@@ -120,36 +107,6 @@ func (self *Agent) budgetNow(ctx context.Context, run *Run) *Budget {
 // batch of documents is the largest prompt a night sends and the answer
 // is capped at four thousand tokens, so this is about one of those.
 const dreamCallEstimate = 10000
-
-// partway is the moment a share of the night's remaining time is gone,
-// or zero when the night has no deadline.
-func partway(ctx context.Context, now time.Time, share float64) time.Time {
-	deadline, ok := ctx.Deadline()
-	if !ok || !deadline.After(now) {
-		return time.Time{}
-	}
-	return now.Add(time.Duration(float64(deadline.Sub(now)) * share))
-}
-
-// halfway is partway at a half.
-func halfway(ctx context.Context, now time.Time) time.Time {
-	return partway(ctx, now, 0.5)
-}
-
-// consolidatingTimeLeft says whether rewriting pages may go on.
-func (self *dreamBudget) consolidatingTimeLeft() bool {
-	return self.consolidateUntil.IsZero() || time.Now().Before(self.consolidateUntil)
-}
-
-// overviewingTimeLeft says whether writing overviews may go on.
-func (self *dreamBudget) overviewingTimeLeft() bool {
-	return self.overviewUntil.IsZero() || time.Now().Before(self.overviewUntil)
-}
-
-// readingTimeLeft says whether the reading may go on.
-func (self *dreamBudget) readingTimeLeft() bool {
-	return self.digestUntil.IsZero() || time.Now().Before(self.digestUntil)
-}
 
 // newDreamBudget is what this night may spend: the person's daily tokens
 // less what the day has already spent, in conversation and in earlier

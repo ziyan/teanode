@@ -12,11 +12,6 @@ import (
 
 // The bounds of the theme phase.
 const (
-	// dreamNewThemes is how many themes one night names, each call within
-	// the night's budget. Each costs a model call; a group left unnamed
-	// tonight is found again tomorrow.
-	dreamNewThemes = 40
-
 	// themeNamingMembers is how many of a group's pages the naming prompt
 	// shows, the most important first, and themeNamingOpeningLength how
 	// much of each opening.
@@ -183,8 +178,7 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 	// level-one groups, then the themes of themes over them, then the
 	// parts, largest first, each only once the theme it is a part of has
 	// a page to stand under.
-	named := 0
-	canName := func() bool { return named < dreamNewThemes && ctx.Err() == nil && budget.left() }
+	canName := func() bool { return ctx.Err() == nil && budget.left() }
 	for _, group := range levelOneGroups {
 		if group.plan != nil {
 			continue
@@ -193,7 +187,6 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 			break
 		}
 		name, opening, isNamed := nameTheme(self.themeMemberLines(ctx, run, group.memberIds, importanceById), false, "")
-		named++
 		if isNamed {
 			group.plan = &plannedTheme{name: name, opening: opening, memberIds: group.memberIds}
 		}
@@ -231,7 +224,6 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 			lines = append(lines, levelOnePlans[index].line())
 		}
 		name, opening, isNamed := nameTheme(lines, true, "")
-		named++
 		if isNamed {
 			levelTwoPlans = append(levelTwoPlans, &plannedTheme{name: name, opening: opening, levelOneIndexes: indexes})
 		}
@@ -257,7 +249,6 @@ func (self *Agent) dreamThemes(ctx context.Context, run *Run, record *models.Age
 			break
 		}
 		name, opening, isNamed := nameTheme(self.themeMemberLines(ctx, run, part.memberIds, importanceById), false, part.parent.plan.themeName())
-		named++
 		if isNamed {
 			part.plan = &plannedTheme{name: name, opening: opening, memberIds: part.memberIds}
 		}
@@ -468,12 +459,12 @@ func (self *Agent) nameTheme(ctx context.Context, run *Run, budget *dreamBudget,
 		log.Warningf("cannot name a theme: %s", read.Problem)
 		return "", "", false
 	}
-	name := cutRunes(strings.TrimSpace(strings.ReplaceAll(read.Value.Name, "\n", " ")), 80)
+	name := strings.TrimSpace(strings.ReplaceAll(read.Value.Name, "\n", " "))
 	if models.Slug(name) == "" {
 		log.Warningf("cannot name a theme: the name %q has nothing a path can be made of", read.Value.Name)
 		return "", "", false
 	}
-	return name, cutRunes(strings.TrimSpace(read.Value.Opening), 1000), true
+	return name, strings.TrimSpace(read.Value.Opening), true
 }
 
 // writeThemes keeps the night's themes: the pages made, kept, moved,

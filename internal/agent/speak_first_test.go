@@ -279,8 +279,8 @@ func TestNotNowKeepsTheAgentQuietUnlessAsked(t *testing.T) {
 }
 
 // A memory check is asked for once memory holds enough about the person,
-// they have been introduced, and checks are on; not again within the week
-// while the set is small.
+// they have been introduced, and checks are on; once they have been asked a
+// question, the agent does not ask again on its own.
 func TestAMemoryCheckIsAskedForWhenMemoryKnowsEnough(t *testing.T) {
 	world := newSpeakFirstWorld(t)
 	var self *models.AgentNode
@@ -326,9 +326,8 @@ func TestAMemoryCheckIsAskedForWhenMemoryKnowsEnough(t *testing.T) {
 	later := time.Now().Add(8 * 24 * time.Hour)
 	present(later)
 	world.worker.Wait()
-	jobs := world.speakFirstJobs(t)
-	if len(jobs) != 1 || jobs[0].SubjectID != agent.SpeakFirstMemoryCheck {
-		t.Fatalf("a week later, a memory check: %+v", jobs)
+	if jobs := world.speakFirstJobs(t); len(jobs) != 0 {
+		t.Fatalf("a question was put already, no second check on its own: %+v", jobs)
 	}
 }
 

@@ -102,12 +102,9 @@ func TestAnEmptyListDoesDeclineTheBatch(test *testing.T) {
 	}
 }
 
-// The night opens no more than it was allowed to ask for.
-//
-// The bound was in the prompt and in the sentence written against the
-// files left over, and nowhere in the code, so a model naming the whole
-// batch had the whole batch opened at a vision call each.
-func TestTheNightTakesNoMoreThanItsShareOfABatch(test *testing.T) {
+// The night opens every file the model asked for by name: what it spends is
+// bounded by the budget, not by a share of the batch.
+func TestTheNightOpensEveryFileTheModelNames(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
 
@@ -158,15 +155,13 @@ func TestTheNightTakesNoMoreThanItsShareOfABatch(test *testing.T) {
 
 	worker.dreamAttachments(context.Background(), run, &dreamBudget{})
 
-	// Four files, so the night could take one of them.
-	most := attachmentsMost(len(documents))
 	kept := 0
 	for _, document := range documents {
 		if passagesOf(test, database, document) != "" {
 			kept++
 		}
 	}
-	if kept > most {
-		test.Fatalf("the night opened %d of %d files when it was allowed %d", kept, len(documents), most)
+	if kept != len(documents) {
+		test.Fatalf("the night opened %d of the %d files it was asked to open", kept, len(documents))
 	}
 }

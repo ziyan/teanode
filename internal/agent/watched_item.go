@@ -41,11 +41,6 @@ const (
 	// watchQueueEvery is how often the tick asks whether a watch is due.
 	watchQueueEvery = time.Minute
 
-	// watchItemsAtOnce bounds the items one look judges. The newest go
-	// first; what is left past it is noted and not judged, like what a
-	// first look finds: a backlog that size is not news.
-	watchItemsAtOnce = 25
-
 	// watchedItemCharacters is how much of an item a candidate keeps for
 	// the alert job to read.
 	watchedItemCharacters = 4000
@@ -333,8 +328,9 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 			fresh = append(fresh, item)
 		}
 	}
-	// The newest first: if there is more than one look judges, what is
-	// left is the oldest. An item that does not say when counts as now.
+	// The newest first, so that a look cut short by its deadline or a
+	// failure has judged the news first and finds the rest next time. An
+	// item that does not say when counts as now.
 	happenedAt := func(item *skills.WatchedItem) time.Time {
 		if at := watchedItemAt(item.At, location); !at.IsZero() {
 			return at
@@ -345,12 +341,12 @@ func (self *Agent) runWatch(ctx context.Context, run *Run) error {
 		return happenedAt(right).Compare(happenedAt(left))
 	})
 	// Noted without judging: everything on a first look, which is what was
-	// there when the watch began; what is older than any alert could be
-	// news for; and what is past the most a look judges.
+	// there when the watch began, and what is older than any alert could be
+	// news for.
 	oldest := now.Add(-(alertFreshness + watch.OverlapDuration()))
 	var judged, noted []*skills.WatchedItem
 	for _, item := range fresh {
-		if isFirstLook || happenedAt(item).Before(oldest) || len(judged) >= watchItemsAtOnce {
+		if isFirstLook || happenedAt(item).Before(oldest) {
 			noted = append(noted, item)
 			continue
 		}

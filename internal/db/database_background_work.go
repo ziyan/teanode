@@ -60,7 +60,8 @@ type BackgroundWorkOperation interface {
 	ListAgentBackgroundWorkToWake(finishedAfter, finishedBefore, claimExpiredBefore time.Time, limit int) ([]*models.AgentBackgroundWork, error)
 
 	// FailStaleAgentBackgroundWork marks work still queued or running that
-	// was made before the moment as failed, with the reason given.
+	// was made before the moment and has no queued or running job to run it
+	// as failed, with the reason given.
 	FailStaleAgentBackgroundWork(createdBefore time.Time, reason string) (int64, error)
 
 	// ScavengeAgentBackgroundWork removes finished work made before the
@@ -251,6 +252,8 @@ func (self *transaction) ListAgentBackgroundWorkToWake(finishedAfter, finishedBe
 func (self *transaction) FailStaleAgentBackgroundWork(createdBefore time.Time, reason string) (int64, error) {
 	result := self.tx.Model(&agentBackgroundWorkModel{}).
 		Where(`"work_status" IN ? AND "created_at" < ?`, []string{string(models.BackgroundWorkQueued), string(models.BackgroundWorkRunning)}, createdBefore).
+		Where(`NOT EXISTS (SELECT 1 FROM "agent_job" WHERE "agent_job"."kind" = ? AND "agent_job"."subject_id" = "agent_background_work"."id" AND "agent_job"."status" IN ?)`,
+			string(models.AgentJobBackground), []string{string(models.AgentJobQueued), string(models.AgentJobRunning)}).
 		Updates(map[string]any{"work_status": string(models.BackgroundWorkFailed), "error_message": reason, "finished_at": time.Now()})
 	return result.RowsAffected, result.Error
 }

@@ -17,8 +17,14 @@ type EmbeddingOperation interface {
 	// the candidates a search ranks.
 	ListMailEmbeddings(mailboxId, model string, limit int) ([]*MailEmbedding, error)
 
+	// ListMailEmbeddingsPage is one page of all of a mailbox's vectors for a
+	// model, newest first, from offset: a search reads every page in turn so
+	// that no vector is left out and none but one page is held at a time.
+	ListMailEmbeddingsPage(mailboxId, model string, offset, limit int) ([]*MailEmbedding, error)
+
 	// ListMailWithoutEmbedding is the newest messages of a mailbox that
-	// have no vector for the model yet, for a backfill.
+	// have no vector for the model yet, for a backfill. A limit of zero or
+	// less lists every one.
 	ListMailWithoutEmbedding(mailboxId, model string, limit int) ([]string, error)
 
 	// DeleteMailEmbeddings forgets a mailbox's vectors.
@@ -60,11 +66,15 @@ func (self *transaction) PutMailEmbedding(mailboxId, mailId, model string, vecto
 }
 
 func (self *transaction) ListMailEmbeddings(mailboxId, model string, limit int) ([]*MailEmbedding, error) {
+	return self.ListMailEmbeddingsPage(mailboxId, model, 0, limit)
+}
+
+func (self *transaction) ListMailEmbeddingsPage(mailboxId, model string, offset, limit int) ([]*MailEmbedding, error) {
 	if limit <= 0 {
 		limit = 2000
 	}
 	var rows []mailEmbeddingModel
-	if err := self.tx.Where("\"mailbox_id\" = ? AND \"model\" = ?", mailboxId, model).Order("\"created_at\" DESC").Limit(limit).Find(&rows).Error; err != nil {
+	if err := self.tx.Where("\"mailbox_id\" = ? AND \"model\" = ?", mailboxId, model).Order("\"created_at\" DESC, \"mail_id\" DESC").Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	embeddings := make([]*MailEmbedding, 0, len(rows))
@@ -76,9 +86,6 @@ func (self *transaction) ListMailEmbeddings(mailboxId, model string, limit int) 
 }
 
 func (self *transaction) ListMailWithoutEmbedding(mailboxId, model string, limit int) ([]string, error) {
-	if limit <= 0 {
-		limit = 200
-	}
 	// A phone's notes are kept in the mailbox; they are not mail to be found
 	// by meaning among the rest of it.
 	var ids []string
@@ -90,7 +97,7 @@ func (self *transaction) ListMailWithoutEmbedding(mailboxId, model string, limit
 		WHERE "mailbox_folder"."mailbox_id" = ? AND "mail_embedding"."mail_id" IS NULL AND "mailbox_folder"."kind" NOT IN ('trash', 'junk')
 		  AND "mail"."kind" <> 'note'
 		ORDER BY "mail"."received_at" DESC, "mail"."id" DESC
-		LIMIT ?`, model, mailboxId, limit).Scan(&ids).Error
+		LIMIT ?`, model, mailboxId, limitOrAll(limit)).Scan(&ids).Error
 	return ids, err
 }
 

@@ -54,9 +54,9 @@ const (
 	//
 	// Its cron line is how often to *look* for new work, not how fast to
 	// get through a backlog. Waiting for tomorrow's slot after every
-	// eight pages meant a first pass over a checkout moved about twenty
+	// batch of pages meant a first pass over a checkout moved about twenty
 	// megabytes a day, so a home directory would have taken weeks. The
-	// eight-page limit is what keeps one source from holding the queue;
+	// ingestPasses limit is what keeps one source from holding the queue;
 	// this is what keeps it from crawling.
 	ingestAgain = 20 * time.Second
 
@@ -107,12 +107,6 @@ const (
 	// way through what it should have read, which it reads next pass; a
 	// pass that did not see everything must not delete what it missed.
 	cursorPassUnfinished = "passUnfinished"
-
-	// ownCommitsWorthRecording is how much of a repository has to be the
-	// person's before it is an event on their own page. Ten keeps the
-	// timeline to what they worked on rather than what they once cloned
-	// and fixed a typo in.
-	ownCommitsWorthRecording = 10
 )
 
 // queueIngestion queues the sources whose time has come.
