@@ -349,7 +349,6 @@ deliberately absent.
 | `askTailMessages` | 12 | messages kept verbatim by a compaction |
 | `askResultCharacters` | 24000 | one tool answer in the history |
 | `concurrentToolCalls` | 6 | calls of one batch running at once |
-| `attachmentImagesPerTurn` | 8 | pictures in one turn |
 | `stopGrace` | 5 seconds | how long `Stop` lets the turns people are reading finish |
 | `resumeWindow` | 15 minutes | how old a cut turn may be and still be carried on |
 | `resumeMostPerAgent` | 3 | conversations carried on per agent at a start |

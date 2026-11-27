@@ -2,14 +2,16 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
 )
 
-// A text file is read to the model, capped; a picture is not text; what
+// A text file is read to the model, whole; a picture is not text; what
 // is neither is named, never read.
 func TestExtractAttachmentTextReadsTextOnly(t *testing.T) {
 	if got := ExtractAttachmentText(t.Context(), "notes.txt", "text/plain", []byte("hello")); got != "hello" {
@@ -24,9 +26,30 @@ func TestExtractAttachmentTextReadsTextOnly(t *testing.T) {
 	if got := ExtractAttachmentText(t.Context(), "clip.mp4", "video/mp4", []byte("not a video")); got != "" {
 		t.Fatalf("a video became text: %q", got)
 	}
-	long := strings.Repeat("x", attachmentTextCharacters+100)
-	if got := ExtractAttachmentText(t.Context(), "long.txt", "text/plain", []byte(long)); len(got) > attachmentTextCharacters+100 || !strings.HasSuffix(got, "the file goes on]") {
-		t.Fatalf("a long file was not cut: %d characters", len(got))
+	long := strings.Repeat("x", tools.AttachmentPageCharacters*3+100)
+	if got := ExtractAttachmentText(t.Context(), "long.txt", "text/plain", []byte(long)); got != long {
+		t.Fatalf("a long file was cut: %d of %d characters", len(got), len(long))
+	}
+}
+
+// A turn shows the first page of a long file and says how to read on; a
+// short file is shown whole with no such line; nine pictures all ride.
+func TestUserTurnPagesALongFileAndKeepsEveryPicture(t *testing.T) {
+	long := strings.Repeat("y", tools.AttachmentPageCharacters+250)
+	pictures := map[string][]byte{}
+	attachments := []*models.AgentAttachment{{ID: "doc", Name: "long.txt", ContentType: "text/plain", Text: long}}
+	for index := range 9 {
+		identifier := fmt.Sprintf("pic%d", index)
+		pictures[identifier] = []byte{0x89, 'P', 'N', 'G'}
+		attachments = append(attachments, &models.AgentAttachment{ID: identifier, Name: identifier + ".png", ContentType: "image/png", Size: 4})
+	}
+	message := userTurn(context.Background(), &fakeFiles{files: pictures}, "look", attachments, nil, nil)
+	if !strings.Contains(message.Content, "250 more characters") || !strings.Contains(message.Content, "read_attachment") ||
+		!strings.Contains(message.Content, fmt.Sprintf("offset %d", tools.AttachmentPageCharacters)) {
+		t.Fatalf("the turn does not say how to read on: %.300s", message.Content[len(message.Content)-400:])
+	}
+	if got := len(message.Parts) - 1; got != 9 {
+		t.Fatalf("pictures shown = %d, want 9", got)
 	}
 }
 
