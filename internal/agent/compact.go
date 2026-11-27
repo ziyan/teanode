@@ -274,7 +274,9 @@ func (self *AskRun) compact(ctx context.Context, provider llm.Provider, model, m
 	// open like any other.
 	// Said before the first call, since writing the note takes a while
 	// and the turn is quiet meanwhile.
-	self.sayNote(models.NoteCompacting, "")
+	if !self.isQuietCompaction {
+		self.sayNote(models.NoteCompacting, "")
+	}
 	note := ""
 	for _, chunk := range chunkHistory(older, compactChunkTokens) {
 		prompt, err := render("compact.txt", map[string]any{"Previous": note, "Conversation": renderMessages(chunk, compactMessageCharacters)})
@@ -309,6 +311,8 @@ func (self *AskRun) compact(ctx context.Context, provider llm.Provider, model, m
 		return nil, err
 	}
 	self.settings.Conversation.CompactedThrough = through
-	self.sayNote(models.NoteCompacted, note)
+	if !self.isQuietCompaction {
+		self.sayNote(models.NoteCompacted, note)
+	}
 	return append([]llm.ChatMessage{compactionNote(note)}, tail...), nil
 }
