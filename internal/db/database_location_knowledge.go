@@ -33,6 +33,10 @@ type LocationKnowledgeOperation interface {
 	// GetLatestLocationDayStart answers when the newest day filed in the
 	// source began, or nil when none is.
 	GetLatestLocationDayStart(sourceId string) (*time.Time, error)
+
+	// GetEarliestLocationDayStart answers when the oldest day filed in the
+	// source began, or nil when none is.
+	GetEarliestLocationDayStart(sourceId string) (*time.Time, error)
 }
 
 // locationDayExternalId is the name a day goes by in its source.
@@ -104,6 +108,18 @@ func (self *transaction) GetLatestLocationDayStart(sourceId string) (*time.Time,
 	var found []agentDocumentModel
 	if err := self.tx.Where(`"source_id" = ? AND "happened_at" IS NOT NULL`, sourceId).
 		Order(`"happened_at" DESC`).Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return found[0].HappenedAt, nil
+}
+
+func (self *transaction) GetEarliestLocationDayStart(sourceId string) (*time.Time, error) {
+	var found []agentDocumentModel
+	if err := self.tx.Where(`"source_id" = ? AND "happened_at" IS NOT NULL`, sourceId).
+		Order(`"happened_at" ASC`).Limit(1).Find(&found).Error; err != nil {
 		return nil, err
 	}
 	if len(found) == 0 {

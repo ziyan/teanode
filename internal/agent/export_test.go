@@ -53,3 +53,11 @@ func SetIdleCompactionDelay(delay time.Duration) time.Duration {
 // SoftHistoryLimit and HardHistoryLimit are the two limits for a window.
 func SoftHistoryLimit(contextLength int) int { return softHistoryLimit(contextLength) }
 func HardHistoryLimit(contextLength int) int { return hardHistoryLimit(contextLength) }
+
+// SetEmbedPage is how many vectors a search by meaning reads at a time, and
+// returns what it was.
+func SetEmbedPage(count int) int {
+	previous := embedPage
+	embedPage = count
+	return previous
+}

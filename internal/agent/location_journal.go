@@ -33,11 +33,6 @@ const (
 	// A day ends once, so an hour is soon enough.
 	locationJournalEvery = time.Hour
 
-	// locationJournalDays is how many days back every run looks. A departure
-	// can be reported a day or two late, when the phone had no signal, and an
-	// erase, a forgotten place or a new name changes the words of older days.
-	locationJournalDays = 14
-
 	// locationJournalVisitsMost is how many visits one day lists. A day with
 	// more is a position flickering between two places, and the rest add
 	// nothing to what the reading can learn.
@@ -403,6 +398,17 @@ func readLocationPresence(tx db.Transaction, userId string, now time.Time) (loca
 	return presence, err
 }
 
+// earlierDay is the start, in zone, of the day of moment when that is before
+// from, and from otherwise.
+func earlierDay(from, moment time.Time, zone *time.Location) time.Time {
+	local := moment.In(zone)
+	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, zone)
+	if day.Before(from) {
+		return day
+	}
+	return from
+}
+
 func (self *Agent) writeLocationJournal(ctx context.Context, agent *models.Agent, owner *models.User, now time.Time) (int, error) {
 	zone := Location(owner)
 	local := now.In(zone)
@@ -423,15 +429,16 @@ func (self *Agent) writeLocationJournal(ctx context.Context, agent *models.Agent
 		if !source.Enabled {
 			return nil
 		}
-		// Every run looks at all of the days it covers, not only the newest:
-		// an erase of part of a day or the forgetting of a place deletes the
-		// day's document, and a rename or a label changes what it says, and
-		// each of those has to be written again from what is left. A day whose
-		// text is unchanged is not written.
-		from := today.AddDate(0, 0, -locationJournalDays)
+		// Every run looks at every day there is a visit, a pause or a filed
+		// document for, not only the newest: a departure can be reported days
+		// late, when the phone had no signal, an erase of part of a day or the
+		// forgetting of a place deletes the day's document, and a rename or a
+		// label changes what it says, and each of those has to be written
+		// again from what is left. A day whose text is unchanged is not
+		// written.
 		var visits []*models.PlaceVisit
 		for offset := 0; ; {
-			page, nextOffset, err := tx.ListPlaceVisits(owner.ID, db.PlaceVisitFilter{From: &from, Until: &today, Offset: offset, LimitCount: 200})
+			page, nextOffset, err := tx.ListPlaceVisits(owner.ID, db.PlaceVisitFilter{Until: &today, Offset: offset, LimitCount: 200})
 			if err != nil {
 				return err
 			}
@@ -441,6 +448,30 @@ func (self *Agent) writeLocationJournal(ctx context.Context, agent *models.Agent
 			}
 			offset = nextOffset
 		}
+		pauses, err := tx.ListLocationPauses(owner.ID, time.Time{}, today, 0)
+		if err != nil {
+			return err
+		}
+		// The first day anything is known of: the oldest visit (they are
+		// newest first), the oldest pause and the oldest day already filed.
+		from := today
+		if count := len(visits); count > 0 {
+			if first := visits[count-1]; first.ArrivedAt != nil {
+				from = earlierDay(from, *first.ArrivedAt, zone)
+			} else if first.DepartedAt != nil {
+				from = earlierDay(from, *first.DepartedAt, zone)
+			}
+		}
+		for _, pause := range pauses {
+			from = earlierDay(from, pause.StartedAt, zone)
+		}
+		filedFrom, err := tx.GetEarliestLocationDayStart(source.ID)
+		if err != nil {
+			return err
+		}
+		if filedFrom != nil {
+			from = earlierDay(from, *filedFrom, zone)
+		}
 		homes, _, err := tx.ListPlaces(owner.ID, db.PlaceFilter{PlaceLabel: models.PlaceLabelHome, LimitCount: 1})
 		if err != nil {
 			return err
@@ -449,9 +480,7 @@ func (self *Agent) writeLocationJournal(ctx context.Context, agent *models.Agent
 		if err != nil {
 			return err
 		}
-		if presence.pauses, err = tx.ListLocationPauses(owner.ID, from, today, 0); err != nil {
-			return err
-		}
+		presence.pauses = pauses
 		for dayStart := from; dayStart.Before(today); dayStart = dayStart.AddDate(0, 0, 1) {
 			text := locationDayText(visits, dayStart, presence, len(homes) > 0)
 			if text == "" {
