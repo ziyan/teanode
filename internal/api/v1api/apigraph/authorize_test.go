@@ -20,6 +20,9 @@ var authorizing = map[string]bool{
 	// Resolves a domain filter into the domains to query, and refuses a caller
 	// who holds the permission over none of them on the way.
 	"domainsToList": true,
+	// requireSignedIn, then agent:observe or agent:act: reading every
+	// person's agent conversations and runs.
+	"requireObserver": true,
 
 	// requireSignedIn, plus the account it resolved to. Anything about a
 	// person rather than about the server needs the account itself.

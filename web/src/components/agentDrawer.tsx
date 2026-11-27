@@ -700,9 +700,9 @@ type Line =
       note: string
       done: boolean
       arguments?: string
-  // intention is, on a tool call, the agent's words for what the call
-  // does, shown in place of the tool's name.
-  intention?: string
+      // intention is, on a tool call, the agent's words for what the call
+      // does, shown in place of the tool's name.
+      intention?: string
       result?: string
       at?: string
     }
@@ -793,6 +793,7 @@ const CONVERSATION = `
     ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
       conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt chat ${CHAT_FIELDS} }
       actingAs
+      isObserved
       messages {
         id createdAt role content name toolCallId toolCalls { id name arguments intention }
         usage { promptTokens completionTokens cost }
@@ -3043,6 +3044,7 @@ async function readConversationOnce(conversationId: string, signal: AbortSignal)
     ReadAgentConversation: {
       conversation: Conversation
       actingAs?: string | null
+      isObserved?: boolean
       messages: StoredMessage[]
       total?: number
       todos: Todo[]
@@ -3181,6 +3183,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // operator reading another person's agent speaks to it as them, and
   // must be told so every time the drawer is open on it.
   const [actingAs, setActingAs] = useState<string | null>(null)
+  // Somebody else's conversation, read by an operator: the note stands where
+  // the composer would, so nothing can be typed as them by accident.
+  const [isObserved, setIsObserved] = useState(false)
   const [lines, setLines] = useState<Line[]>([])
   const newestLineKey = lines.length > 0 ? lines[lines.length - 1].key : undefined
   useEffect(() => {
@@ -3432,6 +3437,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     (snapshot: Awaited<ReturnType<typeof readConversationSnapshot>>) => {
       setLoaded(snapshot.conversation)
       setActingAs(snapshot.actingAs ?? null)
+      setIsObserved(snapshot.isObserved === true)
       setTyping({})
       setEditing(null)
       remember(CONVERSATION_KEY, snapshot.conversation.id)
@@ -6109,7 +6115,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // nothing left to track and was taking the room above the box.
   const showTodos = todos.length > 0 && (running || todos.some((todo) => !todo.doneAt))
   const canSend = (draft.trim().length > 0 || pending.length > 0) && !uploading
-  const isTextComposerShown = !(isOfferShown || isFindingChat) && voiceState === 'off' && !isVoiceComposerShown
+  const isTextComposerShown =
+    !(isOfferShown || isFindingChat || isObserved) && voiceState === 'off' && !isVoiceComposerShown
   const pendingBlock = hasPendingContent ? (
     <div className="agent-drawer-pending">
       {replying && (
@@ -6795,7 +6802,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             </div>
           )}
           {isTextComposerShown ? null : pendingBlock}
-          {actingAs ? (
+          {isObserved ? (
+            <div className="agent-drawer-readonly notice" role="note">
+              {t('agentDrawer.observed', { name: actingAs ?? '' })}
+            </div>
+          ) : actingAs ? (
             <div className="agent-drawer-readonly notice">{t('agentDrawer.actingAs', { name: actingAs })}</div>
           ) : null}
           {isRun ? (
@@ -6817,7 +6828,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           ) : null}
           {/* Voice mode: the box gives way to what is being heard, until the
               person ends it; the conversation above stays where it is. */}
-          {isOfferShown || isFindingChat ? null : voiceState !== 'off' ? (
+          {isOfferShown || isFindingChat || isObserved ? null : voiceState !== 'off' ? (
             <div className="agent-drawer-voice-mode" role="group" aria-label={t('agentDrawer.voiceMode')}>
               {/* While an answer is read aloud the meter cuts it short at a
                   tap: what a voice cannot do where the phone hears itself. */}

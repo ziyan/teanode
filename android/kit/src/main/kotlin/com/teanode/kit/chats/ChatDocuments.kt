@@ -38,6 +38,7 @@ object ChatDocuments {
           ReadAgentConversation(conversationId: ${'$'}conversationId, first: ${'$'}first, offset: ${'$'}offset) {
             conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote chat { $CHAT_FIELDS } }
             actingAs
+            isObserved
             messages {
               $MESSAGE_FIELDS
               toolCalls { id name arguments intention }

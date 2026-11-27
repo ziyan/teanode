@@ -209,6 +209,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"BackfillAgentFollowUps": client.DocumentBackfillAgentFollowUps,
 		"ListAgentRuns":          client.DocumentListAgentRuns,
 		"ListAllAgentRuns":       client.DocumentListAllAgentRuns,
+		"ListFailedAgentTurns":   client.DocumentListFailedAgentTurns,
 		"StopAgentRun":           client.DocumentStopAgentRun,
 		"SaveAgentNode":          client.DocumentSaveAgentNode,
 		// Goals, on set times or at their own pace.

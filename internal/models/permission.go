@@ -39,6 +39,7 @@ const (
 	PermissionPasswordsUse    Permission = "passwords:use" // keep passwords, passkeys, cards and notes that only one's own devices can read, and share some of them
 	PermissionShoppingUse     Permission = "shopping:use"  // keep shopping lists, share them with the circles one is in, and check them off at the store
 	PermissionAgentAudit      Permission = "agent:audit"   // every person's agent state and usage, limits, switch-off; never content
+	PermissionAgentObserve    Permission = "agent:observe" // every person's agent conversations and runs, read-only; each read is audited
 	PermissionAgentAct        Permission = "agent:act"     // every person's agent conversations and runs, and a word with their agent as them; content, for the operator of a private server
 )
 
@@ -91,6 +92,7 @@ var permissionKinds = []struct {
 	{PermissionPasswordsUse, PermissionKindServer, ""},
 	{PermissionShoppingUse, PermissionKindServer, ""},
 	{PermissionAgentAudit, PermissionKindServer, ""},
+	{PermissionAgentObserve, PermissionKindServer, ""},
 	{PermissionAgentAct, PermissionKindServer, ""},
 }
 

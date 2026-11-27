@@ -637,6 +637,10 @@ const (
 	// thousand sent thirty-three to a window of thirty-two.
 	askReadThenAnswerTokens = 24000
 
+	// policyRefusalRetryAfter is how long a round the model refused as
+	// against its policy waits before it is asked once more.
+	policyRefusalRetryAfter = 2 * time.Second
+
 	// askTailMessages is how many recent messages stay verbatim through a
 	// compaction.
 	askTailMessages = 12
@@ -1524,7 +1528,7 @@ func (self *AskRun) turn() error {
 	// A compaction that failed is not tried again this turn, and a request
 	// the provider refused for its size is compacted hard and sent once
 	// more.
-	compactFailed, overflowed := false, false
+	compactFailed, overflowed, isRefusalRetried := false, false, false
 	// A call that failed the same way three times is not going to work
 	// the fourth: the turn stops rather than spending its rounds on it.
 	failures := map[string]int{}
@@ -1690,6 +1694,23 @@ func (self *AskRun) turn() error {
 					round--
 					continue
 				}
+			}
+			// A model's policy flag on a request is not always about its
+			// words: the same prompt refused once has passed a minute later.
+			// The round is asked once more before the turn gives up.
+			if llm.IsPolicyRefusal(err) && !isRefusalRetried && (response == nil || strings.TrimSpace(response.Message.Content) == "") {
+				isRefusalRetried = true
+				log.Noticef("the model refused round %d of a %s turn of %q as against its policy (%d messages); asking once more", round+1, usageKind, settings.Owner.Username, len(messages))
+				select {
+				case <-time.After(policyRefusalRetryAfter):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				round--
+				continue
+			}
+			if llm.IsPolicyRefusal(err) {
+				return fmt.Errorf("the model refused this request as against its usage policy, twice: %w", err)
 			}
 			if errors.Is(err, context.Canceled) && response != nil && strings.TrimSpace(response.Message.Content) != "" {
 				// Stopped mid-sentence: the words that had come stay in

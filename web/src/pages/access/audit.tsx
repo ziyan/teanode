@@ -37,7 +37,7 @@ type AuditEvent = {
   // says who changed what and nothing about which one.
   resourceLabel?: string
   resourceLink?: string
-  action: 'create' | 'update' | 'delete'
+  action: 'create' | 'update' | 'delete' | 'agent.conversation.observe'
   before?: Record<string, unknown> | null
   after?: Record<string, unknown> | null
 }
@@ -98,6 +98,7 @@ const RESOURCE_TYPES = [
   'configuration',
   'agent',
   'addressbook',
+  'agent_conversation',
 ]
 
 // AuditTab is the log of administrative changes, newest first: who, what,

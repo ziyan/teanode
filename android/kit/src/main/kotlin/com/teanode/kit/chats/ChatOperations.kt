@@ -42,6 +42,8 @@ data class ConversationPage(
     val todos: List<AgentTodo>,
     /** Whose agent this is, when an operator is looking at somebody else's. */
     val actingAs: String?,
+    /** Whether the reader is not the owner: it is read-only for them, and the screen says so in place of the composer. */
+    val isObserved: Boolean = false,
 )
 
 /** AgentIdea is something the agent suggests starting with. */
@@ -81,6 +83,7 @@ private class ConversationAnswer(
         val total: Int = 0,
         val todos: List<AgentTodo>? = null,
         val actingAs: String? = null,
+        val isObserved: Boolean? = null,
     )
 }
 
@@ -170,7 +173,7 @@ suspend fun Connection.conversation(conversationId: String?, first: Int = 100, o
     val answer = execute(ChatDocuments.CONVERSATION, ConversationAnswer.serializer(), variables)
     return ConversationPage(
         conversation = answer.read.conversation, messages = answer.read.messages, interactions = answer.interactions ?: emptyList(),
-        total = answer.read.total, todos = answer.read.todos ?: emptyList(), actingAs = answer.read.actingAs?.takeIf { name -> name.isNotEmpty() },
+        total = answer.read.total, todos = answer.read.todos ?: emptyList(), actingAs = answer.read.actingAs?.takeIf { name -> name.isNotEmpty() }, isObserved = answer.read.isObserved ?: false,
     )
 }
 

@@ -234,6 +234,16 @@ private fun runMessages(): List<AgentMessage> = listOf(
     message("r4", "assistant", "Two new threads. Neither needs an answer today.", 19.7),
 )
 
+/** Somebody else's conversation, as an operator with agent:observe reads it: the owner's words and the agent's, and no composer. */
+private fun observedMessages(): List<AgentMessage> = listOf(
+    message("b1", "user", "Can you find two hotels near the station for the first weekend of the month?", 3.4),
+    message("b2", "assistant", "", 3.3, toolCalls = listOf(AgentToolCall("call-7", "web_search", """{"query":"hotels near the station"}""", "Looking for hotels near the station"))),
+    message("b3", "tool", """{"results":2}""", 3.2, toolCallId = "call-7"),
+    message("b4", "assistant", "Two fit: the Harbor Inn, five minutes from the station, and the Linden House, ten minutes on foot. Which one should I hold?", 3.1),
+)
+
+private val observedConversation = AgentConversation("demo-observed", "named", title = "Planning the trip", summary = null, lastAt = hoursAgo(3))
+
 private fun messagesOf(conversationId: String?): List<AgentMessage> = when (conversationId) {
     null, "demo-main" -> mainMessages()
     "demo-cards" -> cardsMessages()
@@ -243,11 +253,12 @@ private fun messagesOf(conversationId: String?): List<AgentMessage> = when (conv
     "demo-long" -> longMessages()
     "demo-goal" -> goalMessages()
     "demo-run" -> runMessages()
+    "demo-observed" -> observedMessages()
     else -> emptyList()
 }
 
 private fun conversationOf(conversationId: String?): AgentConversation =
-    conversations.firstOrNull { found -> found.id == (conversationId ?: "demo-main") } ?: archivedConversations.firstOrNull { found -> found.id == conversationId }
+    if (conversationId == "demo-observed") observedConversation else conversations.firstOrNull { found -> found.id == (conversationId ?: "demo-main") } ?: archivedConversations.firstOrNull { found -> found.id == conversationId }
         ?: AgentConversation(conversationId ?: "demo-main", "named", title = null, summary = null, lastAt = null)
 
 private val demoTodos = listOf(AgentTodo("t1", "Find two hotels near the station", hoursAgo(3.4)), AgentTodo("t2", "Ask which one to book", null), AgentTodo("t3", "Send the confirmation to Sam", null))
@@ -261,7 +272,8 @@ private fun conversationAnswer(request: DemoRequest): DemoResponse? {
     val read = JsonObject(
         mapOf(
             "conversation" to TeaNodeJson.encodeToJsonElement(AgentConversation.serializer(), found),
-            "actingAs" to JsonNull,
+            "actingAs" to (if (conversationId == "demo-observed") JsonPrimitive("Robin Hale") else JsonNull),
+            "isObserved" to JsonPrimitive(conversationId == "demo-observed"),
             "messages" to TeaNodeJson.encodeToJsonElement(ListSerializer(AgentMessage.serializer()), messages),
             "total" to JsonPrimitive(messages.size),
             "todos" to TeaNodeJson.encodeToJsonElement(ListSerializer(AgentTodo.serializer()), if (conversationId == "demo-cards") demoTodos else emptyList()),

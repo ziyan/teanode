@@ -440,7 +440,9 @@ struct ConversationView: View {
                         .zIndex(0)
                 }
                 Group {
-                    if let call = model.call {
+                    if model.isObserved {
+                        ObservedNote(ownerName: model.actingAs)
+                    } else if let call = model.call {
                         CallBar(call: call)
                     } else {
                         Composer(model: model)
@@ -625,7 +627,7 @@ struct ConversationBanners: View {
                     model.reader.stop()
                 }
             }
-            if let actingAs = model.actingAs {
+            if let actingAs = model.actingAs, !model.isObserved {
                 Banner(systemImage: "person.badge.key", text: String(localized: "This is \(actingAs)'s agent. What you say here reaches it as \(actingAs), and the server log says you did."))
             }
             if model.conversation?.kind == "run" {
@@ -649,6 +651,32 @@ struct ConversationBanners: View {
             }
         }
         .padding(.horizontal)
+    }
+}
+
+/// ObservedNote takes the composer's place in a conversation the reader is
+/// observing: plain footer text, as a system list's footer reads, because
+/// nothing can be typed here.
+struct ObservedNote: View {
+    /// Whose conversation it is; nil when the server did not say.
+    let ownerName: String?
+
+    var body: some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .accessibilityElement(children: .combine)
+    }
+
+    private var text: String {
+        if let ownerName, !ownerName.isEmpty {
+            return String(localized: "This is \(ownerName)'s conversation. You are observing it and cannot write here.")
+        }
+        return String(localized: "This is another person's conversation. You are observing it and cannot write here.")
     }
 }
 

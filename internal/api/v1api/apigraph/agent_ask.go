@@ -57,9 +57,13 @@ type AgentAskQuery interface {
 	// The transcripts of the agent's runs — sorting, summaries, replies —
 	// newest first: what it did while nobody was there. Needs agent:use.
 	ListAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error)
-	// ListAllAgentRuns is every person's runs, for an operator with
-	// agent:act: what every agent on the server did, openable.
-	ListAllAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error)
+	// ListAllAgentRuns is every person's conversations and runs, for an
+	// operator with agent:observe or agent:act: what every agent on the
+	// server did, openable. Chats between people are never listed.
+	ListAllAgentRuns(ctx context.Context, arguments ListAllAgentRunsArguments) (*AgentRunPage, error)
+	// ListFailedAgentTurns is the turns of every person's agent that ended in
+	// a failed note, newest first. Needs agent:observe or agent:act.
+	ListFailedAgentTurns(ctx context.Context, arguments ListFailedAgentTurnsArguments) (*AgentFailedTurnPage, error)
 }
 
 // AgentAskMutation is a turn, its confirmations, and the conversations.
@@ -182,6 +186,10 @@ type AgentConversationView struct {
 	// caller's own: an operator reading it, and speaking into it, does so
 	// as that person, and the drawer says so.
 	ActingAs string `json:"actingAs,omitempty"`
+
+	// IsObserved is true when the reader is not the owner: the clients show
+	// the read-only note in place of the composer.
+	IsObserved bool `json:"isObserved"`
 }
 
 // ReadAgentRunArguments name a run and where to read from.
@@ -494,13 +502,34 @@ func (self *graph) ownConversation(tx db.Transaction, found *models.Agent, conve
 	return conversation, nil
 }
 
+// observeRefusal is what an operator with agent:observe alone is told when
+// they try to write in another person's conversation.
+const observeRefusal = "Observing is read-only: only the person, or an operator with agent:act, can write here."
+
+// canObserveAgents says whether the caller may read every person's agent
+// conversations and runs: agent:observe, which agent:act implies.
+func canObserveAgents(principal *api.Principal) bool {
+	return principal.Permissions.Has(models.PermissionAgentObserve) || principal.Permissions.Has(models.PermissionAgentAct)
+}
+
+// requireActingAs refuses a write in another person's conversation unless the
+// caller holds agent:act. other is nil for the caller's own conversation.
+func requireActingAs(principal *api.Principal, other *models.Agent) error {
+	if other != nil && !principal.Permissions.Has(models.PermissionAgentAct) {
+		return fmt.Errorf("%w: %s", api.ErrPermissionDenied, observeRefusal)
+	}
+	return nil
+}
+
 // conversationFor is the conversation the caller may read or speak into:
-// their own agent's, or -- with agent:act -- any agent's, handed back with
-// that agent and its person so the caller acts as them. The agent and
-// person are nil for the caller's own.
+// their own agent's, or -- with agent:observe or agent:act -- any agent's,
+// handed back with that agent and its person so the caller acts as them. The
+// agent and person are nil for the caller's own. Reading is all that
+// agent:observe allows; the callers that write refuse it with
+// requireActingAs.
 func (self *graph) conversationFor(tx db.Transaction, principal *api.Principal, found *models.Agent, conversationId string, readingRuns bool) (*models.AgentConversation, *models.Agent, *models.User, error) {
 	conversation, err := self.ownConversation(tx, found, conversationId, readingRuns)
-	if err == nil || !errors.Is(err, api.ErrNotFound) || !principal.Permissions.Has(models.PermissionAgentAct) {
+	if err == nil || !errors.Is(err, api.ErrNotFound) || !canObserveAgents(principal) {
 		return conversation, nil, nil, err
 	}
 	conversation, err = tx.GetAgentConversation(conversationId)
@@ -533,11 +562,54 @@ type ListAgentRunsArguments struct {
 	Query string   `json:"query" graphapi:"nullable"`
 }
 
+// ListAllAgentRunsArguments bound the operator's listing: what ListAgentRuns
+// takes, and a time range on the conversation's last activity (RFC 3339),
+// running now only, and the kinds main, named and goal beside the run kinds.
+type ListAllAgentRunsArguments struct {
+	First         int      `json:"first" graphapi:"nullable"`
+	Offset        int      `json:"offset" graphapi:"nullable"`
+	AgentID       string   `json:"agentId" graphapi:"nullable"`
+	JobID         string   `json:"jobId" graphapi:"nullable"`
+	Kinds         []string `json:"kinds" graphapi:"nullable"`
+	Query         string   `json:"query" graphapi:"nullable"`
+	Since         string   `json:"since" graphapi:"nullable"`
+	Until         string   `json:"until" graphapi:"nullable"`
+	IsRunningOnly bool     `json:"isRunningOnly" graphapi:"nullable"`
+}
+
+// ListFailedAgentTurnsArguments bound the failed turns.
+type ListFailedAgentTurnsArguments struct {
+	First   int    `json:"first" graphapi:"nullable"`
+	Offset  int    `json:"offset" graphapi:"nullable"`
+	Since   string `json:"since" graphapi:"nullable"`
+	AgentID string `json:"agentId" graphapi:"nullable"`
+}
+
+// AgentFailedTurn is one turn that ended in a failed note.
+type AgentFailedTurn struct {
+	ConversationID    string    `json:"conversationId"`
+	ConversationKind  string    `json:"conversationKind"`
+	ConversationTitle string    `json:"conversationTitle"`
+	OwnerUsername     string    `json:"ownerUsername"`
+	OwnerName         string    `json:"ownerName"`
+	FailedAt          time.Time `json:"failedAt"`
+	ErrorText         string    `json:"errorText"`
+	AgentID           string    `json:"agentId"`
+}
+
+// AgentFailedTurnPage is a page of failed turns and how many there are.
+type AgentFailedTurnPage struct {
+	FailedTurns []*AgentFailedTurn `json:"failedTurns"`
+	TotalCount  int64              `json:"totalCount"`
+}
+
 // AgentRunPage is a page of runs and how many there are in all, each with
 // what it cost.
 type AgentRunPage struct {
 	Runs  []*AgentRunSummary `json:"runs"`
 	Total int64              `json:"total"`
+	// TotalCount is Total again, under the name the Oversight screens read.
+	TotalCount int64 `json:"totalCount"`
 }
 
 // AgentRunSummary is one run as a list shows it: the conversation's
@@ -554,6 +626,12 @@ type AgentRunSummary struct {
 	Surface   string                `json:"surface,omitempty"`
 	LastAt    time.Time             `json:"lastAt"`
 	Usage     models.AgentUsageNote `json:"usage"`
+
+	// OwnerUsername, OwnerName and IsRunning are filled for the operator's
+	// listing: whose agent it is, and whether a turn is in flight in it.
+	OwnerUsername string `json:"ownerUsername"`
+	OwnerName     string `json:"ownerName"`
+	IsRunning     bool   `json:"isRunning"`
 }
 
 // runSummaries is the runs with their usage attached.
@@ -607,7 +685,7 @@ func (self *graph) ListAgentRuns(ctx context.Context, arguments ListAgentRunsArg
 	if err != nil {
 		return nil, err
 	}
-	return &AgentRunPage{Runs: summaries, Total: total}, nil
+	return &AgentRunPage{Runs: summaries, Total: total, TotalCount: total}, nil
 }
 
 func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAgentConversationsArguments) ([]*models.AgentConversation, error) {
@@ -706,7 +784,98 @@ func sortByLastMessage(conversations []*models.AgentConversation) {
 	})
 }
 
+// observeInterval is how often a reader's look at one conversation is written
+// in the audit log: paging a transcript is one read.
+const observeInterval = 10 * time.Minute
+
+// readObservedConversation answers a read of another person's conversation for
+// an operator who may observe, whether or not they have an agent of their own.
+// It says whether the conversation was another person's; when it was not, the
+// ordinary read goes on.
+func (self *graph) readObservedConversation(ctx context.Context, arguments ReadAgentConversationArguments) (*AgentConversationView, bool, error) {
+	conversationId := strings.TrimSpace(arguments.ConversationID)
+	principal := api.ContextPrincipal(ctx)
+	if conversationId == "" || principal == nil || principal.User == nil || !canObserveAgents(principal) {
+		return nil, false, nil
+	}
+	tx := self.transaction(ctx)
+	conversation, err := tx.GetAgentConversation(conversationId)
+	if err != nil {
+		return nil, false, err
+	}
+	if conversation == nil {
+		return nil, false, nil
+	}
+	other, err := tx.GetAgent(conversation.AgentID)
+	if err != nil {
+		return nil, false, err
+	}
+	if other == nil || other.UserID == principal.User.ID {
+		return nil, false, nil
+	}
+	// A chat is between its people: an operator reads none of them but their
+	// own.
+	if conversation.IsChat() {
+		return nil, true, api.ErrNotFound
+	}
+	owner, err := tx.GetUser(other.UserID)
+	if err != nil {
+		return nil, true, err
+	}
+	if owner == nil {
+		return nil, true, api.ErrNotFound
+	}
+	if err := recordObservedRead(ctx, tx, principal, conversation, owner); err != nil {
+		return nil, true, err
+	}
+	view, err := self.pageConversation(tx, conversation, arguments, owner, other)
+	if err != nil {
+		return nil, true, err
+	}
+	view.ActingAs = owner.Username
+	view.IsObserved = true
+	return view, true, nil
+}
+
+// recordObservedRead notes that an operator read a conversation of another
+// person's agent: the log line, and the audit row, folded to one per reader and
+// conversation per observeInterval. Every read of another person's conversation
+// goes through it, so none is left unaudited. Opening a conversation is audited;
+// the lists of conversations and failed turns are not.
+func recordObservedRead(ctx context.Context, tx db.Transaction, principal *api.Principal, conversation *models.AgentConversation, owner *models.User) error {
+	log.Noticef("%s read a conversation of %s's agent", operatorName(ctx), owner.Username)
+	_, err := tx.RecordConversationObserved(conversation, principal.User.ID, owner.ID, observeInterval, time.Now())
+	return err
+}
+
+// pageConversation is the newest page of a conversation that is not a chat,
+// described as the owner's and their agent's.
+func (self *graph) pageConversation(tx db.Transaction, conversation *models.AgentConversation, arguments ReadAgentConversationArguments, owner *models.User, speakingAgent *models.Agent) (*AgentConversationView, error) {
+	limit := arguments.First
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	offset := max(arguments.Offset, 0)
+	messages, err := tx.ListAgentMessages(conversation.ID, nil)
+	if err != nil {
+		return nil, err
+	}
+	total := len(messages)
+	start := max(len(messages)-limit-offset, 0)
+	end := max(len(messages)-offset, start)
+	todos, err := tx.ListAgentTodos(conversation.ID)
+	if err != nil {
+		return nil, err
+	}
+	page := messages[start:end]
+	describeOwnMessages(page, owner, speakingAgent)
+	return &AgentConversationView{Conversation: conversation, Messages: page, Total: total, Todos: todos}, nil
+}
+
 func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgentConversationArguments) (*AgentConversationView, error) {
+	if view, isHandled, err := self.readObservedConversation(ctx, arguments); isHandled || err != nil {
+		return view, err
+	}
 	principal, found, err := self.requireConversationPerson(ctx)
 	if err != nil {
 		return nil, err
@@ -719,22 +888,14 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 			return nil, err
 		}
 	}
-	conversation, other, owner, err := self.conversationFor(tx, principal, found, arguments.ConversationID, true)
+	// Another person's conversation was answered by readObservedConversation
+	// above, so what is left here is the caller's own.
+	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, true)
 	if err != nil {
 		return nil, err
 	}
-	// A chat is between its people: an operator with agent:act reads none of
-	// them but their own.
-	if conversation.IsChat() && other != nil {
-		return nil, api.ErrNotFound
-	}
 	if err := requireConversationUse(principal, found, conversation); err != nil {
 		return nil, err
-	}
-	actingAs := ""
-	if other != nil {
-		actingAs = owner.Username
-		log.Noticef("%s read a conversation of %s's agent", operatorName(ctx), owner.Username)
 	}
 	// The newest page by default: a drawer opens on the end of a
 	// conversation, not its beginning.
@@ -764,12 +925,8 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 		return nil, err
 	}
 	page := messages[start:end]
-	speaker, speakingAgent := principal.User, found
-	if other != nil {
-		speaker, speakingAgent = owner, other
-	}
-	describeOwnMessages(page, speaker, speakingAgent)
-	return &AgentConversationView{Conversation: conversation, Messages: page, Total: total, Todos: todos, ActingAs: actingAs}, nil
+	describeOwnMessages(page, principal.User, found)
+	return &AgentConversationView{Conversation: conversation, Messages: page, Total: total, Todos: todos}, nil
 }
 
 // describeOwnMessages gives the messages of a conversation with the agent the
@@ -844,8 +1001,46 @@ func (self *graph) readChatConversation(ctx context.Context, user *models.User, 
 	return &AgentConversationView{Conversation: view, Messages: messages, Total: total, Todos: []*models.AgentTodo{}}, nil
 }
 
-func (self *graph) ListAllAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error) {
-	if _, err := self.requirePermission(ctx, models.PermissionAgentAct); err != nil {
+// requireObserver is the caller who may read every person's agent
+// conversations and runs: agent:observe, or agent:act which implies it.
+func (self *graph) requireObserver(ctx context.Context) (*api.Principal, error) {
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !canObserveAgents(principal) {
+		return nil, api.ErrNotFound
+	}
+	return principal, nil
+}
+
+// parseOversightTime reads an RFC 3339 time argument; empty is no bound.
+func parseOversightTime(name, text string) (*time.Time, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, text)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s is a time such as 2026-01-02T15:04:05Z", api.ErrInvalidArguments, name)
+	}
+	return &parsed, nil
+}
+
+// oversightLiveWindow is how long ago a turn's instance may last have been
+// heard of for the turn to count as running.
+const oversightLiveWindow = 90 * time.Second
+
+func (self *graph) ListAllAgentRuns(ctx context.Context, arguments ListAllAgentRunsArguments) (*AgentRunPage, error) {
+	if _, err := self.requireObserver(ctx); err != nil {
+		return nil, err
+	}
+	since, err := parseOversightTime("since", arguments.Since)
+	if err != nil {
+		return nil, err
+	}
+	until, err := parseOversightTime("until", arguments.Until)
+	if err != nil {
 		return nil, err
 	}
 	limit := arguments.First
@@ -853,21 +1048,67 @@ func (self *graph) ListAllAgentRuns(ctx context.Context, arguments ListAgentRuns
 		limit = 50
 	}
 	offset := max(arguments.Offset, 0)
-	filter := &db.AgentRunFilter{JobID: arguments.JobID, Kinds: arguments.Kinds, Query: arguments.Query}
+	filter := &db.OversightFilter{
+		AgentID: arguments.AgentID, JobID: arguments.JobID, Kinds: arguments.Kinds, Query: arguments.Query,
+		Since: since, Until: until, IsRunningOnly: arguments.IsRunningOnly, LiveAfter: time.Now().Add(-oversightLiveWindow),
+	}
 	tx := self.transaction(ctx)
-	runs, err := tx.ListAgentRuns(arguments.AgentID, filter, &db.Options{Limit: uint64(limit), Offset: uint64(offset)})
+	found, err := tx.ListOversightConversations(filter, &db.Options{Limit: uint64(limit), Offset: uint64(offset)})
 	if err != nil {
 		return nil, err
 	}
-	total, err := tx.CountAgentRuns(arguments.AgentID, filter)
+	total, err := tx.CountOversightConversations(filter)
 	if err != nil {
 		return nil, err
 	}
-	summaries, err := runSummaries(tx, runs)
+	conversations := make([]*models.AgentConversation, 0, len(found))
+	for _, each := range found {
+		conversations = append(conversations, each.Conversation)
+	}
+	summaries, err := runSummaries(tx, conversations)
 	if err != nil {
 		return nil, err
 	}
-	return &AgentRunPage{Runs: summaries, Total: total}, nil
+	for index, each := range found {
+		summaries[index].OwnerUsername = each.OwnerUsername
+		summaries[index].OwnerName = each.OwnerName
+		summaries[index].IsRunning = each.IsRunning
+	}
+	return &AgentRunPage{Runs: summaries, Total: total, TotalCount: total}, nil
+}
+
+func (self *graph) ListFailedAgentTurns(ctx context.Context, arguments ListFailedAgentTurnsArguments) (*AgentFailedTurnPage, error) {
+	if _, err := self.requireObserver(ctx); err != nil {
+		return nil, err
+	}
+	since, err := parseOversightTime("since", arguments.Since)
+	if err != nil {
+		return nil, err
+	}
+	limit := arguments.First
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := max(arguments.Offset, 0)
+	filter := &db.FailedTurnFilter{AgentID: arguments.AgentID, Since: since}
+	tx := self.transaction(ctx)
+	turns, err := tx.ListFailedAgentTurns(filter, &db.Options{Limit: uint64(limit), Offset: uint64(offset)})
+	if err != nil {
+		return nil, err
+	}
+	total, err := tx.CountFailedAgentTurns(filter)
+	if err != nil {
+		return nil, err
+	}
+	page := &AgentFailedTurnPage{FailedTurns: make([]*AgentFailedTurn, 0, len(turns)), TotalCount: total}
+	for _, turn := range turns {
+		page.FailedTurns = append(page.FailedTurns, &AgentFailedTurn{
+			ConversationID: turn.ConversationID, ConversationKind: string(turn.ConversationKind),
+			ConversationTitle: turn.ConversationTitle, OwnerUsername: turn.OwnerUsername, OwnerName: turn.OwnerName,
+			FailedAt: turn.FailedAt, ErrorText: turn.ErrorText, AgentID: turn.AgentID,
+		})
+	}
+	return page, nil
 }
 
 // subscribeAgentRun follows a run of the caller's agent: the run itself when
@@ -1036,6 +1277,9 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 	// permissions, their tools. It is said in the log every time.
 	conversation, other, owner, err := self.conversationFor(tx, principal, found, arguments.ConversationID, true)
 	if err != nil {
+		return nil, err
+	}
+	if err := requireActingAs(principal, other); err != nil {
 		return nil, err
 	}
 	asking, person := found, principal.User
@@ -1339,6 +1583,9 @@ func (self *graph) ReactToAgentMessage(ctx context.Context, arguments ReactToAge
 	// not read it, ask in it or react in it as them.
 	if conversation.IsChat() && other != nil {
 		return false, api.ErrNotFound
+	}
+	if err := requireActingAs(principal, other); err != nil {
+		return false, err
 	}
 	if err := requireConversationUse(principal, found, conversation); err != nil {
 		return false, err
@@ -1664,7 +1911,8 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 			}
 		}
 		var other *models.Agent
-		conversation, other, _, err = self.conversationFor(tx, principal, found, arguments.ConversationID, true)
+		var owner *models.User
+		conversation, other, owner, err = self.conversationFor(tx, principal, found, arguments.ConversationID, true)
 		if err != nil {
 			return err
 		}
@@ -1672,7 +1920,14 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 		if conversation.IsChat() && other != nil {
 			return api.ErrNotFound
 		}
-		return requireConversationUse(principal, found, conversation)
+		if err := requireConversationUse(principal, found, conversation); err != nil {
+			return err
+		}
+		// Following another person's conversation is reading it.
+		if other != nil {
+			return recordObservedRead(ctx, tx, principal, conversation, owner)
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}
