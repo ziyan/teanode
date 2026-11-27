@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.241.0] - 2026-11-27
+
+### Added
+
+- The agent can manage your feed when you ask: answer a card, like it or take the like back, show less like it, mark cards read, and read a card, a stack or the next page. (#801)
+
+### Changed
+
+- A goal can do everything on your feed that its instructions ask: answer, like, show less, mark read, restore, and resolve or take back any card. Commands the agent runs with `teanode agent feed` are no longer refused any of these. (#801)
+
+### Fixed
+
+- Card titles are no longer cut off in the middle of a word: an alert's card shows the alert's first sentence as its title and the rest below it, and other cards keep their whole title and body. (#801)
+
 ## [0.240.1] - 2026-11-27
 
 ### Changed
