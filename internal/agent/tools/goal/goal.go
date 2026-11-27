@@ -26,12 +26,6 @@ import (
 // limit and the server's monthly one.
 const DefaultInterval = 30 * time.Minute
 
-// NoteCharacters is as much of the agent's note as is kept. The note is
-// shown beside the conversation and, while the goal waits, in a bar above
-// the box the person types in, so it is a sentence or two by design and
-// cut here when it is not.
-const NoteCharacters = 500
-
 func init() {
 	tools.Register(func() []*tools.Tool {
 		return []*tools.Tool{
@@ -40,7 +34,7 @@ func init() {
 				Description: "Goals: what you keep at for the person in the background, between conversations, each in a conversation of its own where your turns on it run out of their sight, until it is met or they drop it. They hear from a goal only when it needs them, or in their feed. " +
 					"`start` starts one, with a title of a few words and text saying what it is for and what done looks like; use it when they ask you to keep at, watch for or follow up on something that outlasts this conversation, and for anything at a time they name. `list` is every goal and where it stands; `show` one with what happened on it and what it made. " +
 					"A goal paces itself, unless it is given times or on_mail: times are cron lines in the person's zone (\"30 7 * * 1-5\" is weekdays at 7:30) or single moments (\"@at 2026-09-12 09:00\", \"@in 2h\"), and on_mail runs it whenever a message passes every test. Its turns are then at those times, and the text says what to do at each: \"every weekday at 8, tell me what needs me\" is a goal with times [\"0 8 * * 1-5\"]; a reminder in two hours is a goal with times [\"@in 2h\"]. " +
-					"`tell` passes the person's words to a goal by goal_id: their answer to what it asked, or something it should know. `set` changes a goal's title, text, times, on_mail or is_notified_when_posted; `run` gives it a turn now. `done`, `drop`, `pause` and `resume` are theirs: a goal met, stopped, switched off for now, or taken up again. " +
+					"`tell` passes words to a goal by goal_id: the person's answer to what it asked, or something it should know. `set` changes a goal's title, text, times, on_mail or is_notified_when_posted; `run` gives it a turn now. `done`, `drop`, `pause` and `resume` close a goal as met, stop it, switch it off for now, or take it up again; do them when the person asks, or when a goal's own text says to. " +
 					"In a goal's own turns: `note` with status (where it stands, one line), the minutes until your next turn (not used for a goal with times), and activity when something happened worth their reading later; `wait` with status saying what you need from them, which is said to them in their main conversation; `met` with text saying how it ended, as soon as it is done.",
 				Parameters: tools.Object(map[string]any{
 					"action":  tools.EnumProperty("what to do", "start", "list", "show", "tell", "set", "run", "done", "drop", "pause", "resume", "note", "wait", "met"),
@@ -117,7 +111,6 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		text = status
 	}
 	here := current.Conversation()
-	isGoalTurn := here.IsGoal() && current.Headless()
 	goalId := strings.TrimSpace(asked.GoalID)
 
 	// Across goals, through the operations the dashboard's Goals tab and
@@ -135,11 +128,6 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		return operate(ctx, client.DocumentGetAgentGoal, map[string]any{"conversationId": goalId}, "GetAgentGoal", "")
 	case "start":
-		// A goal's own turns do not start more goals: work it needs is
-		// background work, or a later turn of its own.
-		if isGoalTurn {
-			return nil, fmt.Errorf("a goal does not start goals; give the minutes until your next turn with note, or start background work")
-		}
 		if text == "" {
 			return nil, fmt.Errorf("say what the goal is for and what done looks like, in text")
 		}
@@ -154,11 +142,6 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		return operate(ctx, client.DocumentStartAgentGoal, variables, "StartAgentGoal", note+passwordsNoticeFor(text))
 	case "tell", "set", "run", "done", "drop", "pause", "resume":
-		// The person's words and the person's decisions: from a turn
-		// they are in, never one of the agent's own.
-		if current.Headless() {
-			return nil, fmt.Errorf("only the person answers, changes, closes or pauses a goal; in a goal's own turn, say note, wait or met")
-		}
 		if goalId == "" && here.IsGoal() {
 			goalId = here.ID
 		}
@@ -189,9 +172,6 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	// the goal's conversation; anywhere else there is no goal to say it of.
 	if !here.IsGoal() {
 		return nil, fmt.Errorf("%s is said in a goal's own turn; this is not a goal's conversation. To start a goal, use start", action)
-	}
-	if runes := []rune(text); len(runes) > NoteCharacters {
-		text = string(runes[:NoteCharacters])
 	}
 	activity := strings.TrimSpace(asked.Activity)
 
