@@ -642,7 +642,7 @@ func TestJournalNarrativeReplacesChoicesAndKeepsPinsAndHiddenOnes(t *testing.T) 
 
 // A correction is kept with its time, however many and however long; one
 // is removed by its place; both ask for the narrative to be written again.
-func TestJournalCorrectionsAreLimitedAndAskForANewNarrative(t *testing.T) {
+func TestJournalCorrectionsAreKeptWholeAndAskForANewNarrative(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
@@ -677,7 +677,7 @@ func TestJournalCorrectionsAreLimitedAndAskForANewNarrative(t *testing.T) {
 			t.Fatal(err)
 		}
 		day, _ = tx.GetJournalDay(ada.ID, "2026-03-03")
-		if len(day.NarrativeCorrections) != 19 || day.NarrativeCorrections[1].CorrectionText != "Correction xx" {
+		if len(day.NarrativeCorrections) != correctionCount-1 || day.NarrativeCorrections[1].CorrectionText != "Correction xx" {
 			t.Errorf("corrections after removing the second: %d", len(day.NarrativeCorrections))
 		}
 		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "Room again.", journalTestAt(12)); err != nil {
