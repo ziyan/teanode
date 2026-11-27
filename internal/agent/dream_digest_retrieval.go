@@ -231,13 +231,15 @@ func withoutOverlap(previous, current string) string {
 const digestBatchRunes = 40000
 
 // dreamScanConcurrency is how many reading calls the nightly reading makes at
-// once: one, which suits a service that meters by the call and a model of
-// the person's own with a single slot.
-const dreamScanConcurrency = 1
-
-// dreamRewriteConcurrency is how many pages the nightly run rewrites at once,
-// after the reading. One, for the same reason.
-const dreamRewriteConcurrency = 1
+// once, and dreamRewriteConcurrency how many pages it rewrites at once after
+// the reading: enough to finish a night's backlog, few enough that a hosted
+// model's rate limit is not met. They were settings at these values; nobody
+// could say what else they should be. The daily money limit bounds what the
+// night spends however fast it goes.
+const (
+	dreamScanConcurrency    = 6
+	dreamRewriteConcurrency = 4
+)
 
 // chatNamesOf is what the person may be called in a chat archive: their
 // username, and each word of their name, in lower case. A thread whose
