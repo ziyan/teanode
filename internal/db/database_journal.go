@@ -128,7 +128,6 @@ type JournalOperation interface {
 	// AddJournalCorrection adds a correction to a target's narrative and marks
 	// it waiting to be written. A correction the narrative already keeps, the
 	// same words but for case and spacing, adds nothing and isAdded is false.
-	// ErrLimitReached past models.JournalCorrectionsMost.
 	AddJournalCorrection(userId string, target models.JournalTarget, timeZone, correctionText string, at time.Time) (isAdded bool, err error)
 
 	// RemoveJournalCorrection removes the correction at correctionIndex and
@@ -1020,9 +1019,6 @@ func (self *transaction) AddJournalCorrection(userId string, target models.Journ
 		return sameJournalCorrection(correction.CorrectionText, correctionText)
 	}) {
 		return false, nil
-	}
-	if len(corrections) >= models.JournalCorrectionsMost {
-		return false, limitReached("a narrative keeps at most %d corrections; remove one first", models.JournalCorrectionsMost)
 	}
 	if err := self.storeJournalCorrections(subject, append(corrections, models.JournalCorrection{CorrectionText: correctionText, CreatedAt: at}), at); err != nil {
 		return false, err

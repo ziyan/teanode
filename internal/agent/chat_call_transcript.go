@@ -421,20 +421,27 @@ type chatCallSummary struct {
 func (self *Agent) finishChatCallTranscript(ctx context.Context, chatCall *models.ChatCall, chat *models.Chat, transcriptState string, summary *chatCallSummary) error {
 	completionContext, cancelCompletion := context.WithTimeout(context.WithoutCancel(ctx), jobCompletionTimeout)
 	defer cancelCompletion()
-	var posted *models.ChatMessage
+	var posted []*models.ChatMessage
 	var finished *models.ChatCall
 	if err := self.settings.Database.TransactionContext(completionContext, func(tx db.Transaction) (err error) {
 		summaryMessageId := ""
 		if summary != nil && summary.text != "" && chat != nil && summary.agent != nil {
-			posted, err = tx.AppendChatMessage(&models.ChatMessage{
-				ChatID: chat.ID, AuthorUserID: summary.owner.ID, AuthorName: summary.agent.DisplayName(),
-				AuthorKind: models.ChatAuthorAgent, AuthorAgentID: summary.agent.ID,
-				Body: "Summary of the call:\n\n" + summary.text,
-			})
-			if err != nil {
-				return err
+			// A summary longer than one chat message holds goes as several,
+			// in order; the call names the first.
+			for _, body := range splitChatBody("Summary of the call:\n\n"+summary.text, models.ChatMessageMostCharacters) {
+				message, err := tx.AppendChatMessage(&models.ChatMessage{
+					ChatID: chat.ID, AuthorUserID: summary.owner.ID, AuthorName: summary.agent.DisplayName(),
+					AuthorKind: models.ChatAuthorAgent, AuthorAgentID: summary.agent.ID,
+					Body: body,
+				})
+				if err != nil {
+					return err
+				}
+				if summaryMessageId == "" {
+					summaryMessageId = message.ID
+				}
+				posted = append(posted, message)
 			}
-			summaryMessageId = posted.ID
 		}
 		finished, err = tx.FinishChatCallTranscript(chatCall.ID, transcriptState, summaryMessageId)
 		return err
@@ -444,8 +451,8 @@ func (self *Agent) finishChatCallTranscript(ctx context.Context, chatCall *model
 	if finished == nil || chat == nil {
 		return nil
 	}
-	if posted != nil {
-		self.publishSaidByAgent(posted, chat)
+	for _, message := range posted {
+		self.publishSaidByAgent(message, chat)
 	}
 	self.notifyChatCallMembers(finished, chat)
 	return nil

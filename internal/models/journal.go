@@ -300,9 +300,6 @@ type JournalSettings struct {
 	EveningQuestionTime string `json:"eveningQuestionTime"`
 }
 
-// JournalCorrectionsMost is how many corrections a narrative keeps.
-const JournalCorrectionsMost = 20
-
 // JournalTarget names a day (PeriodKind empty, Day set) or a period
 // (PeriodKind and PeriodStart set).
 type JournalTarget struct {

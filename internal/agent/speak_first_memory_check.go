@@ -9,9 +9,9 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// When a memory check is worth the person's time: memory has to know
-// enough about them for the questions to be about something. The agent asks
-// to start one once; a later one is started by the person.
+// When a memory check is worth the person's time: memory has to know enough
+// about them for the questions to be about something, and a later check needs
+// as many facts filed since the last one, so it asks about what is new.
 const memoryCheckFactCount = 100
 
 // memoryCheckReason is the agent asking whether it may check a few things
@@ -58,13 +58,22 @@ func (self *Agent) memoryCheckReason() speakFirstReason {
 	}
 }
 
-// memoryCheckDue says whether memory holds enough about the person and no
-// question has been put to them yet.
+// memoryCheckDue says whether memory holds enough about the person that no
+// check has asked about yet: enough facts in all for a first check, and enough
+// filed since the latest question for a later one.
 func memoryCheckDue(tx db.Transaction, agent *models.Agent) (bool, error) {
-	factCount, err := tx.CountAgentFactsToCheck(agent.ID)
-	if err != nil || factCount < memoryCheckFactCount {
+	questions, err := tx.ListAgentEvaluationQuestions(agent.ID, nil)
+	if err != nil {
 		return false, err
 	}
-	questions, err := tx.ListAgentEvaluationQuestions(agent.ID, nil)
-	return len(questions) == 0, err
+	var since *time.Time
+	if len(questions) > 0 {
+		// Newest first: the last check is when its latest question was put.
+		since = &questions[0].CreatedAt
+	}
+	factCount, err := tx.CountAgentFactsToCheck(agent.ID, since)
+	if err != nil {
+		return false, err
+	}
+	return factCount >= memoryCheckFactCount, nil
 }

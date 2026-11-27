@@ -441,16 +441,11 @@ func TestJournalCorrectionsAndWritingTheNarrative(t *testing.T) {
 		t.Errorf("removing a correction that is not there: %q", failure)
 	}
 
-	for index := 0; index < models.JournalCorrectionsMost; index++ {
-		failure := ""
+	// However many corrections there are, each is kept.
+	const correctionCount = 25
+	for index := 0; index < correctionCount-1; index++ {
 		if _, failures := world.callWith(t, world.ada, correctJournalQuery, map[string]any{"day": "2026-03-04", "correctionText": fmt.Sprintf("Correction %d.", index)}); len(failures) > 0 {
-			failure = failures[0]
-		}
-		if (index < models.JournalCorrectionsMost-1) != (failure == "") {
-			t.Fatalf("correction %d beyond the one already there: %q", index, failure)
-		}
-		if failure != "" && !strings.Contains(failure, "at most 20 corrections") {
-			t.Errorf("the 21st correction is refused with %q", failure)
+			t.Fatalf("correction %d beyond the one already there: %q", index, failures[0])
 		}
 	}
 	world.refusal(t, world.ada, correctJournalQuery, map[string]any{"day": "2026-03-04", "correctionText": "   "})
@@ -473,7 +468,7 @@ func TestJournalCorrectionsAndWritingTheNarrative(t *testing.T) {
 	// Deleting the narrative keeps what the person said was wrong.
 	data = world.run(t, world.ada, deleteNarrativeQuery, map[string]any{"day": "2026-03-04"})
 	deleted := asMap(t, data["DeleteJournalNarrative"])
-	if deleted["headline"] != "" || deleted["narrative"] != "" || len(asList(t, deleted["references"])) != 0 || len(asList(t, deleted["corrections"])) != models.JournalCorrectionsMost {
+	if deleted["headline"] != "" || deleted["narrative"] != "" || len(asList(t, deleted["references"])) != 0 || len(asList(t, deleted["corrections"])) != correctionCount {
 		t.Errorf("a deleted narrative: %v", deleted)
 	}
 }

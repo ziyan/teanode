@@ -69,7 +69,12 @@ func ReadResultMore(ctx context.Context, run Run, id string, offset int) (page s
 	return fmt.Sprintf("%s\n[%d more characters: call %s with result_id %q and offset %d]", text[offset:end], utf8.RuneCountInString(text[end:]), ResultMoreName, id, end), isUntrusted, nil
 }
 
-// holderOf is who a held result belongs to: the agent that made the call.
+// holderOf is who a held result belongs to: the agent that made the call, in
+// the conversation it made it in, so one conversation's long results never
+// push out another's.
 func holderOf(run Run) string {
+	if conversation := run.Conversation(); conversation != nil {
+		return "agent/" + run.Agent().ID + "/" + conversation.ID
+	}
 	return "agent/" + run.Agent().ID
 }

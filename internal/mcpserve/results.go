@@ -32,11 +32,9 @@ const ResultCharacters = 8000
 // caller, not for a session: the HTTP transport keeps none, and the same
 // caller's next request is what reads on.
 const (
-	// resultsPerHolder is how many results one caller has held at once;
-	// the oldest goes when another comes.
-	resultsPerHolder = 8
 	// heldBytesPerHolder is how much one caller has held at once, so that
-	// one caller's long answers push out its own, not everybody's.
+	// one caller's long answers push out its own, not everybody's; the
+	// oldest goes first when another does not fit.
 	heldBytesPerHolder = 16 << 20
 	// resultHeldFor is how long a result is held after it was made.
 	resultHeldFor = 30 * time.Minute
@@ -110,10 +108,9 @@ func (self *ResultStore) keep(ctx context.Context, result *heldResult) string {
 			ID: id, Holder: result.holder, ResultText: result.text,
 			IsUntrusted: result.isUntrusted, IsError: result.isError,
 		}, db.McpHeldResultLimits{
-			HeldFor:              resultHeldFor,
-			ResultCountPerHolder: resultsPerHolder,
-			ByteCountPerHolder:   heldBytesPerHolder,
-			ByteCount:            heldBytes,
+			HeldFor:            resultHeldFor,
+			ByteCountPerHolder: heldBytesPerHolder,
+			ByteCount:          heldBytes,
 		}, self.now())
 	}); err != nil {
 		log.Warningf("cannot hold a long tool result for result_more: %s", err)

@@ -47,11 +47,10 @@ type McpHeldResultLimits struct {
 	// HeldFor is how long a result is held after it was stored.
 	HeldFor time.Duration
 
-	// ResultCountPerHolder and ByteCountPerHolder bound what one holder has
-	// held at once; ByteCount bounds everything held, for every holder.
-	ResultCountPerHolder int
-	ByteCountPerHolder   int
-	ByteCount            int
+	// ByteCountPerHolder bounds what one holder has held at once; ByteCount
+	// bounds everything held, for every holder.
+	ByteCountPerHolder int
+	ByteCount          int
 }
 
 func (self *transaction) KeepMcpHeldResult(held *McpHeldResult, limits McpHeldResultLimits, now time.Time) error {
@@ -68,11 +67,11 @@ func (self *transaction) KeepMcpHeldResult(held *McpHeldResult, limits McpHeldRe
 	// oldest, go.
 	if err := self.tx.Exec(`DELETE FROM "mcp_held_result" WHERE "id" IN (
 		SELECT "id" FROM (
-			SELECT "id", ROW_NUMBER() OVER newest AS "position", SUM(octet_length("result_text")) OVER newest AS "cumulative_bytes"
+			SELECT "id", SUM(octet_length("result_text")) OVER newest AS "cumulative_bytes"
 			FROM "mcp_held_result" WHERE "holder" = ?
 			WINDOW newest AS (ORDER BY "stored_at" DESC, "id" DESC)
-		) AS "ranked" WHERE "position" > ? OR "cumulative_bytes" > ?)`,
-		held.Holder, limits.ResultCountPerHolder-1, limits.ByteCountPerHolder-newByteCount).Error; err != nil {
+		) AS "ranked" WHERE "cumulative_bytes" > ?)`,
+		held.Holder, limits.ByteCountPerHolder-newByteCount).Error; err != nil {
 		return err
 	}
 	if err := self.tx.Exec(`DELETE FROM "mcp_held_result" WHERE "id" IN (

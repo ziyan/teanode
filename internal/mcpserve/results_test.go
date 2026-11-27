@@ -294,19 +294,25 @@ func TestHeldResultsExpireAndAreBounded(t *testing.T) {
 		t.Fatal("a result was still held after it expired")
 	}
 
+	// However many results one caller has, each is held while their bytes fit.
 	var ids []string
-	for index := 0; index < resultsPerHolder+2; index++ {
+	for index := 0; index < 20; index++ {
 		clock = clock.Add(time.Second)
 		ids = append(ids, results.keep(ctx, &heldResult{holder: "owner", text: "text " + strconv.Itoa(index)}))
 	}
+	if _, ok, _ := results.find(ctx, "owner", ids[0]); !ok {
+		t.Fatal("the oldest of many small results was not held")
+	}
+	if heldCount := heldResultCount(t, database, "owner"); heldCount != 20 {
+		t.Fatalf("%d results were held for one caller, not 20", heldCount)
+	}
+	// One that does not fit beside them pushes out the oldest first.
+	clock = clock.Add(time.Second)
+	if id := results.keep(ctx, &heldResult{holder: "owner", text: strings.Repeat("x", heldBytesPerHolder-4)}); id == "" {
+		t.Fatal("a result of nearly a caller's whole room was not held")
+	}
 	if _, ok, _ := results.find(ctx, "owner", ids[0]); ok {
-		t.Fatal("the oldest of too many results was still held")
-	}
-	if _, ok, _ := results.find(ctx, "owner", ids[len(ids)-1]); !ok {
-		t.Fatal("the newest result was not held")
-	}
-	if heldCount := heldResultCount(t, database, "owner"); heldCount != resultsPerHolder {
-		t.Fatalf("%d results were held for one caller, not %d", heldCount, resultsPerHolder)
+		t.Fatal("the oldest result was still held after a large one came")
 	}
 	if id := results.keep(ctx, &heldResult{holder: "owner", text: strings.Repeat("x", heldBytesPerHolder+1)}); id != "" {
 		t.Fatal("a result larger than one caller may hold was held")

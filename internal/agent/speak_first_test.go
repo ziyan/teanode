@@ -279,8 +279,8 @@ func TestNotNowKeepsTheAgentQuietUnlessAsked(t *testing.T) {
 }
 
 // A memory check is asked for once memory holds enough about the person,
-// they have been introduced, and checks are on; once they have been asked a
-// question, the agent does not ask again on its own.
+// they have been introduced, and checks are on; after a check, the next is
+// asked for once as many facts again were filed since its last question.
 func TestAMemoryCheckIsAskedForWhenMemoryKnowsEnough(t *testing.T) {
 	world := newSpeakFirstWorld(t)
 	var self *models.AgentNode
@@ -323,11 +323,20 @@ func TestAMemoryCheckIsAskedForWhenMemoryKnowsEnough(t *testing.T) {
 		t.Fatalf("a question was put today: %+v", jobs)
 	}
 	world.tick(t)
-	later := time.Now().Add(8 * 24 * time.Hour)
-	present(later)
-	world.worker.Wait()
+	present(time.Now().Add(4 * time.Minute))
 	if jobs := world.speakFirstJobs(t); len(jobs) != 0 {
-		t.Fatalf("a question was put already, no second check on its own: %+v", jobs)
+		t.Fatalf("nothing new was filed since the last question: %+v", jobs)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		for index := 0; index < 100; index++ {
+			if _, err := tx.AddAgentFact(&models.AgentFact{AgentID: world.agent.ID, NodeID: self.ID, Kind: models.FactPlain, Text: fmt.Sprintf("Robin has planted bean row number %d.", index)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	present(time.Now().Add(40 * time.Minute))
+	if jobs := world.speakFirstJobs(t); len(jobs) != 1 {
+		t.Fatalf("a hundred new facts ask for a second check: %+v", jobs)
 	}
 }
 
