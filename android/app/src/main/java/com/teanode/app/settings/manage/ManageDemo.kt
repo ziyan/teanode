@@ -25,14 +25,14 @@ private const val AGENT_SETTINGS = """{
   "features":{"triage":true,"summaries":true,"draftReplies":true,"search":true,"research":true,"autoReply":false,"ask":true,"schedules":true,"browser":false,"connectedServers":true,"computer":true,
     "chatApps":true,"skills":true,"subagents":true,"remember":true,"knowledge":true,"dreaming":true},
   "limits":{"dailyTokensPerAgent":1000000,"monthlyTokensPerServer":0,"dailyCostPerAgent":2.5,"monthlyCostPerServer":0},
-  "retention":{"runs":"720h","corrections":"2160h"},"currency":"USD","search":{"kind":"brave","hasApiKey":true},
+ "currency":"USD","search":{"kind":"brave","hasApiKey":true},
   "tools":{"disabled":["shell"],"confirm":["mail"],"catalog":[
     {"name":"mail_send","family":"mail","risk":"outward","description":"Sends mail.","confirms":true,"core":true,"actions":null},
     {"name":"mail_search","family":"mail","risk":"low","description":"Searches mail.","confirms":false,"core":false,"actions":null},
     {"name":"shell","family":"computer","risk":"local","description":"Runs a command on the attached computer.","confirms":true,"core":false,"actions":["run","stop"]}]},
   "voice":{"enabled":true,"provider":"main","transcriptionModel":"gpt-4o-transcribe","silenceMS":600,"speechModel":"gpt-4o-mini-tts","speechVoice":"cedar","askModel":""},
   "recording":{"isLiveTranscriptionEnabled":true,"isAccurateWordsEnabled":false},
-  "browser":{"enabled":true,"cdpEndpoint":"chrome:9222","attachTabs":true,"allowPrivateAddresses":[],"idleTimeout":"5m","maxContexts":4},
+  "browser":{"enabled":true,"cdpEndpoint":"chrome:9222","attachTabs":true,"allowPrivateAddresses":[]},
   "mcpServers":[
     {"name":"tracker","transport":"","effectiveTransport":"http","url":"https://tracker.example.com/mcp","command":"","args":[],"envNames":["API_TOKEN"],"workingDir":"","auth":"static","effectiveAuth":"static",
      "hasAuthorization":true,"oauthClientId":"","hasOauthClientSecret":false,"oauthScopes":[],"oauthAuthorizationUrl":"","oauthTokenUrl":"","oauthRedirect":"","headless":true,"location":"","readOnly":["list_items"],"disabled":[],"timeout":"30s","enabled":true},

@@ -1461,12 +1461,6 @@ public struct AgentLimits: Codable, Hashable, Sendable {
     public let monthlyTokensPerServer: Int
 }
 
-/// AgentRetention is how long run transcripts and corrections are kept.
-public struct AgentRetention: Codable, Hashable, Sendable {
-    public var runs: String
-    public var corrections: String
-}
-
 /// AgentServerSettings are the operator's agent settings: whether people
 /// may have an agent, the house instructions, the providers and models,
 /// what people may turn on, the limits, the tools and the services they
@@ -1520,11 +1514,9 @@ public struct AgentServerSettings: Codable, Hashable, Sendable {
         public let cdpEndpoint: String
         public let canAttachTabs: Bool
         public let allowPrivateAddresses: [String]
-        public let idleTimeout: String
-        public let maxContexts: Int
 
         enum CodingKeys: String, CodingKey {
-            case cdpEndpoint, allowPrivateAddresses, idleTimeout, maxContexts
+            case cdpEndpoint, allowPrivateAddresses
             case isEnabled = "enabled"
             case canAttachTabs = "attachTabs"
         }
@@ -1555,7 +1547,6 @@ public struct AgentServerSettings: Codable, Hashable, Sendable {
     /// What people may turn on, by feature; one not said is on.
     public let features: [String: Bool]
     public let limits: AgentLimits
-    public let retention: AgentRetention
     public let currency: String
     public let search: WebSearch
     public let tools: ToolPolicy
@@ -1570,7 +1561,7 @@ public struct AgentServerSettings: Codable, Hashable, Sendable {
     public let kinds: [String]
 
     enum CodingKeys: String, CodingKey {
-        case instructions, allowPrivateAddresses, skipCertificateCheck, providers, models, features, limits, retention, currency
+        case instructions, allowPrivateAddresses, skipCertificateCheck, providers, models, features, limits, currency
         case search, tools, voice, recording, browser, mcpServers, finance, works, families, kinds
         case isEnabled = "enabled"
     }
@@ -1799,7 +1790,7 @@ public struct AgentProviderDraft: Hashable, Sendable {
     }
 }
 
-/// AgentLimitsDraft is the limits, the retention and the currency as their
+/// AgentLimitsDraft is the limits and the currency as their
 /// form holds them, each limit as typed.
 public struct AgentLimitsDraft: Hashable, Sendable {
     /// The limits in the order the form groups them.
@@ -1809,7 +1800,6 @@ public struct AgentLimitsDraft: Hashable, Sendable {
     ]
 
     public var limitTexts: [String: String]
-    public var retention: AgentRetention
     public var currency: String
 
     public init(_ settings: AgentServerSettings) {
@@ -1821,7 +1811,6 @@ public struct AgentLimitsDraft: Hashable, Sendable {
         ]
         // Zero is said as 0, as the dashboard's form shows a stored limit.
         limitTexts = numbers.mapValues { number in number == 0 ? "0" : SettingsList.text(number) }
-        retention = settings.retention
         currency = settings.currency
     }
 
@@ -1833,7 +1822,6 @@ public struct AgentLimitsDraft: Hashable, Sendable {
         }
         return [
             "limits": .object(limits),
-            "retention": .object(["runs": .string(retention.runs), "corrections": .string(retention.corrections)]),
             "currency": .string(currency),
         ]
     }
@@ -1899,16 +1887,12 @@ public struct AgentBrowserDraft: Hashable, Sendable {
     public var cdpEndpoint: String
     public var canAttachTabs: Bool
     public var allowPrivateAddressesText: String
-    public var idleTimeout: String
-    public var maxContextsText: String
 
     public init(_ browser: AgentServerSettings.Browser) {
         isEnabled = browser.isEnabled
         cdpEndpoint = browser.cdpEndpoint
         canAttachTabs = browser.canAttachTabs
         allowPrivateAddressesText = SettingsList.text(browser.allowPrivateAddresses)
-        idleTimeout = browser.idleTimeout
-        maxContextsText = String(browser.maxContexts)
     }
 
     public var agentParameters: [String: JSONValue] {
@@ -1916,7 +1900,6 @@ public struct AgentBrowserDraft: Hashable, Sendable {
             "browser": .object([
                 "enabled": .bool(isEnabled), "cdpEndpoint": .string(cdpEndpoint), "attachTabs": .bool(canAttachTabs),
                 "allowPrivateAddresses": SettingsList.value(SettingsList.lineItems(allowPrivateAddressesText)),
-                "idleTimeout": .string(idleTimeout), "maxContexts": .number(SettingsList.number(maxContextsText)),
             ])
         ]
     }
@@ -2710,13 +2693,12 @@ extension Documents {
           models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize transcription embeddingDimensions choices }
           features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
           limits { dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer }
-          retention { runs corrections }
           currency
           search { kind hasApiKey }
           tools { disabled confirm catalog { name family risk description confirms core actions } }
           voice { enabled provider transcriptionModel silenceMS speechModel speechVoice askModel }
           recording { isLiveTranscriptionEnabled isAccurateWordsEnabled }
-          browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
+          browser { enabled cdpEndpoint attachTabs allowPrivateAddresses }
           mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl oauthRedirect headless location readOnly disabled timeout enabled }
           finance { offeredProviders plaid { environment clientId hasSecret countryCodes products } }
           works families kinds

@@ -3465,7 +3465,7 @@ private struct AgentLimitsFormView: View {
         AgentSettingsForm(model: model, title: "Limits", makeDraft: { AgentLimitsDraft($0) }, parameters: { $0.agentParameters }) { draft, _ in
             Section {
             } footer: {
-                Text("Caps on what one person, and the whole server, may spend in a day and a month; how long transcripts and corrections are kept.")
+                Text("Caps on what one person, and the whole server, may spend in a day and a month.")
             }
             ForEach(Array(AgentLimitsDraft.limitGroups.enumerated()), id: \.offset) { _, limitNames in
                 Section {
@@ -3482,14 +3482,6 @@ private struct AgentLimitsFormView: View {
                             .textInputAutocapitalization(.characters)
                         }
                     }
-                }
-            }
-            Section {
-                LabeledContent("Keep run transcripts for") {
-                    TextField("Keep run transcripts for", text: draft.retention.runs).multilineTextAlignment(.trailing)
-                }
-                LabeledContent("Keep corrections for") {
-                    TextField("Keep corrections for", text: draft.retention.corrections).multilineTextAlignment(.trailing)
                 }
             }
         }
@@ -3625,16 +3617,6 @@ private struct AgentBrowserFormView: View {
             }
             Section {
                 TextField("DevTools endpoint", text: draft.cdpEndpoint, prompt: Text(verbatim: "chrome:9222"))
-                LabeledContent("Idle timeout") {
-                    TextField("Idle timeout", text: draft.idleTimeout).multilineTextAlignment(.trailing)
-                }
-                LabeledContent("Contexts at once") {
-                    TextField(
-                        "Contexts at once", text: Binding(get: { draft.wrappedValue.maxContextsText }, set: { draft.wrappedValue.maxContextsText = SettingsList.digits($0) })
-                    )
-                    .keyboardType(.numberPad)
-                    .multilineTextAlignment(.trailing)
-                }
             }
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()

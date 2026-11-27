@@ -229,7 +229,9 @@ type AgentLimitsSettings struct {
 	DreamShare               float64 `json:"dreamShare"`
 }
 
-// AgentRetentionSettings says how long records are kept.
+// AgentRetentionSettings is no longer used: records are kept for fixed
+// times. It answers empty for one release so an older app's settings page
+// loads; clients should stop asking for it.
 type AgentRetentionSettings struct {
 	Runs        string `json:"runs"`
 	Corrections string `json:"corrections"`
@@ -325,8 +327,10 @@ type AgentBrowserSettings struct {
 	CDPEndpoint           string   `json:"cdpEndpoint"`
 	AttachTabs            bool     `json:"attachTabs"`
 	AllowPrivateAddresses []string `json:"allowPrivateAddresses"`
-	IdleTimeout           string   `json:"idleTimeout"`
-	MaxContexts           int      `json:"maxContexts"`
+
+	// No longer used; always empty or zero, for one release.
+	IdleTimeout string `json:"idleTimeout"`
+	MaxContexts int    `json:"maxContexts"`
 }
 
 // AgentMCPServerSettings is one connected server, without its secrets.
@@ -415,11 +419,8 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			DailyCostPerAgent:      agent.Limits.DailyCostPerAgent,
 			MonthlyCostPerServer:   agent.Limits.MonthlyCostPerServer,
 		},
-		Retention: &AgentRetentionSettings{
-			Runs:        agent.Retention.Runs.String(),
-			Corrections: agent.Retention.Corrections.String(),
-		},
-		Search: &AgentSearchSettings{Kind: agent.Search.Kind, HasAPIKey: agent.Search.APIKey != ""},
+		Retention: &AgentRetentionSettings{},
+		Search:    &AgentSearchSettings{Kind: agent.Search.Kind, HasAPIKey: agent.Search.APIKey != ""},
 		Tools: &AgentToolsSettings{
 			Disabled: nonNil(agenttools.Rename(agent.Tools.Disabled)),
 			Confirm:  nonNil(agenttools.Rename(agent.Tools.Confirm)),
@@ -443,8 +444,6 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			CDPEndpoint:           agent.Browser.CDPEndpoint,
 			AttachTabs:            agent.Browser.AttachTabs == nil || *agent.Browser.AttachTabs,
 			AllowPrivateAddresses: nonNil(agent.Browser.AllowPrivateAddresses),
-			IdleTimeout:           agent.Browser.IdleTimeout.String(),
-			MaxContexts:           agent.Browser.MaxContexts,
 		},
 		MCPServers: []*AgentMCPServerSettings{},
 		Finance: &AgentFinanceSettings{
@@ -691,7 +690,8 @@ type AgentLimitsParameters struct {
 	DreamShare               *float64 `json:"dreamShare"`
 }
 
-// AgentRetentionParameters change how long records are kept.
+// AgentRetentionParameters is accepted and ignored: records are kept for
+// fixed times.
 type AgentRetentionParameters struct {
 	Runs        *string `json:"runs"`
 	Corrections *string `json:"corrections"`
@@ -768,8 +768,10 @@ type AgentBrowserParameters struct {
 	CDPEndpoint           *string   `json:"cdpEndpoint"`
 	AttachTabs            *bool     `json:"attachTabs"`
 	AllowPrivateAddresses *[]string `json:"allowPrivateAddresses"`
-	IdleTimeout           *string   `json:"idleTimeout"`
-	MaxContexts           *int      `json:"maxContexts"`
+
+	// No longer used; accepted and ignored.
+	IdleTimeout *string `json:"idleTimeout"`
+	MaxContexts *int    `json:"maxContexts"`
 }
 
 // AgentMCPServerParameters is one connected server as given. Env is given
@@ -967,14 +969,6 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 			limits.MonthlyCostPerServer = *parameters.Limits.MonthlyCostPerServer
 		}
 	}
-	if parameters.Retention != nil {
-		if err := applyDuration(&agent.Retention.Runs, parameters.Retention.Runs, "agent.retention.runs"); err != nil {
-			return err
-		}
-		if err := applyDuration(&agent.Retention.Corrections, parameters.Retention.Corrections, "agent.retention.corrections"); err != nil {
-			return err
-		}
-	}
 	if parameters.Search != nil {
 		applyString(&agent.Search.Kind, parameters.Search.Kind)
 		applySecret(&agent.Search.APIKey, parameters.Search.APIKey)
@@ -1047,10 +1041,6 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		applyString(&browser.CDPEndpoint, parameters.Browser.CDPEndpoint)
 		applyFeature(&browser.AttachTabs, parameters.Browser.AttachTabs)
 		applyStrings(&browser.AllowPrivateAddresses, parameters.Browser.AllowPrivateAddresses)
-		if err := applyDuration(&browser.IdleTimeout, parameters.Browser.IdleTimeout, "agent.browser.idleTimeout"); err != nil {
-			return err
-		}
-		applyInt(&browser.MaxContexts, parameters.Browser.MaxContexts)
 	}
 	if parameters.MCPServers != nil {
 		previous := map[string]config.AgentMCPServer{}

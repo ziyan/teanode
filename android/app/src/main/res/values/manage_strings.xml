@@ -44,7 +44,6 @@
     <string name="manage_check_prices_now">Check prices now</string>
     <string name="manage_checking">Checking…</string>
     <string name="manage_connected_servers">Connected servers</string>
-    <string name="manage_contexts_at_once">Contexts at once</string>
     <string name="manage_copy">Copy</string>
     <string name="manage_created">Created</string>
     <string name="manage_currency">Currency</string>
@@ -84,7 +83,6 @@
     <string name="manage_headless_usable">Usable with nobody present</string>
     <string name="manage_house_instructions">House instructions</string>
     <string name="manage_house_instructions_prompt">Standing words for every agent on this server, for example \"never answer a parent automatically\".</string>
-    <string name="manage_idle_timeout">Idle timeout</string>
     <string name="manage_inferred">inferred</string>
     <string name="manage_install">Install</string>
     <string name="manage_installed">Installed</string>
@@ -95,8 +93,6 @@
     <string name="manage_job_never_ran">This job never got as far as a run.</string>
     <string name="manage_jobs_footer">Tap a job to open what it tried; Runs lists its calls, and Retry queues it again.</string>
     <string name="manage_jobs_given_up">Jobs given up on</string>
-    <string name="manage_keep_corrections">Keep corrections for</string>
-    <string name="manage_keep_runs">Keep run transcripts for</string>
     <string name="manage_kept_keys">Kept %1$s for %2$s</string>
     <string name="manage_key_set">key set</string>
     <string name="manage_keys_footer">Kept on this server for every person\'s agent. A value is written and never shown again; type a new one to change it, leave it blank to keep it.</string>
@@ -109,7 +105,7 @@
     <string name="manage_limit_monthly_cost">Monthly cost, whole server</string>
     <string name="manage_limit_monthly_tokens">Tokens per month, whole server (0 = no cap)</string>
     <string name="manage_limits">Limits</string>
-    <string name="manage_limits_footer">Caps on what one person, and the whole server, may spend in a day and a month; how long transcripts and corrections are kept.</string>
+    <string name="manage_limits_footer">Caps on what one person, and the whole server, may spend in a day and a month.</string>
     <string name="manage_live_transcription">Live transcription while recording</string>
     <string name="manage_live_transcription_footer">Show words as they are spoken while a recording is being captured. The audio is also streamed through this server to the voice provider\'s realtime transcription, billed by the minute to the person\'s agent, and the words are kept only until the saved audio has been transcribed with speakers.</string>
     <string name="manage_local">local</string>

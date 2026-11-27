@@ -44,7 +44,6 @@
     <string name="manage_check_prices_now">立即核对价格</string>
     <string name="manage_checking">检查中…</string>
     <string name="manage_connected_servers">已连接的服务器</string>
-    <string name="manage_contexts_at_once">同时上下文数</string>
     <string name="manage_copy">复制</string>
     <string name="manage_created">创建于</string>
     <string name="manage_currency">货币</string>
@@ -84,7 +83,6 @@
     <string name="manage_headless_usable">无人时也可使用</string>
     <string name="manage_house_instructions">服务器通用指示</string>
     <string name="manage_house_instructions_prompt">给此服务器上所有助手的固定指示，例如\"绝不自动回复家长\"。</string>
-    <string name="manage_idle_timeout">空闲超时</string>
     <string name="manage_inferred">自动推断</string>
     <string name="manage_install">安装</string>
     <string name="manage_installed">已安装</string>
@@ -95,8 +93,6 @@
     <string name="manage_job_never_ran">这个任务从未进行到运行这一步。</string>
     <string name="manage_jobs_footer">点按任务可打开它尝试过的内容；“运行记录”列出它的调用，“重试”会再次排队。</string>
     <string name="manage_jobs_given_up">已放弃的任务</string>
-    <string name="manage_keep_corrections">更正记录保留</string>
-    <string name="manage_keep_runs">运行记录保留</string>
     <string name="manage_kept_keys">已为 %2$s 保存 %1$s</string>
     <string name="manage_key_set">已设密钥</string>
     <string name="manage_keys_footer">保存在此服务器上，供每个人的助手使用。写入后不再显示；输入新值即可更改，留空则保留。</string>
@@ -109,7 +105,7 @@
     <string name="manage_limit_monthly_cost">整台服务器每月金额</string>
     <string name="manage_limit_monthly_tokens">整台服务器每月 token（0 = 不限）</string>
     <string name="manage_limits">限制</string>
-    <string name="manage_limits_footer">一个人以及整台服务器每天、每月的用量上限；记录和纠正保留多久。</string>
+    <string name="manage_limits_footer">一个人以及整台服务器每天、每月的用量上限。</string>
     <string name="manage_live_transcription">录制时实时转写</string>
     <string name="manage_live_transcription_footer">录制过程中实时显示所说的话。音频还会经本服务器传到语音提供方的实时转写，按分钟计入用户代理的用量，转写出的文字只保留到保存的音频完成说话人区分转写为止。</string>
     <string name="manage_local">本地</string>

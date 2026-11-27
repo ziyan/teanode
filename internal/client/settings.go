@@ -45,12 +45,11 @@ const settingsSelection = `{
 		models { default fast quick embedding triage research summarize reply ask schedule compact choices scan synthesize decide categorize embeddingDimensions }
 		features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
 		limits { dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer }
-		retention { runs corrections }
 		search { kind hasApiKey }
 		voice { enabled provider transcriptionModel silenceMS speechModel speechVoice askModel }
 		recording { isLiveTranscriptionEnabled isAccurateWordsEnabled }
 		tools { disabled confirm }
-		browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
+		browser { enabled cdpEndpoint attachTabs allowPrivateAddresses }
 		mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl headless readOnly disabled timeout enabled }
 		finance { offeredProviders plaid { environment clientId hasSecret countryCodes products } }
 		push { enabled relayUrl relay { enabled apnsKeyId apnsTeamId hasApnsKey apnsTopic hasFcmServiceAccount } }

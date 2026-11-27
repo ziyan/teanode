@@ -776,15 +776,8 @@ func (self *Agent) scavenge(ctx context.Context, now time.Time) {
 		return
 	}
 	self.lastScavenge = now
-	retention := self.settings.Configuration().Agent.Retention
-	runs := retention.Runs.Duration()
-	if runs <= 0 {
-		runs = 30 * 24 * time.Hour
-	}
-	corrections := retention.Corrections.Duration()
-	if corrections <= 0 {
-		corrections = 90 * 24 * time.Hour
-	}
+	runs := config.AgentRunRetention
+	corrections := config.AgentCorrectionRetention
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		// Once an hour for the whole server, not once an hour for each
 		// instance: the sweep deletes uploads from storage, which two
