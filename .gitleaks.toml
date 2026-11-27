@@ -56,4 +56,8 @@ regexes = [
   # suffix, in one commit of the agent-feed branch before it was reworded.
   # It is a grouping key, not a credential.
   '''^laptop/7/abc123$''',
+  # A model id, the voice transcription model, which a provider-models test
+  # names right after a variable called keyed: the generic rule reads the
+  # pair as a key and its value. It is the name of a model.
+  '''^gpt-4o-transcribe$''',
 ]
