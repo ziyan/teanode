@@ -7,9 +7,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
-
-	"github.com/lib/pq"
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
@@ -35,9 +32,7 @@ import (
 
 // The bounds of a survey.
 const (
-	// surveyPageCount is how many pages one survey asks, and
-	// surveyConcurrency how many at once.
-	surveyPageCount   = 40
+	// surveyConcurrency is how many pages one survey asks at once.
 	surveyConcurrency = 6
 
 	// A theme is asked in a survey of a page when at least
@@ -45,18 +40,6 @@ const (
 	// surveyThemeShareUnder of them, are under that page.
 	surveyThemeLeastMembers = 3
 	surveyThemeShareUnder   = 0.3
-
-	// surveyPageRounds is how many rounds one page's run may take: a
-	// few lookups and an answer. surveyPageLongest is how long it may
-	// take before it is stopped and counted as failed.
-	surveyPageRounds  = 8
-	surveyPageLongest = 5 * time.Minute
-
-	// surveyLongest is how long a whole survey may take, and
-	// surveyCombineReserve how much of that is kept back for combining
-	// the parts, so a slow page cannot leave no time for the report.
-	surveyLongest        = 15 * time.Minute
-	surveyCombineReserve = 3 * time.Minute
 
 	// surveyFactCount is how many of a page's facts its run is shown,
 	// the most wanted first, and surveyFactLength how much of each. A
@@ -96,17 +79,11 @@ type SurveyReport struct {
 	CoveredPaths []string
 	FailedPaths  []string
 
-	// EligiblePageCount is how many pages in scope had an overview to ask;
-	// OverLimitPageCount how many of those were left out, the least
-	// important, over surveyPageCount; WithoutOverviewPageCount how many
-	// pages in scope had no overview yet and were not asked.
+	// EligiblePageCount is how many pages in scope had an overview to ask,
+	// and all of them were asked; WithoutOverviewPageCount how many pages
+	// in scope had no overview yet and were not asked.
 	EligiblePageCount        int
-	OverLimitPageCount       int
 	WithoutOverviewPageCount int
-
-	// IsChosenByRelevance says the pages asked were chosen by how near
-	// they are to the question as well as by importance.
-	IsChosenByRelevance bool
 
 	// RunIDs is every run the survey made, each a transcript the person
 	// can open: one per page, and the one that combined them.
@@ -127,16 +104,10 @@ type surveyScope struct {
 	pages       []*surveyPage
 	reflections []string
 
-	// eligiblePageCount, overLimitPageCount and withoutOverviewPageCount
-	// are the counts the report ends with; see SurveyReport.
+	// eligiblePageCount and withoutOverviewPageCount are the counts the
+	// report ends with; see SurveyReport.
 	eligiblePageCount        int
-	overLimitPageCount       int
 	withoutOverviewPageCount int
-
-	// isChosenByRelevance says the pages asked, from more than the limit,
-	// were the ones nearest the question and the most important, rather
-	// than the most important alone.
-	isChosenByRelevance bool
 }
 
 // withOverviews is the pages among these that have an overview to ask,
@@ -159,8 +130,8 @@ type surveyPart struct {
 // names a theme, or any page, and empty means everything.
 //
 // Every run it makes is a run of kind survey, read-only, in a
-// conversation of its own. The whole of it is bounded by surveyLongest
-// and by ctx, whichever ends first.
+// conversation of its own. It goes on until every page has answered or ctx
+// ends.
 func (self *Agent) Survey(ctx context.Context, agent *models.Agent, owner *models.User, question, scopePath string) (*SurveyReport, error) {
 	if self == nil || agent == nil || owner == nil || !self.canThink(self.settings.Configuration()) {
 		return nil, ErrUnavailable
@@ -169,17 +140,9 @@ func (self *Agent) Survey(ctx context.Context, agent *models.Agent, owner *model
 	if question == "" {
 		return nil, fmt.Errorf("ask a question to survey")
 	}
-	ctx, cancel := context.WithTimeout(ctx, surveyLongest)
-	defer cancel()
-
-	// The question's meaning, worked out before the transaction: when the
-	// scope holds more pages than a survey asks, it chooses the ones
-	// nearest the question. Nil without an embedder, and the most
-	// important are asked as before.
-	questionMeaning := self.meaningOf(ctx, agent.ID, "survey", question)
 	var scope *surveyScope
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		scope, err = resolveSurveyScope(tx, agent.ID, scopePath, questionMeaning)
+		scope, err = resolveSurveyScope(tx, agent.ID, scopePath)
 		return err
 	}); err != nil {
 		return nil, err
@@ -197,8 +160,7 @@ func (self *Agent) Survey(ctx context.Context, agent *models.Agent, owner *model
 	}
 
 	report := &SurveyReport{
-		EligiblePageCount: scope.eligiblePageCount, OverLimitPageCount: scope.overLimitPageCount,
-		WithoutOverviewPageCount: scope.withoutOverviewPageCount, IsChosenByRelevance: scope.isChosenByRelevance,
+		EligiblePageCount: scope.eligiblePageCount, WithoutOverviewPageCount: scope.withoutOverviewPageCount,
 	}
 	var answers []string
 	for index, part := range parts {
@@ -254,17 +216,9 @@ func (self *Agent) Survey(ctx context.Context, agent *models.Agent, owner *model
 }
 
 // surveyPages asks each page for its part, at most surveyConcurrency at
-// once, each bounded in rounds and time, and all of them done in time
-// to leave surveyCombineReserve for the report. The parts are in the
-// order of the pages.
+// once. The parts are in the order of the pages.
 func (self *Agent) surveyPages(ctx context.Context, run *Run, pages []*surveyPage, question, shortQuestion, knowledgeLanguage string) []*surveyPart {
-	pagesUntil := time.Now().Add(surveyLongest - surveyCombineReserve)
-	if deadline, isSet := ctx.Deadline(); isSet && deadline.Add(-surveyCombineReserve).Before(pagesUntil) {
-		pagesUntil = deadline.Add(-surveyCombineReserve)
-	}
-	pagesContext, cancel := context.WithDeadline(ctx, pagesUntil)
-	defer cancel()
-
+	pagesContext := ctx
 	parts := make([]*surveyPart, len(pages))
 	slots := make(chan struct{}, surveyConcurrency)
 	var pageRuns sync.WaitGroup
@@ -292,8 +246,6 @@ func (self *Agent) surveyPage(ctx context.Context, run *Run, surveyedPage *surve
 	if ctx.Err() != nil {
 		return &surveyPart{isFailed: true}
 	}
-	ctx, cancel := context.WithTimeout(ctx, surveyPageLongest)
-	defer cancel()
 	page := surveyedPage.page
 	prompt, err := render("survey_part.txt", map[string]any{
 		"PersonName":        personName(run.Owner),
@@ -320,7 +272,7 @@ func (self *Agent) surveyPage(ctx context.Context, run *Run, surveyedPage *surve
 	// read as summaries of the overview rather than answers to the
 	// question. Unset, synthesize is the research model.
 	thinking, err := self.think(ctx, run, fmt.Sprintf("Survey: %s, %s", shortQuestion, page.Path), prompt,
-		lookupTools, surveyPageRounds, models.AgentJobSurvey, config.AgentWorkSynthesize)
+		lookupTools, 0, models.AgentJobSurvey, config.AgentWorkSynthesize)
 	part := &surveyPart{}
 	if thinking != nil && thinking.Conversation != nil {
 		part.conversationId = thinking.Conversation.ID
@@ -360,97 +312,11 @@ func surveyCoverage(report *SurveyReport) string {
 	if len(failedPaths) > 0 {
 		coverage += "\n\nNot covered, the run did not finish: " + quoted(failedPaths) + "."
 	}
-	askedCount := len(coveredPaths) + len(failedPaths)
-	if report.OverLimitPageCount > 0 || report.WithoutOverviewPageCount > 0 {
-		coverage += fmt.Sprintf("\n\nAsked %d of the %d pages in scope that have an overview.", askedCount, report.EligiblePageCount)
-		if report.OverLimitPageCount > 0 {
-			leftOut := "the least important"
-			if report.IsChosenByRelevance {
-				leftOut = "the farthest from the question and least important"
-			}
-			coverage += fmt.Sprintf(" %d more were left out, %s, over this survey's limit of %d pages.",
-				report.OverLimitPageCount, leftOut, surveyPageCount)
-		}
-		if report.WithoutOverviewPageCount > 0 {
-			coverage += fmt.Sprintf(" %d pages in scope have no overview yet and were not asked.", report.WithoutOverviewPageCount)
-		}
+	if report.WithoutOverviewPageCount > 0 {
+		coverage += fmt.Sprintf("\n\nAsked all %d pages in scope that have an overview. %d pages in scope have no overview yet and were not asked.",
+			report.EligiblePageCount, report.WithoutOverviewPageCount)
 	}
 	return coverage
-}
-
-// surveyImportantPageCount is how many of the pages a survey asks, from a
-// scope holding more than it asks, are the most important whatever the
-// question: a question about the whole area still hears from the parts that
-// matter most, and one about a corner of it hears mostly from that corner.
-const surveyImportantPageCount = 10
-
-// surveyRelevance is how near the question each page is: the best of its
-// own vector and its overview sections', by page id. Empty without a
-// question to compare with.
-func surveyRelevance(tx db.Transaction, agentId string, pages []*models.AgentNode, question *meaning) (map[string]float64, error) {
-	relevance := map[string]float64{}
-	if question == nil || len(pages) == 0 {
-		return relevance, nil
-	}
-	ids := make([]string, 0, len(pages))
-	for _, page := range pages {
-		ids = append(ids, page.ID)
-	}
-	for _, table := range []db.VectorTable{db.AgentNodeTable, db.AgentOverviewSectionTable} {
-		scores, err := tx.Nearest(table, agentId, question.ModelName, question.Vector, len(pages)*overviewSectionCount, db.VectorQuery{
-			Where: []string{`"node_id" = ANY(?)`}, Arguments: []any{pq.Array(ids)},
-		})
-		if err != nil {
-			return nil, err
-		}
-		for _, scored := range scores {
-			nodeId := scored.ID
-			if table.Table == db.AgentOverviewSectionTable.Table {
-				nodeId = nodeOfOverviewSection(scored.ID)
-			}
-			if scored.Score > relevance[nodeId] {
-				relevance[nodeId] = scored.Score
-			}
-		}
-	}
-	return relevance, nil
-}
-
-// chooseSurveyPages is the pages a survey asks from more than it asks:
-// the most important few whatever the question, then the ones nearest the
-// question, then the most important of the rest. The pages come most
-// important first; without relevance the most important are asked.
-func chooseSurveyPages(pages []*models.AgentNode, relevance map[string]float64, limit, importantCount int) []*models.AgentNode {
-	if len(pages) <= limit {
-		return pages
-	}
-	if len(relevance) == 0 {
-		return pages[:limit]
-	}
-	chosen := make([]*models.AgentNode, 0, limit)
-	isChosen := map[string]bool{}
-	take := func(page *models.AgentNode) {
-		if len(chosen) < limit && !isChosen[page.ID] {
-			isChosen[page.ID] = true
-			chosen = append(chosen, page)
-		}
-	}
-	for _, page := range pages[:min(importantCount, limit)] {
-		take(page)
-	}
-	byRelevance := append([]*models.AgentNode(nil), pages...)
-	sort.SliceStable(byRelevance, func(left, right int) bool {
-		return relevance[byRelevance[left].ID] > relevance[byRelevance[right].ID]
-	})
-	for _, page := range byRelevance {
-		if relevance[page.ID] > 0 {
-			take(page)
-		}
-	}
-	for _, page := range pages {
-		take(page)
-	}
-	return chosen
 }
 
 // errNoSuchScope is a scope that names no page.
@@ -473,8 +339,8 @@ var errNoSuchScope = errors.New("there is no page at that path to survey")
 //
 // A scope with nothing in it that has an overview is the scope page
 // alone, which still has its opening and its facts. At most
-// surveyPageCount pages, the most important first.
-func resolveSurveyScope(tx db.Transaction, agentId, scopePath string, question *meaning) (*surveyScope, error) {
+// the most important first.
+func resolveSurveyScope(tx db.Transaction, agentId, scopePath string) (*surveyScope, error) {
 	scope := &surveyScope{}
 	var pages []*models.AgentNode
 	reflectionsPath := models.PathReflections
@@ -543,15 +409,6 @@ func resolveSurveyScope(tx db.Transaction, agentId, scopePath string, question *
 		return pages[left].Path < pages[right].Path
 	})
 	scope.eligiblePageCount = len(pages)
-	if len(pages) > surveyPageCount {
-		scope.overLimitPageCount = len(pages) - surveyPageCount
-		relevance, err := surveyRelevance(tx, agentId, pages, question)
-		if err != nil {
-			return nil, err
-		}
-		scope.isChosenByRelevance = len(relevance) > 0
-		pages = chooseSurveyPages(pages, relevance, surveyPageCount, surveyImportantPageCount)
-	}
 	for _, page := range pages {
 		surveyedPage, err := readSurveyPage(tx, agentId, page)
 		if err != nil {

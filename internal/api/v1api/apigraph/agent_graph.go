@@ -682,9 +682,10 @@ type AgentSurveyView struct {
 	RunIDs []string `json:"runIds"`
 
 	// EligiblePageCount is how many pages in scope had an overview to
-	// ask, OverLimitPageCount how many of those were left out over the
-	// survey's limit, and WithoutOverviewPageCount how many pages in
-	// scope had no overview yet and were not asked.
+	// ask, and all of them were asked. OverLimitPageCount is always zero:
+	// a survey has no limit on its pages, and the field answers for one
+	// release so that an older app still loads. WithoutOverviewPageCount
+	// is how many pages in scope had no overview yet and were not asked.
 	EligiblePageCount        int `json:"eligiblePageCount"`
 	OverLimitPageCount       int `json:"overLimitPageCount"`
 	WithoutOverviewPageCount int `json:"withoutOverviewPageCount"`
@@ -1344,7 +1345,7 @@ func (self *graph) SurveyAgentMemory(ctx context.Context, arguments SurveyAgentM
 	return &AgentSurveyView{
 		Report: surveyed.Report, CoveredPaths: nonNil(surveyed.CoveredPaths),
 		FailedPaths: nonNil(surveyed.FailedPaths), RunIDs: nonNil(surveyed.RunIDs),
-		EligiblePageCount: surveyed.EligiblePageCount, OverLimitPageCount: surveyed.OverLimitPageCount,
+		EligiblePageCount:        surveyed.EligiblePageCount,
 		WithoutOverviewPageCount: surveyed.WithoutOverviewPageCount,
 	}, nil
 }
