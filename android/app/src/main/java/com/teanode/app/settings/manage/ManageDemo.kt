@@ -11,14 +11,27 @@ import kotlinx.serialization.json.booleanOrNull
 private const val AGENT_SETTINGS = """{
   "enabled":true,"instructions":"Never answer a parent automatically.","allowPrivateAddresses":["192.0.2.10"],"skipCertificateCheck":[],
   "providers":[
-    {"name":"main","kind":"openai","baseUrl":"","hasApiKey":true,"hasBillingApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,"allow":[],"deny":["legacy-*"],
-     "pricingInput":1.25,"pricingOutput":10,"pricingCacheRead":0.125,"pricingCacheWrite":0,"pricingAudioInput":6,
-     "modelPricing":[{"model":"model-large*","input":2,"output":8,"cacheRead":0.5,"cacheWrite":0,"audioInput":4.5}],"planUsage":null},
-    {"name":"plan","kind":"openai-codex","baseUrl":"","hasApiKey":false,"hasRefreshToken":true,"account":"robin@example.com","enabled":true,"allow":[],"deny":[],
-     "pricingInput":0,"pricingOutput":0,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":0,"modelPricing":[],
+    {"name":"main","kind":"openai","baseUrl":"","hasApiKey":true,"hasBillingApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,
+     "models":[
+       {"model":"model-large","name":"Large","contextWindow":0,"reportedContextWindow":200000,"isEnabled":true,"usedFor":["default","research"],
+        "pricing":{"input":2,"output":8,"cacheRead":0.5,"cacheWrite":0,"audioInput":4.5}},
+       {"model":"model-small","name":"Small","contextWindow":64000,"reportedContextWindow":128000,"isEnabled":true,"usedFor":["fast","quick"],
+        "pricing":{"input":0.2,"output":0.8,"cacheRead":0.05,"cacheWrite":0,"audioInput":0}},
+       {"model":"embedding-small","name":"","contextWindow":0,"reportedContextWindow":8000,"isEnabled":true,"usedFor":["embedding"],
+        "pricing":{"input":0.02,"output":0,"cacheRead":0,"cacheWrite":0,"audioInput":0}},
+       {"model":"speaker-model","name":"Speaker","contextWindow":0,"reportedContextWindow":0,"isEnabled":true,"usedFor":["transcription"],
+        "pricing":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"audioInput":6}},
+       {"model":"model-old","name":"Old large","contextWindow":0,"reportedContextWindow":32000,"isEnabled":false,"usedFor":[],
+        "pricing":null}],
+     "pricingInput":1.25,"pricingOutput":10,"pricingCacheRead":0.125,"pricingCacheWrite":0,"pricingAudioInput":6,"planUsage":null},
+    {"name":"plan","kind":"openai-codex","baseUrl":"","hasApiKey":false,"hasRefreshToken":true,"account":"robin@example.com","enabled":true,
+     "models":[
+       {"model":"plan-model-large","name":"Plan Large","contextWindow":0,"reportedContextWindow":272000,"isEnabled":true,"usedFor":[],
+        "pricing":null}],
+     "pricingInput":0,"pricingOutput":0,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":0,
      "planUsage":{"planName":"plus","observedAt":"2999-01-02T03:04:05Z","windows":[{"usedPercent":42,"windowMinutes":300,"resetsAt":"2999-01-02T05:00:00Z"},{"usedPercent":91,"windowMinutes":10080,"resetsAt":"2999-01-05T05:00:00Z"}]}},
-    {"name":"local","kind":"openai","baseUrl":"http://192.0.2.30:8000/v1","hasApiKey":false,"hasRefreshToken":false,"account":"","enabled":false,"allow":["small-*"],"deny":[],
-     "pricingInput":0,"pricingOutput":0,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":0,"modelPricing":[],"planUsage":null}
+    {"name":"local","kind":"openai","baseUrl":"http://192.0.2.30:8000/v1","hasApiKey":false,"hasRefreshToken":false,"account":"","enabled":false,
+     "models":[],"pricingInput":0,"pricingOutput":0,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":0,"planUsage":null}
   ],
   "models":{"default":"main:model-large","fast":"main:model-small","quick":"main:model-small","embedding":"main:embedding-small","triage":"","research":"main:model-large","summarize":"",
     "reply":"","ask":"","schedule":"","compact":"","scan":"","synthesize":"","decide":"","categorize":"","transcription":"main:speaker-model","embeddingDimensions":1536,"choices":["main:model-large","main:model-small"]},
@@ -102,9 +115,12 @@ val manageDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField(
         "ListAgentModels",
         """[{"name":"main:model-large","canTranscribe":false},{"name":"main:model-small","canTranscribe":false},{"name":"main:embedding-small"},
+          {"name":"main:model-new-a","canTranscribe":false},{"name":"main:model-new-b","canTranscribe":false},{"name":"plan:plan-model-large","canTranscribe":false},
           {"name":"main:speaker-model","canTranscribe":true,"hasSpeakerDiarization":true,"hasSegmentTimestamps":true,"hasSpeakerReferences":true,"maximumAudioBytes":26214400,"maximumSpeakerReferenceCount":4},
           {"name":"main:plain-transcriber","canTranscribe":true,"hasSpeakerDiarization":false,"hasSegmentTimestamps":true}]""",
     ),
+    graphQLField("SaveAgentModelEntry", """{"model":"model-new-a"}"""),
+    graphQLField("DeleteAgentModelEntry", "true"),
     graphQLField("TestAgentProvider", """[{"name":"main:model-large","contextLength":200000},{"name":"main:model-small","contextLength":128000},{"name":"main:embedding-small","contextLength":8000}]"""),
     graphQLField("BeginAgentProviderSignIn", """{"signInId":"sign-in-1","userCode":"ABCD-1234","verificationAddress":"https://example.com/device","isSignedIn":false,"account":"","plan":""}"""),
     graphQLField("FinishAgentProviderSignIn", """{"signInId":"sign-in-1","userCode":"ABCD-1234","verificationAddress":"https://example.com/device","isSignedIn":true,"account":"robin@example.com","plan":"plus"}"""),

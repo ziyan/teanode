@@ -699,10 +699,14 @@ jobs:
           shoot domain-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen domain
           shoot domain-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen domain
           shoot dns-records-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dns-records
-          # The provider editor, scrolled to the price of a particular model.
-          shoot provider-prices-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
-          shoot provider-prices-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
-          shoot provider-prices-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
+          # The providers page: a section per provider with its credential, its models and Add model.
+          shoot providers-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen providers
+          shoot providers-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen providers
+          shoot providers-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen providers
+          # One model's page: name, id, context window, prices, on, and what uses it.
+          shoot provider-model-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-model
+          shoot provider-model-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-model
+          shoot provider-model-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-model
           # The same editor for a provider with a billing key, scrolled to the prices from the bill.
           shoot provider-billing-check-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-billing-check
           shoot provider-billing-check-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-billing-check

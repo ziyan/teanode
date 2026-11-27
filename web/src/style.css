@@ -3255,9 +3255,6 @@ body,
 
 /* The sentence under a field, saying what it is for. Under rather than beside:
    a hint beside a field is read after the field has already been filled in. */
-/* Prices for particular models: a row per model, with the columns named
-   once above them rather than four labels repeated down the dialog. The
-   fields are the form's own; only the grid is here. */
 /* Signing a provider in to a plan: the steps, the page, and the one-time
    code large enough to copy by eye onto another device. */
 .provider-sign-in {
@@ -3270,45 +3267,48 @@ body,
   user-select: all;
 }
 
-.priced-models {
+/* A provider's models sit under its credential row, indented to read as
+   belonging to it. */
+.provider-block + .provider-block {
+  margin-top: 12px;
+}
+
+.provider-models {
+  margin-left: 16px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+
+.provider-models-empty {
+  margin: 8px 0;
+}
+
+.provider-models-add {
+  margin: 8px 0;
+}
+
+/* The provider's own list in the Add model dialog: one id a line, the
+   window beside it, the chosen one marked. */
+.model-choices {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
   margin-bottom: 10px;
 }
 
-/* A model takes its own line and its five prices share the next: five
-   fields and a name across one line of a dialog leaves no room for the
-   name, and a header cannot sit over a row that wraps, so the columns
-   are named inside the fields. */
-.priced-models-row {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)) 30px;
-  gap: 6px;
-  align-items: center;
-  margin-bottom: 6px;
+.model-choice {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  border-color: transparent;
 }
 
-.priced-models-row input:first-child {
-  grid-column: 1 / -1;
+.model-choice.selected {
+  border-color: var(--accent);
 }
-
-.priced-models-row input {
-  font-variant-numeric: tabular-nums;
-}
-
-.priced-models-row input + input {
-  text-align: right;
-}
-
-.priced-models-add {
-  margin-bottom: 10px;
-}
-
-/* Narrow enough that four fields across would leave no room for a model
-   name: the name takes the line, the three prices share the next, and
-   the column names move into the fields, since a header cannot sit over
-   two rows at once. */
 
 /* A control standing on its own rather than inside its label — the zone
    box that appears under "always this zone" — carries the bottom margin

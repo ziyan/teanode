@@ -1326,16 +1326,45 @@ does not open one.
 on. Work assigned to a disabled provider fails validation, so a provider
 cannot be switched off from under the models section by accident.
 
-**`models`** — A filter over what the service offers, with `allow` and
-`deny` lists of patterns matched against model names the way a shell
-matches file names (`qwen*`). Empty allow means everything; deny is applied
-after allow. Only admitted models may be assigned work.
+**`models`** — The models this provider offers, a list of entries. A model is
+offered only when it is an entry of an enabled provider and the entry is
+enabled: work can be assigned only to a model listed here, and the settings
+pages and the command line (`teanode settings agent model`) edit the list.
+Each entry has a `model` and may have the rest below.
 
-**`allow`**, **`deny`** — The two lists of the filter.
+    providers:
+      - name: openai
+        kind: openai
+        pricing: { input: 0.15, output: 0.6 }
+        models:
+          - model: gpt-6.1-sol
+            name: Sol
+            contextWindow: 200000
+            pricing: { input: 2, output: 12, cacheRead: 0.2 }
+          - model: gpt-6-luna
+            enabled: false
+
+**`model`** — The id the service knows the model by, which is what a role
+writes after the provider's name and a colon. Required, and listed once per
+provider.
+
+**`name`** — What people read instead of the id: "Sol" for `gpt-6.1-sol`. On a
+model entry, empty reads as the id.
+
+**`contextWindow`** — The window of the model in tokens, where the provider's
+own figure is wrong or missing. Zero takes the provider's figure, and an
+unknown default when it reports none; otherwise at least 1000.
+
+**`enabled`** — On a model entry, keeps the entry while switching the model
+off. Unset means on. A model that a role uses cannot be switched off.
 
 **`pricing`** — What the service charges, per million tokens, with
 `input`, `output`, `cacheRead`, `cacheWrite` and `audioInput`. Optional; it lets the usage view show
-money beside tokens, which is the number an operator budgets.
+money beside tokens, which is the number an operator budgets. On a provider it
+is what every model costs that has no prices of its own; on a model entry it
+is that model's prices, and an entry with none takes the provider's. An entry
+with a `pricing` block, even one of all zeros, has its own price: all zeros
+means the model is free. Leave `pricing` out to take the provider's.
 
 **`input`**, **`output`**, **`cacheRead`**, **`cacheWrite`**, **`audioInput`** — The five
 prices. `cacheWrite` is what putting a prompt into the cache costs, which some
@@ -1345,23 +1374,22 @@ wrong for one that does. `audioInput` is what a million audio input tokens
 cost, which a transcription model bills apart from text input; left unset,
 audio is priced as text input, at `input`.
 
-**`model`** — Which model a `modelPricing` entry prices: the name after
-the provider's, matched the way `allow` and `deny` are.
+### Settings from older releases
 
-**`modelPricing`** — Prices for particular models of this provider, since
-one service's models rarely cost alike: a small model and a large one behind
-the same key are priced apart. Each entry has a `model` and the same five
-prices. The `model` is the name after the provider's, matched the way `allow`
-and `deny` are, so `gpt-5*` prices a family; the first entry that matches a
-model is the one used, so exact names belong above the patterns that would
-also catch them. A model no entry matches costs what `pricing` above says.
+A provider's `models` used to be an object of `allow` and `deny` patterns, and
+`modelPricing` priced models or families of them by pattern. Both are read when
+a configuration loads, converted, and not written back:
 
-    providers:
-      - name: openai
-        pricing: { input: 0.15, output: 0.6, cacheRead: 0.075 }
-        modelPricing:
-          - { model: gpt-5.6-terra, input: 2, output: 12, cacheRead: 0.2 }
-          - { model: gpt-5.6-luna, input: 0.2, output: 1.2, cacheRead: 0.02 }
+- the provider gets an entry for every model a role names on it, and for every
+  `modelPricing` entry whose model is a plain id and not a pattern;
+- each entry gets the price the first matching `modelPricing` entry gave it,
+  patterns included, so what a model costs does not change; an old entry of
+  all zeros stays a price of zero (free) and does not fall back to the
+  provider's;
+- `allow` and `deny` are dropped, with a warning in the log. No entry is made
+  for a model that no role uses and no price names; add those from the
+  provider's list of models;
+- the next time the settings are saved, they hold the new shape.
 
 ### `agent.models`
 
@@ -1371,7 +1399,7 @@ chat and realtime voice models are never a fallback. The model must advertise
 the required file-transcription capabilities through the provider registry.
 
 Every value is written `provider:model`, and the provider must be declared,
-enabled, and admit the model.
+enabled, and offer the model: the model is an enabled entry in its `models`.
 
 **`default`** — The model for anything not named below. Required when the
 agent is enabled.

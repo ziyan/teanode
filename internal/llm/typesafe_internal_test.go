@@ -125,7 +125,7 @@ func TestADecisionAsksTheConfiguredModel(test *testing.T) {
 
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
-	configuration.Agent.Providers = []config.AgentProvider{{Name: "decider", Kind: "typesafe", BaseURL: server.URL + "/v1", APIKey: "a-key"}}
+	configuration.Agent.Providers = []config.AgentProvider{{Name: "decider", Kind: "typesafe", BaseURL: server.URL + "/v1", APIKey: "a-key", ModelEntries: []config.AgentModelEntry{{Model: "jev-2026-01-01"}}}}
 	configuration.Agent.Models.Decide = "decider:jev-2026-01-01"
 	registry, err := Open(&configuration.Agent)
 	if err != nil {

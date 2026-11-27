@@ -1220,25 +1220,6 @@ public struct AgentPlanUsage: Codable, Hashable, Sendable {
 /// AgentProviderSettings is a model service, as the operator's list shows
 /// it. Its key is never read back.
 public struct AgentProviderSettings: Codable, Hashable, Sendable {
-    /// ModelPrice is the price of the models matching one pattern.
-    public struct ModelPrice: Codable, Hashable, Sendable {
-        public let model: String
-        public let input: Double
-        public let output: Double
-        public let cacheRead: Double
-        public let cacheWrite: Double
-        public let audioInput: Double
-
-        public init(model: String, input: Double, output: Double, cacheRead: Double = 0, cacheWrite: Double = 0, audioInput: Double = 0) {
-            self.model = model
-            self.input = input
-            self.output = output
-            self.cacheRead = cacheRead
-            self.cacheWrite = cacheWrite
-            self.audioInput = audioInput
-        }
-    }
-
     public let name: String
     public let providerKind: String
     public let baseUrl: String
@@ -1250,19 +1231,20 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
     public let hasRefreshToken: Bool
     public let account: String
     public let isEnabled: Bool
-    public let allow: [String]
-    public let deny: [String]
     public let pricingInput: Double
     public let pricingOutput: Double
     public let pricingCacheRead: Double
     public let pricingCacheWrite: Double
     public let pricingAudioInput: Double
-    public let modelPricing: [ModelPrice]?
+    /// The models this provider offers, each with its own settings; absent
+    /// from a server older than model entries.
+    public let modelEntries: [AgentModelEntry]?
     public let planUsage: AgentPlanUsage?
 
     enum CodingKeys: String, CodingKey {
-        case name, baseUrl, hasApiKey, hasBillingApiKey, hasRefreshToken, account, allow, deny, pricingInput, pricingOutput, pricingCacheRead
-        case pricingCacheWrite, pricingAudioInput, modelPricing, planUsage
+        case name, baseUrl, hasApiKey, hasBillingApiKey, hasRefreshToken, account, pricingInput, pricingOutput, pricingCacheRead
+        case pricingCacheWrite, pricingAudioInput, planUsage
+        case modelEntries = "models"
         case providerKind = "kind"
         case isEnabled = "enabled"
     }
@@ -1276,14 +1258,12 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
         self.hasRefreshToken = false
         self.account = ""
         self.isEnabled = isEnabled
-        self.allow = []
-        self.deny = []
         self.pricingInput = 0
         self.pricingOutput = 0
         self.pricingCacheRead = 0
         self.pricingCacheWrite = 0
         self.pricingAudioInput = 0
-        self.modelPricing = []
+        self.modelEntries = []
         self.planUsage = nil
     }
 
@@ -1302,12 +1282,134 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
         [
             "name": .string(name), "kind": .string(providerKind), "baseUrl": .string(baseUrl), "apiKey": .string(""),
             "billingApiKey": .string(""),
-            "enabled": .bool(isEnabled), "allow": SettingsList.value(allow), "deny": SettingsList.value(deny),
+            "enabled": .bool(isEnabled),
             "pricingInput": .number(pricingInput), "pricingOutput": .number(pricingOutput),
             "pricingCacheRead": .number(pricingCacheRead), "pricingCacheWrite": .number(pricingCacheWrite),
             "pricingAudioInput": .number(pricingAudioInput),
-            "modelPricing": .array((modelPricing ?? []).map(AgentProviderDraft.priceValue)),
         ]
+    }
+
+    /// The provider's models as a list, empty from an older server.
+    public var models: [AgentModelEntry] { modelEntries ?? [] }
+}
+
+/// AgentModelPricing is what one model costs per million tokens. An entry
+/// that has one has its own price, all zeros meaning free.
+public struct AgentModelPricing: Codable, Hashable, Sendable {
+    public let input: Double
+    public let output: Double
+    public let cacheRead: Double
+    public let cacheWrite: Double
+    public let audioInput: Double
+
+    public init(input: Double = 0, output: Double = 0, cacheRead: Double = 0, cacheWrite: Double = 0, audioInput: Double = 0) {
+        self.input = input
+        self.output = output
+        self.cacheRead = cacheRead
+        self.cacheWrite = cacheWrite
+        self.audioInput = audioInput
+    }
+}
+
+/// AgentModelEntry is one model a provider offers, as its page shows it.
+/// A role names it as provider:model, where model is the id.
+public struct AgentModelEntry: Codable, Hashable, Sendable, Identifiable {
+    /// The id the service knows it by, such as demo-large.
+    public let model: String
+    /// What people read; empty reads as the id.
+    public let name: String
+    /// The window the operator set, in tokens; zero takes the provider's.
+    public let contextWindow: Int
+    /// The provider's own figure, zero when it reports none.
+    public let reportedContextWindow: Int
+    /// The model's own price, or nil when it takes the provider's.
+    public let pricing: AgentModelPricing?
+    public let isEnabled: Bool
+    /// The roles that point at it: default, quick, embedding and so on.
+    public let usedFor: [String]
+
+    public var id: String { model }
+
+    /// What a row reads: the name, or the id when there is none.
+    public var displayName: String { name.isEmpty ? model : name }
+
+    public init(
+        model: String, name: String = "", contextWindow: Int = 0, reportedContextWindow: Int = 0,
+        pricing: AgentModelPricing? = nil, isEnabled: Bool = true, usedFor: [String] = []
+    ) {
+        self.model = model
+        self.name = name
+        self.contextWindow = contextWindow
+        self.reportedContextWindow = reportedContextWindow
+        self.pricing = pricing
+        self.isEnabled = isEnabled
+        self.usedFor = usedFor
+    }
+}
+
+/// AgentModelEntryDraft is a model's page as its form holds it, each
+/// number as typed.
+public struct AgentModelEntryDraft: Hashable, Sendable {
+    public var model = ""
+    public var name = ""
+    public var contextWindowText = ""
+    public var inputText = ""
+    public var outputText = ""
+    public var cacheReadText = ""
+    public var cacheWriteText = ""
+    public var audioInputText = ""
+    public var isEnabled = true
+
+    /// A model typed or picked in Add model, not yet saved.
+    public init(model: String = "") {
+        self.model = model
+    }
+
+    public init(_ entry: AgentModelEntry) {
+        model = entry.model
+        name = entry.name
+        contextWindowText = entry.contextWindow == 0 ? "" : String(entry.contextWindow)
+        if let pricing = entry.pricing {
+            inputText = SettingsList.text(pricing.input)
+            outputText = SettingsList.text(pricing.output)
+            cacheReadText = SettingsList.text(pricing.cacheRead)
+            cacheWriteText = SettingsList.text(pricing.cacheWrite)
+            audioInputText = SettingsList.text(pricing.audioInput)
+            // A price of zero is the model's own (free), so it is shown as
+            // typed rather than as empty, which would be sent as unset.
+            if pricing == AgentModelPricing() { inputText = "0" }
+        }
+        isEnabled = entry.isEnabled
+    }
+
+    /// The window as a number of tokens; blank or not a number is zero,
+    /// which takes the provider's figure.
+    public var contextWindow: Int { Int(contextWindowText.filter(\.isNumber)) ?? 0 }
+
+    /// Whether the server would accept it: a window is blank or at least a
+    /// thousand tokens.
+    public var canSave: Bool {
+        !model.trimmingCharacters(in: .whitespaces).isEmpty && (contextWindow == 0 || contextWindow >= 1000)
+    }
+
+    /// Whether every price field is empty, which sends no price of its own
+    /// so the model takes the provider's.
+    public var isPricingEmpty: Bool {
+        [inputText, outputText, cacheReadText, cacheWriteText, audioInputText].allSatisfy { $0.trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+
+    public var entryValue: JSONValue {
+        let pricingValue: JSONValue = isPricingEmpty ? .null : .object([
+            "input": .number(SettingsList.number(inputText)), "output": .number(SettingsList.number(outputText)),
+            "cacheRead": .number(SettingsList.number(cacheReadText)), "cacheWrite": .number(SettingsList.number(cacheWriteText)),
+            "audioInput": .number(SettingsList.number(audioInputText)),
+        ])
+        return .object([
+            "model": .string(model.trimmingCharacters(in: .whitespaces)), "name": .string(name.trimmingCharacters(in: .whitespaces)),
+            "contextWindow": .number(Double(contextWindow)),
+            "pricing": pricingValue,
+            "isEnabled": .bool(isEnabled),
+        ])
     }
 }
 
@@ -1428,26 +1530,99 @@ public enum AgentFeatureSwitches {
     }
 }
 
+/// AgentLiveModel is one model a provider's own list offers, written
+/// provider:model, with its window when the provider reports one.
+public struct AgentLiveModel: Codable, Hashable, Sendable {
+    public let name: String
+    public let contextLength: Int?
+
+    public init(name: String, contextLength: Int? = nil) {
+        self.name = name
+        self.contextLength = contextLength
+    }
+
+    /// The provider's name, before the first colon.
+    public var providerName: String { String(name.split(separator: ":", maxSplits: 1).first ?? "") }
+
+    /// The model id, after the first colon.
+    public var modelID: String { name.split(separator: ":", maxSplits: 1).dropFirst().first.map(String.init) ?? name }
+}
+
+/// AgentModelChoiceGroup is one provider's models in a role picker, the
+/// section a picker shows under the provider's name.
+public struct AgentModelChoiceGroup: Hashable, Sendable, Identifiable {
+    public struct Row: Hashable, Sendable, Identifiable {
+        /// What the role stores: provider:model.
+        public let value: String
+        /// What the picker shows: Provider · Model.
+        public let label: String
+        public var id: String { value }
+    }
+
+    public let providerName: String
+    public let rows: [Row]
+    public var id: String { providerName }
+}
+
 /// AgentModelChoices are the models the providers offer, split the way the
 /// models form offers them: a deciding provider (kind typesafe) answers only
 /// the decide and categorize slots, and the server refuses it anywhere else.
+/// What is offered is each enabled provider's enabled entries, as the
+/// dashboard's pickers list them, not what a provider's live list says.
 public struct AgentModelChoices: Hashable, Sendable {
     public let forWork: [String]
     public let forDeciding: [String]
 
-    public init(knownModels: [String], providers: [AgentProviderSettings]) {
+    public init(providers: [AgentProviderSettings]) {
         let deciderNames = Set(providers.filter { $0.providerKind == "typesafe" }.map(\.name))
         let isDecider: (String) -> Bool = { model in
             deciderNames.contains(String(model.split(separator: ":", maxSplits: 1).first ?? ""))
         }
-        forWork = knownModels.filter { !isDecider($0) }
-        forDeciding = knownModels.filter(isDecider)
+        let offered = Self.offered(providers: providers)
+        forWork = offered.filter { !isDecider($0) }
+        forDeciding = offered.filter(isDecider)
     }
 
-    /// What a picker lists: the known models, with the one chosen first
-    /// when the list does not know it.
-    public static func listed(_ known: [String], chosen: String) -> [String] {
-        chosen.isEmpty || known.contains(chosen) ? known : [chosen] + known
+    /// Every provider:model the enabled providers offer: the enabled entries
+    /// of each provider that is on, in the order they are listed.
+    public static func offered(providers: [AgentProviderSettings]) -> [String] {
+        providers.filter(\.isEnabled).flatMap { provider in
+            provider.models.filter(\.isEnabled).map { "\(provider.name):\($0.model)" }
+        }
+    }
+
+    /// The role picker's sections: one per provider, in the order the
+    /// providers are listed, then one for values naming no known provider.
+    /// The values are the offered ones, narrowed to onlyModels when it is
+    /// given (the models a capability is known for), plus the one chosen
+    /// when it is not among them. A row reads "Provider · Model", the model
+    /// by its entry's name when the provider has one; a value is always
+    /// provider:model. A model of a disabled entry is left out unless it is
+    /// the one chosen.
+    public static func grouped(chosen: String, providers: [AgentProviderSettings], onlyModels: [String]? = nil) -> [AgentModelChoiceGroup] {
+        let offered = Self.offered(providers: providers)
+        let values = listed(onlyModels.map { allowed in offered.filter { allowed.contains($0) } } ?? offered, chosen: chosen)
+        var groups: [AgentModelChoiceGroup] = []
+        var placed = Set<String>()
+        for provider in providers {
+            var rows: [AgentModelChoiceGroup.Row] = []
+            for value in values where value.hasPrefix(provider.name + ":") {
+                let modelID = String(value.dropFirst(provider.name.count + 1))
+                let entry = provider.models.first { $0.model == modelID }
+                rows.append(.init(value: value, label: "\(provider.name) · \(entry?.displayName ?? modelID)"))
+                placed.insert(value)
+            }
+            if !rows.isEmpty { groups.append(AgentModelChoiceGroup(providerName: provider.name, rows: rows)) }
+        }
+        let others = values.filter { !placed.contains($0) }.map { AgentModelChoiceGroup.Row(value: $0, label: $0) }
+        if !others.isEmpty { groups.append(AgentModelChoiceGroup(providerName: "", rows: others)) }
+        return groups
+    }
+
+    /// What a picker lists: the offered models, with the one chosen first
+    /// when the list does not have it.
+    public static func listed(_ offered: [String], chosen: String) -> [String] {
+        chosen.isEmpty || offered.contains(chosen) ? offered : [chosen] + offered
     }
 }
 
@@ -1668,31 +1843,6 @@ public struct AgentGeneralDraft: Hashable, Sendable {
 /// AgentProviderDraft is a provider as its editor holds it. The key is
 /// never read back: blank keeps the stored one.
 public struct AgentProviderDraft: Hashable, Sendable {
-    /// ModelPriceDraft is one row of per-model prices as typed.
-    public struct ModelPriceDraft: Hashable, Sendable, Identifiable {
-        public let id: UUID
-        public var model = ""
-        public var inputText = ""
-        public var outputText = ""
-        public var cacheReadText = ""
-        public var cacheWriteText = ""
-        public var audioInputText = ""
-
-        public init() {
-            id = UUID()
-        }
-
-        public init(_ price: AgentProviderSettings.ModelPrice) {
-            id = UUID()
-            model = price.model
-            inputText = SettingsList.text(price.input)
-            outputText = SettingsList.text(price.output)
-            cacheReadText = SettingsList.text(price.cacheRead)
-            cacheWriteText = SettingsList.text(price.cacheWrite)
-            audioInputText = SettingsList.text(price.audioInput)
-        }
-    }
-
     public var name = ""
     public var providerKind = "openai"
     public var baseUrl = ""
@@ -1702,14 +1852,11 @@ public struct AgentProviderDraft: Hashable, Sendable {
     public var hasBillingApiKey = false
     public var hasRefreshToken = false
     public var isEnabled = true
-    public var allowText = ""
-    public var denyText = ""
     public var pricingInputText = ""
     public var pricingOutputText = ""
     public var pricingCacheReadText = ""
     public var pricingCacheWriteText = ""
     public var pricingAudioInputText = ""
-    public var modelPrices: [ModelPriceDraft] = []
 
     public init() {}
 
@@ -1721,14 +1868,11 @@ public struct AgentProviderDraft: Hashable, Sendable {
         hasBillingApiKey = provider.hasBillingApiKey ?? false
         hasRefreshToken = provider.hasRefreshToken
         isEnabled = provider.isEnabled
-        allowText = SettingsList.text(provider.allow)
-        denyText = SettingsList.text(provider.deny)
         pricingInputText = SettingsList.text(provider.pricingInput)
         pricingOutputText = SettingsList.text(provider.pricingOutput)
         pricingCacheReadText = SettingsList.text(provider.pricingCacheRead)
         pricingCacheWriteText = SettingsList.text(provider.pricingCacheWrite)
         pricingAudioInputText = SettingsList.text(provider.pricingAudioInput)
-        modelPrices = (provider.modelPricing ?? []).map(ModelPriceDraft.init)
     }
 
     public var isSignedInKind: Bool { providerKind == AgentProviderSettings.signedInKind }
@@ -1739,32 +1883,16 @@ public struct AgentProviderDraft: Hashable, Sendable {
         !name.trimmingCharacters(in: .whitespaces).isEmpty && (!isSignedInKind || hasRefreshToken)
     }
 
-    static func priceValue(_ price: AgentProviderSettings.ModelPrice) -> JSONValue {
-        .object([
-            "model": .string(price.model), "input": .number(price.input), "output": .number(price.output),
-            "cacheRead": .number(price.cacheRead), "cacheWrite": .number(price.cacheWrite),
-            "audioInput": .number(price.audioInput),
-        ])
-    }
-
     var parameters: [String: JSONValue] {
-        let prices = modelPrices.filter { !$0.model.trimmingCharacters(in: .whitespaces).isEmpty }.map { row in
-            AgentProviderSettings.ModelPrice(
-                model: row.model.trimmingCharacters(in: .whitespaces), input: SettingsList.number(row.inputText),
-                output: SettingsList.number(row.outputText), cacheRead: SettingsList.number(row.cacheReadText),
-                cacheWrite: SettingsList.number(row.cacheWriteText), audioInput: SettingsList.number(row.audioInputText))
-        }
         return [
             "name": .string(name.trimmingCharacters(in: .whitespaces)), "kind": .string(providerKind),
             "baseUrl": .string(baseUrl.trimmingCharacters(in: .whitespaces)), "apiKey": .string(apiKey), "billingApiKey": .string(billingApiKey),
             "enabled": .bool(isEnabled),
-            "allow": SettingsList.value(SettingsList.lineItems(allowText)), "deny": SettingsList.value(SettingsList.lineItems(denyText)),
             "pricingInput": .number(SettingsList.number(pricingInputText)),
             "pricingOutput": .number(SettingsList.number(pricingOutputText)),
             "pricingCacheRead": .number(SettingsList.number(pricingCacheReadText)),
             "pricingCacheWrite": .number(SettingsList.number(pricingCacheWriteText)),
             "pricingAudioInput": .number(SettingsList.number(pricingAudioInputText)),
-            "modelPricing": .array(prices.map(Self.priceValue)),
         ]
     }
 
@@ -2706,7 +2834,7 @@ extension Documents {
     static let manageAgentSettingsFields = """
         agent {
           enabled instructions allowPrivateAddresses skipCertificateCheck
-          providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
+          providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput models { model name contextWindow reportedContextWindow pricing { input output cacheRead cacheWrite audioInput } isEnabled usedFor } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
           models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize transcription embeddingDimensions choices }
           features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
           limits { dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer }
@@ -2852,6 +2980,16 @@ extension Documents {
         """
     public static let manageAgentModels = """
         { ListAgentModels { name contextLength canTranscribe hasSpeakerDiarization hasSegmentTimestamps hasSpeakerReferences maximumAudioBytes maximumSpeakerReferenceCount } }
+        """
+    public static let manageSaveAgentModelEntry = """
+        mutation ($providerName: String!, $entry: AgentModelEntryInput!) {
+          SaveAgentModelEntry(providerName: $providerName, entry: $entry) { model }
+        }
+        """
+    public static let manageDeleteAgentModelEntry = """
+        mutation ($providerName: String!, $model: String!) {
+          DeleteAgentModelEntry(providerName: $providerName, model: $model)
+        }
         """
     public static let manageTestAgentProvider = """
         query ($name: String!) { TestAgentProvider(name: $name) { name contextLength } }
@@ -3057,6 +3195,30 @@ extension Connection {
             let ListAgentModels: [Model?]
         }
         return try await execute(Documents.manageAgentModels, as: Answer.self).ListAgentModels.compactMap { $0?.name }
+    }
+
+    /// The live models the enabled providers offer, as ListAgentModels
+    /// answers, each with its window when the provider reports one.
+    public func agentLiveModels() async throws -> [AgentLiveModel] {
+        struct Answer: Decodable, Sendable { let ListAgentModels: [AgentLiveModel?] }
+        return try await execute(Documents.manageAgentModels, as: Answer.self).ListAgentModels.compactMap { $0 }
+    }
+
+    /// Adds a model to a provider or changes the one with the same id.
+    /// The server answers with the provider, and the settings are read
+    /// again by the caller.
+    public func saveAgentModelEntry(providerName: String, draft: AgentModelEntryDraft) async throws {
+        struct Answer: Decodable, Sendable { let SaveAgentModelEntry: JSONValue? }
+        _ = try await execute(
+            Documents.manageSaveAgentModelEntry, variables: ["providerName": .string(providerName), "entry": draft.entryValue], as: Answer.self)
+    }
+
+    /// Removes a model from a provider. The server refuses while a role
+    /// uses it, and says which.
+    public func deleteAgentModelEntry(providerName: String, model: String) async throws {
+        struct Answer: Decodable, Sendable { let DeleteAgentModelEntry: JSONValue? }
+        _ = try await execute(
+            Documents.manageDeleteAgentModelEntry, variables: ["providerName": .string(providerName), "model": .string(model)], as: Answer.self)
     }
 
     /// Asks one provider what it offers, and says why when it cannot.

@@ -24,14 +24,12 @@ const provider = {
   hasRefreshToken: false,
   account: '',
   enabled: true,
-  allow: [],
-  deny: [],
+  models: [],
   pricingInput: 0,
   pricingOutput: 0,
   pricingCacheRead: 0,
   pricingCacheWrite: 0,
   pricingAudioInput: 0,
-  modelPricing: [],
 }
 
 const checked = {
@@ -67,7 +65,6 @@ function renderProviders(onSaved = vi.fn()) {
           <ProvidersSection
             settings={{ providers: [provider], kinds: ['openai'] } as unknown as Agent}
             onSaved={onSaved}
-            onModels={() => undefined}
           />
         </ToastProvider>
       </TranslationProvider>

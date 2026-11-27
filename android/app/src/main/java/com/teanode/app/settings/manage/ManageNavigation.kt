@@ -39,9 +39,27 @@ fun NavGraphBuilder.manageRoutes(navigator: AppNavigator) {
     val back: () -> Unit = { navigator.back() }
     managePage(ManageRoutes.AGENT_PERSONAL) { AgentPersonalSettingsScreen(onBack = back) }
     managePage(ManageRoutes.AGENT_RUNS) { AgentRunsAdminScreen(onBack = back, onOpenConversation = { conversationId -> ChatsHooks.openConversation(navigator, conversationId) }) }
-    managePage(ManageRoutes.AGENT_PROVIDERS) { AgentProvidersScreen(onBack = back, onOpenProvider = { index -> navigator.navigate(ManageRoutes.provider(index)) }) }
+    managePage(ManageRoutes.AGENT_PROVIDERS) { AgentProvidersScreen(
+        onBack = back, onOpenProvider = { index -> navigator.navigate(ManageRoutes.provider(index)) },
+        onOpenModel = { index, model -> navigator.navigate(ManageRoutes.providerModel(index, model)) }, onAddModel = { index -> navigator.navigate(ManageRoutes.addModel(index)) },
+    ) }
     composable(ManageRoutes.AGENT_PROVIDER, arguments = listOf(navArgument("providerIndex") { type = NavType.StringType }), deepLinks = Routes.deepLinks(ManageRoutes.AGENT_PROVIDER)) { entry ->
         AgentProviderFormScreen(entry.arguments?.getString("providerIndex").asIndex(), onBack = back)
+    }
+    composable(ManageRoutes.AGENT_PROVIDER_ADD_MODEL, arguments = listOf(navArgument("providerIndex") { type = NavType.StringType }), deepLinks = Routes.deepLinks(ManageRoutes.AGENT_PROVIDER_ADD_MODEL)) { entry ->
+        val providerIndex = entry.arguments?.getString("providerIndex").asIndex()
+        if (providerIndex != null) AgentAddModelScreen(
+            providerIndex, onBack = back,
+            // The new model's page replaces the list it was chosen from, so back from it returns to the providers.
+            onAdded = { model -> navigator.back(); navigator.navigate(ManageRoutes.providerModel(providerIndex, model)) },
+        )
+    }
+    composable(
+        ManageRoutes.AGENT_PROVIDER_MODEL, arguments = listOf(navArgument("providerIndex") { type = NavType.StringType }, navArgument("model") { type = NavType.StringType }),
+        deepLinks = Routes.deepLinks(ManageRoutes.AGENT_PROVIDER_MODEL),
+    ) { entry ->
+        val providerIndex = entry.arguments?.getString("providerIndex").asIndex()
+        if (providerIndex != null) AgentModelScreen(providerIndex, entry.arguments?.getString("model").orEmpty(), onBack = back)
     }
     managePage(ManageRoutes.AGENT_MODELS) { AgentModelsScreen(onBack = back) }
     managePage(ManageRoutes.AGENT_VOICE) { AgentVoiceScreen(onBack = back) }

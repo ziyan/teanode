@@ -3,6 +3,7 @@ package com.teanode.kit.manage
 import com.teanode.kit.TeaNodeJson
 import com.teanode.kit.access.OperatorAccess
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -17,11 +18,16 @@ class AgentServerSettingsTest {
     private val settingsText = """
         {"enabled":true,"instructions":"Be brief.","allowPrivateAddresses":["192.0.2.10"],"skipCertificateCheck":[],
          "providers":[
-           {"name":"main","kind":"openai","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,"allow":[],"deny":[],
-            "pricingInput":1.25,"pricingOutput":10,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":6,
-            "modelPricing":[{"model":"model-large*","input":2,"output":8,"cacheRead":0.5,"cacheWrite":0,"audioInput":4.5}],"planUsage":null},
-           {"name":"decider","kind":"typesafe","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,"allow":[],"deny":[],
-            "pricingInput":0,"pricingOutput":0,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":0,"modelPricing":[],
+           {"name":"main","kind":"openai","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,
+            "models":[
+              {"model":"model-large","name":"Large","contextWindow":0,"reportedContextWindow":200000,"isEnabled":true,"usedFor":["default"],
+               "pricing":{"input":2,"output":8,"cacheRead":0.5,"cacheWrite":0,"audioInput":4.5}},
+              {"model":"model-small","name":"","contextWindow":64000,"reportedContextWindow":0,"isEnabled":false,"usedFor":["fast","quick"],
+               "pricing":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"audioInput":0}}],
+            "pricingInput":1.25,"pricingOutput":10,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":6,"planUsage":null},
+           {"name":"decider","kind":"typesafe","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,
+            "models":[{"model":"judge","name":"Judge","contextWindow":0,"reportedContextWindow":0,"isEnabled":true,"usedFor":["decide"],"pricing":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"audioInput":0}}],
+            "pricingInput":0,"pricingOutput":0,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":0,
             "planUsage":{"planName":"plus","observedAt":"2030-01-02T03:04:05Z","windows":[{"usedPercent":140,"windowMinutes":300,"resetsAt":"2030-01-02T05:00:00Z"}]}}
          ],
          "models":{"default":"main:model-large","fast":"main:model-small","quick":"main:model-small","embedding":"","triage":"main:model-small","research":"","summarize":"",
@@ -155,8 +161,6 @@ class AgentServerSettingsTest {
     fun aRenamedProviderTakesItsModelsWithIt() {
         val draft = AgentProviderDraft.of(settings.providers[0])
         assertEquals("1.25", draft.pricingInputText)
-        assertEquals("0.5", draft.modelPrices.first().cacheReadText)
-        assertEquals("4.5", draft.modelPrices.first().audioInputText)
         assertFalse(draft.hasBillingApiKey)
         val section = draft.copy(name = "primary").agentParameters(0, settings)
         val providers = section["providers"] as JsonArray
@@ -166,6 +170,10 @@ class AgentServerSettingsTest {
         assertEquals("", providers[0].jsonObject.text("apiKey"))
         assertEquals("", providers[0].jsonObject.text("billingApiKey"))
         assertEquals("6", providers[0].jsonObject.text("pricingAudioInput"))
+        assertNull(providers[0].jsonObject["allow"])
+        assertNull(providers[0].jsonObject["deny"])
+        assertNull(providers[0].jsonObject["modelPricing"])
+        assertNull(providers[0].jsonObject["models"])
         assertNull(providers[1].jsonObject.text("previousName"))
         assertEquals("primary:model-large", section.text("models", "default"))
         assertEquals("decider:judge", section.text("models", "decide"))
@@ -196,11 +204,79 @@ class AgentServerSettingsTest {
     }
 
     @Test
-    fun aDecidingProvidersModelsAreOfferedOnlyForDeciding() {
-        val choices = AgentModelChoices.of(listOf("main:model-large", "decider:judge"), settings.providers)
-        assertEquals(listOf("main:model-large"), choices.forWork)
-        assertEquals(listOf("decider:judge"), choices.forDeciding)
-        assertEquals(listOf("b:two", "a:one"), AgentModelChoices.listed(listOf("a:one"), "b:two"))
+    fun aProvidersModelsAreReadWithTheirOwnSettings() {
+        val large = settings.providers[0].models[0]
+        assertEquals("Large", large.displayName)
+        assertEquals(200000, large.reportedContextWindow)
+        assertEquals(listOf("default"), large.usedFor)
+        assertEquals(4.5, large.pricing?.audioInput ?: -1.0, 0.0)
+        val small = settings.providers[0].models[1]
+        assertEquals("model-small", small.displayName)
+        assertEquals(64000, small.contextWindow)
+        assertFalse(small.isEnabled)
+    }
+
+    @Test
+    fun aModelEntryIsSavedWithoutWhatTheServerOwns() {
+        val draft = AgentModelEntryDraft.of(settings.providers[0].models[0]).copy(name = " Big ", contextWindowText = "128000", outputText = "9.5")
+        assertTrue(draft.canSave)
+        val json = draft.entry.toJson()
+        assertEquals("model-large", json.text("model"))
+        assertEquals("Big", json.text("name"))
+        assertEquals("128000", json.text("contextWindow"))
+        assertEquals("9.5", json.text("pricing", "output"))
+        assertEquals("true", json.text("isEnabled"))
+        assertNull(json["usedFor"])
+        assertNull(json["reportedContextWindow"])
+    }
+
+    @Test
+    fun aPriceOfZeroIsSentAndAnEmptyOneIsNull() {
+        val free = AgentModelEntryDraft.of(AgentModelEntry(model = "model-free", pricing = AgentModelPricing()))
+        assertEquals("0", free.inputText)
+        assertEquals("0", free.entry.toJson().text("pricing", "input"))
+        val unset = AgentModelEntryDraft.of(AgentModelEntry(model = "model-unset"))
+        assertTrue(unset.isPricingEmpty)
+        assertNull(unset.entry.pricing)
+        assertTrue(unset.entry.toJson()["pricing"] is JsonNull)
+    }
+
+    @Test
+    fun theTranscriptionPickerListsEntriesAMatchingCapabilityIsKnownFor() {
+        val listed = AgentModelChoices.offeredWithCapability(listOf("main:model-large", "main:not-an-entry", "main:model-small"), settings.providers)
+        assertEquals(listOf("main:model-large"), listed.map { option -> option.value })
+    }
+
+    @Test
+    fun aContextWindowIsNoneOrAtLeastAThousand() {
+        val draft = AgentModelEntryDraft(model = "model-large")
+        assertTrue(draft.canSave)
+        assertFalse(draft.copy(contextWindowText = "999").canSave)
+        assertTrue(draft.copy(contextWindowText = "1000").canSave)
+        assertFalse(draft.copy(model = " ").canSave)
+        assertEquals(0, draft.entry.contextWindow)
+    }
+
+    @Test
+    fun theRolePickersListTheModelsThatAreOnAsProviderAndModel() {
+        val offered = AgentModelChoices.offered(settings.providers)
+        assertEquals(listOf("main:model-large", "decider:judge"), offered.map { option -> option.value })
+        assertEquals(listOf("main · Large", "decider · Judge"), offered.map { option -> option.label })
+        val choices = AgentModelChoices.of(offered, settings.providers)
+        assertEquals(listOf("main:model-large"), choices.forWork.map { option -> option.value })
+        assertEquals(listOf("decider:judge"), choices.forDeciding.map { option -> option.value })
+        val listed = AgentModelChoices.listed(offered, "other:gone", settings.providers)
+        assertEquals("other:gone", listed.first().value)
+        assertEquals("other · gone", listed.first().label)
+        assertEquals("main · model-small", AgentModelChoices.optionFor("main:model-small", settings.providers).label)
+        assertEquals(offered, AgentModelChoices.listed(offered, "main:model-large", settings.providers))
+    }
+
+    @Test
+    fun theLiveListOffersWhatThisProviderHasNotAdded() {
+        val live = listOf("main:model-large", "main:model-new", "decider:judge", "main:model-new", "main:")
+        assertEquals(listOf("model-new"), AgentModelChoices.idsToAdd(live, settings.providers[0]))
+        assertEquals(emptyList<String>(), AgentModelChoices.idsToAdd(live, settings.providers[1]))
     }
 
     @Test

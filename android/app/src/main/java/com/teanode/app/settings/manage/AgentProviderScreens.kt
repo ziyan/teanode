@@ -50,6 +50,7 @@ import com.teanode.app.ui.components.ConfirmationDialog
 import com.teanode.app.ui.components.EmptyState
 import com.teanode.app.ui.components.LoadedContent
 import com.teanode.app.ui.components.LocalSnackbar
+import com.teanode.app.ui.components.TeaNodeNavigationRow
 import com.teanode.app.ui.components.TeaNodeRow
 import com.teanode.app.ui.components.TeaNodeScreen
 import com.teanode.app.ui.components.TeaNodeSectionHeader
@@ -60,13 +61,20 @@ import com.teanode.kit.manage.AgentBillingCheck
 import com.teanode.kit.manage.AgentPlanUsage
 import com.teanode.kit.manage.AgentProviderDraft
 import com.teanode.kit.manage.AgentProviderSettings
-import com.teanode.kit.manage.ModelPriceDraft
+import com.teanode.kit.manage.AgentModelAssignments
+import com.teanode.kit.manage.AgentModelChoices
+import com.teanode.kit.manage.AgentModelEntry
+import com.teanode.kit.manage.AgentModelEntryDraft
+import com.teanode.kit.manage.AgentServerSettings
 import com.teanode.kit.manage.ProviderSignIn
 import com.teanode.kit.manage.SettingsList
 import com.teanode.kit.manage.agentBillingChecks
 import com.teanode.kit.manage.agentServerSettings
 import com.teanode.kit.manage.beginProviderSignIn
+import com.teanode.kit.manage.agentModelNames
 import com.teanode.kit.manage.checkAgentProviderPrices
+import com.teanode.kit.manage.deleteAgentModelEntry
+import com.teanode.kit.manage.saveAgentModelEntry
 import com.teanode.kit.manage.finishProviderSignIn
 import com.teanode.kit.manage.testAgentProvider
 import com.teanode.kit.manage.updateAgentServerSettings
@@ -108,29 +116,26 @@ fun PlanUsageRows(usage: AgentPlanUsage, modifier: Modifier = Modifier, now: Ins
     }
 }
 
+/** What a provider is signed in or keyed with: for a plan, who it is signed in as, and for a key, whether one is set. */
 @Composable
-private fun providerDetails(provider: AgentProviderSettings): String {
-    val parts = mutableListOf<String>()
-    if (provider.isSignedInKind) {
-        parts += stringResource(if (provider.hasRefreshToken) R.string.manage_signed_in else R.string.manage_not_signed_in)
-    } else {
-        parts += provider.baseUrl.ifEmpty { stringResource(R.string.manage_its_own_endpoint) }
-        parts += stringResource(if (provider.hasApiKey) R.string.manage_key_set else R.string.manage_no_key)
-    }
-    if (provider.allow.isNotEmpty()) parts += stringResource(R.string.manage_provider_offers, SettingsList.text(provider.allow))
-    if (provider.deny.isNotEmpty()) parts += stringResource(R.string.manage_provider_hides, SettingsList.text(provider.deny))
-    if (provider.pricingInput != 0.0 || provider.pricingOutput != 0.0) {
-        parts += stringResource(R.string.manage_provider_prices, SettingsList.text(provider.pricingInput).ifEmpty { "0" }, SettingsList.text(provider.pricingOutput).ifEmpty { "0" })
-    }
-    // The prices above are only what is left when no model's own price matches, so the count of those is said too.
-    val pricedCount = provider.modelPricing?.size ?: 0
-    if (pricedCount > 0) parts += stringResource(R.string.manage_provider_priced_apart, pricedCount)
-    return parts.joinToString(" · ")
+private fun credentialHeadline(provider: AgentProviderSettings): String = when {
+    provider.isSignedInKind && provider.hasRefreshToken ->
+        if (provider.account.isEmpty()) stringResource(R.string.manage_signed_in_snack) else stringResource(R.string.manage_signed_in_as, provider.account)
+    provider.isSignedInKind -> stringResource(R.string.manage_not_signed_in).replaceFirstChar { first -> first.uppercase() }
+    else -> stringResource(if (provider.hasApiKey) R.string.manage_key_set else R.string.manage_no_key).replaceFirstChar { first -> first.uppercase() }
 }
 
-/** The model services, a row each, edited one at a time. The list is sent whole whenever a row changes. */
+/** Where a keyed provider talks to: its address, or its own endpoint. */
 @Composable
-fun AgentProvidersScreen(onBack: () -> Unit, onOpenProvider: (Int?) -> Unit) {
+private fun credentialSupporting(provider: AgentProviderSettings): String? =
+    if (provider.isSignedInKind) null else provider.baseUrl.ifEmpty { stringResource(R.string.manage_its_own_endpoint).replaceFirstChar { first -> first.uppercase() } }
+
+/**
+ * The model services, a section each: its credential, then the models it offers (name over id), then Add model. A model opens its own page,
+ * and the credential opens the provider's form. The provider list is sent whole when a provider is removed.
+ */
+@Composable
+fun AgentProvidersScreen(onBack: () -> Unit, onOpenProvider: (Int?) -> Unit, onOpenModel: (Int, String) -> Unit, onAddModel: (Int) -> Unit) {
     val connection = LocalConnection.current
     val actions = rememberActionRunner()
     val snackbar = LocalSnackbar.current
@@ -147,13 +152,14 @@ fun AgentProvidersScreen(onBack: () -> Unit, onOpenProvider: (Int?) -> Unit) {
         items(settings.providers.size) { index ->
             val provider = settings.providers[index]
             Column {
+                TeaNodeSectionHeader(provider.name)
                 TeaNodeRow(
-                    headline = provider.name,
+                    headline = credentialHeadline(provider),
                     overline = listOfNotNull(
                         provider.providerKind, provider.planUsage?.planName?.takeIf { name -> name.isNotEmpty() }?.let { name -> stringResource(R.string.manage_plan_name, name.replaceFirstChar { first -> first.uppercase() }) },
                         if (!provider.isEnabled) stringResource(R.string.manage_off) else null,
                     ).joinToString(" · "),
-                    supporting = providerDetails(provider), supportingMaxLines = 5, onClick = { if (testingName == null) onOpenProvider(index) },
+                    supporting = credentialSupporting(provider), onClick = { if (testingName == null) onOpenProvider(index) },
                     trailing = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (testingName == provider.name) androidx.compose.material3.CircularProgressIndicator(Modifier.padding(end = 8.dp), strokeWidth = 2.dp)
@@ -173,6 +179,13 @@ fun AgentProvidersScreen(onBack: () -> Unit, onOpenProvider: (Int?) -> Unit) {
                     },
                 )
                 provider.planUsage?.takeIf { usage -> usage.windows.isNotEmpty() }?.let { usage -> PlanUsageRows(usage, Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
+                provider.models.forEach { entry ->
+                    TeaNodeNavigationRow(
+                        headline = entry.displayName, supporting = if (entry.name.isEmpty()) null else entry.model, onClick = { onOpenModel(index, entry.model) },
+                        trailing = { if (!entry.isEnabled) Text(stringResource(R.string.manage_off), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    )
+                }
+                TeaNodeRow(headline = stringResource(R.string.manage_add_model), leadingIcon = Icons.Outlined.Add, onClick = { onAddModel(index) })
             }
         }
         item { FooterText(stringResource(R.string.manage_providers_footer)) }
@@ -186,6 +199,110 @@ fun AgentProvidersScreen(onBack: () -> Unit, onOpenProvider: (Int?) -> Unit) {
             onDismiss = { removingIndex = null },
         )
     }
+}
+
+/**
+ * Adds a model to a provider: what the provider's own list offers and has not been added yet, searchable, or an id typed in. Choosing one adds it
+ * with its defaults and opens its page.
+ */
+@Composable
+fun AgentAddModelScreen(providerIndex: Int, onBack: () -> Unit, onAdded: (String) -> Unit) {
+    val connection = LocalConnection.current
+    val actions = rememberActionRunner()
+    val loaded = rememberLoad { connection.agentServerSettings() }
+    val liveNames = rememberLoad { runCatching { connection.agentModelNames() }.getOrDefault(emptyList()) }
+    var search by remember { mutableStateOf("") }
+    var isTyping by remember { mutableStateOf(false) }
+    var typedModel by remember { mutableStateOf("") }
+    fun add(provider: AgentProviderSettings, modelId: String) {
+        val id = modelId.trim()
+        if (id.isEmpty()) return
+        isTyping = false
+        actions.run(onSuccess = { onAdded(id) }) { connection.saveAgentModelEntry(provider.name, AgentModelEntry(model = id)) }
+    }
+    TeaNodeScreen(title = stringResource(R.string.manage_add_model), onBack = onBack) { contentPadding ->
+        LoadedContent(loaded, Modifier.padding(contentPadding)) { settings ->
+            val provider = settings.providers.getOrNull(providerIndex)
+            if (provider != null) {
+                val offered = AgentModelChoices.idsToAdd(liveNames.value ?: emptyList(), provider).filter { modelId -> modelId.contains(search.trim(), ignoreCase = true) }
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    TeaNodeSectionHeader(provider.name)
+                    FormField(search, { typed -> search = typed }, stringResource(R.string.manage_search_models))
+                    TeaNodeRow(headline = stringResource(R.string.manage_type_an_id), leadingIcon = Icons.Outlined.Add, onClick = { typedModel = ""; isTyping = true })
+                    offered.forEach { modelId -> TeaNodeRow(headline = modelId, onClick = { add(provider, modelId) }) }
+                    if (offered.isEmpty()) FooterText(stringResource(if (liveNames.value == null) R.string.manage_models_loading else R.string.manage_no_models_to_add))
+                }
+                if (isTyping) com.teanode.app.settings.FormDialog(
+                    title = stringResource(R.string.manage_type_an_id), confirmLabel = stringResource(R.string.manage_add_model), isConfirmEnabled = typedModel.trim().isNotEmpty(),
+                    onConfirm = { add(provider, typedModel) }, onDismiss = { isTyping = false },
+                ) { FormField(typedModel, { typed -> typedModel = typed }, stringResource(R.string.manage_model_id), placeholder = "model-name") }
+            }
+        }
+    }
+}
+
+/** What a role is called on the page of a model that it uses: its own label, or the word the server sent when it is one this app does not know. */
+@Composable
+private fun roleLabel(roleName: String): String = if (AgentModelAssignments.ALL_FIELD_NAMES.contains(roleName)) modelLabel(roleName) else roleName
+
+/** One model of a provider: its name, id, context window, prices, whether it is on, which work uses it, and Remove, which the server refuses while a role uses it. */
+@Composable
+fun AgentModelScreen(providerIndex: Int, model: String, onBack: () -> Unit) {
+    val connection = LocalConnection.current
+    val actions = rememberActionRunner()
+    val loaded = rememberLoad { connection.agentServerSettings() }
+    val settings = loaded.value
+    val provider = settings?.providers?.getOrNull(providerIndex)
+    val stored = provider?.models?.firstOrNull { entry -> entry.model == model }
+    var draft by remember(stored != null) { mutableStateOf(stored?.let { entry -> AgentModelEntryDraft.of(entry) }) }
+    var isRemoving by remember { mutableStateOf(false) }
+    val savedText = stringResource(R.string.settings_saved)
+    val removedText = stringResource(R.string.manage_removed)
+    TeaNodeScreen(
+        title = stringResource(R.string.manage_model), onBack = onBack,
+        actions = {
+            val current = draft
+            if (provider != null && current != null) BarTextAction(
+                stringResource(R.string.settings_save), onClick = { actions.run(savedText, onSuccess = onBack) { connection.saveAgentModelEntry(provider.name, current.entry) } },
+                isEnabled = current.canSave, isWorking = actions.isWorking,
+            )
+        },
+    ) { contentPadding ->
+        LoadedContent(loaded, Modifier.padding(contentPadding)) {
+            val current = draft
+            if (provider != null && stored != null && current != null) Column(Modifier.verticalScroll(rememberScrollState())) {
+                TeaNodeSectionHeader(provider.name)
+                FormField(current.name, { typed -> draft = current.copy(name = typed) }, stringResource(R.string.manage_model_name), placeholder = stored.model)
+                TeaNodeRow(headline = stringResource(R.string.manage_model_id), supporting = stored.model)
+                FormField(
+                    current.contextWindowText, { typed -> draft = current.copy(contextWindowText = SettingsList.digits(typed)) }, stringResource(R.string.manage_context_window),
+                    placeholder = if (stored.reportedContextWindow > 0) java.text.NumberFormat.getIntegerInstance().format(stored.reportedContextWindow) else stringResource(R.string.manage_not_reported),
+                    keyboardType = KeyboardType.Number,
+                    supporting = if (stored.reportedContextWindow > 0) stringResource(R.string.manage_context_window_reported, java.text.NumberFormat.getIntegerInstance().format(stored.reportedContextWindow))
+                    else stringResource(R.string.manage_context_window_not_reported),
+                    isError = !current.canSave,
+                )
+                TeaNodeSectionHeader(stringResource(R.string.manage_price_per_million))
+                PriceField(stringResource(R.string.manage_price_input), current.inputText) { typed -> draft = current.copy(inputText = typed) }
+                PriceField(stringResource(R.string.manage_price_output), current.outputText) { typed -> draft = current.copy(outputText = typed) }
+                PriceField(stringResource(R.string.manage_price_cache_read), current.cacheReadText) { typed -> draft = current.copy(cacheReadText = typed) }
+                PriceField(stringResource(R.string.manage_price_cache_write), current.cacheWriteText) { typed -> draft = current.copy(cacheWriteText = typed) }
+                PriceField(stringResource(R.string.manage_price_audio_input), current.audioInputText) { typed -> draft = current.copy(audioInputText = typed) }
+                SwitchRow(stringResource(R.string.manage_model_on), current.isEnabled, { isOn -> draft = current.copy(isEnabled = isOn) })
+                TeaNodeSectionHeader(stringResource(R.string.manage_used_for))
+                if (stored.usedFor.isEmpty()) FooterText(stringResource(R.string.manage_used_for_none))
+                stored.usedFor.forEach { roleName -> TeaNodeRow(headline = roleLabel(roleName)) }
+                TeaNodeRow(headline = stringResource(R.string.settings_remove), leadingIcon = Icons.Outlined.Delete, onClick = { isRemoving = true })
+                androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 24.dp))
+            }
+        }
+    }
+    if (isRemoving && provider != null) ConfirmationDialog(
+        title = stringResource(R.string.manage_remove_model), confirmLabel = stringResource(R.string.settings_remove), isDestructive = true,
+        text = stringResource(R.string.manage_remove_model_detail, provider.name, model),
+        onConfirm = { isRemoving = false; actions.run(removedText, onSuccess = onBack) { connection.deleteAgentModelEntry(provider.name, model) } },
+        onDismiss = { isRemoving = false },
+    )
 }
 
 /** Adds a provider or changes one. A provider that runs on a person's plan is signed in to rather than keyed, and the sign-in is what saves it. */
@@ -249,7 +366,7 @@ fun AgentProviderFormScreen(providerIndex: Int?, onBack: () -> Unit) {
                                                 val refreshed = AgentProviderDraft.of(fresh)
                                                 draft = draft?.copy(
                                                     pricingInputText = refreshed.pricingInputText, pricingOutputText = refreshed.pricingOutputText, pricingCacheReadText = refreshed.pricingCacheReadText,
-                                                    pricingCacheWriteText = refreshed.pricingCacheWriteText, pricingAudioInputText = refreshed.pricingAudioInputText, modelPrices = refreshed.modelPrices,
+                                                    pricingCacheWriteText = refreshed.pricingCacheWriteText, pricingAudioInputText = refreshed.pricingAudioInputText, models = refreshed.models,
                                                 )
                                             }
                                         }
@@ -293,30 +410,13 @@ private fun ProviderFormFields(
             SecretField(stringResource(R.string.manage_billing_key), draft.hasBillingApiKey, draft.billingApiKey, { typed -> onChange(draft.copy(billingApiKey = typed)) }, hint = stringResource(R.string.manage_billing_key_hint))
         }
     }
-    FormField(draft.allowText, { typed -> onChange(draft.copy(allowText = typed)) }, stringResource(R.string.manage_models_to_offer), placeholder = stringResource(R.string.manage_models_to_offer_prompt))
-    FormField(draft.denyText, { typed -> onChange(draft.copy(denyText = typed)) }, stringResource(R.string.manage_models_to_hide), placeholder = stringResource(R.string.manage_models_to_hide_prompt))
     TeaNodeSectionHeader(stringResource(R.string.manage_price_per_million))
+    FooterText(stringResource(R.string.manage_provider_prices_footer))
     PriceField(stringResource(R.string.manage_price_input), draft.pricingInputText) { typed -> onChange(draft.copy(pricingInputText = typed)) }
     PriceField(stringResource(R.string.manage_price_output), draft.pricingOutputText) { typed -> onChange(draft.copy(pricingOutputText = typed)) }
     PriceField(stringResource(R.string.manage_price_cache_read), draft.pricingCacheReadText) { typed -> onChange(draft.copy(pricingCacheReadText = typed)) }
     PriceField(stringResource(R.string.manage_price_cache_write), draft.pricingCacheWriteText) { typed -> onChange(draft.copy(pricingCacheWriteText = typed)) }
     PriceField(stringResource(R.string.manage_price_audio_input), draft.pricingAudioInputText) { typed -> onChange(draft.copy(pricingAudioInputText = typed)) }
-    draft.modelPrices.forEach { row ->
-        fun change(changed: ModelPriceDraft) = onChange(draft.copy(modelPrices = draft.modelPrices.map { price -> if (price.rowId == row.rowId) changed else price }))
-        TeaNodeSectionHeader(stringResource(R.string.manage_prices_for_models))
-        FormField(row.model, { typed -> change(row.copy(model = typed)) }, stringResource(R.string.manage_price_model), placeholder = "model-name*")
-        PriceField(stringResource(R.string.manage_price_in), row.inputText) { typed -> change(row.copy(inputText = typed)) }
-        PriceField(stringResource(R.string.manage_price_out), row.outputText) { typed -> change(row.copy(outputText = typed)) }
-        PriceField(stringResource(R.string.manage_price_cached), row.cacheReadText) { typed -> change(row.copy(cacheReadText = typed)) }
-        PriceField(stringResource(R.string.manage_price_caching), row.cacheWriteText) { typed -> change(row.copy(cacheWriteText = typed)) }
-        PriceField(stringResource(R.string.manage_price_audio), row.audioInputText) { typed -> change(row.copy(audioInputText = typed)) }
-        TeaNodeRow(headline = stringResource(R.string.settings_remove), leadingIcon = Icons.Outlined.Delete, onClick = { onChange(draft.copy(modelPrices = draft.modelPrices.filter { price -> price.rowId != row.rowId })) })
-    }
-    TeaNodeRow(
-        headline = stringResource(R.string.manage_price_another_model), leadingIcon = Icons.Outlined.Add,
-        onClick = { onChange(draft.copy(modelPrices = draft.modelPrices + ModelPriceDraft(rowId = (draft.modelPrices.maxOfOrNull { price -> price.rowId } ?: -1) + 1))) },
-    )
-    FooterText(stringResource(R.string.manage_prices_for_models_footer))
     if (draft.hasBillingApiKey && storedProviderName != null) BilledPricesSection(billingCheck, isCheckingPrices, onCheckPrices)
     SwitchRow(stringResource(R.string.manage_enabled), draft.isEnabled, { isOn -> onChange(draft.copy(isEnabled = isOn)) })
 }

@@ -140,14 +140,18 @@ func TestTheAssistantIsSetUpInOneStep(t *testing.T) {
 			t.Error("a model the server does not offer was accepted")
 		}
 
-		// A saved provider that was switched off, with a filter hiding the
-		// model, is switched back on and the filter dropped; its prices stay.
+		// A saved provider that was switched off, with its model switched off
+		// too, is switched back on and the model offered again; its prices
+		// stay.
 		// Agents and its models were switched off with it, as the
 		// configuration requires.
 		if err := store.Update(func(configuration *config.Configuration) error {
 			saved := &configuration.Agent.Providers[0]
 			saved.Enabled = new(false)
-			saved.Models = config.AgentProviderModels{Allow: []string{"nomic-*"}}
+			for index := range saved.ModelEntries {
+				// Every entry off, the chosen default included.
+				saved.ModelEntries[index].Enabled = new(false)
+			}
 			saved.Pricing.Input = 1
 			configuration.Agent.Enabled = false
 			configuration.Agent.Models = config.AgentModels{}
@@ -159,7 +163,7 @@ func TestTheAssistantIsSetUpInOneStep(t *testing.T) {
 			t.Fatal(err)
 		}
 		saved := store.Current().Agent.Providers[0]
-		if !saved.IsEnabled() || len(saved.Models.Allow) != 0 || saved.Pricing.Input != 1 {
+		if !saved.IsEnabled() || !saved.Offers("llama3.2") || saved.Pricing.Input != 1 {
 			t.Errorf("the saved provider became %+v", saved)
 		}
 	})
