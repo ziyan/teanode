@@ -15,7 +15,7 @@ import kotlinx.serialization.json.JsonPrimitive
 object AgentFeedDocuments {
     private const val FEED_ITEM_FIELDS = """feedItemId feedItemKind feedSourceKind feedSourceId feedSourceTitle runConversationId title body pictureSymbol
 factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl } choices { choiceKey choiceLabel choiceRole }
-chosenChoiceKey chosenAt outcomeText isOutcomePending feedUrgency isLiked isRead isDismissed postedAt updatedAt
+chosenChoiceKey chosenAt outcomeText isOutcomePending feedUrgency isLiked isRead isDismissed dismissedAt postedAt updatedAt
 feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent
 feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }"""
 
@@ -26,8 +26,8 @@ feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCapti
     unreadCount
   }
 }"""
-    const val LIST_AGENT_FEED = """query (${'$'}first: Int, ${'$'}after: String, ${'$'}includeDismissed: Boolean) {
-  ListAgentFeed(first: ${'$'}first, after: ${'$'}after, includeDismissed: ${'$'}includeDismissed) {
+    const val LIST_AGENT_FEED = """query (${'$'}first: Int, ${'$'}after: String, ${'$'}includeDismissed: Boolean, ${'$'}isDismissedOnly: Boolean) {
+  ListAgentFeed(first: ${'$'}first, after: ${'$'}after, includeDismissed: ${'$'}includeDismissed, isDismissedOnly: ${'$'}isDismissedOnly) {
     feedItems { $FEED_ITEM_FIELDS }
     nextCursor
     unreadCount
@@ -205,6 +205,8 @@ data class AgentFeedItemView(
     val isLiked: Boolean = false,
     val isRead: Boolean = false,
     val isDismissed: Boolean = false,
+    /** When the card was dismissed (RFC 3339); null for a card that is not dismissed. */
+    val dismissedAt: String? = null,
     val postedAt: String = "",
     val updatedAt: String = "",
     /** The stack this card belongs to; empty for a card that stands alone. */
@@ -356,6 +358,48 @@ data class AgentFeedList(
     fun isUnread(feedItemId: String): Boolean = feedItems.firstOrNull { item -> item.feedItemId == feedItemId }?.isRead == false
 }
 
+/** One entry of the dismissed cards as a screen draws it: a card alone, or the consecutive cards of one stack as a deck. */
+sealed interface AgentFeedDismissedEntry {
+    /** The card drawn on top: the only card of an entry alone, the newest of a deck. */
+    val topCard: AgentFeedItemView
+
+    data class Single(override val topCard: AgentFeedItemView) : AgentFeedDismissedEntry
+
+    /** [feedItems] are the deck's cards in the order they were read, the top card first. */
+    data class Deck(val feedStackKey: String, val feedItems: List<AgentFeedItemView>) : AgentFeedDismissedEntry {
+        override val topCard: AgentFeedItemView get() = feedItems.first()
+    }
+}
+
+/**
+ * Groups dismissed cards into entries: consecutive cards with one non-empty `feedStackKey` become a deck, every other card
+ * is an entry alone. The order is kept, so a deck sits where its newest card was.
+ */
+fun groupDismissedFeedItems(feedItems: List<AgentFeedItemView>): List<AgentFeedDismissedEntry> {
+    val entries = ArrayList<AgentFeedDismissedEntry>()
+    var index = 0
+    while (index < feedItems.size) {
+        val feedStackKey = feedItems[index].feedStackKey
+        var end = index + 1
+        if (feedStackKey.isNotEmpty()) while (end < feedItems.size && feedItems[end].feedStackKey == feedStackKey) end++
+        entries.add(if (end - index > 1) AgentFeedDismissedEntry.Deck(feedStackKey, feedItems.subList(index, end).toList()) else AgentFeedDismissedEntry.Single(feedItems[index]))
+        index = end
+    }
+    return entries
+}
+
+/**
+ * The dismissed cards as the feed's list draws them: each deck is its top card standing for the stack, with the count of
+ * the deck's cards and how many of them are unread, as the server gives a stack's top card in the feed.
+ */
+fun foldDismissedFeedItems(feedItems: List<AgentFeedItemView>): List<AgentFeedItemView> =
+    groupDismissedFeedItems(feedItems).map { entry ->
+        when (entry) {
+            is AgentFeedDismissedEntry.Single -> entry.topCard
+            is AgentFeedDismissedEntry.Deck -> entry.topCard.copy(stackItemCount = entry.feedItems.size, stackUnreadCount = entry.feedItems.count { card -> !card.isRead })
+        }
+    }
+
 @Serializable
 private class ListAgentFeedAnswer(val ListAgentFeed: AgentFeedPage)
 
@@ -387,11 +431,15 @@ private class DiscussAgentFeedItemAnswer(val DiscussAgentFeedItem: String)
 /** How many cards a page of the feed holds. */
 const val AGENT_FEED_PAGE_SIZE = 30
 
-/** A page of the feed, newest first; [after] is the previous page's `nextCursor`. */
-suspend fun Connection.agentFeed(after: String? = null, first: Int = AGENT_FEED_PAGE_SIZE, includeDismissed: Boolean = false): AgentFeedPage {
+/**
+ * A page of the feed, newest first; [after] is the previous page's `nextCursor`. With [isDismissedOnly] the page lists
+ * the dismissed cards that have not expired instead, the most recently dismissed first, each one an entry of its own.
+ */
+suspend fun Connection.agentFeed(after: String? = null, first: Int = AGENT_FEED_PAGE_SIZE, includeDismissed: Boolean = false, isDismissedOnly: Boolean = false): AgentFeedPage {
     val variables = hashMapOf<String, JsonElement>("first" to JsonPrimitive(first))
     if (!after.isNullOrEmpty()) variables["after"] = JsonPrimitive(after)
     if (includeDismissed) variables["includeDismissed"] = JsonPrimitive(true)
+    if (isDismissedOnly) variables["isDismissedOnly"] = JsonPrimitive(true)
     return execute<ListAgentFeedAnswer>(AgentFeedDocuments.LIST_AGENT_FEED, variables).ListAgentFeed
 }
 

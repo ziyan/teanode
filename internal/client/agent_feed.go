@@ -65,6 +65,7 @@ type AgentFeedItem struct {
 	IsLiked           bool                  `json:"isLiked"`
 	IsRead            bool                  `json:"isRead"`
 	IsDismissed       bool                  `json:"isDismissed"`
+	DismissedAt       *time.Time            `json:"dismissedAt"`
 	FeedStackKey      string                `json:"feedStackKey"`
 	StackItemCount    int                   `json:"stackItemCount"`
 	StackUnreadCount  int                   `json:"stackUnreadCount"`
@@ -103,7 +104,7 @@ const (
 		factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl }
 		recordReferences { itemId threadId subject from path name financeTransactionId recordingId recordingTitle photoId photoTitle }
 		choices { choiceKey choiceLabel choiceRole } chosenChoiceKey chosenAt outcomeText isOutcomePending
-		feedUrgency isLiked isRead isDismissed feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent postedAt updatedAt
+		feedUrgency isLiked isRead isDismissed dismissedAt feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent postedAt updatedAt
 		feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }`
 
 	// DocumentPostAgentFeedItem is also what the feed tool sends.
@@ -118,8 +119,8 @@ const (
 // The documents the command line and the feed tool send, exported so a test
 // can check them against the schema.
 const (
-	DocumentListAgentFeed = `query ($first: Int, $after: String, $includeDismissed: Boolean) {
-		ListAgentFeed(first: $first, after: $after, includeDismissed: $includeDismissed) {
+	DocumentListAgentFeed = `query ($first: Int, $after: String, $includeDismissed: Boolean, $isDismissedOnly: Boolean) {
+		ListAgentFeed(first: $first, after: $after, includeDismissed: $includeDismissed, isDismissedOnly: $isDismissedOnly) {
 			feedItems { ` + feedItemFields + ` } nextCursor unreadCount
 		}
 	}`
@@ -146,6 +147,9 @@ const (
 	DocumentRestoreAgentFeedItems = `mutation ($feedItemIds: [String!]!) {
 		RestoreAgentFeedItems(feedItemIds: $feedItemIds)
 	}`
+	DocumentWithdrawAgentFeedItem = `mutation ($feedItemId: String!) {
+		WithdrawAgentFeedItem(feedItemId: $feedItemId)
+	}`
 	DocumentMarkAgentFeedRead = `mutation ($feedItemIds: [String!]!) {
 		MarkAgentFeedRead(feedItemIds: $feedItemIds)
 	}`
@@ -157,12 +161,16 @@ const (
 	}`
 )
 
-// ListAgentFeed is a page of the feed, newest first.
-func ListAgentFeed(ctx context.Context, connection *Client, first int, after string, includeDismissed bool) (*AgentFeedPage, error) {
+// ListAgentFeed is a page of the feed, newest first, or with isDismissedOnly
+// a page of the dismissed cards, the most recently dismissed first.
+func ListAgentFeed(ctx context.Context, connection *Client, first int, after string, includeDismissed, isDismissedOnly bool) (*AgentFeedPage, error) {
 	var result struct {
 		ListAgentFeed *AgentFeedPage `json:"ListAgentFeed"`
 	}
 	variables := map[string]any{"includeDismissed": includeDismissed}
+	if isDismissedOnly {
+		variables["isDismissedOnly"] = true
+	}
 	if first > 0 {
 		variables["first"] = first
 	}
@@ -302,4 +310,12 @@ func PostAgentFeedItem(ctx context.Context, connection *Client, variables map[st
 		return nil, err
 	}
 	return result.PostAgentFeedItem, nil
+}
+
+// WithdrawAgentFeedItem takes a card back for good.
+func WithdrawAgentFeedItem(ctx context.Context, connection *Client, feedItemId string) error {
+	var result struct {
+		WithdrawAgentFeedItem bool `json:"WithdrawAgentFeedItem"`
+	}
+	return connection.Execute(ctx, DocumentWithdrawAgentFeedItem, map[string]any{"feedItemId": feedItemId}, &result)
 }

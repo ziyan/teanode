@@ -18,6 +18,7 @@ class AgentFeedTest {
         id: String,
         isRead: Boolean = false,
         isDismissed: Boolean = false,
+        dismissedAt: String? = null,
         choices: String = "[]",
         chosen: String? = null,
         isPending: Boolean = false,
@@ -33,11 +34,11 @@ class AgentFeedTest {
             "title":"Card $id","body":"Body","pictureSymbol":"cloud.sun","factRows":[{"factLabel":"High","factValue":"18 C"}],
             "sourceLinks":[{"sourceTitle":"Forecast","sourceUrl":"https://example.com/forecast"}],
             "choices":$choices,"chosenChoiceKey":${chosen?.let { key -> "\"$key\"" }},"chosenAt":null,"outcomeText":"$outcome","isOutcomePending":$isPending,
-            "feedUrgency":"now","isLiked":false,"isRead":$isRead,"isDismissed":$isDismissed,"postedAt":"2026-11-18T08:00:00Z","updatedAt":"2026-11-18T08:30:00Z",
+            "feedUrgency":"now","isLiked":false,"isRead":$isRead,"isDismissed":$isDismissed,"dismissedAt":${dismissedAt?.let { text -> "\"$text\"" }},"postedAt":"2026-11-18T08:00:00Z","updatedAt":"2026-11-18T08:30:00Z",
             "feedStackKey":"$stackKey","feedStackTitle":"$stackTitle","stackPosition":null,"stackItemCount":$stackCount,"stackUnreadCount":$stackUnread}"""
 
-    private fun item(id: String, isRead: Boolean = false, isDismissed: Boolean = false): AgentFeedItemView =
-        TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card(id, isRead, isDismissed))
+    private fun item(id: String, isRead: Boolean = false, isDismissed: Boolean = false, stackKey: String = ""): AgentFeedItemView =
+        TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card(id, isRead, isDismissed, stackKey = stackKey))
 
     private val twoChoices = """[{"choiceKey":"me","choiceLabel":"That is me","choiceRole":"dismiss"},{"choiceKey":"secure","choiceLabel":"Secure my account","choiceRole":"action"}]"""
 
@@ -118,6 +119,58 @@ class AgentFeedTest {
         assertEquals(JsonPrimitive("cursor-9"), sentVariables(fake)["after"])
         assertEquals(JsonPrimitive(AGENT_FEED_PAGE_SIZE), sentVariables(fake)["first"])
         assertNull(sentVariables(fake)["includeDismissed"])
+    }
+
+    @Test
+    fun theDismissedListAsksForDismissedOnlyAndReadsWhenEachCardWasDismissed() = runBlocking {
+        val (connection, fake) = fakeConnection { """{"data":{"ListAgentFeed":{"feedItems":[${card("a", isDismissed = true, dismissedAt = "2026-11-20T09:00:00Z")}],"nextCursor":null,"unreadCount":2}}}""" }
+        val page = connection.agentFeed(isDismissedOnly = true)
+        assertEquals(JsonPrimitive(true), sentVariables(fake)["isDismissedOnly"])
+        assertEquals("2026-11-20T09:00:00Z", page.feedItems.single().dismissedAt)
+        assertEquals(2, page.unreadCount)
+    }
+
+    @Test
+    fun theFeedAsksForNeitherDismissedOnlyNorDismissedCardsByDefault() = runBlocking {
+        val (connection, fake) = fakeConnection { """{"data":{"ListAgentFeed":{"feedItems":[${card("a")}],"nextCursor":null,"unreadCount":1}}}""" }
+        val page = connection.agentFeed()
+        assertNull(sentVariables(fake)["isDismissedOnly"])
+        assertNull(page.feedItems.single().dismissedAt)
+        assertTrue(AgentFeedDocuments.LIST_AGENT_FEED.contains("isDismissedOnly") && AgentFeedDocuments.LIST_AGENT_FEED.contains("dismissedAt"))
+    }
+
+    @Test
+    fun consecutiveDismissedCardsOfOneStackBecomeADeckAndTheRestStayAlone() {
+        val feedItems = listOf(item("a"), item("b", stackKey = "goal:one"), item("c", stackKey = "goal:one"), item("d", stackKey = "goal:two"), item("e", stackKey = "goal:one"), item("f", stackKey = "goal:one"), item("g"), item("h"))
+        val entries = groupDismissedFeedItems(feedItems)
+        assertEquals(
+            listOf(
+                AgentFeedDismissedEntry.Single(feedItems[0]),
+                AgentFeedDismissedEntry.Deck("goal:one", listOf(feedItems[1], feedItems[2])),
+                AgentFeedDismissedEntry.Single(feedItems[3]),
+                AgentFeedDismissedEntry.Deck("goal:one", listOf(feedItems[4], feedItems[5])),
+                AgentFeedDismissedEntry.Single(feedItems[6]),
+                AgentFeedDismissedEntry.Single(feedItems[7]),
+            ),
+            entries,
+        )
+        assertEquals("b", (entries[1] as AgentFeedDismissedEntry.Deck).topCard.feedItemId)
+    }
+
+    @Test
+    fun cardsWithNoStackKeyAreNeverGroupedAndAnEmptyListGroupsToNothing() {
+        assertEquals(3, groupDismissedFeedItems(listOf(item("a"), item("b"), item("c"))).size)
+        assertTrue(groupDismissedFeedItems(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun aFoldedDeckIsItsTopCardCountingTheDeckAndItsUnreadCards() {
+        val folded = foldDismissedFeedItems(listOf(item("a", isRead = true, stackKey = "goal:one"), item("b", stackKey = "goal:one"), item("c", stackKey = "goal:one", isRead = true), item("d")))
+        assertEquals(listOf("a", "d"), folded.map { card -> card.feedItemId })
+        assertEquals(3, folded[0].stackItemCount)
+        assertEquals(1, folded[0].stackUnreadCount)
+        assertTrue(folded[0].isStack)
+        assertFalse(folded[1].isStack)
     }
 
     @Test

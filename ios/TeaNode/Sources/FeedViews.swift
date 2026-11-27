@@ -18,11 +18,18 @@ final class FeedModel {
     /// The stack this model lists, when it is the open stack's; nil for the
     /// feed itself, which lists one entry per stack.
     let feedStackKey: String?
+    /// Whether this model lists the dismissed cards, one entry per card, in
+    /// place of the feed.
+    let isDismissedOnly: Bool
 
     private(set) var items: [AgentFeedItem] = []
     private(set) var unreadCount = 0
     private(set) var hasLoaded = false
     private(set) var isLoadingMore = false
+    /// Whether the feed is being read again because a dismissal left it with
+    /// no cards; the screen shows the loading mark, not "nothing here", until
+    /// that read is done.
+    private(set) var isReadingAfterEmptying = false
     /// Why the first read failed, when there is nothing to show instead.
     private(set) var loadFailedText: String?
     /// The cards a call is in flight for, so a second tap does nothing.
@@ -39,6 +46,10 @@ final class FeedModel {
 
     private var nextCursor: String?
     private var isLoading = false
+    /// The cards this model took off the list, which a read already on its way
+    /// may still hold. They are left out of what it brings back; a read that
+    /// began after they were taken off no longer needs the reminder.
+    private var hiddenFeedItemIds: Set<String> = []
     /// The read of the newest page under way, which a second caller waits
     /// for instead of starting another.
     private var loadTask: Task<Void, Never>?
@@ -51,15 +62,16 @@ final class FeedModel {
     private var pendingReadFeedItemIds: Set<String> = []
     private var readTask: Task<Void, Never>?
 
-    init(connection: Connection, feedStackKey: String? = nil) {
+    init(connection: Connection, feedStackKey: String? = nil, isDismissedOnly: Bool = false) {
         self.connection = connection
         self.feedStackKey = feedStackKey
+        self.isDismissedOnly = isDismissedOnly
     }
 
     /// A page of the feed, or of the stack this model lists.
     private func fetchPage(after cursor: String?) async throws -> AgentFeedPage {
         if let feedStackKey { return try await connection.agentFeedStack(feedStackKey, after: cursor) }
-        return try await connection.agentFeed(after: cursor)
+        return try await connection.agentFeed(after: cursor, isDismissedOnly: isDismissedOnly)
     }
 
     /// Whether any card waits for a turn of the agent to say how its answer
@@ -101,9 +113,11 @@ final class FeedModel {
     private func readNewestPage() async {
         isLoading = true
         defer { isLoading = false }
+        let hiddenAtStart = hiddenFeedItemIds
         do {
             let page = try await fetchPage(after: nil)
-            items = page.feedItems
+            items = page.feedItems.filter { !hiddenFeedItemIds.contains($0.feedItemId) }
+            hiddenFeedItemIds.subtract(hiddenAtStart)
             nextCursor = page.nextCursor
             unreadCount = page.unreadCount
             hasLoaded = true
@@ -136,7 +150,7 @@ final class FeedModel {
         do {
             let page = try await fetchPage(after: cursor)
             let known = Set(items.map(\.feedItemId))
-            items += page.feedItems.filter { !known.contains($0.feedItemId) }
+            items += page.feedItems.filter { !known.contains($0.feedItemId) && !hiddenFeedItemIds.contains($0.feedItemId) }
             nextCursor = page.nextCursor
             unreadCount = page.unreadCount
         } catch is CancellationError {
@@ -236,6 +250,7 @@ final class FeedModel {
             _ = try await connection.showLessLikeAgentFeedItem(item.feedItemId)
             remove(item)
             doneText = String(localized: "You will see fewer like it.")
+            await readAgainIfEmptied()
         } catch is CancellationError {
         } catch {
             problemText = error.loadProblemText
@@ -272,7 +287,41 @@ final class FeedModel {
                 ? String(localized: "\(dismissedFeedItemIds.count) card dismissed.")
                 : String(localized: "\(dismissedFeedItemIds.count) cards dismissed.")
             undo = { [weak self] in await self?.restore(dismissedFeedItemIds) }
-            await load()
+            if items.isEmpty {
+                await readAgainIfEmptied()
+            } else {
+                await load()
+            }
+        } catch is CancellationError {
+        } catch {
+            problemText = error.loadProblemText
+        }
+    }
+
+    /// When the list has no cards left after a card was taken off, the feed is
+    /// read again with the loading mark showing, and is said to be empty only
+    /// if that read is. Cards taken off stay hidden from that read. A read
+    /// already under way began before the card went, so it is waited for and
+    /// another is made.
+    private func readAgainIfEmptied() async {
+        guard items.isEmpty else { return }
+        isReadingAfterEmptying = true
+        defer { isReadingAfterEmptying = false }
+        await refresh()
+    }
+
+    /// Brings one card of the dismissed list back. The card leaves the list at
+    /// once and stays off it for a read already on its way.
+    func restoreDismissed(_ item: AgentFeedItem) async {
+        do {
+            let restoredFeedItemIds = try await connection.restoreAgentFeedItems([item.feedItemId])
+            withAnimation { remove(feedItemIds: [item.feedItemId]) }
+            if restoredFeedItemIds.contains(item.feedItemId) {
+                doneText = String(localized: "Card restored")
+            } else {
+                // The server leaves a card out when the feed holds a newer one like it, or it expired.
+                doneText = String(localized: "This card could not be restored.")
+            }
         } catch is CancellationError {
         } catch {
             problemText = error.loadProblemText
@@ -283,6 +332,7 @@ final class FeedModel {
     private func restore(_ feedItemIds: [String]) async {
         do {
             _ = try await connection.restoreAgentFeedItems(feedItemIds)
+            hiddenFeedItemIds.subtract(feedItemIds)
             await load()
         } catch is CancellationError {
         } catch {
@@ -306,6 +356,7 @@ final class FeedModel {
     }
 
     private func remove(feedItemIds: Set<String>) {
+        hiddenFeedItemIds.formUnion(feedItemIds)
         let unreadCountRemoved = items.filter {
             feedItemIds.contains($0.feedItemId) && !$0.isRead && !readFeedItemIds.contains($0.feedItemId)
         }.count
@@ -400,6 +451,8 @@ struct FeedScreen: View {
     let model: FeedModel
     /// The stack open on the feed, if one is.
     @State private var path: [FeedStackTarget] = []
+    /// Whether the Dismissed Cards screen is pushed on the feed.
+    @State private var isShowingDismissed = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -410,6 +463,7 @@ struct FeedScreen: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
                             Button("Dismiss Read", systemImage: "xmark.circle") { Task { await model.dismissEveryReadCard() } }
+                            Button("Dismissed Cards", systemImage: "tray.full") { isShowingDismissed = true }
                         } label: {
                             Label("More", systemImage: "ellipsis")
                         }
@@ -418,11 +472,16 @@ struct FeedScreen: View {
                 .navigationDestination(for: FeedStackTarget.self) { target in
                     FeedStackScreen(target: target, parent: model)
                 }
+                .navigationDestination(isPresented: $isShowingDismissed) {
+                    FeedDismissedScreen(parent: model)
+                }
                 #if DEBUG
                     // `-TeaNodeScreen feed-stack`: the stack of news cards, open; `feed-brief`: the morning brief.
                     .task {
                         guard DemoServer.isRequested, path.isEmpty else { return }
-                        if DemoServer.screen == "feed-stack" {
+                        if DemoServer.screen == "feed-dismissed" {
+                            isShowingDismissed = true
+                        } else if DemoServer.screen == "feed-stack" {
                             path = [FeedStackTarget(feedStackKey: DemoServer.demoNewsStackKey, title: "Robots in warehouses")]
                         } else if DemoServer.screen == "feed-brief" {
                             path = [FeedStackTarget(feedStackKey: DemoServer.demoBriefStackKey, title: DemoServer.demoBriefTitle)]
@@ -552,6 +611,7 @@ struct FeedList: View {
                 switch action {
                 case .showLess: Task { await model.showLessLike(item) }
                 case .dismiss: Task { await model.dismiss(item) }
+                case .restore: Task { await model.restoreDismissed(item) }
                 case .openGoals: app.openedSection = .goals
                 }
             }
@@ -723,7 +783,7 @@ struct FeedList: View {
     private var placeholder: some View {
         if !model.hasLoaded, let loadFailedText = model.loadFailedText {
             LoadFailedView(problemText: loadFailedText) { await model.load() }
-        } else if !model.hasLoaded {
+        } else if !model.hasLoaded || model.isReadingAfterEmptying {
             ProgressView()
         } else if model.items.isEmpty, model.feedStackKey != nil || app.appUpdates.updateToOffer == nil {
             ContentUnavailableView(
@@ -917,7 +977,7 @@ struct FeedCard: View {
         } else if item.isChosen {
             // The choice is no longer listed, but the answer is still given.
             outcome
-        } else if !item.choices.isEmpty, !item.isDismissed {
+        } else if !item.choices.isEmpty {
             // Side by side and of equal width when every label fits on one
             // line at that width, else one under the other.
             ViewThatFits(in: .horizontal) {
@@ -1214,6 +1274,7 @@ struct FeedFacts: View {
 enum FeedInformationAction {
     case showLess
     case dismiss
+    case restore
     case openGoals
 }
 
@@ -1222,6 +1283,9 @@ enum FeedInformationAction {
 /// It also holds "Show less like this" and Dismiss, which close the card.
 struct FeedInformationSheet: View {
     let item: AgentFeedItem
+    /// Whether the card is one of the dismissed list, which offers Restore in
+    /// place of Show less and Dismiss.
+    var canRestore = false
     let onAction: (FeedInformationAction) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -1250,6 +1314,9 @@ struct FeedInformationSheet: View {
                     if let updatedAt = ServerTime.date(item.updatedAt), updatedAt != ServerTime.date(item.postedAt) {
                         LabeledContent("Updated", value: updatedAt.formatted(date: .abbreviated, time: .shortened))
                     }
+                    if let dismissedDate = item.dismissedDate {
+                        LabeledContent("Dismissed", value: dismissedDate.formatted(date: .abbreviated, time: .shortened))
+                    }
                 }
                 if !item.sourceLinks.isEmpty {
                     Section("Sources") {
@@ -1263,13 +1330,22 @@ struct FeedInformationSheet: View {
                         }
                     }
                 }
-                Section {
-                    Button("Show less like this", systemImage: "hand.thumbsdown") { onAction(.showLess) }
-                        .actionColor()
-                    Button("Dismiss", systemImage: "xmark.circle") { onAction(.dismiss) }
-                        .actionColor()
-                } footer: {
-                    Text("Either one takes this card out of your feed. Showing less also tells your agent to post fewer like it.")
+                if canRestore {
+                    Section {
+                        Button("Restore", systemImage: "arrow.uturn.backward.circle") { onAction(.restore) }
+                            .actionColor()
+                    } footer: {
+                        Text("Puts this card back in your feed.")
+                    }
+                } else {
+                    Section {
+                        Button("Show less like this", systemImage: "hand.thumbsdown") { onAction(.showLess) }
+                            .actionColor()
+                        Button("Dismiss", systemImage: "xmark.circle") { onAction(.dismiss) }
+                            .actionColor()
+                    } footer: {
+                        Text("Either one takes this card out of your feed. Showing less also tells your agent to post fewer like it.")
+                    }
                 }
             }
             .navigationTitle("About this card")

@@ -45,6 +45,7 @@ function feedItem(feedItemId: string, overrides: Partial<FeedItem> = {}): FeedIt
     isLiked: false,
     isRead: true,
     isDismissed: false,
+    dismissedAt: null,
     postedAt: '2030-01-01T08:00:00Z',
     updatedAt: '2030-01-01T09:00:00Z',
     feedStackKey: '',

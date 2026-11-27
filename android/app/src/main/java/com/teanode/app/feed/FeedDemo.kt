@@ -60,6 +60,11 @@ object FeedDemoIDs {
     const val BRIEF_STACK_KEY = "schedule:brief:run-1"
     const val ROBOTS_STACK_KEY = "goal:robots"
     const val IDEAS_STACK_KEY = "speak_first:ideas"
+    const val DISMISSED_CHOICES = "demo-dismissed-choices"
+    const val DISMISSED_WATERING_NEW = "demo-dismissed-watering-new"
+    const val DISMISSED_WATERING_OLD = "demo-dismissed-watering-old"
+    const val DISMISSED_NEWS = "demo-dismissed-news"
+    const val WATERING_STACK_KEY = "goal:garden-watering"
 }
 
 /** A picture of a card, drawn on the spot by [feedDemoPictureBytes] at the size it says. */
@@ -126,6 +131,34 @@ val demoBriefCards: List<AgentFeedItemView> = listOf(
     briefCard(FeedDemoIDs.BRIEF_REVIEWS, 5, "Open reviews", "One review is waiting for you and one issue is assigned to you.", "chevron.left.forwardslash.chevron.right", "list", briefReviewsContent),
     briefCard(FeedDemoIDs.BRIEF_MAIL, 6, "Mail worth reading", "Two messages you will want to see.", "envelope", "list", briefMailContent)
         .copy(feedMedia = listOf(media("mail-0", "photo", 800, 800, rowIndex = 0))),
+)
+
+/** The dismissed cards of the demo, the most recently dismissed first; two share a stack, so they are drawn as a deck. Invented. */
+val demoDismissedCards: List<AgentFeedItemView> = listOf(
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.DISMISSED_CHOICES, feedItemKind = "decision", feedSourceKind = "agent", title = "Renew the library card",
+        body = "Your library card runs out on Friday. Renewing takes one step.", pictureSymbol = "book",
+        choices = listOf(choice("approve", "Renew it", "action"), choice("not-now", "Not now", "dismiss")),
+        isDismissed = true, dismissedAt = minutesAgo(35), postedAt = minutesAgo(60 * 30), updatedAt = minutesAgo(60 * 30),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.DISMISSED_WATERING_NEW, feedItemKind = "report", feedSourceKind = "goal", feedSourceTitle = "Garden watering",
+        title = "Watering plan for Thursday", body = "No rain until the weekend. Water the beds before eight in the morning.", pictureSymbol = "cloud.sun",
+        feedStackKey = FeedDemoIDs.WATERING_STACK_KEY, feedStackTitle = "Garden watering",
+        isRead = true, isDismissed = true, dismissedAt = minutesAgo(60 * 3), postedAt = minutesAgo(60 * 26), updatedAt = minutesAgo(60 * 26),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.DISMISSED_WATERING_OLD, feedItemKind = "report", feedSourceKind = "goal", feedSourceTitle = "Garden watering",
+        title = "Watering plan for Tuesday", body = "A shower is likely at noon, so the beds can wait until evening.", pictureSymbol = "cloud.rain",
+        feedStackKey = FeedDemoIDs.WATERING_STACK_KEY, feedStackTitle = "Garden watering",
+        isRead = true, isDismissed = true, dismissedAt = minutesAgo(60 * 3 + 1), postedAt = minutesAgo(60 * 74), updatedAt = minutesAgo(60 * 74),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.DISMISSED_NEWS, feedItemKind = "news", feedSourceKind = "agent", title = "A new bakery opens on Mill Street",
+        body = "It opens on Saturday with a free loaf for the first fifty visitors.", pictureSymbol = "newspaper",
+        factRows = listOf(AgentFeedFactRow("Opens", "Saturday, 7:00"), AgentFeedFactRow("Where", "Mill Street")),
+        isRead = true, isLiked = true, isDismissed = true, dismissedAt = minutesAgo(60 * 28), postedAt = minutesAgo(60 * 50), updatedAt = minutesAgo(60 * 50),
+    ),
 )
 
 private fun withStack(card: AgentFeedItemView, count: Int, unread: Int, key: String, title: String = "") = card.copy(feedStackKey = key, feedStackTitle = title, stackItemCount = count, stackUnreadCount = unread)
@@ -301,7 +334,7 @@ private fun answeredWith(item: AgentFeedItemView, choiceKey: String): AgentFeedI
 fun demoFeedCard(feedItemId: String): AgentFeedItemView = cardOf(feedItemId)
 
 private fun cardOf(feedItemId: String): AgentFeedItemView =
-    (demoFeedCards + demoBriefCards + stackCards(FeedDemoIDs.ROBOTS_STACK_KEY)).firstOrNull { card -> card.feedItemId == feedItemId } ?: demoFeedCards.first()
+    (demoFeedCards + demoBriefCards + demoDismissedCards + stackCards(FeedDemoIDs.ROBOTS_STACK_KEY)).firstOrNull { card -> card.feedItemId == feedItemId } ?: demoFeedCards.first()
 
 /** What demo mode answers for Feed: every kind and state of card, and answers that change a card the way the server would. */
 val feedDemoAnswerers: List<DemoAnswerer> = listOf(
@@ -310,7 +343,11 @@ val feedDemoAnswerers: List<DemoAnswerer> = listOf(
         val parts = request.path.split('/')
         if (request.path.startsWith("/demo/feed/media/") && parts.size >= 7) DemoResponse(feedDemoPictureBytes(parts[4], parts[5].toIntOrNull() ?: 800, parts[6].toIntOrNull() ?: 450)) else null
     },
-    graphQLField("ListAgentFeed") {
+    graphQLField("ListAgentFeed") { variables ->
+        // Dismissed only: each dismissed card is an entry of its own, never folded into a stack.
+        if ((variables["isDismissedOnly"] as? JsonPrimitive)?.content == "true") {
+            return@graphQLField TeaNodeJson.encodeToString(AgentFeedPage.serializer(), AgentFeedPage(demoDismissedCards, null, demoFeedCards.count { card -> !card.isRead }))
+        }
         val page = AgentFeedPage(demoFeedCards, null, demoFeedCards.count { card -> !card.isRead })
         TeaNodeJson.encodeToString(AgentFeedPage.serializer(), page)
     },

@@ -42,6 +42,12 @@ type FeedOperation interface {
 	// asked for, and cards past their expiry never.
 	ListAgentFeedItems(userId string, cursor *models.FeedCursor, limit int, includeDismissed bool, now time.Time) ([]*models.AgentFeedItem, *models.FeedCursor, error)
 
+	// ListDismissedAgentFeedItems is a person's dismissed cards that have not
+	// expired, the most recently dismissed first, at most limit, after the
+	// cursor when there is one, and the cursor of the next page, nil on the
+	// last. A stack is not folded: each dismissed card is an entry.
+	ListDismissedAgentFeedItems(userId string, cursor *models.FeedCursor, limit int, now time.Time) ([]*models.AgentFeedItem, *models.FeedCursor, error)
+
 	// ListUnsettledAgentFeedItemsBySource is the agent's cards of a source
 	// that are neither chosen nor dismissed.
 	ListUnsettledAgentFeedItemsBySource(agentId string, feedSourceKind models.FeedSourceKind, feedSourceId string) ([]*models.AgentFeedItem, error)
@@ -90,9 +96,20 @@ type FeedOperation interface {
 	DismissAgentFeedItems(userId string, selection *FeedDismissSelection, now time.Time) ([]*models.AgentFeedItem, error)
 
 	// RestoreAgentFeedItems brings back the person's dismissed cards and
-	// answers the ones this call brought back. A card a choice settled stays
-	// closed.
+	// answers the ones this call brought back, still read. A card a dismiss
+	// choice settled has the answer cleared, so it can be answered again; one
+	// answered with an action keeps its answer, since the action was carried
+	// out. A card whose coalesce key a card that is not dismissed holds is
+	// left out, as is one that expired.
 	RestoreAgentFeedItems(userId string, feedItemIds []string, now time.Time) ([]*models.AgentFeedItem, error)
+
+	// DismissAgentFeedItemsAnsweredBefore dismisses every card answered with a
+	// choice before the time that is not dismissed yet, and answers them.
+	DismissAgentFeedItemsAnsweredBefore(before, now time.Time) ([]*models.AgentFeedItem, error)
+
+	// DeleteAgentFeedItem removes a card for good: one the agent took back
+	// is not among the dismissed cards to be restored.
+	DeleteAgentFeedItem(feedItemId string) error
 
 	// ExpireAgentFeedItems deletes cards that expired before the time, and
 	// says how many.
@@ -344,7 +361,7 @@ func EncodeFeedCursor(cursor *models.FeedCursor) string {
 	if cursor == nil {
 		return ""
 	}
-	return strconv.FormatInt(cursor.CreatedAt.UnixNano(), 10) + feedCursorSeparator + cursor.ID
+	return strconv.FormatInt(cursor.OrderedAt.UnixNano(), 10) + feedCursorSeparator + cursor.ID
 }
 
 // DecodeFeedCursor reads what EncodeFeedCursor wrote; empty is no cursor.
@@ -360,7 +377,7 @@ func DecodeFeedCursor(text string) (*models.FeedCursor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("db: %q is not a cursor of the feed", text)
 	}
-	return &models.FeedCursor{CreatedAt: time.Unix(0, parsed), ID: identifier}, nil
+	return &models.FeedCursor{OrderedAt: time.Unix(0, parsed), ID: identifier}, nil
 }
 
 func (self *transaction) ListAgentFeedItems(userId string, cursor *models.FeedCursor, limit int, includeDismissed bool, now time.Time) ([]*models.AgentFeedItem, *models.FeedCursor, error) {
@@ -408,13 +425,41 @@ func (self *transaction) ListAgentFeedStackItems(userId, feedStackKey string, of
 	return items, next, nil
 }
 
+func (self *transaction) ListDismissedAgentFeedItems(userId string, cursor *models.FeedCursor, limit int, now time.Time) ([]*models.AgentFeedItem, *models.FeedCursor, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+	query := self.tx.Where(`"user_id" = ? AND "dismissed_at" IS NOT NULL AND ("expires_at" IS NULL OR "expires_at" > ?)`, userId, now)
+	if cursor != nil {
+		query = query.Where(`("dismissed_at", "id") < (?, ?)`, cursor.OrderedAt, cursor.ID)
+	}
+	var found []agentFeedItemModel
+	if err := query.Order(`"dismissed_at" DESC, "id" DESC`).Limit(limit + 1).Find(&found).Error; err != nil {
+		return nil, nil, err
+	}
+	var next *models.FeedCursor
+	if len(found) > limit {
+		found = found[:limit]
+		next = &models.FeedCursor{OrderedAt: *found[limit-1].DismissedAt, ID: found[limit-1].ID}
+	}
+	items := make([]*models.AgentFeedItem, 0, len(found))
+	for index := range found {
+		item, err := found[index].toModel()
+		if err != nil {
+			return nil, nil, err
+		}
+		items = append(items, item)
+	}
+	return items, next, nil
+}
+
 // pageFeedItems reads a page of the cards a query selects, newest first.
 func (self *transaction) pageFeedItems(query *gorm.DB, cursor *models.FeedCursor, limit int) ([]*models.AgentFeedItem, *models.FeedCursor, error) {
 	if limit <= 0 {
 		limit = 30
 	}
 	if cursor != nil {
-		query = query.Where(`("created_at", "id") < (?, ?)`, cursor.CreatedAt, cursor.ID)
+		query = query.Where(`("created_at", "id") < (?, ?)`, cursor.OrderedAt, cursor.ID)
 	}
 	var found []agentFeedItemModel
 	if err := query.Order(`"created_at" DESC, "id" DESC`).Limit(limit + 1).Find(&found).Error; err != nil {
@@ -423,7 +468,7 @@ func (self *transaction) pageFeedItems(query *gorm.DB, cursor *models.FeedCursor
 	var next *models.FeedCursor
 	if len(found) > limit {
 		found = found[:limit]
-		next = &models.FeedCursor{CreatedAt: found[limit-1].CreatedAt, ID: found[limit-1].ID}
+		next = &models.FeedCursor{OrderedAt: found[limit-1].CreatedAt, ID: found[limit-1].ID}
 	}
 	items := make([]*models.AgentFeedItem, 0, len(found))
 	for index := range found {
@@ -489,7 +534,7 @@ func (self *transaction) UpdateAgentFeedItem(feedItemId string, modify func(*mod
 
 func (self *transaction) SettleAgentFeedItem(feedItemId string, settlement *models.FeedSettlement, now time.Time) (bool, error) {
 	expiresAt := now.AddDate(0, 0, models.FeedExpiryDays)
-	result := self.tx.Model(&agentFeedItemModel{}).Where(`"id" = ? AND "chosen_choice_key" IS NULL AND "dismissed_at" IS NULL`, feedItemId).
+	result := self.tx.Model(&agentFeedItemModel{}).Where(`"id" = ? AND "chosen_choice_key" IS NULL`, feedItemId).
 		Updates(map[string]any{
 			"chosen_choice_key": settlement.ChoiceKey, "chosen_at": now, "chosen_conversation_id": settlement.ConversationID,
 			"outcome_text": settlement.OutcomeText, "is_outcome_pending": settlement.IsOutcomePending,
@@ -540,9 +585,62 @@ func (self *transaction) RestoreAgentFeedItems(userId string, feedItemIds []stri
 	if len(feedItemIds) == 0 {
 		return []*models.AgentFeedItem{}, nil
 	}
-	query := self.tx.Where(`"user_id" = ? AND "id" IN ? AND "dismissed_at" IS NOT NULL AND "chosen_choice_key" IS NULL AND ("expires_at" IS NULL OR "expires_at" > ?)`,
-		userId, feedItemIds, now)
-	return updateFeedItems(query, map[string]any{"dismissed_at": nil, "updated_at": now})
+	// A key held by an open card would break the unique index, and the card
+	// holding it is the newer word on that subject.
+	query := self.tx.Where(`"user_id" = ? AND "id" IN ? AND "dismissed_at" IS NOT NULL AND ("expires_at" IS NULL OR "expires_at" > ?)`, userId, feedItemIds, now).
+		Where(`("coalesce_key" IS NULL OR NOT EXISTS (SELECT 1 FROM "agent_feed_item" "open_item" WHERE "open_item"."agent_id" = "agent_feed_item"."agent_id"
+			AND "open_item"."coalesce_key" = "agent_feed_item"."coalesce_key" AND "open_item"."dismissed_at" IS NULL))`)
+	var candidates []agentFeedItemModel
+	if err := query.Select(`"id"`, `"coalesce_key"`, `"choices"`, `"chosen_choice_key"`).Order(`"dismissed_at" DESC, "id" DESC`).Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+	restoredIds, answerClearedIds := []string{}, []string{}
+	restoredKeys := map[string]bool{}
+	for index := range candidates {
+		candidate := &candidates[index]
+		// Of two cards on one subject only the one dismissed last comes back.
+		if candidate.CoalesceKey != nil {
+			if restoredKeys[*candidate.CoalesceKey] {
+				continue
+			}
+			restoredKeys[*candidate.CoalesceKey] = true
+		}
+		restoredIds = append(restoredIds, candidate.ID)
+		if candidate.ChosenChoiceKey == nil {
+			continue
+		}
+		var choices []models.FeedChoice
+		if err := decodeJSON(candidate.Choices, &choices); err != nil {
+			return nil, err
+		}
+		for _, choice := range choices {
+			if choice.ChoiceKey == *candidate.ChosenChoiceKey && choice.ChoiceRole == models.FeedChoiceDismiss {
+				answerClearedIds = append(answerClearedIds, candidate.ID)
+			}
+		}
+	}
+	if len(restoredIds) == 0 {
+		return []*models.AgentFeedItem{}, nil
+	}
+	// "Not now" was an answer that did nothing, so a card put back after it
+	// is waiting again.
+	if len(answerClearedIds) > 0 {
+		if err := self.tx.Model(&agentFeedItemModel{}).Where(`"id" IN ?`, answerClearedIds).Updates(map[string]any{
+			"chosen_choice_key": nil, "chosen_at": nil, "chosen_conversation_id": "", "outcome_text": "", "is_outcome_pending": false,
+		}).Error; err != nil {
+			return nil, err
+		}
+	}
+	return updateFeedItems(self.tx.Where(`"id" IN ?`, restoredIds), map[string]any{"dismissed_at": nil, "updated_at": now})
+}
+
+func (self *transaction) DismissAgentFeedItemsAnsweredBefore(before, now time.Time) ([]*models.AgentFeedItem, error) {
+	query := self.tx.Where(`"chosen_at" IS NOT NULL AND "chosen_at" < ? AND "dismissed_at" IS NULL AND ("expires_at" IS NULL OR "expires_at" > ?)`, before, now)
+	return updateFeedItems(query, map[string]any{"dismissed_at": now, "read_at": gorm.Expr(`COALESCE("read_at", ?::timestamptz)`, now), "updated_at": now})
+}
+
+func (self *transaction) DeleteAgentFeedItem(feedItemId string) error {
+	return self.tx.Where(`"id" = ?`, feedItemId).Delete(&agentFeedItemModel{}).Error
 }
 
 // updateFeedItems changes the cards the query selects and answers them as

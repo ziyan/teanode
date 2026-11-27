@@ -248,3 +248,50 @@ func TestDismissingAndRestoringFeedCards(t *testing.T) {
 		}
 	})
 }
+
+// The dismissed cards are a list of their own, a stack's cards each an
+// entry, and a withdrawn card is gone rather than dismissed.
+func TestTheDismissedCardsAndAWithdrawnCard(t *testing.T) {
+	world := newFeedWorld(t)
+	world.within(world.person, func(ctx context.Context) {
+		post := func(title, stackKey string) *AgentFeedItemView {
+			view, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: title, StackKey: stackKey})
+			if err != nil {
+				t.Fatalf("post %s: %s", title, err)
+			}
+			return view
+		}
+		stackedOne, stackedTwo, open := post("Stacked one", "evening-brief"), post("Stacked two", "evening-brief"), post("Still open", "")
+		withdrawn := post("No longer true", "")
+		stackKey := "evening-brief"
+		if _, err := world.resolver.DismissAgentFeedItems(ctx, DismissAgentFeedItemsArguments{FeedStackKey: &stackKey}); err != nil {
+			t.Fatal(err)
+		}
+		isTrue := true
+		page, err := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{IsDismissedOnly: &isTrue})
+		if err != nil || len(page.FeedItems) != 2 {
+			t.Fatalf("the dismissed cards: %+v %v", page, err)
+		}
+		for _, entry := range page.FeedItems {
+			if entry.FeedItemID != stackedOne.FeedItemID && entry.FeedItemID != stackedTwo.FeedItemID {
+				t.Fatalf("a card that is not dismissed is listed: %s", entry.Title)
+			}
+			if !entry.IsDismissed || entry.DismissedAt == nil || entry.StackItemCount != 1 || entry.FeedStackKey != stackKey {
+				t.Fatalf("each dismissed card is an entry of its own, with its stack named: %+v", entry)
+			}
+		}
+
+		if isWithdrawn, err := world.resolver.WithdrawAgentFeedItem(ctx, AgentFeedItemArguments{FeedItemID: withdrawn.FeedItemID}); err != nil || !isWithdrawn {
+			t.Fatalf("withdraw: %v %v", isWithdrawn, err)
+		}
+		if _, err := world.resolver.GetAgentFeedItem(ctx, AgentFeedItemArguments{FeedItemID: withdrawn.FeedItemID}); err == nil {
+			t.Fatal("a withdrawn card can still be read")
+		}
+		if page, _ := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{IsDismissedOnly: &isTrue}); len(page.FeedItems) != 2 {
+			t.Fatalf("a withdrawn card is among the dismissed: %d", len(page.FeedItems))
+		}
+		if page, _ := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{}); len(page.FeedItems) != 1 || page.FeedItems[0].FeedItemID != open.FeedItemID {
+			t.Fatalf("the feed keeps the open card alone: %+v", page.FeedItems)
+		}
+	})
+}

@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.AdsClick
@@ -63,18 +64,25 @@ fun FeedInfoSheet(item: AgentFeedItemView, actions: FeedActions, onDismiss: () -
             if (posted != null || (updated != null && updated != posted)) TeaNodeSectionHeader(stringResource(R.string.feed_info_when))
             posted?.let { text -> TeaNodeRow(headline = text, overline = stringResource(R.string.feed_info_posted)) }
             if (updated != null && updated != posted) TeaNodeRow(headline = updated, overline = stringResource(R.string.feed_info_updated))
+            val dismissed = item.dismissedAt?.let { text -> dated(text) }
+            if (dismissed != null) TeaNodeRow(headline = dismissed, overline = stringResource(R.string.feed_info_dismissed))
             if (item.sourceLinks.isNotEmpty()) {
                 TeaNodeSectionHeader(stringResource(R.string.feed_info_sources))
                 for (link in item.sourceLinks) {
                     TeaNodeRow(headline = link.sourceTitle.ifEmpty { link.sourceUrl }, leadingIcon = Icons.Outlined.Link, onClick = { actions.followLink(link.sourceUrl) })
                 }
             }
-            TeaNodeRow(headline = stringResource(R.string.feed_info_show_less), leadingIcon = Icons.Outlined.ThumbDown, onClick = { onDismiss(); model.showLessLike(item, fewerLikeItText) })
-            TeaNodeRow(headline = stringResource(R.string.feed_info_dismiss), leadingIcon = Icons.Outlined.Cancel, onClick = { onDismiss(); model.dismiss(item) })
-            Text(
-                stringResource(R.string.feed_info_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
+            if (model.isDismissedOnly) {
+                // A dismissed card is brought back, not dismissed or shown less of.
+                TeaNodeRow(headline = stringResource(R.string.feed_restore), leadingIcon = Icons.Outlined.Restore, onClick = { onDismiss(); model.swipeAway(item) })
+            } else {
+                TeaNodeRow(headline = stringResource(R.string.feed_info_show_less), leadingIcon = Icons.Outlined.ThumbDown, onClick = { onDismiss(); model.showLessLike(item, fewerLikeItText) })
+                TeaNodeRow(headline = stringResource(R.string.feed_info_dismiss), leadingIcon = Icons.Outlined.Cancel, onClick = { onDismiss(); model.dismiss(item) })
+                Text(
+                    stringResource(R.string.feed_info_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.feed_info_done)) }
             }

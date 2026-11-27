@@ -57,6 +57,13 @@
     <string name="feed_dismiss_read">忽略已读</string>
     <string name="feed_undo">撤销</string>
     <string name="feed_more_actions">更多操作</string>
+    <string name="feed_dismissed_cards">已忽略的卡片</string>
+    <string name="feed_dismissed_title">已忽略的卡片</string>
+    <string name="feed_dismissed_empty_title">没有已忽略的卡片</string>
+    <string name="feed_dismissed_empty_description">已忽略的卡片会保留到过期为止。</string>
+    <string name="feed_restore">恢复</string>
+    <string name="feed_restored">卡片已恢复</string>
+    <string name="feed_info_dismissed">忽略时间</string>
     <plurals name="feed_dismissed_count">
         <item quantity="other">已忽略 %1$d 张卡片</item>
     </plurals>

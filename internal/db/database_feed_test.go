@@ -327,8 +327,9 @@ func TestDismissingCardsByIdsStackAndReadAndRestoringThem(t *testing.T) {
 			t.Fatal("an alert still waiting for its answer was dismissed with the read ones")
 		}
 
-		// Restore: a dismissed card comes back, a settled one stays closed,
-		// an open one and another person's are left out.
+		// Restore: a dismissed card comes back, one answered with an action
+		// comes back with its answer, and an open one and another person's
+		// are left out.
 		if _, err := tx.SettleAgentFeedItem(decision.ID, &models.FeedSettlement{ChoiceKey: "secure"}, now); err != nil {
 			t.Fatal(err)
 		}
@@ -336,17 +337,17 @@ func TestDismissingCardsByIdsStackAndReadAndRestoringThem(t *testing.T) {
 			t.Fatal(err)
 		}
 		restored, err := tx.RestoreAgentFeedItems(userId, []string{first.ID, decision.ID, third.ID, strangers.ID}, now.Add(time.Minute))
-		if ids := idsOf(restored); err != nil || len(restored) != 1 || !ids[first.ID] {
+		if ids := idsOf(restored); err != nil || len(restored) != 2 || !ids[first.ID] || !ids[decision.ID] {
 			t.Fatalf("restore: %+v %v", restored, err)
 		}
-		if settled, _ := tx.GetAgentFeedItem(decision.ID); settled.DismissedAt == nil {
-			t.Fatal("a card a choice settled was restored")
+		if settled, _ := tx.GetAgentFeedItem(decision.ID); settled.DismissedAt != nil || settled.ChosenChoiceKey != "secure" {
+			t.Fatalf("a card answered with an action comes back with its answer: %+v", settled)
 		}
-		if brought, _ := tx.GetAgentFeedItem(first.ID); brought.DismissedAt != nil {
-			t.Fatal("the restored card is still dismissed")
+		if brought, _ := tx.GetAgentFeedItem(first.ID); brought.DismissedAt != nil || brought.ReadAt == nil {
+			t.Fatal("the restored card is still dismissed, or unread again")
 		}
-		if visible, _, _ := tx.ListAgentFeedItems(userId, nil, 10, false, now); len(visible) != 3 {
-			t.Fatalf("the restored, the unread and the waiting alert card are in the list: %d", len(visible))
+		if visible, _, _ := tx.ListAgentFeedItems(userId, nil, 10, false, now); len(visible) != 4 {
+			t.Fatalf("the restored two, the unread and the waiting alert card are in the list: %d", len(visible))
 		}
 
 		// A card past its expiry is out of the feed: it is not dismissed,
@@ -357,6 +358,151 @@ func TestDismissingCardsByIdsStackAndReadAndRestoringThem(t *testing.T) {
 		}
 		if expired, err := tx.RestoreAgentFeedItems(userId, []string{stackedOne.ID}, afterExpiry); err != nil || len(expired) != 0 {
 			t.Fatalf("an expired card was restored: %+v %v", expired, err)
+		}
+	})
+}
+
+// The dismissed cards are listed on their own, the most recently dismissed
+// first, every card an entry even inside a stack, and a page at a time.
+func TestTheDismissedCardsAreListedMostRecentlyDismissedFirst(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId, agentId := feedTestAgent(t, tx, "feed-dismissed-list")
+		otherUserId, otherAgentId := feedTestAgent(t, tx, "feed-dismissed-list-other")
+		start := time.Now()
+		post := func(userId, agentId, title, stackKey string) *models.AgentFeedItem {
+			card := newTestCard(userId, agentId, title)
+			card.FeedStackKey = stackKey
+			stored, _, err := tx.UpsertAgentFeedItem(card, start)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return stored
+		}
+		alone, stackedOne, stackedTwo := post(userId, agentId, "Alone", ""), post(userId, agentId, "Stacked one", "garden"), post(userId, agentId, "Stacked two", "garden")
+		post(userId, agentId, "Still open", "")
+		strangers := post(otherUserId, otherAgentId, "Somebody else's", "")
+		for index, card := range []*models.AgentFeedItem{stackedOne, alone, stackedTwo} {
+			if _, err := tx.DismissAgentFeedItems(userId, &db.FeedDismissSelection{FeedItemIDs: []string{card.ID}}, start.Add(time.Duration(index+1)*time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := tx.DismissAgentFeedItems(otherUserId, &db.FeedDismissSelection{FeedItemIDs: []string{strangers.ID}}, start.Add(time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		now := start.Add(time.Hour)
+		page, next, err := tx.ListDismissedAgentFeedItems(userId, nil, 2, now)
+		if err != nil || len(page) != 2 || page[0].ID != stackedTwo.ID || page[1].ID != alone.ID || next == nil {
+			t.Fatalf("first page: %+v %+v %v", page, next, err)
+		}
+		rest, next, err := tx.ListDismissedAgentFeedItems(userId, next, 2, now)
+		if err != nil || len(rest) != 1 || rest[0].ID != stackedOne.ID || next != nil {
+			t.Fatalf("second page: %+v %+v %v", rest, next, err)
+		}
+		// The cursor goes through its text, as a client hands it back.
+		decoded, err := db.DecodeFeedCursor(db.EncodeFeedCursor(&models.FeedCursor{OrderedAt: *page[1].DismissedAt, ID: page[1].ID}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if again, _, _ := tx.ListDismissedAgentFeedItems(userId, decoded, 2, now); len(again) != 1 || again[0].ID != stackedOne.ID {
+			t.Fatalf("a page from a decoded cursor: %+v", again)
+		}
+		// Expired cards are not among them.
+		afterExpiry := start.Add(time.Duration(models.FeedExpiryDays+1) * 24 * time.Hour)
+		if expired, _, _ := tx.ListDismissedAgentFeedItems(userId, nil, 10, afterExpiry); len(expired) != 0 {
+			t.Fatalf("expired cards are listed: %d", len(expired))
+		}
+	})
+}
+
+// A card answered "not now" comes back waiting for its answer, a card whose
+// subject an open card holds stays where it is, of two dismissed cards on
+// one subject the one dismissed last comes back, and a card answered a day
+// ago is swept to the dismissed cards.
+func TestRestoringRespectsAnswersAndSubjectsAndAnsweredCardsAreSwept(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId, agentId := feedTestAgent(t, tx, "feed-restore-rules")
+		start := time.Now()
+		postKeyed := func(title, coalesceKey string, choices []models.FeedChoice) *models.AgentFeedItem {
+			card := newTestCard(userId, agentId, title)
+			card.CoalesceKey, card.Choices = coalesceKey, choices
+			if len(choices) > 0 {
+				card.FeedItemKind = models.FeedItemDecision
+			}
+			stored, _, err := tx.UpsertAgentFeedItem(card, start)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return stored
+		}
+		dismiss := func(card *models.AgentFeedItem, at time.Time) {
+			if _, err := tx.DismissAgentFeedItems(userId, &db.FeedDismissSelection{FeedItemIDs: []string{card.ID}}, at); err != nil {
+				t.Fatal(err)
+			}
+		}
+		notNow := postKeyed("Try the new route?", "", []models.FeedChoice{
+			{ChoiceKey: "do_it", ChoiceLabel: "Do it", ChoiceRole: models.FeedChoiceAction},
+			{ChoiceKey: "not_now", ChoiceLabel: "Not now", ChoiceRole: models.FeedChoiceDismiss},
+		})
+		if isSettled, err := tx.SettleAgentFeedItem(notNow.ID, &models.FeedSettlement{ChoiceKey: "not_now"}, start); err != nil || !isSettled {
+			t.Fatal(isSettled, err)
+		}
+		dismiss(notNow, start.Add(time.Minute))
+
+		// A subject an open card holds: the old card stays dismissed.
+		oldWeather := postKeyed("Rain this afternoon", "weather:today", nil)
+		dismiss(oldWeather, start.Add(time.Minute))
+		postKeyed("Sun this afternoon", "weather:today", nil)
+
+		// Two dismissed cards on one subject: the later dismissal wins.
+		earlierParcel := postKeyed("Parcel on its way", "parcel:one", nil)
+		dismiss(earlierParcel, start.Add(time.Minute))
+		laterParcel := postKeyed("Parcel out for delivery", "parcel:one", nil)
+		dismiss(laterParcel, start.Add(2*time.Minute))
+
+		now := start.Add(time.Hour)
+		restored, err := tx.RestoreAgentFeedItems(userId, []string{notNow.ID, oldWeather.ID, earlierParcel.ID, laterParcel.ID}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		restoredIds := map[string]bool{}
+		for _, item := range restored {
+			restoredIds[item.ID] = true
+		}
+		if len(restored) != 2 || !restoredIds[notNow.ID] || !restoredIds[laterParcel.ID] {
+			t.Fatalf("restored: %+v", restored)
+		}
+		if waiting, _ := tx.GetAgentFeedItem(notNow.ID); waiting.ChosenChoiceKey != "" || waiting.ChosenAt != nil {
+			t.Fatalf("a card answered not now is waiting again: %+v", waiting)
+		}
+		if still, _ := tx.GetAgentFeedItem(oldWeather.ID); still.DismissedAt == nil {
+			t.Fatal("a card whose subject an open card holds was restored")
+		}
+
+		// The sweep: answered more than a day ago leaves the feed, answered
+		// an hour ago stays.
+		answeredLong := postKeyed("Book the table?", "", []models.FeedChoice{{ChoiceKey: "book", ChoiceLabel: "Book it", ChoiceRole: models.FeedChoiceAction}})
+		answeredRecently := postKeyed("Order more tea?", "", []models.FeedChoice{{ChoiceKey: "order", ChoiceLabel: "Order it", ChoiceRole: models.FeedChoiceAction}})
+		if _, err := tx.SettleAgentFeedItem(answeredLong.ID, &models.FeedSettlement{ChoiceKey: "book"}, now.Add(-25*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.SettleAgentFeedItem(answeredRecently.ID, &models.FeedSettlement{ChoiceKey: "order"}, now.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		swept, err := tx.DismissAgentFeedItemsAnsweredBefore(now.Add(-models.FeedAnsweredLifetime), now)
+		if err != nil || len(swept) != 1 || swept[0].ID != answeredLong.ID || swept[0].DismissedAt == nil {
+			t.Fatalf("swept: %+v %v", swept, err)
+		}
+
+		// A withdrawn card is gone, not dismissed.
+		if err := tx.DeleteAgentFeedItem(answeredRecently.ID); err != nil {
+			t.Fatal(err)
+		}
+		if gone, err := tx.GetAgentFeedItem(answeredRecently.ID); err != nil || gone != nil {
+			t.Fatalf("a deleted card is still there: %+v %v", gone, err)
 		}
 	})
 }

@@ -1009,6 +1009,12 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		if err := authenticator.Scavenge(); err != nil {
 			return err
 		}
+		// Cards answered a day ago leave the feed for the dismissed cards.
+		if self.agentWorker != nil {
+			if err := self.agentWorker.SweepAnsweredFeedItems(ctx); err != nil {
+				return err
+			}
+		}
 		// The turns taken of things done once in a while, the buckets of the
 		// limits that every instance counts together, and the long tool
 		// results held for result_more are rows too. No interval in use is

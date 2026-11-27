@@ -60,9 +60,8 @@ func (self *Agent) ChooseFeedItem(ctx context.Context, settings *FeedChoiceSetti
 	if item.IsChosen() {
 		return nil, feedRefusal("this card is already answered")
 	}
-	if item.DismissedAt != nil {
-		return nil, feedRefusal("this card was dismissed")
-	}
+	// A dismissed card can still be answered from the dismissed cards, and
+	// stays dismissed: putting it back is the person's restore.
 	switch choice.ChoiceRole {
 	case models.FeedChoiceDiscuss, models.FeedChoiceOpen:
 		return item, nil
@@ -301,12 +300,17 @@ func (self *Agent) LikeFeedItem(ctx context.Context, agentId string, item *model
 }
 
 // ShowLessLikeFeedItem records that the person wants fewer cards like this
-// one, and dismisses it.
+// one, and dismisses it. A card already dismissed is only remembered.
 func (self *Agent) ShowLessLikeFeedItem(ctx context.Context, agentId string, item *models.AgentFeedItem) (*models.AgentFeedItem, error) {
 	text := fmt.Sprintf("The person asked to see less like a card in their feed, %q: post fewer cards about this.", item.Title)
 	var dismissed *models.AgentFeedItem
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		if err := self.rememberFeedPreference(tx, agentId, item, text); err != nil {
+			return err
+		}
+		if item.DismissedAt != nil {
+			var err error
+			dismissed, err = tx.GetAgentFeedItem(item.ID)
 			return err
 		}
 		if _, err := tx.DismissAgentFeedItems(item.UserID, &db.FeedDismissSelection{FeedItemIDs: []string{item.ID}}, time.Now()); err != nil {
@@ -348,4 +352,24 @@ func (self *Agent) rememberFeedPreference(tx db.Transaction, agentId string, ite
 		Audiences: []models.AgentAudience{models.AudienceAsk, models.AudienceResearch},
 	})
 	return err
+}
+
+// SweepAnsweredFeedItems moves the cards answered with a choice more than
+// models.FeedAnsweredLifetime ago to the dismissed cards, where they can be
+// found and put back, and tells the open feeds. An answered card has said
+// what it had to; left in place it crowds what still needs the person.
+func (self *Agent) SweepAnsweredFeedItems(ctx context.Context) error {
+	return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		now := time.Now()
+		dismissed, err := tx.DismissAgentFeedItemsAnsweredBefore(now.Add(-models.FeedAnsweredLifetime), now)
+		if err != nil {
+			return err
+		}
+		for _, item := range dismissed {
+			if err := self.announceFeedChange(tx, item, models.FeedChangeDismissed); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

@@ -28,7 +28,7 @@ func init() {
 					"To ask them something, add choices: each a choice_key, a choice_label (what the button says) and a choice_role of action (you carry it out when they press it), dismiss (it closes the card and nothing more) or discuss. Nothing waits on the card: carry on, and the answer reaches you as their message in the main conversation. " +
 					"A card is drawn in one of four layouts, always with a plain body as well: text (the default); list for news stories, chat mentions, review requests and issues, or mail worth reading, with layout_content {listRows: [{rowTitle, rowDetail, rowMeta (the source, or the channel and time), rowSymbol, rowUrl (http or https), rowRecordReference}]}, at most 10 rows; weather for weather, with {placeName, currentTemperature, temperatureUnit (C or F), conditionText, conditionSymbol, highTemperature, lowTemperature, hourlyForecast: [{forecastHour (ISO time), forecastTemperature, forecastSymbol, precipitationChancePercent}]}, at most 12 hours; agenda for a day plan in time order, with {agendaEntries: [{startsAt, endsAt (ISO times), agendaTitle, agendaEntryKind (meeting, focus, task or break), agendaDetail, agendaRecordReference}]}. " +
 					"A brief is one run that posts several cards that belong together: give them stack_title once (\"Morning brief, Wed Nov 19\") and stack_position (the summary at 0, then 1, 2, in reading order); a goal's cards of one run stack by themselves. " +
-					"`update` changes a card you posted, by feed_item_id, where it stands. `withdraw` takes one back when it no longer holds. `dismiss` and `restore` are for when the person asks (\"clear my feed\", \"bring that back\"), never on your own: dismiss closes the cards in feed_item_ids, or every card of a stack_key, or every_read cards the person has read (a decision still waiting for an answer is kept); restore brings feed_item_ids back. `list` shows what is in the feed, to find an id or to see what you already said.",
+					"`update` changes a card you posted, by feed_item_id, where it stands. `withdraw` takes one back for good when it no longer holds: it is deleted, not put among the dismissed cards. `dismiss` and `restore` are for when the person asks (\"clear my feed\", \"bring that back\"), never on your own and never in a goal's own turn: dismiss closes the cards in feed_item_ids, or every card of a stack_key, or every_read cards the person has read (a decision still waiting for an answer is kept); restore brings feed_item_ids back. `list` shows what is in the feed, to find an id or to see what you already said; with dismissed_only it lists the dismissed cards, the most recently dismissed first.",
 				Parameters: tools.Object(map[string]any{
 					"action":         tools.EnumProperty("what to do", "post", "update", "withdraw", "dismiss", "restore", "list"),
 					"feed_item_id":   tools.StringProperty("for update and withdraw: the card, by the id list or post gave"),
@@ -70,6 +70,7 @@ func init() {
 					"feed_item_ids":     tools.ArrayProperty("for dismiss and restore: the cards, at most 500, by the ids list gave", tools.StringProperty("a card's id")),
 					"every_read":        tools.BooleanProperty("for dismiss: every card the person has read, except a decision still waiting for an answer"),
 					"include_dismissed": tools.BooleanProperty("for list: the dismissed cards too"),
+					"dismissed_only":    tools.BooleanProperty("for list: only the dismissed cards, the most recently dismissed first"),
 				}, "action"),
 				Guidance: "feed: post to the feed what the person did not ask for (news, a report, an idea, something they should decide) and keep the main conversation for answering them. One card per subject; `list` first when you may have posted it already. Write the card for them to read: plain words, no ids or tool names, links in the body. A choice is something you can carry out when pressed, not a way to end the card.",
 				Run:      run,
@@ -127,6 +128,7 @@ type arguments struct {
 	Media            []media           `json:"media"`
 	Choices          []choice          `json:"choices"`
 	IsDismissedShown bool              `json:"include_dismissed"`
+	IsDismissedOnly  bool              `json:"dismissed_only"`
 	FeedItemIDs      []string          `json:"feed_item_ids"`
 	IsEveryRead      bool              `json:"every_read"`
 }
@@ -144,12 +146,16 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	feedItemId := strings.TrimSpace(asked.FeedItemID)
 	switch action {
 	case "list":
-		return operate(ctx, client.DocumentListAgentFeed, map[string]any{"first": 30, "includeDismissed": asked.IsDismissedShown}, "ListAgentFeed", "")
+		variables := map[string]any{"first": 30, "includeDismissed": asked.IsDismissedShown}
+		if asked.IsDismissedOnly {
+			variables["isDismissedOnly"] = true
+		}
+		return operate(ctx, client.DocumentListAgentFeed, variables, "ListAgentFeed", "")
 	case "withdraw":
 		if feedItemId == "" {
 			return nil, fmt.Errorf("which card? give feed_item_id, from list")
 		}
-		return operate(ctx, client.DocumentDismissAgentFeedItems, map[string]any{"feedItemIds": []string{feedItemId}}, "DismissAgentFeedItems", "withdrawn")
+		return operate(ctx, client.DocumentWithdrawAgentFeedItem, map[string]any{"feedItemId": feedItemId}, "WithdrawAgentFeedItem", "withdrawn")
 	case "dismiss":
 		variables := map[string]any{}
 		if len(asked.FeedItemIDs) > 0 {
@@ -168,6 +174,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	case "restore":
 		if len(asked.FeedItemIDs) == 0 {
 			return nil, fmt.Errorf("which cards? give feed_item_ids")
+		}
+		// What the person dismissed stays dismissed until they bring it back:
+		// a goal that disagrees posts again, or asks.
+		if here := current.Conversation(); here != nil && here.IsGoal() && current.Headless() {
+			return nil, fmt.Errorf("a goal's own turn cannot restore what the person dismissed; post a new card if it matters again")
 		}
 		return operate(ctx, client.DocumentRestoreAgentFeedItems, map[string]any{"feedItemIds": asked.FeedItemIDs}, "RestoreAgentFeedItems", "brought back")
 	case "post", "update":

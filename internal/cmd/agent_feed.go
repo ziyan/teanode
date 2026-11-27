@@ -20,7 +20,8 @@ func newAgentFeedCommand() *cli.Command {
 		Description: "The feed is a list of cards, newest first: a headline, a few lines, sometimes a short table of facts\n" +
 			"and buttons. 'list' prints them, 'show' one, 'choose' presses a button of a decision, 'like' and 'unlike'\n" +
 			"tell the agent what you want more of, 'less' asks for fewer like it and dismisses the card, 'dismiss'\n" +
-			"closes cards (named, a stack's, or every read one), 'restore' brings them back, 'read' marks cards read, 'discuss' prints the id of the main conversation to talk about a\n" +
+			"closes cards (named, a stack's, or every read one), 'list --dismissed' shows the dismissed ones, 'restore' brings them back,\n" +
+			"'withdraw' deletes one for good, 'read' marks cards read, 'discuss' prints the id of the main conversation to talk about a\n" +
 			"card in, and 'post' puts a card of your own in the feed.",
 		Commands: []*cli.Command{
 			{
@@ -28,6 +29,7 @@ func newAgentFeedCommand() *cli.Command {
 				Usage: "the cards, newest first, and how many are unread",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{Name: "all", Usage: "include cards you dismissed"},
+					&cli.BoolFlag{Name: "dismissed", Usage: "only the cards you dismissed, the most recently dismissed first"},
 					&cli.IntFlag{Name: "limit", Usage: "how many cards, 30 by default"},
 					&cli.StringFlag{Name: "after", Usage: "the cursor a page printed, to read the next page"},
 					JSONFlag(),
@@ -94,10 +96,17 @@ func newAgentFeedCommand() *cli.Command {
 			},
 			{
 				Name:      "restore",
-				Usage:     "bring dismissed cards back; one a choice settled stays closed",
+				Usage:     "bring dismissed cards back; one answered \"not now\" can be answered again",
 				ArgsUsage: "<card-id>...",
 				Flags:     []cli.Flag{JSONFlag()},
 				Action:    runAgentFeedRestore,
+			},
+			{
+				Name:      "withdraw",
+				Usage:     "take a card back for good: it is deleted, not dismissed",
+				ArgsUsage: "<card-id>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentFeedWithdraw,
 			},
 			{
 				Name:      "read",
@@ -163,7 +172,7 @@ func runAgentFeedList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	page, err := client.ListAgentFeed(ctx, connection, command.Int("limit"), command.String("after"), command.Bool("all"))
+	page, err := client.ListAgentFeed(ctx, connection, command.Int("limit"), command.String("after"), command.Bool("all"), command.Bool("dismissed"))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -171,6 +180,10 @@ func runAgentFeedList(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(page)
 	}
 	if len(page.FeedItems) == 0 {
+		if command.Bool("dismissed") {
+			_, _ = fmt.Fprintln(command.Writer, "nothing dismissed")
+			return nil
+		}
 		_, _ = fmt.Fprintln(command.Writer, "the feed is empty")
 		return nil
 	}
@@ -384,6 +397,21 @@ func runAgentFeedRestore(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	return printFeedChangeCount(command, "restored", restoredIds)
+}
+
+func runAgentFeedWithdraw(ctx context.Context, command *cli.Command) error {
+	feedItemId, err := feedCardArgument(command, "teanode agent feed withdraw <card-id>", 1)
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := client.WithdrawAgentFeedItem(ctx, connection, feedItemId); err != nil {
+		return describeError(command, err)
+	}
+	return printFeedChangeCount(command, "withdrawn", []string{feedItemId})
 }
 
 // printFeedChangeCount says how many cards a dismissal or restore changed
