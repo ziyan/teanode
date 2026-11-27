@@ -68,8 +68,9 @@ func TestAReplyIsReadFromTheConversation(t *testing.T) {
 		t.Errorf("a message of another conversation was kept: %+v", kept)
 	}
 
-	kept = keep([]models.AgentReference{{QuotedRole: "user", QuotedText: "  " + strings.Repeat("long words ", 200)}})
-	if len(kept) != 1 || kept[0].QuotedRole != "user" || len([]rune(kept[0].QuotedText)) > replyQuoteCharacters+1 {
+	longWords := strings.TrimSpace(strings.Repeat("long words ", 2000))
+	kept = keep([]models.AgentReference{{QuotedRole: "user", QuotedText: "  " + longWords}})
+	if len(kept) != 1 || kept[0].QuotedRole != "user" || kept[0].QuotedText != longWords {
 		t.Errorf("a line without an id: %+v", kept)
 	}
 	turn = userTurn(context.Background(), nil, "I meant that", nil, nil, kept)
