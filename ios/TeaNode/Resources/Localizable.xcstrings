@@ -99354,6 +99354,22 @@
           }
         }
       }
+    },
+    "Background run": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドの実行"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台运行"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

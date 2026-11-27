@@ -114,24 +114,33 @@ struct OversightView: View {
     /// about now; Failed has no kind, since a failed turn is listed by when.
     private var filterMenu: some View {
         Menu {
+            // Each choice is a titled section of plain rows: a menu-style
+            // picker inside the menu opened a submenu that drew a blank,
+            // checked row.
             if request.segment != .running {
-                Picker("Range", selection: $request.range) {
-                    ForEach(OversightRange.allCases) { range in
-                        Text(verbatim: Self.rangeTitle(range)).tag(range)
+                Section("Range") {
+                    Picker("Range", selection: $request.range) {
+                        ForEach(OversightRange.allCases) { range in
+                            Text(verbatim: Self.rangeTitle(range)).tag(range)
+                        }
                     }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
                 }
-                .pickerStyle(.menu)
             }
             if request.segment != .failed {
-                Picker("Kind", selection: $request.kind) {
-                    Text("Any kind").tag(String?.none)
-                    Text("Main chats").tag(String?.some("main"))
-                    Text("Named chats").tag(String?.some("named"))
-                    ForEach(AgentRunSummary.jobKinds, id: \.self) { jobKind in
-                        Text(verbatim: UpkeepWords.runKind(jobKind)).tag(String?.some(jobKind))
+                Section("Kind") {
+                    Picker("Kind", selection: $request.kind) {
+                        Text("Any kind").tag(String?.none)
+                        Text("Main chats").tag(String?.some("main"))
+                        Text("Named chats").tag(String?.some("named"))
+                        ForEach(AgentRunSummary.jobKinds, id: \.self) { jobKind in
+                            Text(verbatim: UpkeepWords.runKind(jobKind)).tag(String?.some(jobKind))
+                        }
                     }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
                 }
-                .pickerStyle(.menu)
             }
         } label: {
             Label("Filter", systemImage: isFiltered ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
@@ -291,6 +300,7 @@ struct OversightView: View {
         switch kind {
         case "main": String(localized: "Main chat")
         case "named": String(localized: "Named chat")
+        case "run": String(localized: "Background run")
         default: UpkeepWords.runKind(kind)
         }
     }
