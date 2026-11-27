@@ -81,7 +81,7 @@ struct OversightView: View {
             }
         }
         .navigationTitle("Oversight")
-        .searchable(text: $request.query, prompt: Text("What"))
+        .searchable(text: $request.query, prompt: Text("Search conversations"))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 filterMenu
@@ -246,10 +246,11 @@ struct OversightView: View {
                         .foregroundStyle(Color(.secondaryLabel))
                         .symbolEffect(.variableColor.iterative, isActive: true)
                 }
-                if let jobKind = run.jobKind, !jobKind.isEmpty {
+                // A main chat with no title is already called that above.
+                if let jobKind = run.jobKind, !jobKind.isEmpty, !run.title.isEmpty {
                     UpkeepTag(text: Self.kindTitle(jobKind))
                 }
-                Text(verbatim: runDetails(run)).font(.caption).foregroundStyle(Color(.secondaryLabel)).lineLimit(1)
+                Text(verbatim: runDetails(run)).font(.caption).foregroundStyle(Color(.secondaryLabel)).lineLimit(2)
             }
         }
         .accessibilityElement(children: .combine)
