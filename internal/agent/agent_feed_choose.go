@@ -60,9 +60,8 @@ func (self *Agent) ChooseFeedItem(ctx context.Context, settings *FeedChoiceSetti
 	if item.IsChosen() {
 		return nil, feedRefusal("this card is already answered")
 	}
-	if item.DismissedAt != nil {
-		return nil, feedRefusal("this card was dismissed")
-	}
+	// A dismissed card can still be answered from the dismissed cards, and
+	// stays dismissed: putting it back is the person's restore.
 	switch choice.ChoiceRole {
 	case models.FeedChoiceDiscuss, models.FeedChoiceOpen:
 		return item, nil
@@ -301,12 +300,17 @@ func (self *Agent) LikeFeedItem(ctx context.Context, agentId string, item *model
 }
 
 // ShowLessLikeFeedItem records that the person wants fewer cards like this
-// one, and dismisses it.
+// one, and dismisses it. A card already dismissed is only remembered.
 func (self *Agent) ShowLessLikeFeedItem(ctx context.Context, agentId string, item *models.AgentFeedItem) (*models.AgentFeedItem, error) {
 	text := fmt.Sprintf("The person asked to see less like a card in their feed, %q: post fewer cards about this.", item.Title)
 	var dismissed *models.AgentFeedItem
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		if err := self.rememberFeedPreference(tx, agentId, item, text); err != nil {
+			return err
+		}
+		if item.DismissedAt != nil {
+			var err error
+			dismissed, err = tx.GetAgentFeedItem(item.ID)
 			return err
 		}
 		if _, err := tx.DismissAgentFeedItems(item.UserID, &db.FeedDismissSelection{FeedItemIDs: []string{item.ID}}, time.Now()); err != nil {
@@ -327,6 +331,10 @@ func (self *Agent) ShowLessLikeFeedItem(ctx context.Context, agentId string, ite
 // person likes and does not like in their feed.
 var feedPreferencePath = models.JoinPath(models.PathSelf, "feed")
 
+// feedPreferenceFactsChecked is how many of the facts of the preference page
+// are read to see whether a preference is on it already.
+const feedPreferenceFactsChecked = 2000
+
 // rememberFeedPreference files a preference as a fact on its page, the way the
 // memory tool files one.
 func (self *Agent) rememberFeedPreference(tx db.Transaction, agentId string, item *models.AgentFeedItem, text string) error {
@@ -342,10 +350,36 @@ func (self *Agent) rememberFeedPreference(tx db.Transaction, agentId string, ite
 			return err
 		}
 	}
+	// The same words said again (a second show less on the same card, a like
+	// taken back and given again) are not a second fact.
+	existing, err := tx.ListAgentFacts(agentId, node.ID, true, feedPreferenceFactsChecked)
+	if err != nil {
+		return err
+	}
+	for _, fact := range existing {
+		if strings.TrimSpace(fact.Text) == strings.TrimSpace(text) {
+			return nil
+		}
+	}
 	_, err = tx.AddAgentFact(&models.AgentFact{
 		AgentID: agentId, NodeID: node.ID, Kind: models.FactPreference, Text: text, Confidence: 1,
 		Evidence:  []models.Evidence{{Kind: models.EvidencePerson, Quote: cutMarked(item.Title, 100)}},
 		Audiences: []models.AgentAudience{models.AudienceAsk, models.AudienceResearch},
 	})
 	return err
+}
+
+// SweepAnsweredFeedItems moves the cards answered with a choice more than
+// models.FeedAnsweredLifetime ago to the dismissed cards, where they can be
+// found and put back, and tells the open feeds. An answered card has said
+// what it had to; left in place it crowds what still needs the person.
+func (self *Agent) SweepAnsweredFeedItems(ctx context.Context) error {
+	return self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		now := time.Now()
+		dismissed, err := tx.DismissAgentFeedItemsAnsweredBefore(now.Add(-models.FeedAnsweredLifetime), now)
+		if err != nil {
+			return err
+		}
+		return self.announceFeedChanges(tx, dismissed, models.FeedChangeDismissed)
+	})
 }

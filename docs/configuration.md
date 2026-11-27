@@ -1249,7 +1249,7 @@ Runs with nobody present keep their own.
 
 **`features`** — What people may turn on at all.
 
-**`limits`** — What a run may cost.
+**`limits`**: what the agents may spend, per person per day and for the whole server per month, in tokens and in money.
 
 **`currency`** — The three-letter code every amount this server shows or
 caps is written in. Its own section below.
@@ -1579,44 +1579,9 @@ prices are in euros enters them in euros and says `EUR` here.
 
 ### `agent.limits`
 
-**`maxBodyCharacters`** — How much of a message a model is given; the rest
-is cut with a marker.
-
-**`maxRecordingMediaBytes`** bounds one original recording audio/video file,
-including all resumable transport parts. Zero resolves to 2GB.
-
-**`maxRecordingAccountBytes`** bounds the total reserved original media for one
-account. Incomplete uploads and recordings awaiting blob deletion count against
-this limit. Zero resolves to 64GB. Neither limit changes conversation attachments.
-
-**`maxAttachmentBytes`** — The most one upload to a conversation may carry,
-across its files; `25MB` by default. A picture is shown to the model, a
-text file is read to it, and anything else is named.
-
-**`maxChatAttachmentAccountBytes`** bounds the files one person may keep of those
-they have sent in chats; `1GB` when it is not set. A message with files stays
-until somebody deletes it, and everybody in the chat reads them, so these
-are not swept the way a file handed to the agent is. A send that would take a
-person past it is refused, with how much they keep and what to do: delete old
-messages with files to make room. Not to be confused with `maxAttachmentBytes`
-above, which bounds one upload.
-
-**`maxSentFileBytes`** bounds one file sent to a person's main chat: by a
-program over MCP, by the agent from another conversation, or by a run nobody
-is present for (`share_file` with `to: "main_chat"`, `teanode agent
-send-file`); `100MB` when it is not set, which takes a few minutes of a
-screen recording.
-
-**`maxScannedAttachmentBytes`** — The largest file a knowledge source
-carries off a person's machine: a picture or a document that a record in a
-`records` folder said it came with, kept in object storage so that
-something can read it later. `25MB` by default, which takes in every
-screenshot and nearly every document while leaving out the videos and disk
-images that would fill a store without teaching the agent anything.
-Anything larger is named on the source's page as passed over, and never
-uploaded. One source may set its own, in bytes, on its specification; this
-is what the rest use. Not to be confused with `maxAttachmentBytes` above,
-which is what a person may hand the agent in a conversation.
+Four numbers, and nothing else: what the agents may spend. Every other bound
+the agent used to take as a setting is a fixed technical bound now, or gone
+(`docs/decisions/20261126-no-limits-on-how-often-work-starts.md`).
 
 **`dailyTokensPerAgent`** — The default budget per person per day, which an
 operator may override for one person. At the limit, processing for that
@@ -1638,98 +1603,55 @@ first stops the day. Zero means no limit of this kind.
 in a month, beside `monthlyTokensPerServer`, and warned about at 80 % the
 same way. Zero means no cap.
 
-**`embeddingTokensPerDay`** — Meant to bound embedding apart from
-everything else, because the first pass over a person's checkout and chat
-archive is a hundred million tokens at a thousandth of the price of a
-conversation, and counting it against the same daily budget would stop
-the load on its first night and every night after. Zero, the default, is
-no limit. Set, validated and read by nothing so far: embedding is counted
-in `dailyTokensPerAgent` and in the money caps like every other call, and
-this does not yet change that.
+There is no limit on how many rounds a turn takes, how many turns a goal
+takes, how many times finished background work wakes a conversation, how much
+of the day goals or a night may spend, or how many embeddings a day: the
+daily and monthly limits above bound what any of it costs, and a turn goes on
+until the model answers, the budget defers it, the loop guard stops it (the
+same call failing three times) or the person stops it.
 
-**`dreamShare`** — How much of the daily budget one night's run may
-spend, as a fraction, so that a night never eats the day. Zero resolves
-to `0.3`.
+**How long a call to a provider may take.** There is no limit on how long an
+answer takes in total. An answer that streams is cut only when nothing has
+arrived from the provider for 3 minutes, a heartbeat line included, and every
+byte starts the 3 minutes again, so a long document read that keeps arriving
+is never cut. A call that does not stream, such as a list of models or a
+vector, has 15 minutes in all, so that a connection that died without telling
+anyone still ends. Neither is a setting.
 
-**`scanConcurrency`** — How many calls the nightly reading makes at once.
-One for a service metered by the call; as many as it has slots for a
-model of the person's own, where the reading is bound by nothing but the
-machine. Zero and one both mean one at a time.
+**Fixed technical bounds.** These were settings and are constants now, at
+the values they had by default:
 
-**`recallTokens`** — How much of a turn's prompt the pages and facts
-recall carries may take, in tokens, a third of it held for facts that no
-carried page holds. Zero resolves to `1200`, about two to four pages. More
-carries more of what recall found, on every turn.
+- one original recording file, 2 GB, and an account's reserved originals, 64
+  GB (the uploads and the disk);
+- one upload to a conversation, 25 MB, across its files (read into memory and
+  sent to a model); a file a knowledge source carries off a person's machine,
+  25 MB unless the source sets its own on its specification;
+- one file sent to a person's main chat, 100 MB, and the files one person
+  keeps of those they sent in chats, 1 GB (a message with files stays until
+  somebody deletes it, and nothing sweeps them);
+- a message given to a model, 12,000 characters, the rest cut with a marker;
+- how much of a turn's prompt recall carries, 1,200 tokens, a third held for
+  facts that no carried page holds;
+- the chunks one ingest pass embeds before it hands the queue back, 2,000;
+- the nightly reading and the page rewrites, one call at a time each;
+- runs a worker executes at once, 2, per instance.
 
-**`digestDocumentRunes`** — A bound on how much of each document a
-dream's reading is shown, in characters, from its first passage on. Zero,
-the default, reads every document whole: a call holds as many documents
-as fit in about forty thousand characters, twenty at most, and a longer
-document is read in parts of that size, in order, and marked read with
-its last part. Set it to read less of each, for less reading.
+A dream reads every document whole, a long one in parts of what one call
+holds; there is no bound on how much of each it is shown.
 
-**`rewriteConcurrency`** — How many pages the nightly run rewrites at once,
-after the reading. One when unset. Each rewrite changes only its own page,
-so pages can be rewritten side by side; on a model that answers slowly, a
-few at once is what leaves the rest of the night its time.
-
-**`ingestChunksPerRun`** — How many chunks one pass of an ingest job
-embeds before it hands the queue back, so that one enormous source does
-not hold the worker. Zero resolves to `2000`.
-
-**`maxRoundsPerAsk`** — How many times one conversation turn may go back to
-the model. 150 by default; it was 40, which a turn working through a long
-errand on the person's computer ran out of.
-
-**`maxRoundsPerSubagent`** — How many rounds one subagent may take. Zero
-resolves to `20`.
-
-**`goalShare`** — How much of the daily budget the goals at their own pace
-may spend between them, as a fraction, so that goals never eat the day. Goals
-on set times are bounded by their times. Zero resolves to `0.5`.
-
-**`goalTurnsAlone`** — How many turns a goal takes without a word
-from the person before it stops and asks them. Zero resolves to `24`.
-
-**`backgroundWakesAlone`** — How many turns finished background commands and
-work may wake in one conversation before the person writes there again; past
-it, endings are written into the conversation and wake nothing. Zero resolves
-to `20`.
-
-**`maxRoundsPerResearch`** — The same for a research run.
-
-**`maxRoundsPerDream`** — How many turns one call of a dream may take: a
-batch of documents read, a month written up, a page divided. Each is a run
-of the conversation loop, and the ones that decide where something goes have
-every tool the person has — including their attached computer — so a call may
-look a page up, find a file and run something over it before it answers.
-Twelve by default, the last of which is told it is the last and must answer.
-It was four while a night could only look a page up; four left nothing for
-the answer once the smallest useful errand on a machine took three rounds.
-Setting it puts the pacing back wherever an operator wants it, and it also
-bounds the call that describes an indexed checkout.
-
-**`maxRoundsPerReply`** — How many turns a drafting run may take. A reply is a
-run of the conversation loop now, with the thread, the mailbox, the address
-book and the diary to read before it writes: "are you free Thursday" cannot be
-answered from the message alone. Six by default.
-
-**`maxRoundsPerTriage`** — How many turns a sorting run may take, three by
-default. The smallest of the three on purpose: sorting happens to every
-message that arrives, and nearly every message can be sorted from what is in
-front of the model, so the prompt tells it to answer at once and this is the
-ceiling on the exceptions.
-
-**`maxToolCallsPerRun`** — Set, validated, and read by nothing. What actually
-bounds a run is `maxRoundsPerAsk`, together with the rule that stops a turn
-when the same call has failed three times. Kept so a stored configuration does
-not fail to load.
-
-**`requestTimeout`** — How long one call to a provider may take.
-
-**`concurrency`** — How many runs a worker executes at once, per instance.
-Read when the worker is built, so a change needs a restart of that instance,
-which the status line says is owed.
+The keys `maxBodyCharacters`, `maxRecordingMediaBytes`,
+`maxRecordingAccountBytes`, `maxAttachmentBytes`,
+`maxChatAttachmentAccountBytes`, `maxSentFileBytes`,
+`maxScannedAttachmentBytes`, `scanConcurrency`, `recallTokens`,
+`digestDocumentRunes`, `rewriteConcurrency`, `ingestChunksPerRun`,
+`requestTimeout` and `concurrency`, and the keys `maxRoundsPerAsk`,
+`maxRoundsPerResearch`, `maxRoundsPerReply`, `maxRoundsPerTriage`,
+`maxRoundsPerDream`, `maxRoundsPerSubagent`, `maxToolCallsPerRun`,
+`goalShare`, `goalTurnsAlone`, `backgroundWakesAlone`, `dreamShare` and
+`embeddingTokensPerDay`, are gone. A configuration that still has them loads,
+logs a warning for each, and loses them the next time it is saved. The
+settings GraphQL still answers them, as zero or empty, for one release so an
+older app's page loads, and ignores them when they are sent.
 
 ### `agent.retention`
 

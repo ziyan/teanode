@@ -102,7 +102,9 @@ func newCodex(baseUrl, refreshToken, account string, client *http.Client) (*code
 	// Without one it is said, where an operator will see it: the cost of
 	// not saying it is a server that signs in perfectly well until it
 	// restarts and then cannot, with nothing to connect the two.
-	signer, err := sharedSignIn(codexTokenUrl, codexClientId, refreshToken, client, func(string) {
+	// The sign-in has its own client, with the short timeout a token
+	// request deserves; the plan's requests are under guardedDo.
+	signer, err := sharedSignIn(codexTokenUrl, codexClientId, refreshToken, nil, func(string) {
 		log.Warningf(
 			"the %s provider was given a new refresh token; the one in the configuration is now stale "+
 				"and will not work after a restart. Sign in again from the dashboard.",
@@ -112,7 +114,7 @@ func newCodex(baseUrl, refreshToken, account string, client *http.Client) (*code
 		return nil, err
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Minute}
+		client = &http.Client{}
 	}
 
 	return &codex{
@@ -337,7 +339,13 @@ func (self *codex) send(ctx context.Context, method, path string, body []byte, a
 			request.Header.Set("conversation_id", session)
 		}
 
-		answer, err := self.http.Do(request)
+		// A stream is cut when it goes quiet; a plain answer, like the
+		// list of models, has a whole of its own.
+		idle, total := streamIdleTimeout, time.Duration(0)
+		if accept != "text/event-stream" {
+			idle, total = 0, plainRequestTimeout
+		}
+		answer, err := guardedDo(self.http, request, idle, total)
 		if err != nil {
 			return nil, fmt.Errorf("llm: %w", err)
 		}

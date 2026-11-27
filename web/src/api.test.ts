@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { APIError, graphql, isNotFound } from './api'
+import { APIError, AGENT_OPEN_EVENT, graphql, isNotFound, sendToAgentConversation } from './api'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -67,5 +67,29 @@ describe('isNotFound', () => {
     expect(isNotFound(new APIError('db: not found: conversation'))).toBe(true)
     expect(isNotFound(new APIError('api: permission denied'))).toBe(false)
     expect(isNotFound(new Error('api: not found'))).toBe(false)
+  })
+})
+
+describe('sendToAgentConversation', () => {
+  function opened(conversationId: string, message: string) {
+    const details: { conversationId: string; draft?: string; shouldSendDraft?: boolean }[] = []
+    const listener = (event: Event) => details.push((event as CustomEvent).detail)
+    window.addEventListener(AGENT_OPEN_EVENT, listener)
+    sendToAgentConversation(conversationId, message)
+    window.removeEventListener(AGENT_OPEN_EVENT, listener)
+    return details
+  }
+
+  it('sends a message into the conversation it opens', () => {
+    const [detail] = opened('chat-one', 'Plan the week.')
+    expect(detail.draft).toBe('Plan the week.')
+    expect(detail.shouldSendDraft).toBe(true)
+  })
+
+  it('only opens the conversation when there is no message, as for an idea that started a goal', () => {
+    const [detail] = opened('goal-one', '')
+    expect(detail.conversationId).toBe('goal-one')
+    expect(detail.shouldSendDraft).toBeFalsy()
+    expect(detail.draft).toBeFalsy()
   })
 })

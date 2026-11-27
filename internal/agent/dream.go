@@ -64,10 +64,6 @@ const (
 	// cost almost nothing to read.
 	digestSmallest = 8
 
-	// dreamShareDefault is how much of the day's budget a night may
-	// spend when the operator has not said.
-	dreamShareDefault = 0.3
-
 	// dreamEmbed is how many vectors one night writes.
 	dreamEmbed = 2000
 
@@ -127,26 +123,21 @@ func (self *Agent) runDream(ctx context.Context, run *Run) error {
 		return err
 	}
 
-	// A night spends the day's share of the day, so it never eats the
-	// day. What today's earlier nights spent comes off it: the share is
-	// what is kept from the person's conversation, and a night that
-	// starts from the whole share again keeps nothing when nights run
-	// every six hours. Read from the usage rows, which the loop writes as
-	// it goes, so a night that was killed still counts.
-	share := configuration.Agent.Limits.DreamShare
-	if share <= 0 {
-		share = dreamShareDefault
-	}
-	var spentDreaming int64
+	// A night is bounded by the person's daily limit like everything else:
+	// what the day has already spent, in conversation and in earlier
+	// nights, comes off what is left for this one. Read from the usage
+	// rows, which the loop writes as it goes, so a night that was killed
+	// still counts.
+	var spentToday int64
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		spentDreaming, err = SumSpendOfKind(tx, run.Agent.ID, string(models.AgentJobDream), DayStart(run.Owner, time.Now()))
+		spentToday, _, err = SumSpend(tx, configuration, run.Agent.ID, DayStart(run.Owner, time.Now()))
 		return err
 	}); err != nil {
-		// The night goes ahead on its own share alone, which is what it
-		// had before this was read at all.
-		log.Warningf("cannot read what today's nights have spent for agent %q: %s", run.Agent.ID, err)
+		// The night goes ahead on the daily limit its calls check one by
+		// one.
+		log.Warningf("cannot read what today has spent for agent %q: %s", run.Agent.ID, err)
 	}
-	budget := newDreamBudget(configuration, run.Agent, share, spentDreaming)
+	budget := newDreamBudget(configuration, run.Agent, spentToday)
 
 	// A night in order. Read what arrived, write it up, tidy the pages it
 	// touched, then the two halves proper: the arithmetic one that

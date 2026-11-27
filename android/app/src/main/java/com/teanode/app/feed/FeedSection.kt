@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -112,6 +113,11 @@ fun FeedSection() {
                         enabled = model.hasDismissibleReadCard,
                         onClick = { isMenuOpen = false; model.dismissRead() },
                     )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.feed_dismissed_cards)) },
+                        leadingIcon = { Icon(Icons.Outlined.Restore, contentDescription = null) },
+                        onClick = { isMenuOpen = false; navigator.navigate(FeedRoutes.DISMISSED) },
+                    )
                 }
             }
         },
@@ -169,6 +175,8 @@ internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Mo
     val actions = remember(model, navigator, linkOpener) { FeedActions(model, scope, navigator, linkOpener) }
     model.onProblem = { failure -> snackbar.showError(failure) }
     model.onDone = { text -> snackbar.show(text) }
+    val restoredText = stringResource(R.string.feed_restored)
+    model.onRestored = { snackbar.show(restoredText) }
     // After any dismissal the cards are gone already; the snackbar says how many and offers to bring them back.
     val resources = LocalContext.current.resources
     model.onDismissed = { feedItemIds ->
@@ -203,16 +211,21 @@ internal fun FeedListBody(model: FeedModel, areDecksShown: Boolean, modifier: Mo
     // The cards sit on the grouped page, so in light mode they are white on grey.
     Box(modifier.fillMaxSize().background(feedPageColor()).onGloballyPositioned { coordinates -> listCoordinates = coordinates }.gatherDecksOnTapOutside(model, deckBounds) { listCoordinates }) {
         when {
-            list != null && list.feedItems.isEmpty() -> PullToRefresh(onRefresh = { model.refresh() }, Modifier.fillMaxSize()) {
+            // A list emptied by what the person just did is read again before it may say it is empty.
+            list != null && list.feedItems.isEmpty() && !model.isReadingAgain -> PullToRefresh(onRefresh = { model.refresh() }, Modifier.fillMaxSize()) {
                 // Scrollable, or the pull could not be made on an empty feed.
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         if (offeredUpdate != null) Box(Modifier.padding(16.dp)) { appUpdateCard() }
-                        EmptyState(AppSection.Feed.icon, stringResource(R.string.feed_empty_title), Modifier.height(this@BoxWithConstraints.maxHeight), description = stringResource(R.string.feed_empty_description))
+                        if (model.isDismissedOnly) {
+                            EmptyState(Icons.Outlined.Restore, stringResource(R.string.feed_dismissed_empty_title), Modifier.height(this@BoxWithConstraints.maxHeight), description = stringResource(R.string.feed_dismissed_empty_description))
+                        } else {
+                            EmptyState(AppSection.Feed.icon, stringResource(R.string.feed_empty_title), Modifier.height(this@BoxWithConstraints.maxHeight), description = stringResource(R.string.feed_empty_description))
+                        }
                     }
                 }
             }
-            list != null -> PullToRefresh(onRefresh = { model.refresh() }, Modifier.fillMaxSize()) {
+            list != null && !(list.feedItems.isEmpty() && model.isReadingAgain) -> PullToRefresh(onRefresh = { model.refresh() }, Modifier.fillMaxSize()) {
                 LazyColumn(Modifier.fillMaxSize().testTag(FEED_LIST_TAG), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (offeredUpdate != null) item(key = "app-update") { appUpdateCard() }
                     items(list.feedItems, key = { item -> item.feedItemId }) { item ->

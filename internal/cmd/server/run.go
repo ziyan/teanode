@@ -1015,7 +1015,7 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		// longer than a month (a watch may look as rarely as it likes, and
 		// one rarer than that looks again a little early), no refill longer
 		// than a day, and a result is read on for half an hour.
-		return self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 			now := time.Now()
 			if _, err := tx.DeleteThrottlesTakenBefore(now.Add(-31 * 24 * time.Hour)); err != nil {
 				return err
@@ -1025,7 +1025,17 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 			}
 			_, err := tx.DeleteMcpHeldResultsStoredBefore(now.Add(-time.Hour))
 			return err
-		})
+		}); err != nil {
+			return err
+		}
+		// Cards answered a day ago leave the feed for the dismissed cards.
+		// Last, so that a failure here never skips the cleanups above.
+		if self.agentWorker != nil {
+			if err := self.agentWorker.SweepAnsweredFeedItems(ctx); err != nil {
+				log.Errorf("cannot sweep the answered feed cards: %s", err)
+			}
+		}
+		return nil
 	}, &periodic.Settings{
 		Interval: time.Hour,
 		Name:     "web:scavenge",
@@ -1330,10 +1340,6 @@ func startupOnly(configuration *config.Configuration) map[string]any {
 		"agent.enabled":   configuration.Agent.Enabled,
 		"agent.providers": withoutRefreshTokens(configuration.Agent.Providers),
 		"agent.models":    configuration.Agent.Models,
-		// The worker sizes its slots once, when it starts. Raising the
-		// number to let an ingest run beside a dream did nothing until a
-		// restart, and the status line said none was owed.
-		"agent.limits.concurrency": configuration.Agent.Limits.Concurrency,
 		// The certificate and the keys a renewal writes are left out, because
 		// every renewal, by whichever instance made it, would otherwise ask
 		// every instance for a restart; see withoutRenewal.

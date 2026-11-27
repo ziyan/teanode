@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/decide"
@@ -23,7 +22,7 @@ import (
 func TestADeciderIsNotAChatProvider(test *testing.T) {
 	test.Parallel()
 
-	service, err := NewProvider("typesafe", "https://example.test/v1", "a-key", time.Second)
+	service, err := NewProvider("typesafe", "https://example.test/v1", "a-key")
 	if err != nil {
 		test.Fatalf("NewProvider: %s", err)
 	}
@@ -55,7 +54,7 @@ func TestTheChatProvidersStillChat(test *testing.T) {
 	test.Parallel()
 
 	for _, kind := range []string{"openai", "anthropic", "gemini"} {
-		service, err := NewProvider(kind, "https://example.test", "a-key", time.Second)
+		service, err := NewProvider(kind, "https://example.test", "a-key")
 		if err != nil {
 			test.Fatalf("%s: %s", kind, err)
 		}
@@ -86,7 +85,7 @@ func TestADecisionGoesThroughTheProvider(test *testing.T) {
 	}))
 	defer server.Close()
 
-	service, err := NewProvider("typesafe", server.URL+"/v1", "a-key", time.Second)
+	service, err := NewProvider("typesafe", server.URL+"/v1", "a-key")
 	if err != nil {
 		test.Fatalf("NewProvider: %s", err)
 	}

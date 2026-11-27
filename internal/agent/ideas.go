@@ -153,6 +153,17 @@ var ideaUsedChecks = map[string]usedCheck{
 		}
 		return false, err
 	},
+	// A person who has a goal called the daily brief, however they came by
+	// it, is not offered another.
+	"daily_brief": func(tx db.Transaction, agent *models.Agent, owner *models.User) (bool, error) {
+		goals, err := tx.ListAgentGoals(agent.ID, nil, 0)
+		if err != nil {
+			return false, err
+		}
+		return slices.ContainsFunc(goals, func(goal *models.AgentConversation) bool {
+			return strings.EqualFold(strings.TrimSpace(goal.GoalTitle), BriefGoalTitle)
+		}), nil
+	},
 	"goal": func(tx db.Transaction, agent *models.Agent, owner *models.User) (bool, error) {
 		goals, err := tx.ListAgentGoals(agent.ID, nil, 1)
 		return len(goals) > 0, err
@@ -454,7 +465,7 @@ func (self *Agent) StartIdea(ctx context.Context, tx db.Transaction, agent *mode
 				return nil, nil, err
 			}
 			if existing != nil {
-				return &localized, existing, nil
+				return withoutOpeningRequestForGoal(&localized, existing), existing, nil
 			}
 		}
 	default:
@@ -467,6 +478,17 @@ func (self *Agent) StartIdea(ctx context.Context, tx db.Transaction, agent *mode
 		}
 		if conversation == nil || conversation.AgentID != agent.ID {
 			return nil, nil, fmt.Errorf("%w: there is no conversation %q", db.ErrNotFound, conversationId)
+		}
+	} else if idea.IdeaKey == ideaKeyDailyBrief {
+		// The one idea that starts what it offers: "Do it" on the daily
+		// brief starts the goal itself, and the goal's own conversation is
+		// the one that opens.
+		owner, err := tx.GetUser(agent.UserID)
+		if err != nil || owner == nil {
+			return nil, nil, fmt.Errorf("%w: the owner of the agent is gone", db.ErrNotFound)
+		}
+		if conversation, err = self.StartGoal(tx, agent, owner, DailyBriefGoal(agent, owner)); err != nil {
+			return nil, nil, err
 		}
 	} else if conversation, err = tx.CreateAgentConversation(&models.AgentConversation{
 		AgentID: agent.ID, Kind: models.AgentConversationNamed, Title: idea.Headline, TitledBy: "person", LastAt: time.Now(),
@@ -483,7 +505,24 @@ func (self *Agent) StartIdea(ctx context.Context, tx db.Transaction, agent *mode
 		return nil
 	})
 	localizeIdeas([]*models.AgentIdea{started}, language)
-	return started, conversation, err
+	if err != nil {
+		return nil, nil, err
+	}
+	return withoutOpeningRequestForGoal(started, conversation), conversation, nil
+}
+
+// withoutOpeningRequestForGoal clears the opening request of the idea given
+// back when it started a goal (the daily brief). The clients send the
+// opening request into the conversation as the person's message, and a
+// goal's own conversation has nothing to be asked: the goal is already
+// running. The stored idea keeps its words.
+func withoutOpeningRequestForGoal(idea *models.AgentIdea, conversation *models.AgentConversation) *models.AgentIdea {
+	if conversation == nil || conversation.Kind != models.AgentConversationGoal {
+		return idea
+	}
+	copied := *idea
+	copied.OpeningRequest = ""
+	return &copied
 }
 
 // SetIdeaStatus is the person saying what became of an idea: done,
@@ -647,13 +686,12 @@ var (
 )
 
 // ideaReason is the agent offering one idea to a person who has gone quiet,
-// at most once a day. The idea is the
+// no more often than ideaOfferApart. The idea is the
 // highest ranked one they have not been shown; offering it marks it shown,
 // and it stays on their list of ideas whatever they answer.
 func (self *Agent) ideaReason() speakFirstReason {
 	return speakFirstReason{
-		name:           SpeakFirstIdea,
-		isDailyLimited: true,
+		name: SpeakFirstIdea,
 		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
 			if !agent.IsSuggestionsEnabled || agent.OnboardedAt == nil || idle < ideaIdle {
 				return false, nil

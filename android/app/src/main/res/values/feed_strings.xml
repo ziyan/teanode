@@ -57,8 +57,32 @@
     <string name="feed_dismiss_read">Dismiss read</string>
     <string name="feed_undo">Undo</string>
     <string name="feed_more_actions">More actions</string>
+    <string name="feed_dismissed_cards">Dismissed cards</string>
+    <string name="feed_dismissed_title">Dismissed cards</string>
+    <string name="feed_dismissed_empty_title">Nothing dismissed</string>
+    <string name="feed_dismissed_empty_description">Dismissed cards are kept until they expire.</string>
+    <string name="feed_restore">Restore</string>
+    <string name="feed_restored">Card restored</string>
+    <string name="feed_info_dismissed">Dismissed</string>
     <plurals name="feed_dismissed_count">
         <item quantity="one">%1$d card dismissed</item>
         <item quantity="other">%1$d cards dismissed</item>
     </plurals>
+    <string name="feed_resolved_chip">Resolved %1$s</string>
+    <string name="feed_resolved">Resolved</string>
+    <string name="feed_resolve">Resolve</string>
+    <string name="feed_unresolve">Unresolve</string>
+    <string name="feed_resolve_title">Resolve this card</string>
+    <string name="feed_resolve_message">Mark the problem as cleared. The card stays where it is.</string>
+    <string name="feed_resolve_note_label">Note (optional)</string>
+    <string name="feed_resolve_note_hint">One line on how it cleared</string>
+    <string name="feed_resolve_cancel">Cancel</string>
+    <string name="feed_resolve_done">Card marked resolved</string>
+    <string name="feed_unresolve_done">Card marked unresolved</string>
+    <string name="feed_show_card">Show the card</string>
+    <string name="feed_media_camera_still">Camera still</string>
+    <string name="feed_still_opens_recording">Opens the recording</string>
+    <string name="feed_watch_live">Watch live</string>
+    <string name="feed_camera_line">%1$s · %2$s</string>
+    <string name="feed_chart_unit_value">%1$s %2$s</string>
 </resources>

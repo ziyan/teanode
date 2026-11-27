@@ -58,19 +58,88 @@ func (self *deprecatedAcme) empty() bool {
 	return self.AccountKeyFile == "" && self.CertificateFile == "" && self.PrivateKeyFile == ""
 }
 
-// deprecatedLimits covers the goal caps the spending share replaced.
+// deprecatedLimits covers the caps on how often or how much the agent's work
+// runs. The daily and monthly money limits bound spend whatever starts the
+// work, so these are gone.
 type deprecatedLimits struct {
-	// A goal's turns a day: goals now spend at most agent.limits.goalShare
-	// of the day between them.
 	RetiredGoalTurnsPerDay int `yaml:"goalTurnsPerDay,omitempty"`
-
-	// Goals at once: the same share bounds what they cost, however many
-	// there are.
 	RetiredGoalsInProgress int `yaml:"goalsInProgress,omitempty"`
+
+	RetiredGoalShare             float64 `yaml:"goalShare,omitempty"`
+	RetiredDreamShare            float64 `yaml:"dreamShare,omitempty"`
+	RetiredGoalTurnsAlone        int     `yaml:"goalTurnsAlone,omitempty"`
+	RetiredBackgroundWakesAlone  int     `yaml:"backgroundWakesAlone,omitempty"`
+	RetiredMaxRoundsPerAsk       int     `yaml:"maxRoundsPerAsk,omitempty"`
+	RetiredMaxRoundsPerResearch  int     `yaml:"maxRoundsPerResearch,omitempty"`
+	RetiredMaxRoundsPerReply     int     `yaml:"maxRoundsPerReply,omitempty"`
+	RetiredMaxRoundsPerTriage    int     `yaml:"maxRoundsPerTriage,omitempty"`
+	RetiredMaxRoundsPerDream     int     `yaml:"maxRoundsPerDream,omitempty"`
+	RetiredMaxRoundsPerSubagent  int     `yaml:"maxRoundsPerSubagent,omitempty"`
+	RetiredMaxToolCallsPerRun    int     `yaml:"maxToolCallsPerRun,omitempty"`
+	RetiredEmbeddingTokensPerDay int64   `yaml:"embeddingTokensPerDay,omitempty"`
+
+	// Technical bounds that were settings: now constants, or gone.
+	RetiredMaxBodyCharacters             int      `yaml:"maxBodyCharacters,omitempty"`
+	RetiredScanConcurrency               int      `yaml:"scanConcurrency,omitempty"`
+	RetiredRecallTokens                  int      `yaml:"recallTokens,omitempty"`
+	RetiredDigestDocumentRunes           int      `yaml:"digestDocumentRunes,omitempty"`
+	RetiredRewriteConcurrency            int      `yaml:"rewriteConcurrency,omitempty"`
+	RetiredIngestChunksPerRun            int      `yaml:"ingestChunksPerRun,omitempty"`
+	RetiredRequestTimeout                Duration `yaml:"requestTimeout,omitempty"`
+	RetiredMaxRecordingMediaBytes        ByteSize `yaml:"maxRecordingMediaBytes,omitempty"`
+	RetiredMaxRecordingAccountBytes      ByteSize `yaml:"maxRecordingAccountBytes,omitempty"`
+	RetiredMaxAttachmentBytes            ByteSize `yaml:"maxAttachmentBytes,omitempty"`
+	RetiredMaxSentFileBytes              ByteSize `yaml:"maxSentFileBytes,omitempty"`
+	RetiredMaxChatAttachmentAccountBytes ByteSize `yaml:"maxChatAttachmentAccountBytes,omitempty"`
+	RetiredMaxScannedAttachmentBytes     ByteSize `yaml:"maxScannedAttachmentBytes,omitempty"`
+	RetiredConcurrency                   int      `yaml:"concurrency,omitempty"`
+}
+
+// retiredLimitNotices lists each retired key that is set, with the line
+// that says where it went.
+func (self *deprecatedLimits) retiredLimitNotices() []string {
+	const reason = "is no longer used: the daily money limit bounds this"
+	var notices []string
+	add := func(isSet bool, key, why string) {
+		if isSet {
+			notices = append(notices, "agent.limits."+key+" "+why)
+		}
+	}
+	add(self.RetiredGoalTurnsPerDay > 0, "goalTurnsPerDay", reason)
+	add(self.RetiredGoalsInProgress > 0, "goalsInProgress", reason)
+	add(self.RetiredGoalShare > 0, "goalShare", reason)
+	add(self.RetiredDreamShare > 0, "dreamShare", reason)
+	add(self.RetiredGoalTurnsAlone > 0, "goalTurnsAlone", reason)
+	add(self.RetiredBackgroundWakesAlone > 0, "backgroundWakesAlone", reason)
+	add(self.RetiredMaxRoundsPerAsk > 0, "maxRoundsPerAsk", reason)
+	add(self.RetiredMaxRoundsPerResearch > 0, "maxRoundsPerResearch", reason)
+	add(self.RetiredMaxRoundsPerReply > 0, "maxRoundsPerReply", reason)
+	add(self.RetiredMaxRoundsPerTriage > 0, "maxRoundsPerTriage", reason)
+	add(self.RetiredMaxRoundsPerDream > 0, "maxRoundsPerDream", reason)
+	add(self.RetiredMaxRoundsPerSubagent > 0, "maxRoundsPerSubagent", reason)
+	add(self.RetiredMaxToolCallsPerRun > 0, "maxToolCallsPerRun", reason)
+	add(self.RetiredEmbeddingTokensPerDay > 0, "embeddingTokensPerDay", reason)
+
+	const fixed = "is no longer a setting: it is a fixed technical bound now, and the daily and monthly money limits are the only limits"
+	add(self.RetiredMaxBodyCharacters > 0, "maxBodyCharacters", fixed)
+	add(self.RetiredScanConcurrency > 0, "scanConcurrency", fixed)
+	add(self.RetiredRecallTokens > 0, "recallTokens", fixed)
+	add(self.RetiredRewriteConcurrency > 0, "rewriteConcurrency", fixed)
+	add(self.RetiredIngestChunksPerRun > 0, "ingestChunksPerRun", fixed)
+	add(self.RetiredMaxRecordingMediaBytes > 0, "maxRecordingMediaBytes", fixed)
+	add(self.RetiredMaxRecordingAccountBytes > 0, "maxRecordingAccountBytes", fixed)
+	add(self.RetiredMaxAttachmentBytes > 0, "maxAttachmentBytes", fixed)
+	add(self.RetiredMaxSentFileBytes > 0, "maxSentFileBytes", fixed)
+	add(self.RetiredMaxChatAttachmentAccountBytes > 0, "maxChatAttachmentAccountBytes", fixed)
+	add(self.RetiredMaxScannedAttachmentBytes > 0, "maxScannedAttachmentBytes", fixed)
+	add(self.RetiredConcurrency > 0, "concurrency", fixed)
+	add(self.RetiredDigestDocumentRunes > 0, "digestDocumentRunes", "is no longer used: every document is read whole")
+	add(self.RetiredRequestTimeout > 0, "requestTimeout", "is no longer used: an answer has no total time limit, a streamed one is cut when nothing arrives for 3 minutes, and one that does not stream gets 15 minutes")
+	return notices
 }
 
 func (self *deprecatedLimits) empty() bool {
-	return self.RetiredGoalTurnsPerDay == 0 && self.RetiredGoalsInProgress == 0
+	return *self == deprecatedLimits{}
 }
 
 // What older releases stored. A provider's models was an object of allow and
@@ -132,11 +201,8 @@ func (self *Configuration) migrateGoalLimits() {
 	if outdated.empty() {
 		return
 	}
-	if outdated.RetiredGoalTurnsPerDay > 0 {
-		log.Warningf("agent.limits.goalTurnsPerDay is no longer used; goals at their own pace spend at most agent.limits.goalShare of the day between them")
-	}
-	if outdated.RetiredGoalsInProgress > 0 {
-		log.Warningf("agent.limits.goalsInProgress is no longer used; agent.limits.goalShare bounds what goals cost, however many there are")
+	for _, notice := range outdated.retiredLimitNotices() {
+		log.Warningf("%s", notice)
 	}
 	self.Agent.Limits.deprecatedLimits = deprecatedLimits{}
 }

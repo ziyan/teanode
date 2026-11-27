@@ -10,14 +10,20 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /** The agent feed's GraphQL: the same text as the iPhone app's (ios/TeaNodeKit AgentFeed.swift), which the server's tests check against the schema. */
 object AgentFeedDocuments {
     private const val FEED_ITEM_FIELDS = """feedItemId feedItemKind feedSourceKind feedSourceId feedSourceTitle runConversationId title body pictureSymbol
 factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl } choices { choiceKey choiceLabel choiceRole }
-chosenChoiceKey chosenAt outcomeText isOutcomePending feedUrgency isLiked isRead isDismissed postedAt updatedAt
+chosenChoiceKey chosenAt outcomeText isOutcomePending feedUrgency isLiked isRead isDismissed dismissedAt postedAt updatedAt
 feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent
-feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }"""
+isResolved resolvedAt resolutionNote resolvedByKind
+chartBlocks { chartKind chartTitle unit provenance xLabels series { seriesName seriesRole values } markers { markerAt markerLabel } bars { barLabel barValue } }
+feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex cameraName capturedAt stillReason playbackUrl liveUrl }"""
 
     const val LIST_AGENT_FEED_STACK = """query (${'$'}feedStackKey: String!, ${'$'}first: Int, ${'$'}after: String) {
   ListAgentFeedStack(feedStackKey: ${'$'}feedStackKey, first: ${'$'}first, after: ${'$'}after) {
@@ -26,8 +32,8 @@ feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCapti
     unreadCount
   }
 }"""
-    const val LIST_AGENT_FEED = """query (${'$'}first: Int, ${'$'}after: String, ${'$'}includeDismissed: Boolean) {
-  ListAgentFeed(first: ${'$'}first, after: ${'$'}after, includeDismissed: ${'$'}includeDismissed) {
+    const val LIST_AGENT_FEED = """query (${'$'}first: Int, ${'$'}after: String, ${'$'}includeDismissed: Boolean, ${'$'}isDismissedOnly: Boolean) {
+  ListAgentFeed(first: ${'$'}first, after: ${'$'}after, includeDismissed: ${'$'}includeDismissed, isDismissedOnly: ${'$'}isDismissedOnly) {
     feedItems { $FEED_ITEM_FIELDS }
     nextCursor
     unreadCount
@@ -51,6 +57,12 @@ feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCapti
     const val MARK_AGENT_FEED_READ = """mutation (${'$'}feedItemIds: [String!]!) {
   MarkAgentFeedRead(feedItemIds: ${'$'}feedItemIds)
 }"""
+    const val RESOLVE_AGENT_FEED_ITEM = """mutation (${'$'}feedItemId: String!, ${'$'}resolutionNote: String) {
+  ResolveAgentFeedItem(feedItemId: ${'$'}feedItemId, resolutionNote: ${'$'}resolutionNote) { $FEED_ITEM_FIELDS }
+}"""
+    const val UNRESOLVE_AGENT_FEED_ITEM = """mutation (${'$'}feedItemId: String!) {
+  UnresolveAgentFeedItem(feedItemId: ${'$'}feedItemId) { $FEED_ITEM_FIELDS }
+}"""
     const val DISCUSS_AGENT_FEED_ITEM = """mutation (${'$'}feedItemId: String!) {
   DiscussAgentFeedItem(feedItemId: ${'$'}feedItemId)
 }"""
@@ -60,14 +72,15 @@ feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCapti
     const val AGENT_FEED_CHANGED = """subscription { AgentFeedChanged { feedItemId feedChange unreadCount } }"""
 }
 
-/** The kinds of picture a card carries: one of the person's photos, one of their videos, or the picture of a web page. */
-enum class AgentFeedMediaKind { Photo, Video, Picture;
+/** The kinds of picture a card carries: one of the person's photos, one of their videos, the picture of a web page, or a still from one of their cameras. */
+enum class AgentFeedMediaKind { Photo, Video, Picture, CameraStill;
 
     companion object {
         /** A kind a newer server sends is drawn as a picture: its image is all the app can be sure to have. */
         fun of(name: String): AgentFeedMediaKind = when (name) {
             "photo" -> Photo
             "video" -> Video
+            "camera_still" -> CameraStill
             else -> Picture
         }
     }
@@ -95,8 +108,38 @@ data class AgentFeedMediaView(
     val widthPixels: Int? = null,
     val heightPixels: Int? = null,
     val listRowIndex: Int? = null,
+    /** A camera still's camera, such as "Front door"; missing for the others. */
+    val cameraName: String? = null,
+    /** When the still was taken (RFC 3339), on the camera's own clock with its offset; missing for the others. */
+    val capturedAt: String? = null,
+    /** Why this camera was chosen, one line; missing for the others. */
+    val stillReason: String? = null,
+    /** Where the recording of that moment plays (https or the app's own scheme); missing when there is none. */
+    val playbackUrl: String? = null,
+    /** Where the camera's live view opens (https or the app's own scheme); missing when there is none. */
+    val liveUrl: String? = null,
 ) {
     val kind: AgentFeedMediaKind get() = AgentFeedMediaKind.of(feedMediaKind)
+
+    val isCameraStill: Boolean get() = kind == AgentFeedMediaKind.CameraStill
+
+    val cameraLabel: String get() = cameraName.orEmpty()
+
+    val reasonText: String get() = stillReason.orEmpty()
+
+    /** The address of the recording, when it is one the app may follow. */
+    val playbackAddress: String? get() = playbackUrl?.takeIf { address -> isFollowable(address) }
+
+    /** The address of the live view, when it is one the app may follow. */
+    val liveAddress: String? get() = liveUrl?.takeIf { address -> isFollowable(address) }
+
+    /**
+     * The still's time as the camera's own clock says it: `14:02:11`, and when that clock is not [deviceZone]'s at that moment,
+     * the offset after it (`14:02:11 UTC+09:00`); empty when there is no readable time.
+     */
+    fun capturedAtText(deviceZone: ZoneId = ZoneId.systemDefault()): String = AgentFeedClock.cameraTime(capturedAt, deviceZone)
+
+    private fun isFollowable(address: String): Boolean = address.lowercase().let { lowered -> lowered.startsWith("https://") || lowered.startsWith("teanode://") }
 
     val caption: String get() = mediaCaption.orEmpty()
 
@@ -140,6 +183,127 @@ enum class AgentFeedMediaArrangement {
             media.size == 1 -> if (media.first().isPortrait) SinglePortrait else Single
             media.size <= GRID_MOST -> Grid
             else -> Row
+        }
+    }
+}
+
+/** How a card's clock times are written for the person: the device's zone is never named, any other zone is. */
+object AgentFeedClock {
+    private val hoursAndMinutes = DateTimeFormatter.ofPattern("HH:mm")
+    private val hoursMinutesSeconds = DateTimeFormatter.ofPattern("HH:mm:ss")
+
+    /** The zone's name as a short offset, such as `UTC+09:00`, or `UTC` for none. */
+    fun zoneName(offsetSeconds: Int): String {
+        if (offsetSeconds == 0) return "UTC"
+        val total = Math.abs(offsetSeconds) / 60
+        return "UTC" + (if (offsetSeconds < 0) "-" else "+") + "%02d:%02d".format(total / 60, total % 60)
+    }
+
+    /** A camera's `HH:mm:ss` on its own clock, with its zone's name after it when that is not [deviceZone] at that moment. */
+    fun cameraTime(text: String?, deviceZone: ZoneId): String {
+        val moment = runCatching { OffsetDateTime.parse(text.orEmpty()) }.getOrNull() ?: return ""
+        val clock = moment.format(hoursMinutesSeconds)
+        val deviceOffsetSeconds = deviceZone.rules.getOffset(moment.toInstant()).totalSeconds
+        return if (deviceOffsetSeconds == moment.offset.totalSeconds) clock else clock + " " + zoneName(moment.offset.totalSeconds)
+    }
+
+    /** An instant's `HH:mm` in [deviceZone], the person's own; empty when the text is not a time. */
+    fun resolvedTime(text: String?, deviceZone: ZoneId): String {
+        val instant = runCatching { Instant.parse(text.orEmpty()) }.getOrNull() ?: runCatching { OffsetDateTime.parse(text.orEmpty()).toInstant() }.getOrNull() ?: return ""
+        return instant.atZone(deviceZone).format(hoursAndMinutes)
+    }
+}
+
+/** What a line of a chart stands for: what was measured, a line to compare with (last month, the average), or what is expected ahead. */
+enum class AgentFeedSeriesRole(val roleName: String) {
+    Measured("measured"),
+    Reference("reference"),
+    Projection("projection"),
+    ;
+
+    companion object {
+        /** A role this app does not know is drawn as measured. */
+        fun of(roleName: String): AgentFeedSeriesRole = entries.firstOrNull { role -> role.roleName == roleName } ?: Measured
+    }
+}
+
+/** AgentFeedChartSeries is one line of a series chart: a number for each label of the axis, or null where there is none. */
+@Serializable
+data class AgentFeedChartSeries(
+    val seriesName: String = "",
+    val seriesRole: String = "measured",
+    val values: List<Double?> = emptyList(),
+) {
+    val role: AgentFeedSeriesRole get() = AgentFeedSeriesRole.of(seriesRole)
+}
+
+/** AgentFeedChartMarker is a labeled vertical rule at one of the axis labels. */
+@Serializable
+data class AgentFeedChartMarker(val markerAt: String = "", val markerLabel: String = "")
+
+/** AgentFeedChartBar is one bar of a bars chart. */
+@Serializable
+data class AgentFeedChartBar(val barLabel: String = "", val barValue: Double = 0.0)
+
+/**
+ * AgentFeedChartBlock is a chart on a card: a series over time, or bars. [provenance] says where and when the numbers were read.
+ * A [chartKind] this app does not know is drawn as nothing.
+ */
+@Serializable
+data class AgentFeedChartBlock(
+    /** series or bars. */
+    val chartKind: String = "series",
+    val chartTitle: String = "",
+    /** What the numbers count, such as "USD" or "steps". */
+    val unit: String = "",
+    val provenance: String = "",
+    val xLabels: List<String> = emptyList(),
+    val series: List<AgentFeedChartSeries> = emptyList(),
+    val markers: List<AgentFeedChartMarker> = emptyList(),
+    val bars: List<AgentFeedChartBar> = emptyList(),
+) {
+    val isSeries: Boolean get() = chartKind == "series" && xLabels.size >= 2 && series.isNotEmpty()
+
+    val isBars: Boolean get() = chartKind == "bars" && bars.isNotEmpty()
+
+    /** Whether the chart has anything to draw. */
+    val isDrawable: Boolean get() = isSeries || isBars
+
+    /** The bars largest first, whatever order they came in. */
+    val orderedBars: List<AgentFeedChartBar> get() = bars.sortedByDescending { bar -> bar.barValue }
+
+    /** The markers that sit on the axis, with the position of each label; one that is not on the axis is left out. */
+    val placedMarkers: List<Pair<Int, AgentFeedChartMarker>> get() = markers.mapNotNull { marker -> xLabels.indexOf(marker.markerAt).takeIf { position -> position >= 0 }?.let { position -> position to marker } }
+
+    /** Whether a series chart has a reference line or a projection, which the legend names. */
+    val hasLegend: Boolean get() = series.size > 1
+
+    /** A sentence for a screen reader: the title, then each line's first and last numbers, or each bar. */
+    fun description(): String {
+        val unitText = if (unit.isEmpty()) "" else " $unit"
+        val parts = ArrayList<String>()
+        if (chartTitle.isNotEmpty()) parts.add(chartTitle)
+        if (isBars) {
+            parts.add(orderedBars.joinToString(", ") { bar -> "${bar.barLabel} ${trimmed(bar.barValue)}$unitText" })
+        } else if (isSeries) {
+            for (line in series) {
+                val known = line.values.withIndex().filter { entry -> entry.value != null && entry.index < xLabels.size }
+                if (known.isEmpty()) continue
+                val first = known.first()
+                val last = known.last()
+                parts.add("${line.seriesName.ifEmpty { line.seriesRole }}: ${xLabels[first.index]} ${trimmed(first.value!!)}$unitText to ${xLabels[last.index]} ${trimmed(last.value!!)}$unitText")
+            }
+            for ((position, marker) in placedMarkers) parts.add("${marker.markerLabel} at ${xLabels[position]}")
+        }
+        if (provenance.isNotEmpty()) parts.add(provenance)
+        return parts.joinToString(". ")
+    }
+
+    companion object {
+        /** A number as a person writes it: no trailing zeros, thousands apart. */
+        fun trimmed(value: Double): String {
+            val isWhole = value == Math.rint(value) && Math.abs(value) < 1e15
+            return if (isWhole) "%,d".format(value.toLong()) else "%,.2f".format(value).trimEnd('0').trimEnd('.')
         }
     }
 }
@@ -205,6 +369,8 @@ data class AgentFeedItemView(
     val isLiked: Boolean = false,
     val isRead: Boolean = false,
     val isDismissed: Boolean = false,
+    /** When the card was dismissed (RFC 3339); null for a card that is not dismissed. */
+    val dismissedAt: String? = null,
     val postedAt: String = "",
     val updatedAt: String = "",
     /** The stack this card belongs to; empty for a card that stands alone. */
@@ -221,7 +387,35 @@ data class AgentFeedItemView(
     val layoutContent: String = "",
     /** The card's pictures, at most six. */
     val feedMedia: List<AgentFeedMediaView> = emptyList(),
+    /** Whether the problem the card told of has cleared; the card is then drawn muted, with a "Resolved" chip. */
+    val isResolved: Boolean = false,
+    /** When the card was resolved (RFC 3339); null for a card that is not resolved. */
+    val resolvedAt: String? = null,
+    /** One line saying how it cleared; empty when none was given. */
+    val resolutionNote: String = "",
+    /** goal, person or agent; empty for a card that is not resolved. */
+    val resolvedByKind: String = "",
+    /** The card's charts, at most two. */
+    val chartBlocks: List<AgentFeedChartBlock> = emptyList(),
 ) {
+    /** The charts the app can draw, in order. */
+    val drawableCharts: List<AgentFeedChartBlock> get() = chartBlocks.filter { chart -> chart.isDrawable }
+
+    /** The camera stills of the card, which have their own look: a caption, the camera's time and why. */
+    val cameraStills: List<AgentFeedMediaView> get() = cardMedia.filter { media -> media.isCameraStill }
+
+    /** The pictures that are not camera stills, which the media block draws. */
+    val plainCardMedia: List<AgentFeedMediaView> get() = cardMedia.filter { media -> !media.isCameraStill }
+
+    /** The time the card was resolved, `HH:mm` in [deviceZone]; empty when it is not resolved or the time cannot be read. */
+    fun resolvedTimeText(deviceZone: ZoneId = ZoneId.systemDefault()): String = if (isResolved) AgentFeedClock.resolvedTime(resolvedAt, deviceZone) else ""
+
+    /** Whether the card was answered and the agent's work on it is done, so it folds to its title and one line. */
+    val isAnswerFoldable: Boolean get() = isChosen && !isOutcomePending
+
+    /** The one muted line a folded answered card shows: the choice made, then what came of it. */
+    val foldedAnswerText: String get() = listOf(chosenChoice?.choiceLabel.orEmpty(), outcomeText).filter { part -> part.isNotEmpty() }.joinToString(" · ")
+
     /** The pictures of the whole card, not the thumbnails of a list's rows; one with no image to draw is left out. */
     val cardMedia: List<AgentFeedMediaView> get() = feedMedia.filter { media -> media.listRowIndex == null && media.imageUrl.isNotEmpty() }
 
@@ -300,7 +494,7 @@ data class AgentFeedPage(
     val unreadCount: Int = 0,
 )
 
-/** AgentFeedChanged is what the server says happened to a card. [feedChange] is posted, replaced, settled, dismissed or restored. */
+/** AgentFeedChanged is what the server says happened to a card. [feedChange] is posted, replaced, settled, dismissed, restored, resolved or unresolved. */
 @Serializable
 data class AgentFeedChanged(val feedItemId: String, val feedChange: String, val unreadCount: Int = 0)
 
@@ -356,6 +550,48 @@ data class AgentFeedList(
     fun isUnread(feedItemId: String): Boolean = feedItems.firstOrNull { item -> item.feedItemId == feedItemId }?.isRead == false
 }
 
+/** One entry of the dismissed cards as a screen draws it: a card alone, or the consecutive cards of one stack as a deck. */
+sealed interface AgentFeedDismissedEntry {
+    /** The card drawn on top: the only card of an entry alone, the newest of a deck. */
+    val topCard: AgentFeedItemView
+
+    data class Single(override val topCard: AgentFeedItemView) : AgentFeedDismissedEntry
+
+    /** [feedItems] are the deck's cards in the order they were read, the top card first. */
+    data class Deck(val feedStackKey: String, val feedItems: List<AgentFeedItemView>) : AgentFeedDismissedEntry {
+        override val topCard: AgentFeedItemView get() = feedItems.first()
+    }
+}
+
+/**
+ * Groups dismissed cards into entries: consecutive cards with one non-empty `feedStackKey` become a deck, every other card
+ * is an entry alone. The order is kept, so a deck sits where its newest card was.
+ */
+fun groupDismissedFeedItems(feedItems: List<AgentFeedItemView>): List<AgentFeedDismissedEntry> {
+    val entries = ArrayList<AgentFeedDismissedEntry>()
+    var index = 0
+    while (index < feedItems.size) {
+        val feedStackKey = feedItems[index].feedStackKey
+        var end = index + 1
+        if (feedStackKey.isNotEmpty()) while (end < feedItems.size && feedItems[end].feedStackKey == feedStackKey) end++
+        entries.add(if (end - index > 1) AgentFeedDismissedEntry.Deck(feedStackKey, feedItems.subList(index, end).toList()) else AgentFeedDismissedEntry.Single(feedItems[index]))
+        index = end
+    }
+    return entries
+}
+
+/**
+ * The dismissed cards as the feed's list draws them: each deck is its top card standing for the stack, with the count of
+ * the deck's cards and how many of them are unread, as the server gives a stack's top card in the feed.
+ */
+fun foldDismissedFeedItems(feedItems: List<AgentFeedItemView>): List<AgentFeedItemView> =
+    groupDismissedFeedItems(feedItems).map { entry ->
+        when (entry) {
+            is AgentFeedDismissedEntry.Single -> entry.topCard
+            is AgentFeedDismissedEntry.Deck -> entry.topCard.copy(stackItemCount = entry.feedItems.size, stackUnreadCount = entry.feedItems.count { card -> !card.isRead })
+        }
+    }
+
 @Serializable
 private class ListAgentFeedAnswer(val ListAgentFeed: AgentFeedPage)
 
@@ -382,16 +618,26 @@ private class RestoreAgentFeedItemsAnswer(val RestoreAgentFeedItems: List<String
 private class MarkAgentFeedReadAnswer(val MarkAgentFeedRead: Int)
 
 @Serializable
+private class ResolveAgentFeedItemAnswer(val ResolveAgentFeedItem: AgentFeedItemView)
+
+@Serializable
+private class UnresolveAgentFeedItemAnswer(val UnresolveAgentFeedItem: AgentFeedItemView)
+
+@Serializable
 private class DiscussAgentFeedItemAnswer(val DiscussAgentFeedItem: String)
 
 /** How many cards a page of the feed holds. */
 const val AGENT_FEED_PAGE_SIZE = 30
 
-/** A page of the feed, newest first; [after] is the previous page's `nextCursor`. */
-suspend fun Connection.agentFeed(after: String? = null, first: Int = AGENT_FEED_PAGE_SIZE, includeDismissed: Boolean = false): AgentFeedPage {
+/**
+ * A page of the feed, newest first; [after] is the previous page's `nextCursor`. With [isDismissedOnly] the page lists
+ * the dismissed cards that have not expired instead, the most recently dismissed first, each one an entry of its own.
+ */
+suspend fun Connection.agentFeed(after: String? = null, first: Int = AGENT_FEED_PAGE_SIZE, includeDismissed: Boolean = false, isDismissedOnly: Boolean = false): AgentFeedPage {
     val variables = hashMapOf<String, JsonElement>("first" to JsonPrimitive(first))
     if (!after.isNullOrEmpty()) variables["after"] = JsonPrimitive(after)
     if (includeDismissed) variables["includeDismissed"] = JsonPrimitive(true)
+    if (isDismissedOnly) variables["isDismissedOnly"] = JsonPrimitive(true)
     return execute<ListAgentFeedAnswer>(AgentFeedDocuments.LIST_AGENT_FEED, variables).ListAgentFeed
 }
 
@@ -447,6 +693,17 @@ suspend fun Connection.markAgentFeedRead(feedItemIds: List<String>): Int =
         AgentFeedDocuments.MARK_AGENT_FEED_READ,
         mapOf("feedItemIds" to JsonArray(feedItemIds.map { feedItemId -> JsonPrimitive(feedItemId) })),
     ).MarkAgentFeedRead
+
+/** Marks a card resolved, with an optional one line [resolutionNote]. A card already resolved is refused by the server, so the first note stands. */
+suspend fun Connection.resolveAgentFeedItem(feedItemId: String, resolutionNote: String? = null): AgentFeedItemView {
+    val variables = hashMapOf<String, JsonElement>("feedItemId" to JsonPrimitive(feedItemId))
+    if (!resolutionNote.isNullOrBlank()) variables["resolutionNote"] = JsonPrimitive(resolutionNote.trim())
+    return execute<ResolveAgentFeedItemAnswer>(AgentFeedDocuments.RESOLVE_AGENT_FEED_ITEM, variables).ResolveAgentFeedItem
+}
+
+/** Takes the resolution off a card. */
+suspend fun Connection.unresolveAgentFeedItem(feedItemId: String): AgentFeedItemView =
+    execute<UnresolveAgentFeedItemAnswer>(AgentFeedDocuments.UNRESOLVE_AGENT_FEED_ITEM, mapOf("feedItemId" to JsonPrimitive(feedItemId))).UnresolveAgentFeedItem
 
 /** Opens the main conversation about a card (the card is attached to the next message there) and answers its id. */
 suspend fun Connection.discussAgentFeedItem(feedItemId: String): String =

@@ -64,6 +64,11 @@ func LoadHeaders(ctx context.Context, store storage.Storage, mail *models.Mail) 
 	return nil
 }
 
+// messageBodyCharactersMost is how much of a message a model is given: what
+// fits a small model's window beside the instructions, and more than any
+// message that is worth reading says before its quoted history begins.
+const messageBodyCharactersMost = 12000
+
 // BuildMessageContext reads a stored message and reduces it.
 func BuildMessageContext(ctx context.Context, store storage.Storage, mail *models.Mail, maximumCharacters int, includeQuoted bool) (*MessageContext, error) {
 	return buildMessageContext(ctx, store, mail, maximumCharacters, includeQuoted, true)

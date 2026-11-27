@@ -6,6 +6,61 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.240.0] - 2026-11-27
+
+### Added
+
+- Feed cards can be marked resolved when their problem clears, carry charts with where their numbers came from, and show a still from a home camera. (#796)
+
+## [0.239.0] - 2026-11-27
+
+### Changed
+
+- No hidden limit holds back the agent's work any more: no round caps, no shares of the day, and no stall after a goal's turns. The daily and monthly money limits are what bound it. (#798)
+
+### Removed
+
+- The Daily brief page and the look around settings. Both are ordinary goals in the Goals list now. (#798)
+- Quiet hours and the daily cap on alerts. The phone's Focus decides when it is quiet. (#798)
+
+## [0.238.0] - 2026-11-27
+
+### Added
+
+- A list of the dismissed feed cards on the dashboard, both phone apps and the command line. The cards work as in the feed, and a swipe puts one back. (#792)
+
+### Changed
+
+- A feed card answered a day ago moves to the dismissed cards on its own, and a card the agent withdraws is removed rather than dismissed. (#792)
+
+## [0.237.0] - 2026-11-27
+
+### Added
+
+- Oversight: an Administrator can see what every person's agent is running, has done and has failed at, and open any of it read-only. Each read is recorded in the audit log. (#795)
+
+## [0.236.5] - 2026-11-27
+
+### Fixed
+
+- A background run no longer fails outright when the model flags a request as against its usage policy. It asks once more, which is what worked by hand. (#799)
+
+## [0.236.4] - 2026-11-27
+
+### Fixed
+
+- Phone notifications no longer show Markdown marks such as `#`, `-`, `|` or `_`. (#793)
+
+## [0.236.3] - 2026-11-27
+
+### Changed
+
+- A long conversation is now compacted while it is quiet. A reply no longer waits on the note, and each round sends far less than half the model's window. (#794)
+
+### Fixed
+
+- A turn on the ChatGPT plan no longer fails when one of its tools answers with nothing. (#797)
+
 ## [0.236.2] - 2026-11-25
 
 ### Fixed

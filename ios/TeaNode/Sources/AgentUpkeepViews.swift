@@ -57,19 +57,6 @@ struct UpkeepTag: View {
 /// UpkeepWords is how these screens say the server's times, amounts and
 /// fixed words, as the dashboard says them.
 enum UpkeepWords {
-    static func when(_ text: String?) -> String {
-        ServerTime.date(text)?.formatted(date: .abbreviated, time: .shortened) ?? ""
-    }
-
-    static func relative(_ text: String?) -> String {
-        ServerTime.date(text)?.formatted(.relative(presentation: .named)) ?? ""
-    }
-
-    static func money(_ amount: Double, currency: String? = nil) -> String {
-        let code = (currency ?? "").isEmpty ? "USD" : currency ?? "USD"
-        return amount.formatted(.currency(code: code).precision(.fractionLength(amount < 0.01 ? 4 : 2)))
-    }
-
     /// A time of day kept as "HH:MM", as a date today for a time picker.
     static func clockDate(_ text: String) -> Date {
         let parts = UpkeepClock.hourAndMinute(text) ?? (hour: 0, minute: 0)
@@ -82,11 +69,17 @@ enum UpkeepWords {
         return UpkeepClock.text(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
     }
 
-    /// A day the look around may be set to, in the person's language.
-    static func lookAroundWeekdayName(_ name: String) -> String {
-        guard let index = AgentUpkeepPreferences.lookAroundWeekdays.firstIndex(of: name) else { return name }
-        // weekdaySymbols starts on Sunday, the list on Monday.
-        return Calendar.current.weekdaySymbols[(index + 1) % 7]
+    static func when(_ text: String?) -> String {
+        ServerTime.date(text)?.formatted(date: .abbreviated, time: .shortened) ?? ""
+    }
+
+    static func relative(_ text: String?) -> String {
+        ServerTime.date(text)?.formatted(.relative(presentation: .named)) ?? ""
+    }
+
+    static func money(_ amount: Double, currency: String? = nil) -> String {
+        let code = (currency ?? "").isEmpty ? "USD" : currency ?? "USD"
+        return amount.formatted(.currency(code: code).precision(.fractionLength(amount < 0.01 ? 4 : 2)))
     }
 
     static func shapeName(_ shape: KnowledgeSource.Shape) -> String {
@@ -2011,134 +2004,7 @@ struct AgentDreamRow: View {
     }
 }
 
-// MARK: - Daily brief
-
-/// DailyBriefView is the settings page of the morning brief: a switch, a
-/// time and days (the server keeps them on the goal called "Daily brief"),
-/// sending one now, and the goal's page.
-struct DailyBriefView: View {
-    let connection: Connection
-    @State private var brief: AgentGoal?
-    @State private var isLoaded = false
-    @State private var briefTime = "07:30"
-    @State private var briefDayNumbers: Set<Int> = Set(1...5)
-    @State private var isBusy = false
-    @State private var doneText: String?
-    @State private var problemText: String?
-
-    /// Whether the brief is on: its goal exists and is not paused.
-    private var isBriefOn: Bool { brief?.isOpen == true }
-
-    private var briefCron: String? { brief?.goalTimes.first }
-
-    /// Whether the time or the days differ from what the brief has.
-    private var hasBriefChanged: Bool {
-        briefTime != DailyBrief.time(fromCron: briefCron) || briefDayNumbers != Set(DailyBrief.dayNumbers(fromCron: briefCron))
-    }
-
-    var body: some View {
-        List {
-            briefSection
-            goalSection
-        }
-        .navigationTitle("Daily brief")
-        .overlay { if !isLoaded { ProgressView() } }
-        .disabled(isBusy)
-        .refreshable { await load() }
-        .task { await load() }
-        .toast(done: $doneText, problem: $problemText)
-    }
-
-    @ViewBuilder
-    private var goalSection: some View {
-        if let brief {
-            Section {
-                if isBriefOn, let next = ServerTime.date(brief.goalNextAt) {
-                    LabeledContent("Next", value: UpkeepWords.nextText(next))
-                }
-                NavigationLink {
-                    GoalDetail(connection: connection, conversationId: brief.conversationId, doneText: $doneText, problemText: $problemText)
-                } label: {
-                    Label("Open the brief's goal", systemImage: "target")
-                        .foregroundStyle(.primary)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var briefSection: some View {
-        Section {
-            DatePicker(
-                "At", selection: Binding(get: { UpkeepWords.clockDate(briefTime) }, set: { briefTime = UpkeepWords.clockText($0) }),
-                displayedComponents: .hourAndMinute)
-            NavigationLink {
-                BriefDaysScreen(dayNumbers: $briefDayNumbers)
-            } label: {
-                LabeledContent("On days", value: UpkeepWords.dayPatternText(briefDayNumbers.sorted()))
-            }
-            if isBriefOn {
-                if hasBriefChanged {
-                    Button("Save the new time and days", systemImage: "checkmark.circle") { Task { await saveBrief(isEnabled: true) } }
-                        .actionColor()
-                        .disabled(briefDayNumbers.isEmpty)
-                        .fullWidthRowSeparator()
-                }
-                Button("Send one now", systemImage: "paperplane") {
-                    Task { await act(saying: String(localized: "Sending one now; it will arrive in a moment.")) { try await connection.runDailyBrief() } }
-                }
-                .actionColor()
-                .fullWidthRowSeparator()
-                Button("Stop", role: .destructive) { Task { await saveBrief(isEnabled: false) } }
-            } else {
-                Button("Send me a brief", systemImage: "sun.max") { Task { await saveBrief(isEnabled: true) } }
-                    .actionColor()
-                    .disabled(briefDayNumbers.isEmpty)
-            }
-        } header: {
-            Text("A brief each morning")
-        } footer: {
-            if briefDayNumbers.isEmpty {
-                Text("Choose at least one day.")
-            } else if brief == nil {
-                Text("What the day holds and what is waiting for you, in your feed. Turning it on adds a goal called \u{201C}Daily brief\u{201D}, where you can change what it asks for.")
-            } else {
-                Text("What the day holds and what is waiting for you, in your feed. It is the goal called \u{201C}Daily brief\u{201D}, where you can change what it asks for.")
-            }
-        }
-    }
-
-    private func load() async {
-        do {
-            let read = try await connection.goals()
-            brief = DailyBrief.goal(in: read)
-            briefTime = DailyBrief.time(fromCron: briefCron)
-            briefDayNumbers = Set(DailyBrief.dayNumbers(fromCron: briefCron))
-        } catch {
-            problemText = error.localizedDescription
-        }
-        isLoaded = true
-    }
-
-    private func saveBrief(isEnabled: Bool) async {
-        let days = briefDayNumbers.sorted()
-        await act(saying: isEnabled ? String(localized: "The brief is on.") : String(localized: "The brief is off. Its goal is paused.")) {
-            try await connection.setDailyBrief(isEnabled: isEnabled, at: briefTime, days: days)
-        }
-    }
-
-    private func act(saying said: String?, _ work: () async throws -> Void) async {
-        isBusy = true
-        defer { isBusy = false }
-        do {
-            try await work()
-            if let said { doneText = said }
-        } catch {
-            problemText = error.localizedDescription
-        }
-        await load()
-    }
-}
+// MARK: - Days of a goal
 
 /// BriefDaysScreen is the days a goal's weekly time comes on: the seven days
 /// as rows with a checkmark, in the order the person's calendar starts its
@@ -2162,8 +2028,8 @@ struct BriefDaysScreen: View {
 }
 
 #if DEBUG
-    /// The screen `-TeaNodeScreen daily-brief-days` photographs, with
-    /// Monday to Friday chosen, and `daily-brief-days-none` with no day.
+    /// The screen `-TeaNodeScreen goal-days` photographs, with
+    /// Monday to Friday chosen, and `goal-days-none` with no day.
     struct BriefDaysDemoScreen: View {
         @State private var dayNumbers: Set<Int>
 
@@ -2272,9 +2138,8 @@ struct AddFollowUpSheet: View {
 }
 
 /// MutedAlertsView is the dashboard's Alerts tab: whether the agent tells
-/// the person unasked what their mail says they should know now, their
-/// quiet hours, the most a day, and the day and time it looks around their
-/// town; what it told them lately, each muted in a scope they choose; what
+/// the person unasked what their mail says they should know now; what it
+/// told them lately, each muted in a scope they choose; what
 /// it is following for them (bills, parcels, deadlines and events), each
 /// stopped, and a kind of them muted; and what they muted, each unmuted
 /// again.
@@ -2286,11 +2151,6 @@ struct MutedAlertsView: View {
     @State private var isAgentRead = false
     @State private var isAgentMissing = false
     @State private var isAlertsEnabled = true
-    @State private var quietStart = "22:00"
-    @State private var quietEnd = "07:00"
-    @State private var dailyMost = 5
-    @State private var lookAroundWeekday = "thursday"
-    @State private var lookAroundTime = "17:00"
     @State private var alerts: [AgentAlert]?
     @State private var mutes: [AgentAlertMute] = []
     @State private var followUps: [AgentFollowUp]?
@@ -2340,11 +2200,6 @@ struct MutedAlertsView: View {
         .disabled(isBusy)
         .refreshable { await load() }
         .task { await load() }
-        .task(id: quietStart) { await saveQuiet(start: quietStart) }
-        .task(id: quietEnd) { await saveQuiet(end: quietEnd) }
-        .task(id: dailyMost) { await saveDailyMost(dailyMost) }
-        .task(id: lookAroundWeekday) { await saveLookAround(weekday: lookAroundWeekday) }
-        .task(id: lookAroundTime) { await saveLookAround(time: lookAroundTime) }
         .toast(done: $doneText, problem: $problemText)
     }
 
@@ -2354,34 +2209,8 @@ struct MutedAlertsView: View {
             Toggle(
                 "Tell me what my mail says I should know now",
                 isOn: Binding(get: { isAlertsEnabled }, set: { isOn in Task { await setAlertsEnabled(isOn) } }))
-            Group {
-                DatePicker(
-                    "Quiet from", selection: Binding(get: { UpkeepWords.clockDate(quietStart) }, set: { quietStart = UpkeepWords.clockText($0) }),
-                    displayedComponents: .hourAndMinute)
-                DatePicker(
-                    "Quiet until", selection: Binding(get: { UpkeepWords.clockDate(quietEnd) }, set: { quietEnd = UpkeepWords.clockText($0) }),
-                    displayedComponents: .hourAndMinute)
-                Stepper(value: $dailyMost, in: 1...50) {
-                    LabeledContent("At most a day") {
-                        Text(dailyMost, format: .number).monospacedDigit().contentTransition(.numericText())
-                    }
-                }
-                Picker("Look around town on", selection: $lookAroundWeekday) {
-                    ForEach(AgentUpkeepPreferences.lookAroundWeekdays, id: \.self) { offeredWeekday in
-                        Text(verbatim: UpkeepWords.lookAroundWeekdayName(offeredWeekday)).tag(offeredWeekday)
-                    }
-                }
-                DatePicker(
-                    "At", selection: Binding(get: { UpkeepWords.clockDate(lookAroundTime) }, set: { lookAroundTime = UpkeepWords.clockText($0) }),
-                    displayedComponents: .hourAndMinute)
-            }
-            .disabled(!isAlertsEnabled)
         } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Your agent reads what arrives and tells you, unasked, when your mail shows something you should know now: a notice about your family, someone trying your account, a deadline today. It writes in the main conversation and in the chat app you linked.")
-                Text("In your quiet hours only what cannot wait is said; the rest waits for the morning. The same time at both ends means no quiet hours.")
-                Text("Each week your agent finds what is on near you for the weekend and the week after, and tells you on this day at this time.")
-            }
+            Text("Your agent reads what arrives and tells you, unasked, when your mail shows something you should know now: a notice about your family, someone trying your account, a deadline today. It writes in the main conversation and in the chat app you linked.")
         }
         .disabled(preferences == nil)
     }
@@ -2620,11 +2449,6 @@ struct MutedAlertsView: View {
             isAgentMissing = read == nil
             if let read {
                 isAlertsEnabled = read.isAlertsEnabled
-                quietStart = read.shownAlertQuietStart
-                quietEnd = read.shownAlertQuietEnd
-                dailyMost = read.shownAlertDailyMost
-                lookAroundWeekday = read.shownLookAroundWeekday
-                lookAroundTime = read.shownLookAroundTime
             }
         } catch {
             problemText = error.localizedDescription
@@ -2656,46 +2480,6 @@ struct MutedAlertsView: View {
                 : String(localized: "Your agent will not tell you about your mail unasked.")
         } catch {
             isAlertsEnabled = !isOn
-            problemText = error.localizedDescription
-        }
-    }
-
-    private func saveQuiet(start: String? = nil, end: String? = nil) async {
-        guard let preferences else { return }
-        if let start, start == preferences.shownAlertQuietStart { return }
-        if let end, end == preferences.shownAlertQuietEnd { return }
-        try? await Task.sleep(for: .milliseconds(700))
-        if Task.isCancelled { return }
-        do {
-            self.preferences = try await connection.updateAgentUpkeep(alertQuietStart: start, alertQuietEnd: end) ?? preferences
-            doneText = String(localized: "Saved")
-        } catch {
-            problemText = error.localizedDescription
-        }
-    }
-
-    private func saveLookAround(weekday: String? = nil, time: String? = nil) async {
-        guard let preferences else { return }
-        if let weekday, weekday == preferences.shownLookAroundWeekday { return }
-        if let time, time == preferences.shownLookAroundTime { return }
-        try? await Task.sleep(for: .milliseconds(700))
-        if Task.isCancelled { return }
-        do {
-            self.preferences = try await connection.updateAgentUpkeep(lookAroundWeekday: weekday, lookAroundTime: time) ?? preferences
-            doneText = String(localized: "Saved")
-        } catch {
-            problemText = error.localizedDescription
-        }
-    }
-
-    private func saveDailyMost(_ most: Int) async {
-        guard let preferences, most != preferences.shownAlertDailyMost else { return }
-        try? await Task.sleep(for: .milliseconds(700))
-        if Task.isCancelled { return }
-        do {
-            self.preferences = try await connection.updateAgentUpkeep(alertDailyMost: most) ?? preferences
-            doneText = String(localized: "Saved")
-        } catch {
             problemText = error.localizedDescription
         }
     }

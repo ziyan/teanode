@@ -6,10 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
-	"math"
 	"sort"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/recording"
@@ -140,13 +139,7 @@ func (self *Agent) curateRecordingTemporarySpeakersOfRun(ctx context.Context, us
 // reservation commits before the bytes, so a failed write leaves a reference
 // for the cleanup to find, and the next curation writes the bytes again.
 func (self *Agent) createRecordingTemporarySpeaker(ctx context.Context, userId string, transcriptRun *models.RecordingTranscriptRun, attempt *models.RecordingTranscriptionAttempt, audioChunk *models.RecordingAudioChunk, localSpeakerId string, passages []*models.RecordingTranscriptSegment, files storage.StreamFiles) error {
-	maximumAccountBytes := self.settings.Configuration().Agent.Limits.MaxRecordingAccountBytes.Bytes()
-	if maximumAccountBytes == 0 {
-		maximumAccountBytes = 64 << 30
-	}
-	if maximumAccountBytes > math.MaxInt64 {
-		return fmt.Errorf("recording account limit exceeds supported bytes")
-	}
+	maximumAccountBytes := int64(config.MaxRecordingAccountBytes)
 	sort.SliceStable(passages, func(left, right int) bool {
 		return passages[left].SegmentEndMS-passages[left].SegmentStartMS > passages[right].SegmentEndMS-passages[right].SegmentStartMS
 	})

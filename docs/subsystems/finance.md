@@ -974,7 +974,7 @@ that asset, with a range and the pages used. Setting an asset to
 `agent_estimate` with estimates allowed starts the goal "Estimate asset values"
 (the first of each month, the person's own words, recorded as built in) when
 there is none, and gives it a turn at once, so the asset has a value the same
-day. The goal is found by title, like the daily brief's: renamed, it is the
+day. The goal is found by title: renamed, it is the
 person's, and a new one is started beside it; paused, it stays paused and
 nothing is estimated until the person takes it up again. Its prompt searches with each asset's estimate description
 and nothing else.
@@ -1397,8 +1397,7 @@ the starting amount it had, since one measure's start means nothing to
 another. Only an `asset_value` target keeps chosen assets and accounts.
 
 Budget and savings target alerts are candidates of kind `budget` in the alert
-path every agent alert uses, so they share its daily limit, quiet night hours,
-repeat rule and mutes. Each crossing (80 percent of a budget, at risk, over, a
+path every agent alert uses, so they share its repeat rule and mutes. Each crossing (80 percent of a budget, at risk, over, a
 savings target behind) is written once per month, and a spending category can
 be muted on its own.
 

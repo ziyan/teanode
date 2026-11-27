@@ -3,7 +3,6 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"net"
 	"net/url"
 	"path"
@@ -491,12 +490,13 @@ func featureOn(value *bool) bool {
 	return value == nil || *value
 }
 
-// AgentLimits bound what a run may cost.
+// AgentLimits is the money and token budget, and nothing else. Every other
+// bound on what the agent does is a technical one, a constant where it is
+// used (see the Max constants below), and not a setting: nobody can pick
+// the right value, and the budget stops whatever they would have stopped.
+// The keys that were settings load, with a notice, through deprecatedLimits.
 type AgentLimits struct {
 	deprecatedLimits `yaml:",inline"`
-
-	// MaxBodyCharacters is how much of a message a model is given.
-	MaxBodyCharacters int `yaml:"maxBodyCharacters"`
 
 	// DailyTokensPerAgent is the default budget per person per day; an
 	// operator may set a person's own. Zero means unlimited.
@@ -514,126 +514,41 @@ type AgentLimits struct {
 
 	// MonthlyTokensPerServer caps the whole server. Zero means no cap.
 	MonthlyTokensPerServer int64 `yaml:"monthlyTokensPerServer,omitempty"`
-
-	// EmbeddingTokensPerDay bounds embedding separately from everything
-	// else. Zero is no limit, which is the default and is deliberate: the
-	// first pass over a person's checkout and chat archive is a hundred
-	// million tokens at a thousandth of the price of a conversation, and
-	// counting it against the same daily budget would stop the load on its
-	// first night and every night after. The money caps still bind it.
-	EmbeddingTokensPerDay int64 `yaml:"embeddingTokensPerDay,omitempty"`
-
-	// ScanConcurrency is how many calls the nightly reading makes at
-	// once. One for a service that meters by the call; as many as it has
-	// slots for a model of the person's own, where the reading is bound
-	// by nothing but the machine.
-	ScanConcurrency int `yaml:"scanConcurrency,omitempty"`
-
-	// RecallTokens is how much of a turn's prompt the pages and facts
-	// recall carries may take, a third of it held for facts no page
-	// carries. Zero resolves to 1200.
-	RecallTokens int `yaml:"recallTokens,omitempty"`
-
-	// DigestDocumentRunes bounds how much of each document a dream's
-	// reading is shown, in characters, from its first passage on. Zero,
-	// the default, reads every document whole, a long one in parts of
-	// what one call holds.
-	DigestDocumentRunes int `yaml:"digestDocumentRunes,omitempty"`
-
-	// RewriteConcurrency is how many pages the nightly run rewrites at
-	// once, after the reading. One when unset.
-	RewriteConcurrency int `yaml:"rewriteConcurrency,omitempty"`
-
-	// DreamShare is how much of the daily budget the nightly run may
-	// spend, so that a night never eats the day. Zero resolves to 0.3.
-	DreamShare float64 `yaml:"dreamShare,omitempty"`
-
-	// IngestChunksPerRun is how many chunks one pass of an ingest job
-	// embeds before it hands the queue back. Zero resolves to 2000.
-	IngestChunksPerRun int `yaml:"ingestChunksPerRun,omitempty"`
-
-	// The round caps: how many times a run may go back to the model.
-	MaxRoundsPerAsk      int `yaml:"maxRoundsPerAsk"`
-	MaxRoundsPerResearch int `yaml:"maxRoundsPerResearch"`
-	MaxRoundsPerReply    int `yaml:"maxRoundsPerReply"`
-
-	// MaxRoundsPerTriage is how many turns a sorting run may take. It is
-	// the smallest of them on purpose: sorting happens to every message
-	// that arrives, and nearly every message can be sorted from what is in
-	// front of the model.
-	MaxRoundsPerTriage int `yaml:"maxRoundsPerTriage"`
-
-	// MaxRoundsPerDream is how many turns one call of a dream may take:
-	// a reading batch, a month written up, a page divided. A night has
-	// the person's own tools now, their computer among them, so a call
-	// may spend three rounds finding a file and running something over it
-	// before it has anything to answer with; the default is twelve rather
-	// than the four that was enough for looking a page up.
-	MaxRoundsPerDream  int `yaml:"maxRoundsPerDream"`
-	MaxToolCallsPerRun int `yaml:"maxToolCallsPerRun"`
-
-	// MaxRoundsPerSubagent is how many rounds one subagent may take.
-	// Zero resolves to 20.
-	MaxRoundsPerSubagent int `yaml:"maxRoundsPerSubagent,omitempty"`
-
-	// GoalShare is how much of the daily budget the goals at their own
-	// pace may spend between them, so that work nobody is watching never
-	// eats the day the person talks to the agent in. Zero resolves to 0.5.
-	GoalShare float64 `yaml:"goalShare,omitempty"`
-
-	// GoalTurnsAlone is how many turns of its own a goal takes without a
-	// word from the person before it stops and asks them. Zero resolves
-	// to 24.
-	GoalTurnsAlone int `yaml:"goalTurnsAlone,omitempty"`
-
-	// BackgroundWakesAlone is how many turns finished background commands
-	// and work may wake in one conversation before the person writes there
-	// again. Zero resolves to 20.
-	BackgroundWakesAlone int `yaml:"backgroundWakesAlone,omitempty"`
-
-	// RequestTimeout bounds one call to a provider.
-	RequestTimeout Duration `yaml:"requestTimeout"`
-
-	// MaxRecordingMediaBytes bounds one original audio/video file. Zero means 2GB.
-	MaxRecordingMediaBytes ByteSize `yaml:"maxRecordingMediaBytes,omitempty"`
-
-	// MaxRecordingAccountBytes bounds reserved originals, including pending cleanup.
-	// Zero means 64GB. These limits are separate from conversation attachments.
-	MaxRecordingAccountBytes ByteSize `yaml:"maxRecordingAccountBytes,omitempty"`
-
-	// MaxAttachmentBytes bounds one upload to a conversation, across its files.
-	MaxAttachmentBytes ByteSize `yaml:"maxAttachmentBytes"`
-
-	// MaxSentFileBytes bounds one file sent to a person's main chat: by a
-	// program over MCP, by the agent from another conversation, or by a run
-	// nobody is present for. Zero resolves to 100MB, which takes a few
-	// minutes of a screen recording.
-	MaxSentFileBytes ByteSize `yaml:"maxSentFileBytes,omitempty"`
-
-	// MaxChatAttachmentAccountBytes bounds the files one person has sent in
-	// chats and that are still kept, which is every file of a message nobody
-	// has deleted. A message with files stays until somebody deletes it,
-	// and every member of the chat reads them, so unlike a file handed to the
-	// agent they are not swept. Zero resolves to 1GB. Apart from
-	// MaxAttachmentBytes, which bounds one upload.
-	MaxChatAttachmentAccountBytes ByteSize `yaml:"maxChatAttachmentAccountBytes,omitempty"`
-
-	// MaxScannedAttachmentBytes bounds one file a knowledge source
-	// carries off a person's machine: a picture or a document a record
-	// came with, kept in object storage so that something can read it
-	// later. Anything larger is named on the source's page as passed
-	// over and never uploaded. Zero resolves to 25MB.
-	//
-	// Apart from MaxAttachmentBytes above because the two bound
-	// different things: that one is what a person may hand the agent in
-	// a conversation, this one is what an unattended pass may take from
-	// an archive of tens of gigabytes. A source may set its own, and
-	// does so in bytes on its specification.
-	MaxScannedAttachmentBytes ByteSize `yaml:"maxScannedAttachmentBytes,omitempty"`
-
-	// Concurrency is how many runs a worker executes at once.
-	Concurrency int `yaml:"concurrency"`
 }
+
+// The technical bounds that used to be settings. Each is a size the machine
+// or a provider can take, and none of them is spend, which the budget above
+// bounds.
+const (
+	// MaxRecordingMediaBytes is one original audio or video file: what the
+	// upload path and the transcoder are built to hold in one piece.
+	MaxRecordingMediaBytes = 2 << 30
+
+	// MaxRecordingAccountBytes is the originals one person has reserved,
+	// pending cleanup included, so that one account cannot fill the disk.
+	// Apart from the conversation attachments.
+	MaxRecordingAccountBytes = 64 << 30
+
+	// MaxAttachmentBytes is one upload to a conversation, across its files,
+	// which is read into memory and sent to a model.
+	MaxAttachmentBytes = 25 << 20
+
+	// MaxSentFileBytes is one file sent to a person's main chat by a program
+	// over MCP, by the agent from another conversation, or by a run nobody
+	// is present for: a few minutes of a screen recording.
+	MaxSentFileBytes = 100 << 20
+
+	// MaxChatAttachmentAccountBytes is the files one person has sent in
+	// chats and that are still kept. A message with files stays until
+	// somebody deletes it and every member of the chat reads them, so unlike
+	// a file handed to the agent they are not swept, and this keeps one
+	// person from filling the disk with them.
+	MaxChatAttachmentAccountBytes = 1 << 30
+
+	// WorkerConcurrency is how many runs a worker executes at once: what
+	// the database connections and the machine are sized for.
+	WorkerConcurrency = 2
+)
 
 // AgentRetention says how long the agent's records are kept.
 type AgentRetention struct {
@@ -1186,32 +1101,6 @@ func (self *AgentMCPOAuth) ResolvedRedirect() string {
 	return AgentMCPOAuthRedirectServer
 }
 
-// MaxChatAttachmentAccountBytesDefault is what MaxChatAttachmentAccountBytes
-// resolves to when it is zero.
-const MaxChatAttachmentAccountBytesDefault = 1 << 30
-
-// EffectiveMaxChatAttachmentAccountBytes resolves the zero value: the most
-// chat files one person may keep, in bytes.
-func (self *AgentLimits) EffectiveMaxChatAttachmentAccountBytes() uint64 {
-	if self.MaxChatAttachmentAccountBytes == 0 {
-		return MaxChatAttachmentAccountBytesDefault
-	}
-	return self.MaxChatAttachmentAccountBytes.Bytes()
-}
-
-// MaxSentFileBytesDefault is what AgentLimits.MaxSentFileBytes resolves to
-// when it is zero.
-const MaxSentFileBytesDefault = 100 << 20
-
-// EffectiveMaxSentFileBytes resolves the zero value: the largest file sent
-// to a main chat, in bytes.
-func (self *AgentLimits) EffectiveMaxSentFileBytes() uint64 {
-	if self.MaxSentFileBytes == 0 {
-		return MaxSentFileBytesDefault
-	}
-	return self.MaxSentFileBytes.Bytes()
-}
-
 // defaultAgent is what a new server starts with: off, and every limit at a
 // value that keeps a mistake affordable.
 func defaultAgent() Agent {
@@ -1219,22 +1108,7 @@ func defaultAgent() Agent {
 		Enabled:  false,
 		Currency: DefaultCurrency,
 		Limits: AgentLimits{
-			MaxBodyCharacters:  12000,
-			MaxAttachmentBytes: 25 * 1024 * 1024,
-			// Generous enough for every screenshot and nearly every
-			// document, mean enough to leave out the videos and the disk
-			// images, which are most of the bulk of an archive and teach
-			// the agent nothing.
-			MaxScannedAttachmentBytes: 25 * 1024 * 1024,
-			DailyTokensPerAgent:       200000,
-			MaxRoundsPerAsk:           150,
-			MaxRoundsPerResearch:      8,
-			MaxRoundsPerReply:         6,
-			MaxRoundsPerTriage:        3,
-			MaxRoundsPerDream:         4,
-			MaxToolCallsPerRun:        60,
-			RequestTimeout:            Duration(60 * time.Second),
-			Concurrency:               2,
+			DailyTokensPerAgent: 200000,
 		},
 		Retention: AgentRetention{
 			Runs:        Duration(30 * 24 * time.Hour),
@@ -1504,48 +1378,6 @@ func (self *Configuration) validateAgent(validator *validator) {
 			validator.add(role.Field, "%q is used for voice messages and is switched off on provider %q", role.Model, providerName)
 		}
 	}
-	if agent.Limits.MaxRecordingMediaBytes.Bytes() > math.MaxInt64 {
-		validator.add("agent.limits.maxRecordingMediaBytes", "exceeds supported byte sizes")
-	}
-	if agent.Limits.MaxRecordingAccountBytes.Bytes() > math.MaxInt64 {
-		validator.add("agent.limits.maxRecordingAccountBytes", "exceeds supported byte sizes")
-	}
-	if agent.Limits.MaxBodyCharacters <= 0 {
-		validator.add("agent.limits.maxBodyCharacters", "must be positive, for example 12000")
-	}
-	if agent.Limits.RequestTimeout <= 0 {
-		validator.add("agent.limits.requestTimeout", "must be positive, for example 60s")
-	}
-	if agent.Limits.Concurrency <= 0 {
-		validator.add("agent.limits.concurrency", "must be positive, for example 2")
-	}
-	for _, field := range []struct {
-		name  string
-		value int
-	}{
-		{"maxRoundsPerAsk", agent.Limits.MaxRoundsPerAsk},
-		{"maxRoundsPerResearch", agent.Limits.MaxRoundsPerResearch},
-		{"maxRoundsPerReply", agent.Limits.MaxRoundsPerReply},
-		{"maxRoundsPerTriage", agent.Limits.MaxRoundsPerTriage},
-		{"maxRoundsPerDream", agent.Limits.MaxRoundsPerDream},
-		{"maxToolCallsPerRun", agent.Limits.MaxToolCallsPerRun},
-	} {
-		if field.value <= 0 {
-			validator.add("agent.limits."+field.name, "must be positive")
-		}
-	}
-	for _, field := range []struct {
-		name  string
-		value int
-	}{
-		{"maxRoundsPerSubagent", agent.Limits.MaxRoundsPerSubagent},
-		{"goalTurnsAlone", agent.Limits.GoalTurnsAlone},
-		{"backgroundWakesAlone", agent.Limits.BackgroundWakesAlone},
-	} {
-		if field.value < 0 {
-			validator.add("agent.limits."+field.name, "must not be negative; zero is the default")
-		}
-	}
 	validateModelEntries(agent, validator)
 	for _, field := range []struct {
 		name  string
@@ -1786,50 +1618,4 @@ func (self *Agent) PrivateAddressesAllowed() []string {
 		allowed = append(allowed, entry)
 	}
 	return allowed
-}
-
-// The defaults of the limits whose zero means the default.
-const (
-	MaxRoundsPerSubagentDefault = 20
-	GoalTurnsAloneDefault       = 24
-	BackgroundWakesAloneDefault = 20
-)
-
-// limitOr is a limit, or its default when it is not set.
-func limitOr(value, fallback int) int {
-	if value <= 0 {
-		return fallback
-	}
-	return value
-}
-
-// EffectiveMaxRoundsPerSubagent resolves the zero value.
-func (self *AgentLimits) EffectiveMaxRoundsPerSubagent() int {
-	return limitOr(self.MaxRoundsPerSubagent, MaxRoundsPerSubagentDefault)
-}
-
-// GoalShareDefault is the share of the daily budget the goals at their own
-// pace may spend when the operator has not chosen one.
-const GoalShareDefault = 0.5
-
-// EffectiveGoalShare resolves the zero value, and a share past the whole
-// day to the whole day.
-func (self *AgentLimits) EffectiveGoalShare() float64 {
-	switch {
-	case self.GoalShare <= 0:
-		return GoalShareDefault
-	case self.GoalShare > 1:
-		return 1
-	}
-	return self.GoalShare
-}
-
-// EffectiveGoalTurnsAlone resolves the zero value.
-func (self *AgentLimits) EffectiveGoalTurnsAlone() int {
-	return limitOr(self.GoalTurnsAlone, GoalTurnsAloneDefault)
-}
-
-// EffectiveBackgroundWakesAlone resolves the zero value.
-func (self *AgentLimits) EffectiveBackgroundWakesAlone() int {
-	return limitOr(self.BackgroundWakesAlone, BackgroundWakesAloneDefault)
 }

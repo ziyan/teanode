@@ -32,8 +32,7 @@ const (
 
 	// journalEveningQuestionSubjectPrefix begins the subject of the job that
 	// remembers a day's question was asked: a finished job of the agent whose
-	// subject is this and the day. The job does nothing; its row is the memory,
-	// the way a look around town keeps its slot.
+	// subject is this and the day. The job does nothing; its row is the memory.
 	journalEveningQuestionSubjectPrefix = "journal-evening:"
 )
 

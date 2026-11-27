@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -20,7 +23,9 @@ func newAgentFeedCommand() *cli.Command {
 		Description: "The feed is a list of cards, newest first: a headline, a few lines, sometimes a short table of facts\n" +
 			"and buttons. 'list' prints them, 'show' one, 'choose' presses a button of a decision, 'like' and 'unlike'\n" +
 			"tell the agent what you want more of, 'less' asks for fewer like it and dismisses the card, 'dismiss'\n" +
-			"closes cards (named, a stack's, or every read one), 'restore' brings them back, 'read' marks cards read, 'discuss' prints the id of the main conversation to talk about a\n" +
+			"closes cards (named, a stack's, or every read one), 'list --dismissed' shows the dismissed ones, 'restore' brings them back,\n" +
+			"'resolve' marks a card whose problem cleared as resolved and 'unresolve' takes that off,\n" +
+			"'withdraw' deletes one for good, 'read' marks cards read, 'discuss' prints the id of the main conversation to talk about a\n" +
 			"card in, and 'post' puts a card of your own in the feed.",
 		Commands: []*cli.Command{
 			{
@@ -28,6 +33,7 @@ func newAgentFeedCommand() *cli.Command {
 				Usage: "the cards, newest first, and how many are unread",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{Name: "all", Usage: "include cards you dismissed"},
+					&cli.BoolFlag{Name: "dismissed", Usage: "only the cards you dismissed, the most recently dismissed first"},
 					&cli.IntFlag{Name: "limit", Usage: "how many cards, 30 by default"},
 					&cli.StringFlag{Name: "after", Usage: "the cursor a page printed, to read the next page"},
 					JSONFlag(),
@@ -94,10 +100,35 @@ func newAgentFeedCommand() *cli.Command {
 			},
 			{
 				Name:      "restore",
-				Usage:     "bring dismissed cards back; one a choice settled stays closed",
+				Usage:     "bring dismissed cards back; one answered \"not now\" can be answered again",
 				ArgsUsage: "<card-id>...",
 				Flags:     []cli.Flag{JSONFlag()},
 				Action:    runAgentFeedRestore,
+			},
+			{
+				Name:        "resolve",
+				Usage:       "mark a card resolved: its problem cleared",
+				ArgsUsage:   "<card-id>",
+				Description: "The card stays where it is, drawn muted with the time it was resolved. A card is resolved once: the first resolution and its note stand.",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "note", Usage: "one line saying what cleared, at most 160 characters"},
+					JSONFlag(),
+				},
+				Action: runAgentFeedResolve,
+			},
+			{
+				Name:      "unresolve",
+				Usage:     "take the resolved mark off a card",
+				ArgsUsage: "<card-id>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentFeedUnresolve,
+			},
+			{
+				Name:      "withdraw",
+				Usage:     "take a card back for good: it is deleted, not dismissed",
+				ArgsUsage: "<card-id>",
+				Flags:     []cli.Flag{JSONFlag()},
+				Action:    runAgentFeedWithdraw,
 			},
 			{
 				Name:      "read",
@@ -135,6 +166,8 @@ func newAgentFeedCommand() *cli.Command {
 					&cli.StringSliceFlag{Name: "link", Usage: "a source page, url or url=title"},
 					&cli.StringSliceFlag{Name: "photo", Usage: "one of your photos or videos to show on the card, by id, optionally id=caption"},
 					&cli.StringSliceFlag{Name: "picture", Usage: "a page whose picture to show on the card, url or url=caption; the server fetches it"},
+					&cli.StringFlag{Name: "chart-blocks", Usage: "at most two charts, a JSON array of {chartKind (series or bars), chartTitle, unit, provenance, xLabels, series: [{seriesName, seriesRole, values}], markers: [{markerAt, markerLabel}], bars: [{barLabel, barValue}]}"},
+					&cli.StringFlag{Name: "camera-still", Usage: "stills from your cameras, a JSON array of {attachmentId or photoId, cameraName, capturedAt (RFC 3339 with the camera's offset), stillReason, playbackUrl, liveUrl, mediaCaption}"},
 					&cli.StringSliceFlag{Name: "choice", Usage: "a button, key=Label or key=Label:role; at most four"},
 					JSONFlag(),
 				},
@@ -163,7 +196,7 @@ func runAgentFeedList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	page, err := client.ListAgentFeed(ctx, connection, command.Int("limit"), command.String("after"), command.Bool("all"))
+	page, err := client.ListAgentFeed(ctx, connection, command.Int("limit"), command.String("after"), command.Bool("all"), command.Bool("dismissed"))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -171,6 +204,10 @@ func runAgentFeedList(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(page)
 	}
 	if len(page.FeedItems) == 0 {
+		if command.Bool("dismissed") {
+			_, _ = fmt.Fprintln(command.Writer, "nothing dismissed")
+			return nil
+		}
 		_, _ = fmt.Fprintln(command.Writer, "the feed is empty")
 		return nil
 	}
@@ -254,7 +291,14 @@ func printFeedItem(command *cli.Command, item *client.AgentFeedItem) error {
 	for _, link := range item.SourceLinks {
 		_, _ = fmt.Fprintf(writer, "  source: %s %s\n", forTerminal(link.SourceTitle), link.SourceURL)
 	}
+	for _, chart := range item.ChartBlocks {
+		printFeedChart(writer, &chart)
+	}
 	for _, entry := range item.FeedMedia {
+		if entry.FeedMediaKind == "camera_still" {
+			_, _ = fmt.Fprintf(writer, "  camera still: %s, %s at %s: %s\n", entry.ImageURL, forTerminal(entry.CameraName), entry.CapturedAt, forTerminal(entry.StillReason))
+			continue
+		}
 		where := ""
 		if entry.ListRowIndex != nil {
 			where = fmt.Sprintf(" of row %d", *entry.ListRowIndex+1)
@@ -275,6 +319,16 @@ func printFeedItem(command *cli.Command, item *client.AgentFeedItem) error {
 			_, _ = fmt.Fprintf(writer, " %s %s  %s (%s)\n", mark, choice.ChoiceKey, forTerminal(choice.ChoiceLabel), choice.ChoiceRole)
 		}
 	}
+	if item.IsResolved {
+		line := fmt.Sprintf("\nResolved %s by %s", item.ResolvedAt.Local().Format("2006-01-02 15:04"), item.ResolvedByKind)
+		if item.ResolutionNote != "" {
+			line += ": " + forTerminal(item.ResolutionNote)
+		}
+		_, _ = fmt.Fprintln(writer, line)
+	}
+	for _, note := range item.PostNotes {
+		_, _ = fmt.Fprintf(writer, "note: %s\n", forTerminal(note))
+	}
 	switch {
 	case item.OutcomeText != "":
 		_, _ = fmt.Fprintf(writer, "\nOutcome: %s\n", forTerminal(item.OutcomeText))
@@ -282,6 +336,38 @@ func printFeedItem(command *cli.Command, item *client.AgentFeedItem) error {
 		_, _ = fmt.Fprintln(writer, "\nOutcome: still being carried out")
 	}
 	return nil
+}
+
+// printFeedChart prints a chart as the words of what it shows: its title, the
+// lines or bars with their numbers, and where the numbers were read.
+func printFeedChart(writer io.Writer, chart *client.AgentFeedChartBlock) {
+	unit := ""
+	if chart.Unit != "" {
+		unit = " (" + forTerminal(chart.Unit) + ")"
+	}
+	_, _ = fmt.Fprintf(writer, "  chart, %s: %s%s\n", chart.ChartKind, forTerminal(chart.ChartTitle), unit)
+	for _, line := range chart.Series {
+		numbers := make([]string, 0, len(line.Values))
+		for index, value := range line.Values {
+			label := ""
+			if index < len(chart.XLabels) {
+				label = forTerminal(chart.XLabels[index]) + "="
+			}
+			if value == nil {
+				numbers = append(numbers, label+"none")
+				continue
+			}
+			numbers = append(numbers, label+strconv.FormatFloat(*value, 'f', -1, 64))
+		}
+		_, _ = fmt.Fprintf(writer, "    %s (%s): %s\n", forTerminal(line.SeriesName), line.SeriesRole, strings.Join(numbers, " "))
+	}
+	for _, marker := range chart.Markers {
+		_, _ = fmt.Fprintf(writer, "    marker at %s: %s\n", forTerminal(marker.MarkerAt), forTerminal(marker.MarkerLabel))
+	}
+	for _, bar := range chart.Bars {
+		_, _ = fmt.Fprintf(writer, "    %s: %s\n", forTerminal(bar.BarLabel), strconv.FormatFloat(bar.BarValue, 'f', -1, 64))
+	}
+	_, _ = fmt.Fprintf(writer, "    %s\n", forTerminal(chart.Provenance))
 }
 
 func runAgentFeedShow(ctx context.Context, command *cli.Command) error {
@@ -386,6 +472,53 @@ func runAgentFeedRestore(ctx context.Context, command *cli.Command) error {
 	return printFeedChangeCount(command, "restored", restoredIds)
 }
 
+func runAgentFeedResolve(ctx context.Context, command *cli.Command) error {
+	feedItemId, err := feedCardArgument(command, "teanode agent feed resolve <card-id> [--note TEXT]", 1)
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	item, err := client.ResolveAgentFeedItem(ctx, connection, feedItemId, command.String("note"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	return printFeedItem(command, item)
+}
+
+func runAgentFeedUnresolve(ctx context.Context, command *cli.Command) error {
+	feedItemId, err := feedCardArgument(command, "teanode agent feed unresolve <card-id>", 1)
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	item, err := client.UnresolveAgentFeedItem(ctx, connection, feedItemId)
+	if err != nil {
+		return describeError(command, err)
+	}
+	return printFeedItem(command, item)
+}
+
+func runAgentFeedWithdraw(ctx context.Context, command *cli.Command) error {
+	feedItemId, err := feedCardArgument(command, "teanode agent feed withdraw <card-id>", 1)
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := client.WithdrawAgentFeedItem(ctx, connection, feedItemId); err != nil {
+		return describeError(command, err)
+	}
+	return printFeedChangeCount(command, "withdrawn", []string{feedItemId})
+}
+
 // printFeedChangeCount says how many cards a dismissal or restore changed
 // and which.
 func printFeedChangeCount(command *cli.Command, verb string, feedItemIds []string) error {
@@ -476,8 +609,26 @@ func runAgentFeedPost(ctx context.Context, command *cli.Command) error {
 		address, caption, _ := strings.Cut(picture, "=")
 		media = append(media, map[string]any{"pageUrl": strings.TrimSpace(address), "mediaCaption": strings.TrimSpace(caption)})
 	}
+	if stills := strings.TrimSpace(command.String("camera-still")); stills != "" {
+		var entries []map[string]any
+		if err := json.Unmarshal([]byte(stills), &entries); err != nil {
+			return usage(fmt.Sprintf("--camera-still is a JSON array of objects: %s", err))
+		}
+		for _, entry := range entries {
+			caption, _ := entry["mediaCaption"].(string)
+			delete(entry, "mediaCaption")
+			media = append(media, map[string]any{"cameraStill": entry, "mediaCaption": caption})
+		}
+	}
 	if len(media) > 0 {
 		variables["media"] = media
+	}
+	if charts := strings.TrimSpace(command.String("chart-blocks")); charts != "" {
+		var chartBlocks []map[string]any
+		if err := json.Unmarshal([]byte(charts), &chartBlocks); err != nil {
+			return usage(fmt.Sprintf("--chart-blocks is a JSON array of objects: %s", err))
+		}
+		variables["chartBlocks"] = chartBlocks
 	}
 	if choices := command.StringSlice("choice"); len(choices) > 0 {
 		buttons := make([]map[string]string, 0, len(choices))

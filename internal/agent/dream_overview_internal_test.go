@@ -127,7 +127,7 @@ func TestTheNightWritesOverviewsChildrenFirstAndOnlyWhenDue(t *testing.T) {
 	// The first night writes the tools and the checkout; the shed, with
 	// its tools due, waits.
 	record := &models.AgentDream{}
-	worker.dreamOverviews(t.Context(), run, record, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamOverviews(t.Context(), run, record, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	if record.OverviewsWritten != 3 {
 		t.Fatalf("%d overviews were written; the two tools and the checkout were ready", record.OverviewsWritten)
 	}
@@ -159,7 +159,7 @@ func TestTheNightWritesOverviewsChildrenFirstAndOnlyWhenDue(t *testing.T) {
 	// are not written again.
 	promptCount := len(sentPrompts())
 	next := &models.AgentDream{}
-	worker.dreamOverviews(t.Context(), run, next, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamOverviews(t.Context(), run, next, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	if secondNight := askedAbout(sentPrompts()[promptCount:]); !secondNight["things/garden-shed"] || secondNight["things/garden-shed/rake"] {
 		t.Fatalf("the second night wrote %d overviews, asking about %v", next.OverviewsWritten, secondNight)
 	}
@@ -186,9 +186,9 @@ func TestTheNightWritesOverviewsChildrenFirstAndOnlyWhenDue(t *testing.T) {
 	})
 
 	// The folder above the shed the night after; then nothing.
-	worker.dreamOverviews(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamOverviews(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	again := &models.AgentDream{}
-	worker.dreamOverviews(t.Context(), run, again, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamOverviews(t.Context(), run, again, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	if again.OverviewsWritten != 0 {
 		t.Errorf("a night with nothing changed wrote %d overviews", again.OverviewsWritten)
 	}

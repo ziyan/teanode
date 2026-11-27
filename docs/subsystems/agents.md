@@ -127,13 +127,32 @@ A feature has to pass all three:
    mailbox and talk to it; it is on the Member role by default. `agent:audit`
    is the operator's view of everybody's agents — state, usage, limits, the
    switch-off — and never their content. It is on the Operator role.
-   `agent:act` is content: every person's runs and conversations, openable,
-   and a word with their agent as them — the same tools, the same
-   permissions, logged each time as the operator speaking as that person.
-   It is on the Administrator role only, for the operator of a private
-   server debugging what an agent did. The `/manage/agent` page in the
-   management rail has the tabs: agents, use and cost, every run, jobs
-   given up on. (`/chat` is the person's chats with their agent and with
+   `agent:observe` is content, read-only: every person's main and named
+   conversations, goal conversations and runs, listed with a time range, a
+   kind, "running now" (a turn in flight on any instance, from `agent_turn`)
+   and a list of the turns that ended in a failed note, and openable with the
+   composer replaced by a note ("You are observing it and cannot write
+   here"). Chats between people are never listed or opened. Every read of
+   another person's conversation writes an `audit_log` row, action
+   `agent.conversation.observe`, folded to one per reader and conversation per
+   ten minutes (`TakeThrottleWait`, which waits for a parallel read of the
+   same conversation rather than skipping the row); the server-log line stays.
+   Reading it, following its events and asking for the previews of its links
+   each write the row; the lists (`ListAllAgentRuns`, `ListFailedAgentTurns`)
+   do not. `agent:act` implies observing, and adds a word with their agent as
+   them: the same tools, the same permissions, logged each time as the
+   operator speaking as that person. A send or a reaction with `agent:observe`
+   alone is refused. Opening another person's conversation in the apps is
+   always read-only, `isObserved` is true even for a holder of `agent:act`, so
+   nobody types as someone else by accident from a screen; speaking as the
+   person stays possible for `agent:act` through the API and CLI, which say
+   whose conversation it is.
+   Both are on the Administrator role only (migration 0283 gives the
+   Administrator `agent:observe`), for the operator of a private server
+   debugging what an agent did. The `/manage/agent` page in the management
+   rail has the tabs: agents, use and cost, Oversight (running now, recent,
+   failed turns; the range, the kind and the pages are in the address),
+   jobs given up on. (`/chat` is the person's chats with their agent and with
    people, a row at the top of the mailbox's rail; `/agent` forwards there.)
 3. **The person.** Their agent's own switch, and the policy on each source.
 
@@ -174,9 +193,11 @@ The agent also starts a conversation for reasons of its own
 (`internal/agent/speak_first.go`): its introduction, a new phone's tour, a trip,
 a memory check, an idea. The person need not have the app open, since what it
 says reaches their phone. It holds to its rules all the same: not within half an
-hour of their last word, once a day but for the introduction and a tour, never
-while snoozed, and, with no app or dashboard in front of them, not during their
-quiet hours. Somebody with no phone taking notifications and no chat app could
+hour of their last word, never while snoozed, and each subject (the
+introduction, a waiting goal, a fact, an idea) once: there is no gap of a day
+between turns and no quiet hours, since a card lands in the feed at any hour and
+the phone's own Focus or Do Not Disturb decides whether it makes a sound.
+Somebody with no phone taking notifications and no chat app could
 not read it, so for them it waits until they come.
 
 A trip (`speak_first_trip.go`) is spoken about up to three days ahead with a plan
@@ -227,9 +248,9 @@ called unexpected at any of the three. The model writes the alerts in the agent'
 code keeps the bounds, because a model talked into interrupting somebody
 by a stranger's message is what bounds are for:
 
-- at most five a day, the urgent first;
-- nothing in the person's night, 22:00 to 07:00 in their zone, unless it
-  cannot wait; what waited is decided again in the morning;
+- no count a day and no night: every alert the model decided on is
+  delivered at once, the urgent first (a sixth in a day included), and the
+  phone's own Focus or Do Not Disturb decides whether it makes a sound;
 - nothing said twice in a week under the same subject key, unless the model
   says what changed;
 - no web address, host name, link shortener, email address or telephone
@@ -249,9 +270,10 @@ of the agent's own (`internal/channel/relay.go`).
 
 **The person's say.** Alerts are on for every agent (`isAlertsEnabled`) and
 for every mailbox the agent sorts (`AgentMailbox.alerts`, absent meaning
-on). The night and the day's most are theirs to change (`alertQuietStart`,
-`alertQuietEnd`, `alertDailyMost`; the same time at both ends is no night), as
-are the day and time of the look around.
+on). There are no quiet hours and no daily most: `alertQuietStart`,
+`alertQuietEnd`, `alertDailyMost`, `lookAroundWeekday` and `lookAroundTime`
+are no longer used, still answered by the API for one release and ignored when
+sent.
 Saying an alert was theirs, or that it is handled, settles that alert and mutes nothing: the next decision reads their answer. "Don't tell me about these" is a **mute**, a row of `agent_alert_mute`
 naming a sender's address, a domain (and its subdomains), a subject key, or
 a kind: `burst`, or a category of the sorting such as `notification`. The
@@ -265,7 +287,7 @@ burst of an alert about one, the sender of an alert about a message, not
 the subject key the model chose, which the next alert may word
 differently. A target named without a scope is read as an address, a
 domain, or else a subject. The same operations serve every door: the
-agent page's Alerts tab (the switch, quiet hours and daily most, then what
+agent page's Alerts tab (the switch, then what
 was said and what is muted), the Mail tab's switch per mailbox, `teanode agent alert` and `agent settings
 set`, and `agent_profile`'s `no_alerts`, `alerts_on`, `mute_alert` and
 `unmute_alert`, which the agent calls when the person answers an alert with
@@ -310,22 +332,17 @@ bill long past are let go by the sweep without a word.
 `BackfillAgentFollowUps` and `teanode agent follow backfill` run it again on
 demand, for someone who turned alerts on later.
 
-**The look around.** Once a week, on the day and at the time the person set
-(`lookAroundWeekday`, `lookAroundTime`; Thursday at 17:00 in their zone by
-default), each agent with alerts on is queued a `nearby` job (`nearby.go`, subject the slot,
-like the sweep). It reads the person's town and household from the self page
-and the place pages (one model call that is told to leave out any street
-address; `cleanHomeArea` strips what is left), and with a town runs one turn
-with nobody present that has only `web_search` and `web_fetch`, at most 12
-searches and 10 page reads (`AskSettings.CallLimits`: the loop refuses the
-call past them). What it finds is written as `event` and `deadline`
-follow-ups with `source_url`, the page. It then tells the weekend in one
-message (`tellWeekend`: the open events and deadlines due from tomorrow through
-Sunday, from the look around and from mail), and the Sunday roundup lists the
-rest. When
-memory gives no town the run searches nothing and offers the person one idea,
-once (`nearby_home_area`), asking which town to look around. The kind mute
-`nearby` stops the run and keeps what it wrote out of the roundup.
+**The look around.** An ordinary goal, called "Look around", on set times
+(Thursday at 17:00 in the person's zone unless they chose another day and time
+before it became a goal). Migration 0285 made one, built in, for each agent
+that was on and had alerts on. Its words tell a turn to find the person's town
+from the place they labeled home or from memory, to search the web with the town
+and the kind of thing and nothing else, to post the best of what it finds to the
+feed with the feed tool, and to add a follow-up with `agent_profile`'s
+`add_follow_up` for anything with a day. It is on the Goals screens, where its
+words and time can be changed or the goal dropped; there is no job of its own
+(`nearby` is gone), no weekend message, and no kind mute `nearby`. A follow-up
+it adds is told in the Sunday roundup like any other.
 
 ## Runs
 

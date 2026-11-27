@@ -215,6 +215,33 @@ func TestALikeIsWrittenToMemory(t *testing.T) {
 	})
 }
 
+// A dismissed card can still be answered, liked and shown less like, and
+// stays dismissed through all of it: putting it back is the person's restore.
+func TestADismissedCardCanStillBeAnsweredAndLiked(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	card := world.post(t, &models.AgentFeedItem{Title: "A new device signed in", Choices: []models.FeedChoice{
+		{ChoiceKey: "me", ChoiceLabel: "That was me", ChoiceRole: models.FeedChoiceDismiss},
+	}})
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.DismissAgentFeedItems(world.owner.ID, &db.FeedDismissSelection{FeedItemIDs: []string{card.ID}}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		card, _ = tx.GetAgentFeedItem(card.ID)
+	})
+	answered, err := world.choose(t, card, "me")
+	if err != nil || answered.ChosenChoiceKey != "me" || answered.DismissedAt == nil {
+		t.Fatalf("a dismissed card answered stays dismissed: %+v %v", answered, err)
+	}
+	liked, err := world.worker.LikeFeedItem(context.Background(), world.agent.ID, answered, true)
+	if err != nil || !liked.IsLiked || liked.DismissedAt == nil {
+		t.Fatalf("a dismissed card is liked: %+v %v", liked, err)
+	}
+	less, err := world.worker.ShowLessLikeFeedItem(context.Background(), world.agent.ID, liked)
+	if err != nil || less.DismissedAt == nil || !less.DismissedAt.Equal(*liked.DismissedAt) {
+		t.Fatalf("show less on a dismissed card only remembers: %+v %v", less, err)
+	}
+}
+
 // Three news cards from one goal list as one entry with the stack's count, and
 // a decision from the same goal stands alone.
 func TestCardsFromOneGoalStackAndADecisionStandsAlone(t *testing.T) {
@@ -486,5 +513,69 @@ func TestAMemoryCheckRunsInARunConversationWhenTheFeedIsTheDestination(t *testin
 			return
 		}
 		t.Fatalf("no run conversation for the check: %+v", runs)
+	})
+}
+
+// The same preference is one fact: showing less like a card twice, or liking
+// it twice, files each sentence once on the preferences page.
+func TestAPreferenceAlreadyOnThePageIsNotFiledAgain(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	card := world.post(t, &models.AgentFeedItem{Title: "Humanoid robots in warehouses", FeedItemKind: models.FeedItemNews})
+	for range 2 {
+		if _, err := world.worker.ShowLessLikeFeedItem(context.Background(), world.agent.ID, card); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := world.worker.LikeFeedItem(context.Background(), world.agent.ID, card, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		node, err := tx.GetAgentNode(world.agent.ID, "self/feed")
+		if err != nil || node == nil {
+			t.Fatalf("the preferences page: %v %v", node, err)
+		}
+		facts, err := tx.ListAgentFacts(world.agent.ID, node.ID, true, 50)
+		if err != nil || len(facts) != 2 {
+			t.Fatalf("one fact for each sentence: %+v %v", facts, err)
+		}
+	})
+}
+
+// The sweep that moves answered cards to the dismissed ones tells the open
+// feeds of each card, with the person's unread count read once, and leaves a
+// card restored since the cutoff where it is.
+func TestTheSweepAnnouncesEachDismissedCard(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	choices := []models.FeedChoice{{ChoiceKey: "go", ChoiceLabel: "Go", ChoiceRole: models.FeedChoiceAction}}
+	first := world.post(t, &models.AgentFeedItem{Title: "Book the table?", Choices: choices})
+	second := world.post(t, &models.AgentFeedItem{Title: "Order more tea?", Choices: choices})
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		for _, card := range []*models.AgentFeedItem{first, second} {
+			if _, err := tx.SettleAgentFeedItem(card.ID, &models.FeedSettlement{ChoiceKey: "go"}, time.Now().Add(-48*time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	if err := world.worker.SweepAnsweredFeedItems(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		for _, card := range []*models.AgentFeedItem{first, second} {
+			if stored, err := tx.GetAgentFeedItem(card.ID); err != nil || stored.DismissedAt == nil {
+				t.Fatalf("the card was not swept: %+v %v", stored, err)
+			}
+		}
+		restored, err := tx.RestoreAgentFeedItems(first.UserID, []string{first.ID}, time.Now())
+		if err != nil || len(restored) != 1 {
+			t.Fatalf("restore: %+v %v", restored, err)
+		}
+	})
+	if err := world.worker.SweepAnsweredFeedItems(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if stored, _ := tx.GetAgentFeedItem(first.ID); stored.DismissedAt != nil {
+			t.Fatal("a restored card was swept again")
+		}
 	})
 }

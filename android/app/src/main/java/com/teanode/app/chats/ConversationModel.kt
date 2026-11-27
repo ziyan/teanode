@@ -146,6 +146,10 @@ class ConversationModel(
     var actingAs: String? by mutableStateOf(null)
         private set
 
+    /** Whether the reader is not the owner: they may read it and cannot write, and the screen says so in place of the composer. */
+    var isObserved: Boolean by mutableStateOf(false)
+        private set
+
     /** Ideas to start an empty conversation with. */
     var ideas: List<AgentIdea> by mutableStateOf(emptyList())
         private set
@@ -308,6 +312,7 @@ class ConversationModel(
         total = page.total
         todos = page.todos
         actingAs = page.actingAs
+        isObserved = page.isObserved
         val fresh = Transcript(messages, interactions, isChat = isChat)
         if (isFeedReplaying) {
             runningRunIds = emptyList()
@@ -493,10 +498,11 @@ class ConversationModel(
 
     /**
      * Whether the person can still write here: always, but in a chat they have left, or a direct chat with somebody
-     * they no longer share a circle with, which they can read and not write to.
+     * they no longer share a circle with, which they can read and not write to. Somebody else's conversation, read as an observer, is never written to.
      */
     val canWrite: Boolean
         get() {
+            if (isObserved) return false
             val summary = chat
             if (!isChat || summary == null) return true
             return !summary.isRemoved && !(summary.chatKind == ChatKind.Direct.wireName && summary.otherMembers(ownUserId).any { member -> member.isRemoved })

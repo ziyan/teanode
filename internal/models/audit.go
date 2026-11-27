@@ -85,6 +85,10 @@ const (
 	AuditActionCreate AuditAction = "create"
 	AuditActionUpdate AuditAction = "update"
 	AuditActionDelete AuditAction = "delete"
+
+	// AuditActionObserveConversation is an operator reading another person's
+	// agent conversation: nothing changed, and the row says who looked.
+	AuditActionObserveConversation AuditAction = "agent.conversation.observe"
 )
 
 // AuditResourceType names what was changed. Adding one here is what makes a
@@ -122,6 +126,7 @@ const (
 	AuditResourceTaxYearSetting     AuditResourceType = "tax_year_setting"    // a year's estimate inputs
 	AuditResourcePasswords          AuditResourceType = "passwords"           // a person's setup, never a key or a hash
 	AuditResourcePasswordItem       AuditResourceType = "password_item"       // what happened to an item and who it is shared with, never a sealed value
+	AuditResourceAgentConversation  AuditResourceType = "agent_conversation"  // read by an operator with agent:observe or agent:act; nothing in it is recorded
 	AuditResourceCircleMember       AuditResourceType = "circle_member"       // an account an operator put in a circle, with no invitation to answer
 )
 

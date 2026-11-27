@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -129,8 +130,9 @@ func normalizeFeedLayout(item *models.AgentFeedItem) error {
 		}
 		for index := range list.ListRows {
 			row := &list.ListRows[index]
-			row.RowTitle = cutMarked(strings.TrimSpace(row.RowTitle), feedLayoutTextMost)
-			row.RowDetail, row.RowMeta = cutMarked(strings.TrimSpace(row.RowDetail), feedLayoutTextMost*2), cutMarked(strings.TrimSpace(row.RowMeta), feedLayoutTextMost)
+			rowPath := fmt.Sprintf("layoutContent.listRows[%d]", index)
+			row.RowTitle = feedLine(item, rowPath+".rowTitle", row.RowTitle, feedLayoutTextMost)
+			row.RowDetail, row.RowMeta = feedText(item, rowPath+".rowDetail", row.RowDetail, feedLayoutTextMost*2), feedLine(item, rowPath+".rowMeta", row.RowMeta, feedLayoutTextMost)
 			if row.RowTitle == "" {
 				return feedRefusal("layout_content.listRows[%d].rowTitle is empty", index)
 			}
@@ -145,7 +147,7 @@ func normalizeFeedLayout(item *models.AgentFeedItem) error {
 		if err := decodeLayoutContent(content, &weather); err != nil {
 			return err
 		}
-		weather.PlaceName, weather.ConditionText = cutMarked(strings.TrimSpace(weather.PlaceName), feedLayoutTextMost), cutMarked(strings.TrimSpace(weather.ConditionText), feedLayoutTextMost)
+		weather.PlaceName, weather.ConditionText = feedLine(item, "layoutContent.placeName", weather.PlaceName, feedLayoutTextMost), feedLine(item, "layoutContent.conditionText", weather.ConditionText, feedLayoutTextMost)
 		switch {
 		case weather.PlaceName == "":
 			return feedRefusal("layout_content.placeName is empty")
@@ -180,7 +182,8 @@ func normalizeFeedLayout(item *models.AgentFeedItem) error {
 		}
 		for index := range agenda.AgendaEntries {
 			entry := &agenda.AgendaEntries[index]
-			entry.AgendaTitle, entry.AgendaDetail = cutMarked(strings.TrimSpace(entry.AgendaTitle), feedLayoutTextMost), cutMarked(strings.TrimSpace(entry.AgendaDetail), feedLayoutTextMost*2)
+			entryPath := fmt.Sprintf("layoutContent.agendaEntries[%d]", index)
+			entry.AgendaTitle, entry.AgendaDetail = feedLine(item, entryPath+".agendaTitle", entry.AgendaTitle, feedLayoutTextMost), feedText(item, entryPath+".agendaDetail", entry.AgendaDetail, feedLayoutTextMost*2)
 			switch {
 			case entry.AgendaTitle == "":
 				return feedRefusal("layout_content.agendaEntries[%d].agendaTitle is empty", index)

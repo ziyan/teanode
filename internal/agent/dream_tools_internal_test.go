@@ -156,7 +156,7 @@ func TestTheNightIsOfferedThePersonsWholeToolKit(t *testing.T) {
 	}}
 	worker.AttachComputer(run.Agent.ID, laptop, ComputerIdentity{Name: "laptop", System: "linux", Home: "~", Terminal: ""})
 
-	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
+	budget := newDreamBudget(run.Configuration(), run.Agent, 0)
 	if _, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true); err != nil {
 		t.Fatalf("dreamThought: %s", err)
 	}
@@ -206,7 +206,7 @@ func TestDescribingACheckoutStillOnlyLooksThingsUp(t *testing.T) {
 	worker.AttachComputer(run.Agent.ID, laptop, ComputerIdentity{Name: "laptop", System: "linux", Home: "~", Terminal: ""})
 
 	if _, err := worker.think(context.Background(), run, "Described the checkout ~/src/portal", "Answer with {}.",
-		lookupTools, roundsFor(run.Configuration(), models.AgentJobIngest), models.AgentJobIngest, config.AgentWorkScan); err != nil {
+		lookupTools, 0, models.AgentJobIngest, config.AgentWorkScan); err != nil {
 		t.Fatalf("think: %s", err)
 	}
 
@@ -261,7 +261,7 @@ func TestTheNightCanRunSomethingOnTheMachine(t *testing.T) {
 	}}
 	worker.AttachComputer(run.Agent.ID, laptop, ComputerIdentity{Name: "laptop", System: "linux", Home: "~", Terminal: ""})
 
-	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
+	budget := newDreamBudget(run.Configuration(), run.Agent, 0)
 	thinking, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true)
 	if err != nil {
 		t.Fatalf("dreamThought: %s", err)
@@ -320,7 +320,7 @@ func TestTheNightIsRefusedWhatLeavesTheServer(t *testing.T) {
 		return &sendingOperations{}, nil
 	})
 
-	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
+	budget := newDreamBudget(run.Configuration(), run.Agent, 0)
 	thinking, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true)
 	if err != nil {
 		t.Fatalf("dreamThought: %s", err)
@@ -371,7 +371,7 @@ func TestTheNightIsRefusedAChangeToTheGraph(t *testing.T) {
 	defer provider.Close()
 	worker, run := digestSplitWorld(t, database, provider.URL)
 
-	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
+	budget := newDreamBudget(run.Configuration(), run.Agent, 0)
 	thinking, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true)
 	if err != nil {
 		t.Fatalf("dreamThought: %s", err)
@@ -418,7 +418,7 @@ func TestTheNightMayStillLookInTheGraph(t *testing.T) {
 	defer provider.Close()
 	worker, run := digestSplitWorld(t, database, provider.URL)
 
-	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
+	budget := newDreamBudget(run.Configuration(), run.Agent, 0)
 	thinking, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true)
 	if err != nil {
 		t.Fatalf("dreamThought: %s", err)
@@ -466,7 +466,7 @@ func TestTheNightsMachineIsNotHeldToReading(t *testing.T) {
 	}}
 	worker.AttachComputer(run.Agent.ID, laptop, ComputerIdentity{Name: "laptop", System: "linux", Home: "~", Terminal: ""})
 
-	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
+	budget := newDreamBudget(run.Configuration(), run.Agent, 0)
 	thinking, err := worker.dreamThought(context.Background(), run, budget, "Read a batch", "Answer with {}.", true)
 	if err != nil {
 		t.Fatalf("dreamThought: %s", err)
@@ -503,7 +503,7 @@ func TestDescribingACheckoutIsRefusedByTheWholeTurn(t *testing.T) {
 	worker, run := digestSplitWorld(t, database, provider.URL)
 
 	thinking, err := worker.think(context.Background(), run, "Described the checkout ~/src/portal", "Answer with {}.",
-		lookupTools, roundsFor(run.Configuration(), models.AgentJobIngest), models.AgentJobIngest, config.AgentWorkScan)
+		lookupTools, 0, models.AgentJobIngest, config.AgentWorkScan)
 	if err != nil {
 		t.Fatalf("think: %s", err)
 	}

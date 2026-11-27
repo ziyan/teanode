@@ -5,6 +5,10 @@ import com.teanode.app.demo.DemoResponse
 import com.teanode.app.demo.graphQLField
 import com.teanode.kit.TeaNodeJson
 import com.teanode.kit.feed.AgentFeedChoice
+import com.teanode.kit.feed.AgentFeedChartBar
+import com.teanode.kit.feed.AgentFeedChartBlock
+import com.teanode.kit.feed.AgentFeedChartMarker
+import com.teanode.kit.feed.AgentFeedChartSeries
 import com.teanode.kit.feed.AgentFeedFactRow
 import com.teanode.kit.feed.AgentFeedItemView
 import com.teanode.kit.feed.AgentFeedMediaView
@@ -57,9 +61,19 @@ object FeedDemoIDs {
     const val MEDIA_VIDEO = "demo-media-video"
     const val MEDIA_PICTURE = "demo-media-picture"
     const val MEDIA_UNSIZED = "demo-media-unsized"
+    const val RESOLVED = "demo-resolved"
+    const val CHART_SERIES = "demo-chart-series"
+    const val CHART_BARS = "demo-chart-bars"
+    const val CAMERA_STILL = "demo-camera-still"
+    const val ANSWERED_FOLDED = "demo-answered-folded"
     const val BRIEF_STACK_KEY = "schedule:brief:run-1"
     const val ROBOTS_STACK_KEY = "goal:robots"
     const val IDEAS_STACK_KEY = "speak_first:ideas"
+    const val DISMISSED_CHOICES = "demo-dismissed-choices"
+    const val DISMISSED_WATERING_NEW = "demo-dismissed-watering-new"
+    const val DISMISSED_WATERING_OLD = "demo-dismissed-watering-old"
+    const val DISMISSED_NEWS = "demo-dismissed-news"
+    const val WATERING_STACK_KEY = "goal:garden-watering"
 }
 
 /** A picture of a card, drawn on the spot by [feedDemoPictureBytes] at the size it says. */
@@ -128,6 +142,34 @@ val demoBriefCards: List<AgentFeedItemView> = listOf(
         .copy(feedMedia = listOf(media("mail-0", "photo", 800, 800, rowIndex = 0))),
 )
 
+/** The dismissed cards of the demo, the most recently dismissed first; two share a stack, so they are drawn as a deck. Invented. */
+val demoDismissedCards: List<AgentFeedItemView> = listOf(
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.DISMISSED_CHOICES, feedItemKind = "decision", feedSourceKind = "agent", title = "Renew the library card",
+        body = "Your library card runs out on Friday. Renewing takes one step.", pictureSymbol = "book",
+        choices = listOf(choice("approve", "Renew it", "action"), choice("not-now", "Not now", "dismiss")),
+        isDismissed = true, dismissedAt = minutesAgo(35), postedAt = minutesAgo(60 * 30), updatedAt = minutesAgo(60 * 30),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.DISMISSED_WATERING_NEW, feedItemKind = "report", feedSourceKind = "goal", feedSourceTitle = "Garden watering",
+        title = "Watering plan for Thursday", body = "No rain until the weekend. Water the beds before eight in the morning.", pictureSymbol = "cloud.sun",
+        feedStackKey = FeedDemoIDs.WATERING_STACK_KEY, feedStackTitle = "Garden watering",
+        isRead = true, isDismissed = true, dismissedAt = minutesAgo(60 * 3), postedAt = minutesAgo(60 * 26), updatedAt = minutesAgo(60 * 26),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.DISMISSED_WATERING_OLD, feedItemKind = "report", feedSourceKind = "goal", feedSourceTitle = "Garden watering",
+        title = "Watering plan for Tuesday", body = "A shower is likely at noon, so the beds can wait until evening.", pictureSymbol = "cloud.rain",
+        feedStackKey = FeedDemoIDs.WATERING_STACK_KEY, feedStackTitle = "Garden watering",
+        isRead = true, isDismissed = true, dismissedAt = minutesAgo(60 * 3 + 1), postedAt = minutesAgo(60 * 74), updatedAt = minutesAgo(60 * 74),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.DISMISSED_NEWS, feedItemKind = "news", feedSourceKind = "agent", title = "A new bakery opens on Mill Street",
+        body = "It opens on Saturday with a free loaf for the first fifty visitors.", pictureSymbol = "newspaper",
+        factRows = listOf(AgentFeedFactRow("Opens", "Saturday, 7:00"), AgentFeedFactRow("Where", "Mill Street")),
+        isRead = true, isLiked = true, isDismissed = true, dismissedAt = minutesAgo(60 * 28), postedAt = minutesAgo(60 * 50), updatedAt = minutesAgo(60 * 50),
+    ),
+)
+
 private fun withStack(card: AgentFeedItemView, count: Int, unread: Int, key: String, title: String = "") = card.copy(feedStackKey = key, feedStackTitle = title, stackItemCount = count, stackUnreadCount = unread)
 
 private val signInChoices = listOf(choice("me", "That's me", "dismiss"), choice("secure", "Secure my account", "action"))
@@ -145,6 +187,59 @@ private val demoPlainCards: List<AgentFeedItemView> = listOf(
         title = "Claude Code on workstation asks", body = "Tests failed in two packages. Run them again with the race detector?", pictureSymbol = "terminal",
         choices = listOf(choice("option:1", "Yes, run again", "action"), choice("option:2", "No, stop here", "action")),
         feedUrgency = "now", postedAt = minutesAgo(14), updatedAt = minutesAgo(14),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.RESOLVED, feedItemKind = "alert", feedSourceKind = "goal", feedSourceTitle = "Backup watch", title = "Last night's backup did not finish",
+        body = "The backup stopped at 02:10 because the disk was full. Free some space and run it again.", pictureSymbol = "externaldrive",
+        factRows = listOf(AgentFeedFactRow("Finished", "No"), AgentFeedFactRow("Disk free", "1.2 GB")),
+        isResolved = true, resolvedAt = minutesAgo(25), resolutionNote = "The next run finished and the disk has 40 GB free.", resolvedByKind = "goal",
+        isRead = true, postedAt = minutesAgo(60 * 9), updatedAt = minutesAgo(60 * 9),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.CHART_SERIES, feedItemKind = "report", feedSourceKind = "goal", feedSourceTitle = "Weekly money check", title = "Your checking balance is below last week's",
+        body = "The rent went out on Wednesday. At this pace the week ends a little under last week.", pictureSymbol = "chart.line.uptrend.xyaxis",
+        chartBlocks = listOf(
+            AgentFeedChartBlock(
+                chartKind = "series", chartTitle = "Checking balance", unit = "USD", provenance = "Read from the bank at 09:40 EST",
+                xLabels = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
+                series = listOf(
+                    AgentFeedChartSeries("This week", "measured", listOf(2450.0, 2410.0, 1310.0, 1275.0, null, null, null)),
+                    AgentFeedChartSeries("Last week", "reference", listOf(2500.0, 2460.0, 2300.0, 2240.0, 2190.0, 2120.0, 2080.0)),
+                    AgentFeedChartSeries("Expected", "projection", listOf(null, null, null, 1275.0, 1230.0, 1190.0, 1150.0)),
+                ),
+                markers = listOf(AgentFeedChartMarker("Wed", "Rent paid")),
+            ),
+        ),
+        isRead = true, postedAt = minutesAgo(60 * 4), updatedAt = minutesAgo(60 * 4),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.CHART_BARS, feedItemKind = "report", feedSourceKind = "goal", feedSourceTitle = "Weekly money check", title = "Where this month's money went",
+        body = "Groceries are the largest part so far.", pictureSymbol = "chart.bar",
+        chartBlocks = listOf(
+            AgentFeedChartBlock(
+                chartKind = "bars", chartTitle = "Spending by category", unit = "USD", provenance = "Read from the bank at 09:40 EST, through yesterday",
+                bars = listOf(AgentFeedChartBar("Groceries", 420.5), AgentFeedChartBar("Transport", 180.0), AgentFeedChartBar("Dining out", 96.25), AgentFeedChartBar("Subscriptions", 45.0)),
+            ),
+        ),
+        isRead = true, postedAt = minutesAgo(60 * 4 + 5), updatedAt = minutesAgo(60 * 4 + 5),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.CAMERA_STILL, feedItemKind = "update", feedSourceKind = "goal", feedSourceTitle = "Doorstep watch", title = "A parcel was left at the front door",
+        body = "A courier left a box at 14:02. It is on the mat, out of the rain.", pictureSymbol = "video",
+        feedMedia = listOf(
+            AgentFeedMediaView(
+                mediaKey = "still", feedMediaKind = "camera_still", imageUrl = "/demo/feed/media/still/1600/900", widthPixels = 1600, heightPixels = 900,
+                mediaCaption = "A box on the doormat", cameraName = "Front door", capturedAt = java.time.LocalDate.now().toString() + "T14:02:11+09:00",
+                stillReason = "The camera at the front door, where the parcel was left", playbackUrl = "https://example.com/camera/front-door/playback", liveUrl = "https://example.com/camera/front-door/live",
+            ),
+        ),
+        isRead = true, postedAt = minutesAgo(40), updatedAt = minutesAgo(40),
+    ),
+    AgentFeedItemView(
+        feedItemId = FeedDemoIDs.ANSWERED_FOLDED, feedItemKind = "decision", feedSourceKind = "agent", title = "Move the dentist visit to Friday",
+        body = "The clinic has a free slot on Friday at 10:30. Moving it keeps the same dentist.", pictureSymbol = "calendar",
+        choices = listOf(choice("approve", "Move it", "action"), choice("not-now", "Keep Thursday", "dismiss")),
+        chosenChoiceKey = "approve", outcomeText = "Moved to Friday at 10:30 and added to your calendar.", isRead = true, postedAt = minutesAgo(60 * 6), updatedAt = minutesAgo(60 * 5),
     ),
     AgentFeedItemView(
         feedItemId = FeedDemoIDs.MAIL_ORGANIZE, feedItemKind = "mail_organize", feedSourceKind = "goal", feedSourceTitle = "Weekly mail tidy-up",
@@ -301,7 +396,7 @@ private fun answeredWith(item: AgentFeedItemView, choiceKey: String): AgentFeedI
 fun demoFeedCard(feedItemId: String): AgentFeedItemView = cardOf(feedItemId)
 
 private fun cardOf(feedItemId: String): AgentFeedItemView =
-    (demoFeedCards + demoBriefCards + stackCards(FeedDemoIDs.ROBOTS_STACK_KEY)).firstOrNull { card -> card.feedItemId == feedItemId } ?: demoFeedCards.first()
+    (demoFeedCards + demoBriefCards + demoDismissedCards + stackCards(FeedDemoIDs.ROBOTS_STACK_KEY)).firstOrNull { card -> card.feedItemId == feedItemId } ?: demoFeedCards.first()
 
 /** What demo mode answers for Feed: every kind and state of card, and answers that change a card the way the server would. */
 val feedDemoAnswerers: List<DemoAnswerer> = listOf(
@@ -310,7 +405,11 @@ val feedDemoAnswerers: List<DemoAnswerer> = listOf(
         val parts = request.path.split('/')
         if (request.path.startsWith("/demo/feed/media/") && parts.size >= 7) DemoResponse(feedDemoPictureBytes(parts[4], parts[5].toIntOrNull() ?: 800, parts[6].toIntOrNull() ?: 450)) else null
     },
-    graphQLField("ListAgentFeed") {
+    graphQLField("ListAgentFeed") { variables ->
+        // Dismissed only: each dismissed card is an entry of its own, never folded into a stack.
+        if ((variables["isDismissedOnly"] as? JsonPrimitive)?.content == "true") {
+            return@graphQLField TeaNodeJson.encodeToString(AgentFeedPage.serializer(), AgentFeedPage(demoDismissedCards, null, demoFeedCards.count { card -> !card.isRead }))
+        }
         val page = AgentFeedPage(demoFeedCards, null, demoFeedCards.count { card -> !card.isRead })
         TeaNodeJson.encodeToString(AgentFeedPage.serializer(), page)
     },
@@ -323,6 +422,13 @@ val feedDemoAnswerers: List<DemoAnswerer> = listOf(
     },
     graphQLField("LikeAgentFeedItem") { variables ->
         json(cardOf((variables["feedItemId"] as? JsonPrimitive)?.content.orEmpty()).copy(isLiked = (variables["isLiked"] as? JsonPrimitive)?.content == "true"))
+    },
+    graphQLField("ResolveAgentFeedItem") { variables ->
+        val note = (variables["resolutionNote"] as? JsonPrimitive)?.content.orEmpty()
+        json(cardOf((variables["feedItemId"] as? JsonPrimitive)?.content.orEmpty()).copy(isResolved = true, resolvedAt = Instant.now().toString(), resolutionNote = note, resolvedByKind = "person"))
+    },
+    graphQLField("UnresolveAgentFeedItem") { variables ->
+        json(cardOf((variables["feedItemId"] as? JsonPrimitive)?.content.orEmpty()).copy(isResolved = false, resolvedAt = null, resolutionNote = "", resolvedByKind = ""))
     },
     graphQLField("ShowLessLikeAgentFeedItem") { variables -> json(cardOf((variables["feedItemId"] as? JsonPrimitive)?.content.orEmpty()).copy(isDismissed = true)) },
     // The demo keeps no record of what was dismissed: it answers with the ids the server would, and the feed is read as it was.

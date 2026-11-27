@@ -17,6 +17,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/ziyan/teanode/internal/config"
 	"mime"
 	"path/filepath"
 	"strconv"
@@ -276,7 +277,7 @@ func fetchForMainChat(ctx context.Context, run tools.Run, arguments shareArgumen
 	if err != nil {
 		return nil, nil, err
 	}
-	limit := run.Configuration().Agent.Limits.EffectiveMaxSentFileBytes()
+	limit := uint64(config.MaxSentFileBytes)
 	if uint64(len(file.content)) > limit {
 		return nil, nil, fmt.Errorf("%s is %d bytes, more than %d; it is too large to send", file.name, len(file.content), limit)
 	}
@@ -331,7 +332,7 @@ func uploadToMainChat(ctx context.Context, run tools.Run, arguments shareArgumen
 	if err := sending.SendToMainChat(ctx, attachment.ID, strings.TrimSpace(arguments.Caption), sentByOf(ctx, run)); err != nil {
 		return nil, err
 	}
-	limit := run.Configuration().Agent.Limits.EffectiveMaxSentFileBytes()
+	limit := uint64(config.MaxSentFileBytes)
 	result, err := tools.JSONResult(map[string]any{
 		"attachment_id": attachment.ID, "name": attachment.Name,
 		"upload_url":  link,

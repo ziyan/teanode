@@ -32,7 +32,7 @@ agent {
   providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled models { ${MANAGE_MODEL_ENTRY_FIELDS} } pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize transcription embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-  limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalShare goalTurnsAlone backgroundWakesAlone maxRecordingMediaBytes maxRecordingAccountBytes }
+  limits { dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer }
   retention { runs corrections }
   currency
   search { kind hasApiKey }
@@ -244,10 +244,20 @@ mutation (${'$'}jobId: String!) { RetryAgentJob(jobId: ${'$'}jobId) { id } }
 """.trimEnd()
 
     val MANAGE_ALL_AGENT_RUNS = """
-query (${'$'}first: Int, ${'$'}offset: Int, ${'$'}agentId: String, ${'$'}jobId: String, ${'$'}kinds: [String!], ${'$'}query: String) {
-  ListAllAgentRuns(first: ${'$'}first, offset: ${'$'}offset, agentId: ${'$'}agentId, jobId: ${'$'}jobId, kinds: ${'$'}kinds, query: ${'$'}query) {
+query (${'$'}first: Int, ${'$'}offset: Int, ${'$'}agentId: String, ${'$'}jobId: String, ${'$'}kinds: [String!], ${'$'}query: String, ${'$'}since: String, ${'$'}until: String, ${'$'}isRunningOnly: Boolean) {
+  ListAllAgentRuns(first: ${'$'}first, offset: ${'$'}offset, agentId: ${'$'}agentId, jobId: ${'$'}jobId, kinds: ${'$'}kinds, query: ${'$'}query, since: ${'$'}since, until: ${'$'}until, isRunningOnly: ${'$'}isRunningOnly) {
     total
-    runs { id agentId title jobKind lastAt usage { promptTokens cacheReadTokens completionTokens cost } }
+    totalCount
+    runs { id agentId title jobKind lastAt ownerUsername ownerName isRunning usage { promptTokens cacheReadTokens completionTokens cost } }
+  }
+}
+""".trimEnd()
+
+    val MANAGE_FAILED_AGENT_TURNS = """
+query (${'$'}first: Int, ${'$'}offset: Int, ${'$'}since: String, ${'$'}agentId: String) {
+  ListFailedAgentTurns(first: ${'$'}first, offset: ${'$'}offset, since: ${'$'}since, agentId: ${'$'}agentId) {
+    failedTurns { conversationId conversationKind conversationTitle ownerUsername ownerName failedAt errorText agentId }
+    totalCount
   }
 }
 """.trimEnd()

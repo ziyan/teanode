@@ -4,7 +4,7 @@
 // is drawn on. They live apart from the components so they can be tested
 // without drawing anything.
 
-export type FeedMediaKind = 'photo' | 'video' | 'picture'
+export type FeedMediaKind = 'photo' | 'video' | 'picture' | 'camera_still'
 
 export interface FeedMedia {
   mediaKey: string
@@ -18,6 +18,14 @@ export interface FeedMedia {
   heightPixels: number | null
   // Null: the card's own media. A number: the thumbnail of that row of a list card.
   listRowIndex: number | null
+  // Of a camera still: which camera, when it was taken on that camera's own
+  // clock (written with its offset), why this camera was chosen, and where
+  // the recording and the live view open. Empty for other media.
+  cameraName?: string
+  capturedAt?: string
+  stillReason?: string
+  playbackUrl?: string
+  liveUrl?: string
 }
 
 export interface SplitFeedMedia {
@@ -73,6 +81,19 @@ export function webAddressOf(written: string): string {
   try {
     const parsed = new URL(written)
     return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : ''
+  } catch {
+    return ''
+  }
+}
+
+// openableAddressOf is a link a camera still may open: http or https, or the
+// app's own scheme.
+export function openableAddressOf(written: string): string {
+  const web = webAddressOf(written)
+  if (web) return web
+  try {
+    const parsed = new URL(written)
+    return parsed.protocol === 'teanode:' ? parsed.href : ''
   } catch {
     return ''
   }

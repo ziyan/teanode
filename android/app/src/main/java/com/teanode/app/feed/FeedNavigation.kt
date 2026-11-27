@@ -12,18 +12,24 @@ import com.teanode.kit.AppSection
 object FeedRoutes {
     const val STACK = "feed/stack/{feedStackKey}"
 
+    /** The dismissed cards, reached from the feed's menu. */
+    const val DISMISSED = "feed/dismissed"
+
     /** One stack's cards; the key holds colons and is written as the address needs it. */
     fun stack(feedStackKey: String): String = "feed/stack/${Uri.encode(feedStackKey)}"
 
 }
 
-/** The routes of Feed: the feed and one stack. */
+/** The routes of Feed: the feed, one stack and the dismissed cards. */
 fun NavGraphBuilder.feedRoutes(navigator: AppNavigator) {
     composable(Routes.home(AppSection.Feed), deepLinks = Routes.deepLinks(Routes.home(AppSection.Feed))) {
         FeedSection()
     }
     composable(FeedRoutes.STACK, deepLinks = Routes.deepLinks(FeedRoutes.STACK)) { entry ->
         FeedStackScreen(feedStackKey = entry.arguments?.getString("feedStackKey").orEmpty(), onBack = { navigator.back() })
+    }
+    composable(FeedRoutes.DISMISSED, deepLinks = Routes.deepLinks(FeedRoutes.DISMISSED)) {
+        FeedDismissedScreen(onBack = { navigator.back() })
     }
 }
 

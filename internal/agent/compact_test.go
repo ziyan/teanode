@@ -366,3 +366,64 @@ func toString(value any) string {
 	}
 	return ""
 }
+
+// The soft limit is a size, whatever the window: a large window compacts at
+// it rather than at half of what it holds. The hard limit, where a turn
+// compacts before its round, is most of the window. A window nobody knows
+// keeps the small line for both.
+func TestTheSoftLimitIsASizeAndTheHardLimitMostOfTheWindow(t *testing.T) {
+	for _, case_ := range []struct {
+		contextLength, soft, hard int
+	}{
+		{contextLength: 0, soft: 30000, hard: 30000},
+		{contextLength: 32000, soft: 30000, hard: 30000},
+		{contextLength: 100000, soft: 50000, hard: 80000},
+		{contextLength: 272000, soft: 100000, hard: 217600},
+		{contextLength: 500000, soft: 100000, hard: 400000},
+	} {
+		if soft := agent.SoftHistoryLimit(case_.contextLength); soft != case_.soft {
+			t.Errorf("the soft limit of a window of %d is %d, not %d", case_.contextLength, soft, case_.soft)
+		}
+		if hard := agent.HardHistoryLimit(case_.contextLength); hard != case_.hard {
+			t.Errorf("the hard limit of a window of %d is %d, not %d", case_.contextLength, hard, case_.hard)
+		}
+	}
+}
+
+// A turn past the soft limit but under the hard one answers without waiting
+// on a compaction, and the conversation is compacted once it is quiet: the
+// next turn starts from the note.
+func TestAQuietConversationIsCompactedAfterTheTurnNotBeforeIt(t *testing.T) {
+	previous := agent.SetIdleCompactionDelay(200 * time.Millisecond)
+	t.Cleanup(func() { agent.SetIdleCompactionDelay(previous) })
+	const note = "The regatta is on the 21st; the plumber's invoice is paid."
+	ask, requests, notes := longConversation(t, note, "Noted.", 100000)
+
+	ask("and the regatta?")
+	for _, request := range *requests {
+		if strings.Contains(lastThingAsked(request), "Write a note that stands in for it") {
+			t.Fatal("the turn waited on a compaction it did not need")
+		}
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for notes() == 0 && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if count := notes(); count != 1 {
+		t.Fatalf("the quiet conversation is compacted once, got %d notes", count)
+	}
+
+	sentBefore := len(*requests)
+	ask("and the invoice?")
+	hasNote, hasOldest := false, false
+	for _, request := range (*requests)[sentBefore:] {
+		for _, message := range request["messages"].([]any) {
+			content := toString(message.(map[string]any)["content"])
+			hasNote = hasNote || strings.Contains(content, note)
+			hasOldest = hasOldest || strings.Contains(content, "turn 1: ")
+		}
+	}
+	if !hasNote || hasOldest {
+		t.Fatalf("the next turn starts from the note (%v) without the oldest turn (%v)", hasNote, hasOldest)
+	}
+}

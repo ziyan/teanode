@@ -13,7 +13,7 @@ import TeaNodeKit
 
 /// ServerWords is how these screens say times, amounts and the server's
 /// fixed words.
-private enum ServerWords {
+enum ServerWords {
     static func relative(_ timeText: String?) -> String {
         ServerTime.date(timeText)?.formatted(.relative(presentation: .named)) ?? ""
     }
@@ -1914,7 +1914,7 @@ final class AgentAdminModel {
 }
 
 /// AgentAdminView is the dashboard's agents page: everybody's agents with
-/// their limits and switches, what they cost, every run they made, and the
+/// their limits and switches, what they cost, oversight of every conversation, and the
 /// operator's agent settings, skills and source types. Each tab is offered
 /// only to whoever holds the permission it needs.
 struct AgentAdminView: View {
@@ -1959,9 +1959,9 @@ struct AgentAdminView: View {
             Section {
                 NavigationLink { AgentUsageView(connection: connection) } label: { Label("Use and cost", systemImage: "chart.bar").foregroundStyle(.primary) }
             }
-        case .runs:
+        case .oversight:
             Section {
-                NavigationLink { AgentRunsAdminView(connection: connection) } label: { Label("Runs", systemImage: "list.bullet.rectangle").foregroundStyle(.primary) }
+                NavigationLink { OversightView(connection: connection) } label: { Label("Oversight", systemImage: "eye").foregroundStyle(.primary) }
             }
         case .models:
             Section("Models") {
@@ -2077,25 +2077,6 @@ private enum AgentWords {
         case "dailyCostPerAgent": "Daily cost per person"
         case "monthlyCostPerServer": "Monthly cost, whole server"
         case "monthlyTokensPerServer": "Tokens per month, whole server (0 = no cap)"
-        case "maxBodyCharacters": "Characters of a message given to a model"
-        case "maxRoundsPerSubagent": "Rounds per subagent (20)"
-        case "goalShare": "Share of the day goals at their own pace may spend (0.5 by default)"
-        case "goalTurnsAlone": "Goal turns without the person (24)"
-        case "backgroundWakesAlone": "Wakes by background work without the person (20)"
-        case "maxRoundsPerAsk": "Rounds per conversation turn"
-        case "maxRoundsPerResearch": "Rounds per research run"
-        case "maxRoundsPerReply": "Rounds per reply"
-        case "maxToolCallsPerRun": "Tool calls per run"
-        case "maxRecordingMediaBytes": "Original recording file limit"
-        case "maxRecordingAccountBytes": "Recording storage per account"
-        case "requestTimeout": "Timeout per call"
-        case "concurrency": "Runs at once"
-        case "maxRoundsPerDream": "Rounds per dream call"
-        case "scanConcurrency": "Reading calls at once"
-        case "rewriteConcurrency": "Page rewrites at once"
-        case "dreamShare": "Share of the day dreams may spend (0.3 by default)"
-        case "ingestChunksPerRun": "Passages embedded per ingest run"
-        case "embeddingTokensPerDay": "Embedding tokens per day (0 for no cap)"
         default: LocalizedStringKey(limitName)
         }
     }
@@ -2588,250 +2569,6 @@ struct AgentUsageView: View {
             overview = try await connection.agentAdminOverview(grouping: grouping, range: range)
         } catch is CancellationError {
             return
-        } catch {
-            problemText = error.localizedDescription
-        }
-    }
-}
-
-/// AgentRunsAdminView is the jobs given up on, and every call any agent on
-/// this server made to a model, newest first, filtered on the server. A run
-/// opens as a conversation, where what is said goes to that agent as its
-/// person and is logged.
-private struct AgentRunsAdminView: View {
-    let connection: Connection
-    @State private var overview: AgentAdminOverview?
-    @State private var filter = ServerAgentRunFilter()
-    @State private var runs: [ServerAgentRun]?
-    @State private var runTotal = 0
-    @State private var isLoadingMore = false
-    @State private var doneText: String?
-    @State private var problemText: String?
-    /// The run, or what a job given up on tried, opened from this list and pushed over it.
-    @State private var openedConversationId: String?
-
-    private static let pageSize = 50
-
-    var body: some View {
-        List {
-            if let overview {
-                deadJobsSection(overview)
-            }
-            runsSection
-        }
-        .navigationTitle("Runs")
-        .searchable(text: $filter.query, prompt: Text("What"))
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                filterMenu
-            }
-        }
-        .overlay {
-            if runs == nil { ProgressView() }
-        }
-        .task { await loadOverview() }
-        .task(id: filter) {
-            // Typing narrows the runs as it goes, once the typing pauses.
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            await loadRuns()
-        }
-        .refreshable {
-            await loadOverview()
-            await loadRuns()
-        }
-        .navigationDestination(item: $openedConversationId) { conversationId in
-            RunConversationView(connection: connection, conversationId: conversationId)
-        }
-        .toast(done: $doneText, problem: $problemText)
-    }
-
-    private var filterMenu: some View {
-        Menu {
-            Picker("Whose", selection: $filter.agentId) {
-                Text("Everyone").tag(String?.none)
-                ForEach(overview?.agents ?? []) { summary in
-                    Text(verbatim: summary.username).tag(String?.some(summary.agentId))
-                }
-            }
-            .pickerStyle(.menu)
-            Picker("Kind", selection: $filter.jobKind) {
-                Text("Any kind").tag(String?.none)
-                ForEach(AgentRunSummary.jobKinds, id: \.self) { jobKind in
-                    Text(verbatim: UpkeepWords.runKind(jobKind)).tag(String?.some(jobKind))
-                }
-            }
-            .pickerStyle(.menu)
-        } label: {
-            Label(
-                "Filter",
-                systemImage: filter.agentId != nil || filter.jobKind != nil
-                    ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-        }
-    }
-
-    private func deadJobsSection(_ overview: AgentAdminOverview) -> some View {
-        Section {
-            if overview.deadJobs.isEmpty {
-                Text("None.").foregroundStyle(Color(.secondaryLabel))
-            }
-            ForEach(overview.deadJobs) { job in
-                let usernameText = overview.username(agentId: job.agentId)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("\(job.jobKind) for \(usernameText)").foregroundStyle(Color(.label))
-                    Text(verbatim: deadJobDetails(job)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
-                }
-                .swipeActions {
-                    Button("Retry", systemImage: "arrow.clockwise") {
-                        Task { await retry(job) }
-                    }
-                    .tint(.indigo)
-                }
-                .contextMenu {
-                    Button("Open the conversation", systemImage: "bubble.left.and.text.bubble.right") {
-                        Task { await openConversation(job) }
-                    }
-                    Button("Runs", systemImage: "list.bullet") {
-                        filter = ServerAgentRunFilter(jobId: job.id)
-                    }
-                    Button("Retry", systemImage: "arrow.clockwise") {
-                        Task { await retry(job) }
-                    }
-                }
-            }
-        } header: {
-            Text("Jobs given up on")
-        } footer: {
-            if !overview.deadJobs.isEmpty {
-                Text("Press and hold a job to open what it tried, list its runs, or retry it.")
-            }
-        }
-    }
-
-    private func deadJobDetails(_ job: AgentDeadJob) -> String {
-        let countText = job.attemptCount.formatted()
-        let timeText = UpkeepWords.when(job.finishedAt)
-        var parts = [String(localized: "after \(countText) attempts, \(timeText)")]
-        if let errorMessage = job.errorMessage, !errorMessage.isEmpty { parts.append(errorMessage) }
-        return parts.joined(separator: " · ")
-    }
-
-    private var runsSection: some View {
-        Section {
-            if filter.jobId != nil {
-                Button("All runs", systemImage: "line.3.horizontal.decrease.circle") {
-                    filter.jobId = nil
-                }
-                .actionColor()
-                .fullWidthRowSeparator()
-            }
-            if let runs, runs.isEmpty {
-                Text("Nothing yet.").foregroundStyle(Color(.secondaryLabel))
-            }
-            ForEach(runs ?? []) { run in
-                Button {
-                    openedConversationId = run.id
-                } label: {
-                    runRow(run)
-                }
-                .onAppear {
-                    if run.id == runs?.last?.id { Task { await loadMore() } }
-                }
-            }
-            if isLoadingMore {
-                ProgressView().frame(maxWidth: .infinity)
-            }
-        } header: {
-            Text(verbatim: runCountText)
-        } footer: {
-            if filter.jobId != nil {
-                Text("The runs of one job given up on: every call it made before it stopped, newest first.")
-            } else {
-                Text("Every call any agent on this server made to a model, newest first. Open one to read it; what you say there goes to that agent as its person, and is logged.")
-            }
-        }
-    }
-
-    private func runRow(_ run: ServerAgentRun) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(verbatim: run.title).foregroundStyle(Color(.label)).lineLimit(2)
-            HStack(spacing: 8) {
-                if let jobKind = run.jobKind, !jobKind.isEmpty {
-                    UpkeepTag(text: UpkeepWords.runKind(jobKind))
-                }
-                Text(verbatim: runDetails(run)).font(.caption).foregroundStyle(Color(.secondaryLabel)).lineLimit(1)
-            }
-        }
-    }
-
-    private func runDetails(_ run: ServerAgentRun) -> String {
-        var parts = [overview?.username(agentId: run.agentId) ?? run.agentId, UpkeepWords.when(run.lastAt), ServerWords.count(run.tokenCount)]
-        if run.usage.cost > 0 { parts.append(UpkeepWords.money(run.usage.cost)) }
-        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-
-    private var runCountText: String {
-        let countText = runTotal.formatted()
-        return runTotal == 1 ? String(localized: "1 run") : String(localized: "\(countText) runs")
-    }
-
-    private func loadOverview() async {
-        do {
-            overview = try await connection.agentAdminOverview(grouping: .day, range: .lastThirtyDays())
-        } catch is CancellationError {
-            return
-        } catch {
-            problemText = error.localizedDescription
-        }
-    }
-
-    private func loadRuns() async {
-        do {
-            let page = try await connection.serverAgentRuns(filter: filter, first: Self.pageSize)
-            runs = page.runs
-            runTotal = page.total
-        } catch is CancellationError {
-            return
-        } catch {
-            problemText = error.localizedDescription
-            if runs == nil { runs = [] }
-        }
-    }
-
-    private func loadMore() async {
-        guard let loaded = runs, loaded.count < runTotal, !isLoadingMore else { return }
-        isLoadingMore = true
-        defer { isLoadingMore = false }
-        do {
-            let page = try await connection.serverAgentRuns(filter: filter, first: Self.pageSize, offset: loaded.count)
-            let knownIds = Set(loaded.map(\.id))
-            runs = loaded + page.runs.filter { !knownIds.contains($0.id) }
-            runTotal = page.total
-        } catch {
-            problemText = error.localizedDescription
-        }
-    }
-
-    /// Opens what the job tried: its latest run, which is a conversation of
-    /// its own, or what a remember job was about when it never got as far as
-    /// a run.
-    private func openConversation(_ job: AgentDeadJob) async {
-        do {
-            if let conversationId = try await connection.deadJobConversationId(job) {
-                openedConversationId = conversationId
-            } else {
-                problemText = String(localized: "This job never got as far as a run.")
-            }
-        } catch {
-            problemText = error.localizedDescription
-        }
-    }
-
-    private func retry(_ job: AgentDeadJob) async {
-        do {
-            try await connection.retryAgentJob(jobId: job.id)
-            doneText = String(localized: "Queued again.")
-            await loadOverview()
         } catch {
             problemText = error.localizedDescription
         }
@@ -3978,8 +3715,8 @@ private struct AgentFeaturesFormView: View {
 }
 
 /// AgentLimitsFormView is the caps on what one person and the whole server
-/// may spend, how far one run may go, what unattended work may take, and
-/// how long transcripts and corrections are kept.
+/// may spend, in tokens and in money, and how long transcripts and
+/// corrections are kept.
 private struct AgentLimitsFormView: View {
     let model: AgentAdminModel
 
@@ -3987,7 +3724,7 @@ private struct AgentLimitsFormView: View {
         AgentSettingsForm(model: model, title: "Limits", makeDraft: { AgentLimitsDraft($0) }, parameters: { $0.agentParameters }) { draft, _ in
             Section {
             } footer: {
-                Text("Caps on what one person, and the whole server, may spend in a day and a month; how far one run may go; how long transcripts and corrections are kept.")
+                Text("Caps on what one person, and the whole server, may spend in a day and a month; how long transcripts and corrections are kept.")
             }
             ForEach(Array(AgentLimitsDraft.limitGroups.enumerated()), id: \.offset) { _, limitNames in
                 Section {
@@ -4004,23 +3741,15 @@ private struct AgentLimitsFormView: View {
                             .textInputAutocapitalization(.characters)
                         }
                     }
-                    if limitNames.contains("requestTimeout") {
-                        LabeledContent("Keep run transcripts for") {
-                            TextField("Keep run transcripts for", text: draft.retention.runs).multilineTextAlignment(.trailing)
-                        }
-                        LabeledContent("Keep corrections for") {
-                            TextField("Keep corrections for", text: draft.retention.corrections).multilineTextAlignment(.trailing)
-                        }
-                    }
-                } footer: {
-                    if limitNames.contains("maxRecordingMediaBytes") {
-                        Text("Sizes accept units such as GB. Zero uses 2 GB per original and 64 GB per account. Pending uploads and files awaiting deletion count toward storage.")
-                    }
-                    if limitNames.contains("maxRoundsPerSubagent") {
-                        Text("For work nobody is watching. Zero is the default shown in brackets.")
-                    }
                 }
-                .id(limitNames.contains("maxRecordingMediaBytes") ? "recording-quotas" : (limitNames.first ?? ""))
+            }
+            Section {
+                LabeledContent("Keep run transcripts for") {
+                    TextField("Keep run transcripts for", text: draft.retention.runs).multilineTextAlignment(.trailing)
+                }
+                LabeledContent("Keep corrections for") {
+                    TextField("Keep corrections for", text: draft.retention.corrections).multilineTextAlignment(.trailing)
+                }
             }
         }
     }
@@ -4031,7 +3760,7 @@ private struct AgentLimitsFormView: View {
                 AgentWords.limitLabel(limitName),
                 text: Binding(get: { draft.wrappedValue.limitTexts[limitName] ?? "" }, set: { draft.wrappedValue.limitTexts[limitName] = $0 })
             )
-            .keyboardType((limitName == "requestTimeout" || limitName.hasPrefix("maxRecording")) ? .default : .decimalPad)
+            .keyboardType(.decimalPad)
             .multilineTextAlignment(.trailing)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
@@ -5114,16 +4843,12 @@ private struct SourceTypeGuideSheet: View {
         var body: some View {
             ScrollViewReader { proxy in
                 Group {
-                    if screen == "recording-model-settings" {
-                        AgentModelsFormView(model: model)
-                    } else {
-                        AgentLimitsFormView(model: model)
-                    }
+                    AgentModelsFormView(model: model)
                 }
                 .task {
                     await model.load()
                     try? await Task.sleep(for: .milliseconds(200))
-                    proxy.scrollTo(screen == "recording-model-settings" ? "recording-transcription" : "recording-quotas", anchor: .top)
+                    proxy.scrollTo("recording-transcription", anchor: .top)
                 }
             }
         }

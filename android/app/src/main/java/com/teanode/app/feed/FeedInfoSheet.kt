@@ -9,10 +9,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.AdsClick
+import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.outlined.Replay
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -39,6 +48,9 @@ fun FeedInfoSheet(item: AgentFeedItemView, actions: FeedActions, onDismiss: () -
     val context = LocalContext.current
     val model = actions.model
     val fewerLikeItText = stringResource(R.string.feed_said_fewer)
+    val resolvedText = stringResource(R.string.feed_resolve_done)
+    val unresolvedText = stringResource(R.string.feed_unresolve_done)
+    var isResolveDialogOpen by remember { mutableStateOf(false) }
     fun dated(text: String): String? = feedEpochMS(text)?.let { epochMS ->
         DateUtils.formatDateTime(context, epochMS, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_YEAR or DateUtils.FORMAT_ABBREV_MONTH)
     }
@@ -63,21 +75,59 @@ fun FeedInfoSheet(item: AgentFeedItemView, actions: FeedActions, onDismiss: () -
             if (posted != null || (updated != null && updated != posted)) TeaNodeSectionHeader(stringResource(R.string.feed_info_when))
             posted?.let { text -> TeaNodeRow(headline = text, overline = stringResource(R.string.feed_info_posted)) }
             if (updated != null && updated != posted) TeaNodeRow(headline = updated, overline = stringResource(R.string.feed_info_updated))
+            val dismissed = item.dismissedAt?.let { text -> dated(text) }
+            if (dismissed != null) TeaNodeRow(headline = dismissed, overline = stringResource(R.string.feed_info_dismissed))
+            if (item.isResolved) {
+                val resolved = dated(item.resolvedAt.orEmpty())
+                if (resolved != null) TeaNodeRow(headline = resolved, overline = stringResource(R.string.feed_resolved), supporting = item.resolutionNote.takeIf { note -> note.isNotEmpty() })
+            }
             if (item.sourceLinks.isNotEmpty()) {
                 TeaNodeSectionHeader(stringResource(R.string.feed_info_sources))
                 for (link in item.sourceLinks) {
                     TeaNodeRow(headline = link.sourceTitle.ifEmpty { link.sourceUrl }, leadingIcon = Icons.Outlined.Link, onClick = { actions.followLink(link.sourceUrl) })
                 }
             }
-            TeaNodeRow(headline = stringResource(R.string.feed_info_show_less), leadingIcon = Icons.Outlined.ThumbDown, onClick = { onDismiss(); model.showLessLike(item, fewerLikeItText) })
-            TeaNodeRow(headline = stringResource(R.string.feed_info_dismiss), leadingIcon = Icons.Outlined.Cancel, onClick = { onDismiss(); model.dismiss(item) })
-            Text(
-                stringResource(R.string.feed_info_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
+            if (model.isDismissedOnly) {
+                // A dismissed card is brought back, not dismissed or shown less of.
+                TeaNodeRow(headline = stringResource(R.string.feed_restore), leadingIcon = Icons.Outlined.Restore, onClick = { onDismiss(); model.swipeAway(item) })
+            } else {
+                if (item.isResolved) {
+                    TeaNodeRow(headline = stringResource(R.string.feed_unresolve), leadingIcon = Icons.Outlined.Replay, onClick = { onDismiss(); model.unresolve(item, unresolvedText) })
+                } else {
+                    TeaNodeRow(headline = stringResource(R.string.feed_resolve), leadingIcon = Icons.Outlined.TaskAlt, onClick = { isResolveDialogOpen = true })
+                }
+                TeaNodeRow(headline = stringResource(R.string.feed_info_show_less), leadingIcon = Icons.Outlined.ThumbDown, onClick = { onDismiss(); model.showLessLike(item, fewerLikeItText) })
+                TeaNodeRow(headline = stringResource(R.string.feed_info_dismiss), leadingIcon = Icons.Outlined.Cancel, onClick = { onDismiss(); model.dismiss(item) })
+                Text(
+                    stringResource(R.string.feed_info_footer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.feed_info_done)) }
             }
         }
     }
+
+    if (isResolveDialogOpen) {
+        var note by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { isResolveDialogOpen = false },
+            title = { Text(stringResource(R.string.feed_resolve_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.feed_resolve_message), style = MaterialTheme.typography.bodyMedium)
+                    OutlinedTextField(
+                        note, { text -> note = text.take(RESOLUTION_NOTE_MOST) }, modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.feed_resolve_note_label)) }, placeholder = { Text(stringResource(R.string.feed_resolve_note_hint)) }, singleLine = true,
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { isResolveDialogOpen = false; onDismiss(); model.resolve(item, note, resolvedText) }) { Text(stringResource(R.string.feed_resolve)) } },
+            dismissButton = { TextButton(onClick = { isResolveDialogOpen = false }) { Text(stringResource(R.string.feed_resolve_cancel)) } },
+        )
+    }
 }
+
+/** The most characters a resolution note holds: one line. */
+private const val RESOLUTION_NOTE_MOST = 160

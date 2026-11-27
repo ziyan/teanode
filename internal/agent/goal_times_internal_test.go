@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +111,32 @@ func TestTheTimeATurnIsFor(t *testing.T) {
 	} {
 		if got := goalTimeDue(goal, owner, at); got != wanted {
 			t.Errorf("at %s: %q, wanted %q", at, got, wanted)
+		}
+	}
+}
+
+// A built-in goal is held to the addresses its own search returned, and
+// only the look around goal, found by the id its migration made, is also
+// shown nothing of the person's page. A goal of the person's or the agent's
+// is held to neither, whatever it is titled.
+func TestBuiltInGoalTurnsAreProtected(t *testing.T) {
+	t.Parallel()
+
+	sum := md5.Sum([]byte("look-around:agent01"))
+	lookAroundID := "la" + hex.EncodeToString(sum[:])[:24]
+	for name, test := range map[string]struct {
+		goal                            *models.AgentConversation
+		isFetchLimited, isPersonOmitted bool
+	}{
+		"the look around goal":         {&models.AgentConversation{ID: lookAroundID, AgentID: "agent01", GoalWrittenBy: models.WrittenByBuiltIn, GoalTitle: "Weekly town"}, true, true},
+		"another built in goal":        {&models.AgentConversation{ID: "brief01", AgentID: "agent01", GoalWrittenBy: models.WrittenByBuiltIn, GoalTitle: "Look around"}, true, false},
+		"a person's goal with that id": {&models.AgentConversation{ID: lookAroundID, AgentID: "agent01", GoalWrittenBy: models.WrittenByPerson}, false, false},
+		"an agent's goal":              {&models.AgentConversation{ID: "goal01", AgentID: "agent01", GoalWrittenBy: models.WrittenByAgent}, false, false},
+	} {
+		settings := &AskSettings{}
+		protectGoalTurn(settings, test.goal)
+		if settings.IsFetchLimitedToSearched != test.isFetchLimited || settings.IsPersonOmitted != test.isPersonOmitted {
+			t.Errorf("%s: fetch limited %v, person omitted %v; want %v, %v", name, settings.IsFetchLimitedToSearched, settings.IsPersonOmitted, test.isFetchLimited, test.isPersonOmitted)
 		}
 	}
 }

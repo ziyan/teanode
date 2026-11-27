@@ -66,7 +66,7 @@ func consolidateWhile(t *testing.T, answer string, during func(tx db.Transaction
 			facts = append(facts, fact)
 		}
 	})
-	budget := newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0)
+	budget := newDreamBudget(worker.settings.Configuration(), run.Agent, 0)
 	if !worker.consolidatePage(t.Context(), run, &models.AgentDream{}, page, budget) {
 		t.Fatalf("the page was not rewritten")
 	}

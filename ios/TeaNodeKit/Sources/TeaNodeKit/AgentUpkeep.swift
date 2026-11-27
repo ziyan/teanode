@@ -1,16 +1,16 @@
 import Foundation
 
 // The agent page's upkeep tabs, as the dashboard has them: the sources it
-// reads, its memory and the checks of it, the dreams, the daily brief, the
-// alerts muted, the connections, and what it did on its own. The documents
+// reads, its memory and the checks of it, the dreams, the alerts
+// muted, the connections, and what it did on its own. The documents
 // are the dashboard's, field for field, so a phone and a browser change the
 // same things in the same way.
 
 // MARK: - The agent's own settings
 
 /// AgentUpkeepPreferences is the part of the agent's settings these tabs
-/// change: when it may dream and whether it is bootstrapping, and whether,
-/// when and how often it alerts the person.
+/// change: when it may dream and whether it is bootstrapping, and whether
+/// it alerts the person.
 public struct AgentUpkeepPreferences: Codable, Hashable, Sendable {
     public let id: String
     public let enabled: Bool
@@ -19,16 +19,10 @@ public struct AgentUpkeepPreferences: Codable, Hashable, Sendable {
     public let dreamUntil: String?
     public let dreamBootstrap: Bool?
     public let isAlertsEnabled: Bool
-    public let alertQuietStart: String?
-    public let alertQuietEnd: String?
-    public let alertDailyMost: Int
-    public let lookAroundWeekday: String?
-    public let lookAroundTime: String?
 
     public init(
         id: String, enabled: Bool = true, operatorDisabledAt: String? = nil, dreamFrom: String? = nil, dreamUntil: String? = nil,
-        dreamBootstrap: Bool? = nil, isAlertsEnabled: Bool = true, alertQuietStart: String? = nil, alertQuietEnd: String? = nil,
-        alertDailyMost: Int = 0, lookAroundWeekday: String? = nil, lookAroundTime: String? = nil
+        dreamBootstrap: Bool? = nil, isAlertsEnabled: Bool = true
     ) {
         self.id = id
         self.enabled = enabled
@@ -37,11 +31,6 @@ public struct AgentUpkeepPreferences: Codable, Hashable, Sendable {
         self.dreamUntil = dreamUntil
         self.dreamBootstrap = dreamBootstrap
         self.isAlertsEnabled = isAlertsEnabled
-        self.alertQuietStart = alertQuietStart
-        self.alertQuietEnd = alertQuietEnd
-        self.alertDailyMost = alertDailyMost
-        self.lookAroundWeekday = lookAroundWeekday
-        self.lookAroundTime = lookAroundTime
     }
 
     /// Whether the agent runs at all: on, and not turned off by the
@@ -52,23 +41,6 @@ public struct AgentUpkeepPreferences: Codable, Hashable, Sendable {
     /// none are set.
     public var shownDreamFrom: String { UpkeepClock.orDefault(dreamFrom, "01:00") }
     public var shownDreamUntil: String { UpkeepClock.orDefault(dreamUntil, "06:00") }
-
-    /// The alerts' quiet hours and daily most, with the defaults the
-    /// dashboard shows where none are set.
-    public var shownAlertQuietStart: String { UpkeepClock.orDefault(alertQuietStart, "22:00") }
-    public var shownAlertQuietEnd: String { UpkeepClock.orDefault(alertQuietEnd, "07:00") }
-    public var shownAlertDailyMost: Int { alertDailyMost > 0 ? alertDailyMost : 5 }
-
-    /// The days the weekly look around may be set to, as the server keeps
-    /// them, Monday first.
-    public static let lookAroundWeekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-
-    /// The day and time the agent looks around the person's town, with the
-    /// defaults the dashboard shows where none are set.
-    public var shownLookAroundWeekday: String {
-        Self.lookAroundWeekdays.contains(lookAroundWeekday ?? "") ? lookAroundWeekday ?? "thursday" : "thursday"
-    }
-    public var shownLookAroundTime: String { UpkeepClock.orDefault(lookAroundTime, "17:00") }
 }
 
 /// UpkeepClock reads and writes the "HH:MM" times the agent's hours are
@@ -825,39 +797,6 @@ public enum GoalMailTrigger {
     }
 }
 
-/// DailyBrief is the morning brief: the goal titled "Daily brief" that
-/// the server writes itself, set by a time and the days of the week. Off
-/// is the goal paused.
-public enum DailyBrief {
-    /// The title the brief goal has.
-    public static let goalTitle = "Daily brief"
-    static let defaultCron = "30 7 * * 1-5"
-
-    /// The brief among the goals, if it was ever set.
-    public static func goal(in goals: [AgentGoal]) -> AgentGoal? {
-        goals.first { $0.goalWrittenBy == "built_in" && $0.goalTitle == goalTitle }
-    }
-
-    /// The time a cron line such as "30 7 * * 1-5" says, as "HH:MM".
-    public static func time(fromCron cron: String?) -> String {
-        let fields = (cron ?? defaultCron).split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-        let hour = fields.count > 1 ? fields[1] : "7"
-        let minute = fields.count > 0 ? fields[0] : "30"
-        return String(repeating: "0", count: max(0, 2 - hour.count)) + hour + ":" + String(repeating: "0", count: max(0, 2 - minute.count)) + minute
-    }
-
-    /// The days a cron line says, as the numbers the server takes, Monday 1
-    /// to Sunday 7; weekdays when there is no line or its days cannot be
-    /// read.
-    public static func dayNumbers(fromCron cron: String?) -> [Int] {
-        let fields = (cron ?? defaultCron).split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-        guard fields.count == 5, let dayNumbers = ScheduleWeekday.dayNumbers(fromCronField: fields[4]), !dayNumbers.isEmpty else {
-            return Array(1...5)
-        }
-        return dayNumbers
-    }
-}
-
 /// ScheduleWeekday is a day of the week as the server numbers it, Monday 1
 /// to Sunday 7, and how a locale names it.
 public enum ScheduleWeekday {
@@ -1546,14 +1485,14 @@ public struct MemoryCheckAnswer: Codable, Hashable, Sendable, Identifiable {
 
 extension Documents {
     static let agentUpkeepFields = """
-        id enabled operatorDisabledAt dreamFrom dreamUntil dreamBootstrap isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost lookAroundWeekday lookAroundTime
+        id enabled operatorDisabledAt dreamFrom dreamUntil dreamBootstrap isAlertsEnabled
         """
     public static let agentUpkeep = """
         query { ReadAgent { agent { \(agentUpkeepFields) } } }
         """
     public static let updateAgentUpkeep = """
-        mutation ($dreamFrom: String, $dreamUntil: String, $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $lookAroundWeekday: String, $lookAroundTime: String) {
-          UpdateAgent(dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart, alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost, lookAroundWeekday: $lookAroundWeekday, lookAroundTime: $lookAroundTime) {
+        mutation ($dreamFrom: String, $dreamUntil: String, $isAlertsEnabled: Boolean) {
+          UpdateAgent(dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isAlertsEnabled: $isAlertsEnabled) {
             agent { \(agentUpkeepFields) }
           }
         }
@@ -1623,15 +1562,6 @@ extension Documents {
         """
     public static let rereadDocuments = """
         mutation ($minutes: Int!) { RereadAgentDocuments(minutes: $minutes) }
-        """
-
-    public static let setDailyBrief = """
-        mutation ($enabled: Boolean!, $at: String, $days: [Int!]) {
-          SetAgentBrief(enabled: $enabled, at: $at, days: $days) { \(goalFields) }
-        }
-        """
-    public static let runDailyBrief = """
-        mutation { RunAgentBriefNow { \(goalFields) } }
         """
 
     public static let agentAlerts = """
@@ -1810,9 +1740,7 @@ extension Connection {
     /// is. Returns the settings as they are now.
     @discardableResult
     public func updateAgentUpkeep(
-        dreamFrom: String? = nil, dreamUntil: String? = nil, isAlertsEnabled: Bool? = nil, alertQuietStart: String? = nil,
-        alertQuietEnd: String? = nil, alertDailyMost: Int? = nil, lookAroundWeekday: String? = nil,
-        lookAroundTime: String? = nil
+        dreamFrom: String? = nil, dreamUntil: String? = nil, isAlertsEnabled: Bool? = nil
     ) async throws -> AgentUpkeepPreferences? {
         struct Answer: Decodable, Sendable {
             struct Updated: Decodable, Sendable { let agent: AgentUpkeepPreferences? }
@@ -1822,11 +1750,6 @@ extension Connection {
         if let dreamFrom { variables["dreamFrom"] = .string(dreamFrom) }
         if let dreamUntil { variables["dreamUntil"] = .string(dreamUntil) }
         if let isAlertsEnabled { variables["isAlertsEnabled"] = .bool(isAlertsEnabled) }
-        if let alertQuietStart { variables["alertQuietStart"] = .string(alertQuietStart) }
-        if let alertQuietEnd { variables["alertQuietEnd"] = .string(alertQuietEnd) }
-        if let alertDailyMost { variables["alertDailyMost"] = .number(Double(alertDailyMost)) }
-        if let lookAroundWeekday { variables["lookAroundWeekday"] = .string(lookAroundWeekday) }
-        if let lookAroundTime { variables["lookAroundTime"] = .string(lookAroundTime) }
         return try await execute(Documents.updateAgentUpkeep, variables: variables, as: Answer.self).UpdateAgent?.agent
     }
 
@@ -1935,23 +1858,6 @@ extension Connection {
     public func rereadDocuments(minutes: Int) async throws -> Int {
         struct Answer: Decodable, Sendable { let RereadAgentDocuments: Int }
         return try await execute(Documents.rereadDocuments, variables: ["minutes": .number(Double(minutes))], as: Answer.self).RereadAgentDocuments
-    }
-
-    /// Turns the morning brief on at a time and on days, or off; turned
-    /// off, its goal is paused and kept. Returns the brief goal.
-    @discardableResult
-    public func setDailyBrief(isEnabled: Bool, at time: String, days: [Int]) async throws -> AgentGoal? {
-        struct Answer: Decodable, Sendable { let SetAgentBrief: AgentGoal? }
-        var variables: [String: JSONValue] = ["enabled": .bool(isEnabled), "at": .string(time)]
-        if !days.isEmpty { variables["days"] = .array(days.map { .number(Double($0)) }) }
-        return try await execute(Documents.setDailyBrief, variables: variables, as: Answer.self).SetAgentBrief
-    }
-
-    /// Sends a brief now.
-    @discardableResult
-    public func runDailyBrief() async throws -> AgentGoal? {
-        struct Answer: Decodable, Sendable { let RunAgentBriefNow: AgentGoal? }
-        return try await execute(Documents.runDailyBrief, as: Answer.self).RunAgentBriefNow
     }
 
     /// What the agent told the person lately, and what they muted.

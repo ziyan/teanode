@@ -40,6 +40,9 @@ func TestFeedParity(test *testing.T) {
 		"ShowLessLikeAgentFeedItem": {"less", ""},
 		"DismissAgentFeedItems":     {"dismiss", "dismiss"},
 		"RestoreAgentFeedItems":     {"restore", "restore"},
+		"WithdrawAgentFeedItem":     {"withdraw", "withdraw"},
+		"ResolveAgentFeedItem":      {"resolve", "resolve"},
+		"UnresolveAgentFeedItem":    {"unresolve", "unresolve"},
 		"MarkAgentFeedRead":         {"read", ""},
 		"DiscussAgentFeedItem":      {"discuss", ""},
 		"PostAgentFeedItem":         {"post", "post"},
@@ -117,12 +120,12 @@ func TestFeedParity(test *testing.T) {
 	flagNames := map[string]string{
 		"feedItemId": "card", "feedItemKind": "kind", "pictureSymbol": "symbol", "coalesceKey": "coalesce-key", "feedUrgency": "urgency",
 		"stackKey": "stack", "stackPosition": "stack-position", "stackTitle": "stack-title", "cardLayout": "layout", "layoutContent": "layout-content",
-		"title": "title", "body": "body", "factRows": "fact", "sourceLinks": "link", "choices": "choice", "media": "photo",
+		"title": "title", "body": "body", "factRows": "fact", "sourceLinks": "link", "choices": "choice", "media": "photo", "chartBlocks": "chart-blocks",
 	}
 	propertyNames := map[string]string{
 		"feedItemId": "feed_item_id", "feedItemKind": "feed_item_kind", "pictureSymbol": "picture_symbol", "coalesceKey": "coalesce_key", "feedUrgency": "feed_urgency",
 		"stackKey": "stack_key", "stackPosition": "stack_position", "stackTitle": "stack_title", "cardLayout": "card_layout", "layoutContent": "layout_content",
-		"title": "title", "body": "body", "factRows": "fact_rows", "sourceLinks": "source_links", "choices": "choices", "recordReferences": "record_references", "media": "media",
+		"title": "title", "body": "body", "factRows": "fact_rows", "sourceLinks": "source_links", "choices": "choices", "recordReferences": "record_references", "media": "media", "chartBlocks": "chart_blocks",
 	}
 	// "<argument>.<surface>" is exempt for the reason given.
 	exempt := map[string]string{

@@ -2,6 +2,9 @@ package apigraph
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +14,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/storage"
 )
 
 type feedWorld struct {
@@ -247,4 +251,290 @@ func TestDismissingAndRestoringFeedCards(t *testing.T) {
 			t.Fatalf("the stranger's own card is untouched: %+v", page)
 		}
 	})
+}
+
+// The dismissed cards are a list of their own, a stack's cards each an
+// entry, and a withdrawn card is gone rather than dismissed.
+func TestTheDismissedCardsAndAWithdrawnCard(t *testing.T) {
+	world := newFeedWorld(t)
+	world.within(world.person, func(ctx context.Context) {
+		post := func(title, stackKey string) *AgentFeedItemView {
+			view, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: title, StackKey: stackKey})
+			if err != nil {
+				t.Fatalf("post %s: %s", title, err)
+			}
+			return view
+		}
+		stackedOne, stackedTwo, open := post("Stacked one", "evening-brief"), post("Stacked two", "evening-brief"), post("Still open", "")
+		withdrawn := post("No longer true", "")
+		stackKey := "evening-brief"
+		if _, err := world.resolver.DismissAgentFeedItems(ctx, DismissAgentFeedItemsArguments{FeedStackKey: &stackKey}); err != nil {
+			t.Fatal(err)
+		}
+		isTrue := true
+		page, err := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{IsDismissedOnly: &isTrue})
+		if err != nil || len(page.FeedItems) != 2 {
+			t.Fatalf("the dismissed cards: %+v %v", page, err)
+		}
+		for _, entry := range page.FeedItems {
+			if entry.FeedItemID != stackedOne.FeedItemID && entry.FeedItemID != stackedTwo.FeedItemID {
+				t.Fatalf("a card that is not dismissed is listed: %s", entry.Title)
+			}
+			if !entry.IsDismissed || entry.DismissedAt == nil || entry.StackItemCount != 1 || entry.FeedStackKey != stackKey {
+				t.Fatalf("each dismissed card is an entry of its own, with its stack named: %+v", entry)
+			}
+		}
+
+		if isWithdrawn, err := world.resolver.WithdrawAgentFeedItem(ctx, WithdrawAgentFeedItemArguments{FeedItemID: withdrawn.FeedItemID}); err != nil || !isWithdrawn {
+			t.Fatalf("withdraw: %v %v", isWithdrawn, err)
+		}
+		if _, err := world.resolver.GetAgentFeedItem(ctx, AgentFeedItemArguments{FeedItemID: withdrawn.FeedItemID}); err == nil {
+			t.Fatal("a withdrawn card can still be read")
+		}
+		if page, _ := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{IsDismissedOnly: &isTrue}); len(page.FeedItems) != 2 {
+			t.Fatalf("a withdrawn card is among the dismissed: %d", len(page.FeedItems))
+		}
+		if page, _ := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{}); len(page.FeedItems) != 1 || page.FeedItems[0].FeedItemID != open.FeedItemID {
+			t.Fatalf("the feed keeps the open card alone: %+v", page.FeedItems)
+		}
+	})
+}
+
+// A card carries charts through the API as it is posted, a title a little too
+// long is cut and said so in the answer, three fact rows that are a series are
+// refused as an invalid argument, and a camera still with no readable picture
+// is left off with a note while the card posts.
+func TestAPostCarriesChartsAndAnswersWhatItCut(t *testing.T) {
+	world := newFeedWorld(t)
+	world.within(world.person, func(ctx context.Context) {
+		value := 1200.5
+		view, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{
+			Title: strings.Repeat("w", 230),
+			ChartBlocks: []models.FeedChartBlock{{
+				ChartKind: models.FeedChartKindSeries, ChartTitle: "Balance", Unit: "USD", Provenance: "Read from the bank at 09:40 EST",
+				XLabels: []string{"Mon", "Tue"}, Series: []models.FeedChartSeries{{SeriesName: "This week", Values: []*float64{&value, nil}}},
+			}},
+			Media: []*AgentFeedMedia{{CameraStill: &AgentFeedCameraStill{
+				AttachmentID: "no-such-attachment", CameraName: "Front door", CapturedAt: "2026-11-19T14:02:11-05:00", StillReason: "Where the parcel was left",
+			}}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len([]rune(view.Title)) != 201 || len(view.PostNotes) != 2 || !strings.Contains(view.PostNotes[0], "title was cut to 200") || !strings.Contains(view.PostNotes[1], "the still from Front door was left off") {
+			t.Fatalf("the notes: %v %q", view.PostNotes, view.Title)
+		}
+		if len(view.FeedMedia) != 0 || len(view.ChartBlocks) != 1 || view.ChartBlocks[0].Series[0].Values[1] != nil || *view.ChartBlocks[0].Series[0].Values[0] != 1200.5 || view.ChartBlocks[0].Markers == nil || view.ChartBlocks[0].Bars == nil {
+			t.Fatalf("the card: %+v", view)
+		}
+		got, err := world.resolver.GetAgentFeedItem(ctx, AgentFeedItemArguments{FeedItemID: view.FeedItemID})
+		if err != nil || len(got.ChartBlocks) != 1 || got.PostNotes == nil || len(got.PostNotes) != 0 {
+			t.Fatalf("a card read later has no notes: %+v %v", got, err)
+		}
+
+		_, err = world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: "Rows", FactRows: []models.FeedFactRow{
+			{FactLabel: "Mon", FactValue: "12"}, {FactLabel: "Tue", FactValue: "14"}, {FactLabel: "Wed", FactValue: "9"},
+		}})
+		if !errors.Is(err, api.ErrInvalidArguments) || !strings.Contains(err.Error(), "chart_blocks") {
+			t.Fatalf("fact rows that are a series: %v", err)
+		}
+		_, err = world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: "Chart", ChartBlocks: []models.FeedChartBlock{{ChartKind: models.FeedChartKindBars, Bars: []models.FeedChartBar{{BarLabel: "A", BarValue: 1}}}}})
+		if !errors.Is(err, api.ErrInvalidArguments) || !strings.Contains(err.Error(), "chartBlocks[0].provenance") {
+			t.Fatalf("a chart with no provenance: %v", err)
+		}
+	})
+}
+
+// Resolving marks a card as the person's own, once, announces it, and
+// unresolving clears it; a goal's own turn, named by its conversation, may
+// resolve only a card it posted and never replaces the person's resolution.
+func TestResolvingAndUnresolvingACard(t *testing.T) {
+	world := newFeedWorld(t)
+	world.within(world.person, func(ctx context.Context) {
+		goal, err := world.resolver.StartAgentGoal(ctx, StartAgentGoalArguments{GoalTitle: "Watch the parcels", GoalDescription: "Tell me when a parcel is due."})
+		if err != nil {
+			t.Fatal(err)
+		}
+		own, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: "A parcel is due", FeedSourceKind: "goal", FeedSourceID: goal.ConversationID, RunConversationID: goal.ConversationID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		plain, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: "The agent's own card"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		note := "It arrived"
+		if _, err := world.resolver.ResolveAgentFeedItem(ctx, ResolveAgentFeedItemArguments{FeedItemID: plain.FeedItemID, ResolutionNote: &note, RunConversationID: &goal.ConversationID}); !errors.Is(err, api.ErrInvalidArguments) || !strings.Contains(err.Error(), "only a card it posted") {
+			t.Fatalf("a goal resolved a card it did not post: %v", err)
+		}
+		resolved, err := world.resolver.ResolveAgentFeedItem(ctx, ResolveAgentFeedItemArguments{FeedItemID: own.FeedItemID, ResolutionNote: &note, RunConversationID: &goal.ConversationID})
+		if err != nil || !resolved.IsResolved || resolved.ResolvedByKind != "goal" || resolved.ResolutionNote != "It arrived" || resolved.ResolvedAt == nil || resolved.IsRead {
+			t.Fatalf("a goal resolving its own card: %+v %v", resolved, err)
+		}
+		if _, err := world.resolver.ResolveAgentFeedItem(ctx, ResolveAgentFeedItemArguments{FeedItemID: own.FeedItemID}); !errors.Is(err, api.ErrInvalidArguments) || !strings.Contains(err.Error(), "already resolved") {
+			t.Fatalf("a second resolve: %v", err)
+		}
+		cleared, err := world.resolver.UnresolveAgentFeedItem(ctx, UnresolveAgentFeedItemArguments{FeedItemID: own.FeedItemID})
+		if err != nil || cleared.IsResolved || cleared.ResolvedAt != nil || cleared.ResolutionNote != "" || cleared.ResolvedByKind != "" {
+			t.Fatalf("unresolve: %+v %v", cleared, err)
+		}
+
+		// The person's own resolution wins over a goal.
+		if resolved, err = world.resolver.ResolveAgentFeedItem(ctx, ResolveAgentFeedItemArguments{FeedItemID: own.FeedItemID}); err != nil || resolved.ResolvedByKind != "person" || resolved.ResolutionNote != "" {
+			t.Fatalf("the person resolving: %+v %v", resolved, err)
+		}
+		if _, err := world.resolver.UnresolveAgentFeedItem(ctx, UnresolveAgentFeedItemArguments{FeedItemID: own.FeedItemID, RunConversationID: &goal.ConversationID}); !errors.Is(err, api.ErrInvalidArguments) || !strings.Contains(err.Error(), "only they take that off") {
+			t.Fatalf("a goal took off the person's resolution: %v", err)
+		}
+		page, err := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, view := range page.FeedItems {
+			if view.FeedItemID == own.FeedItemID && (!view.IsResolved || view.ResolvedByKind != "person") {
+				t.Fatalf("the list does not show the resolution: %+v", view)
+			}
+		}
+	})
+	// Somebody else's card is no card at all.
+	var strangerCardId string
+	world.within(world.stranger, func(ctx context.Context) {
+		card, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: "Somebody else's"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		strangerCardId = card.FeedItemID
+	})
+	world.within(world.person, func(ctx context.Context) {
+		if _, err := world.resolver.ResolveAgentFeedItem(ctx, ResolveAgentFeedItemArguments{FeedItemID: strangerCardId}); !errors.Is(err, api.ErrNotFound) {
+			t.Fatalf("resolving another person's card: %v", err)
+		}
+	})
+}
+
+// A shell command of the agent reaches the API with the person's own token and
+// the agent-command header. Resolving, unresolving, restoring and withdrawing
+// are the person's, and the feed tool's inside a turn, so they are refused to
+// it, with a message that says whose they are.
+func TestAnAgentCommandCannotResolveUnresolveRestoreOrWithdraw(t *testing.T) {
+	world := newFeedWorld(t)
+	world.within(world.person, func(ctx context.Context) {
+		card, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: "A card"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request, err := http.NewRequest(http.MethodPost, "http://example.invalid/graphql", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set(api.AgentCommandHeader, "1")
+		commandContext := api.ContextWithRequest(ctx, request)
+		for name, call := range map[string]func() error{
+			"resolve": func() error {
+				_, err := world.resolver.ResolveAgentFeedItem(commandContext, ResolveAgentFeedItemArguments{FeedItemID: card.FeedItemID})
+				return err
+			},
+			"unresolve": func() error {
+				_, err := world.resolver.UnresolveAgentFeedItem(commandContext, UnresolveAgentFeedItemArguments{FeedItemID: card.FeedItemID})
+				return err
+			},
+			"restore": func() error {
+				_, err := world.resolver.RestoreAgentFeedItems(commandContext, RestoreAgentFeedItemsArguments{FeedItemIDs: []string{card.FeedItemID}})
+				return err
+			},
+			"withdraw": func() error {
+				_, err := world.resolver.WithdrawAgentFeedItem(commandContext, WithdrawAgentFeedItemArguments{FeedItemID: card.FeedItemID})
+				return err
+			},
+		} {
+			if err := call(); !errors.Is(err, api.ErrPermissionDenied) || !strings.Contains(err.Error(), "for the person, and for the feed tool") {
+				t.Errorf("%s by an agent command: %v", name, err)
+			}
+		}
+		// The same calls with no command header, the feed tool's way in, work.
+		if _, err := world.resolver.ResolveAgentFeedItem(ctx, ResolveAgentFeedItemArguments{FeedItemID: card.FeedItemID}); err != nil {
+			t.Fatalf("resolve by the person: %v", err)
+		}
+		if isWithdrawn, err := world.resolver.WithdrawAgentFeedItem(ctx, WithdrawAgentFeedItemArguments{FeedItemID: card.FeedItemID}); err == nil || isWithdrawn {
+			t.Fatalf("a card the person resolved was withdrawn: %v %v", isWithdrawn, err)
+		}
+	})
+}
+
+// A goal's own turn withdraws only a card it posted, nobody withdraws a card
+// the person answered or resolved, and withdrawing a card deletes the files of
+// its pictures once the deletion is committed.
+func TestWithdrawingACardIsHeldToWhatTheCallerMayTake(t *testing.T) {
+	world := newFeedWorld(t)
+	files, err := storage.Open(&storage.Settings{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = files.Close() }()
+	world.resolver.storage = files
+	const pictureFileId = "feed-picture-withdrawn-card"
+	if err := files.PutFile(context.Background(), pictureFileId, []byte("picture")); err != nil {
+		t.Fatal(err)
+	}
+	world.within(world.person, func(ctx context.Context) {
+		goal, err := world.resolver.StartAgentGoal(ctx, StartAgentGoalArguments{GoalTitle: "Watch the parcels", GoalDescription: "Tell me when a parcel is due."})
+		if err != nil {
+			t.Fatal(err)
+		}
+		goalPost := func(title string) *AgentFeedItemView {
+			view, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: title, FeedSourceKind: "goal", FeedSourceID: goal.ConversationID, RunConversationID: goal.ConversationID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return view
+		}
+		plain, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: "The agent's own card"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		answered, resolved, own := goalPost("Answered"), goalPost("Resolved by the person"), goalPost("Own card")
+
+		// (a) a goal's own turn takes back only its own card.
+		if _, err := world.resolver.WithdrawAgentFeedItem(ctx, WithdrawAgentFeedItemArguments{FeedItemID: plain.FeedItemID, RunConversationID: &goal.ConversationID}); !errors.Is(err, api.ErrInvalidArguments) || !strings.Contains(err.Error(), "only a card it posted") {
+			t.Fatalf("a goal withdrew a card it did not post: %v", err)
+		}
+
+		// (b) a card the person answered or resolved is theirs.
+		if isSettled, err := world.resolver.transaction(ctx).SettleAgentFeedItem(answered.FeedItemID, &models.FeedSettlement{ChoiceKey: "go"}, time.Now()); err != nil || !isSettled {
+			t.Fatalf("answer: %v %v", isSettled, err)
+		}
+		if _, err := world.resolver.ResolveAgentFeedItem(ctx, ResolveAgentFeedItemArguments{FeedItemID: resolved.FeedItemID}); err != nil {
+			t.Fatal(err)
+		}
+		for name, view := range map[string]*AgentFeedItemView{"answered": answered, "resolved": resolved} {
+			if _, err := world.resolver.WithdrawAgentFeedItem(ctx, WithdrawAgentFeedItemArguments{FeedItemID: view.FeedItemID}); !errors.Is(err, api.ErrInvalidArguments) || !strings.Contains(err.Error(), "dismiss it instead") {
+				t.Fatalf("withdrawing the %s card: %v", name, err)
+			}
+			if _, err := world.resolver.GetAgentFeedItem(ctx, AgentFeedItemArguments{FeedItemID: view.FeedItemID}); err != nil {
+				t.Fatalf("the %s card is gone: %v", name, err)
+			}
+		}
+
+		// (c) the goal's own card goes with its picture file, once committed.
+		stored, err := world.resolver.transaction(ctx).GetAgentFeedItem(own.FeedItemID)
+		if err != nil || stored == nil {
+			t.Fatal(stored, err)
+		}
+		stored.FeedMedia = []models.FeedMedia{{MediaKey: "page-1", FeedMediaKind: models.FeedMediaPicture, PageURL: "https://news.example.com/parcel", ImageFileID: pictureFileId}}
+		if _, err := world.resolver.transaction(ctx).UpdateAgentFeedItem(own.FeedItemID, func(item *models.AgentFeedItem) error {
+			item.FeedMedia = stored.FeedMedia
+			return nil
+		}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if isWithdrawn, err := world.resolver.WithdrawAgentFeedItem(ctx, WithdrawAgentFeedItemArguments{FeedItemID: own.FeedItemID, RunConversationID: &goal.ConversationID}); err != nil || !isWithdrawn {
+			t.Fatalf("a goal withdrawing its own card: %v %v", isWithdrawn, err)
+		}
+		if _, err := files.GetFile(context.Background(), pictureFileId); err != nil {
+			t.Fatalf("the picture was deleted before the deletion committed: %v", err)
+		}
+	})
+	if _, err := files.GetFile(context.Background(), pictureFileId); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("the picture of a withdrawn card is still stored: %v", err)
+	}
 }

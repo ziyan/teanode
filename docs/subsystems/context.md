@@ -152,10 +152,21 @@ A long conversation is folded into a note so the turn can continue.
 
 ### When
 
-- **Before a round**, when the rendered history passes half the model's
-  window, as the provider's model list gives it, or 30000 estimated tokens
-  when that is smaller or the provider does not say. The window is looked up
-  only once the history passes 15000, so a short run asks nothing.
+- **While the conversation is quiet** (`compact_idle.go`), after a turn whose
+  last round carried more than the soft limit: 100000 estimated tokens, or half
+  the model's window when that is smaller, or 30000 when the window is not
+  known. The limit is a size, not a share of the window, because a round costs
+  what it sends and the person waits for all of it: a model that reads half a
+  million tokens is no reason to send that many every time. Once no turn has
+  run in the conversation for 45 seconds, here or on another instance, the
+  finished turn compacts it, says nothing to anyone watching, and the next turn
+  starts from the note. It waits for quiet up to 8 times. A throttle keyed on
+  the conversation lets one instance do it at a time. A chat's turn, a member's
+  turn and a read-then-answer run are not compacted this way.
+- **Before a round**, only past the hard limit: four fifths of the window, or
+  30000 when the window is not known, so the request still fits. The person
+  waits on this one, which is why it is the last resort. The window is looked
+  up only once the history passes 15000, so a short run asks nothing.
   If that compaction fails, the flag is set and it is not tried again this
   turn.
 - **After a refusal**, once per turn, when the provider says the request is too
@@ -202,8 +213,11 @@ can all leave one.
 
 | Name | Value | What it bounds |
 | --- | --- | --- |
-| `askHistoryTokens` | 30000 | history before a round compacts, the least of it |
-| window / `askHistoryWindowShare` | half the window | history before a round compacts, when larger |
+| `askHistoryTokens` | 30000 | both limits when the window is not known |
+| `askSoftHistoryTokens` | 100000 | history before a quiet conversation is compacted |
+| window / `askHistoryWindowShare` | half the window | the soft limit, when smaller; the short prompt's line |
+| window × `askHardWindowFifths` / 5 | four fifths | history before a round compacts on the reply's path |
+| `idleCompactionDelay` | 45 s | quiet before a compaction |
 | history limit / 2 | 15000 or more | the short prompt, forced deferral |
 | `askHistoryTokens/2` | 15000 | the tail's ceiling |
 | `askTailMessages` | 12 | messages kept verbatim |

@@ -30,12 +30,10 @@ import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/setti
 import { Tabs, TabItem } from '../components/tabs'
 import { FinanceTab } from './agentFinance'
 import { useFinancePresence } from './finance/financePresence'
-import { dayNumbersFromCronField } from '../components/cronDays'
-import { GOALS, GOAL_FIELDS, Goal, GoalsTab } from './agentGoals'
+import { GoalsTab } from './agentGoals'
 import { IdeasTab } from './agentIdeas'
 import { MemoryCheckSection } from '../components/memoryCheck'
 import { Tooltip } from '../components/tooltip'
-import { WeekdayButtons, languageWeekStart } from '../components/weekdayButtons'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
@@ -126,11 +124,6 @@ export type Agent = {
   operatorDisabledAt?: string | null
   isSuggestionsEnabled: boolean
   isAlertsEnabled: boolean
-  alertQuietStart?: string
-  alertQuietEnd?: string
-  alertDailyMost: number
-  lookAroundWeekday?: string
-  lookAroundTime?: string
 }
 export type AgentSource = { mailboxId: string; name: string; addresses: string[]; policy?: AgentMailboxPolicy | null }
 // A calendar or an address book as a source: a switch, and how much is in it.
@@ -156,7 +149,7 @@ export type AgentView = {
 
 const VIEW = `{
   agent { id name enabled instructions language knowledgeLanguage askModel speechVoice dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm unattendedAllowedRisks
-    isSuggestionsEnabled isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost lookAroundWeekday lookAroundTime
+    isSuggestionsEnabled isAlertsEnabled
     voice { tone length greeting signoff }
     categories { name description }
     notifications { heldReply highPriority runFailed } }
@@ -177,14 +170,12 @@ const UPDATE_AGENT = `
     $voice: AgentVoiceInput,
     $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $unattendedAllowedRisks: [String!], $askModel: String, $speechVoice: String,
     $dreamFrom: String, $dreamUntil: String, $isSuggestionsEnabled: Boolean,
-    $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $lookAroundWeekday: String, $lookAroundTime: String, $forget: Boolean) {
+    $isAlertsEnabled: Boolean, $forget: Boolean) {
     UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
       voice: $voice,
       categories: $categories, notifications: $notifications, confirm: $confirm, unattendedAllowedRisks: $unattendedAllowedRisks, askModel: $askModel, speechVoice: $speechVoice,
       dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isSuggestionsEnabled: $isSuggestionsEnabled,
-      isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart,
-      alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost,
-      lookAroundWeekday: $lookAroundWeekday, lookAroundTime: $lookAroundTime, forget: $forget) ${VIEW}
+      isAlertsEnabled: $isAlertsEnabled, forget: $forget) ${VIEW}
   }`
 const GRANT = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) { GrantAgentMailbox(mailboxId: $mailboxId, policy: $policy) ${VIEW} }`
 const REVOKE = `mutation ($mailboxId: String!) { RevokeAgentMailbox(mailboxId: $mailboxId) ${VIEW} }`
@@ -436,9 +427,6 @@ export function AgentPage() {
       {/* The places it reads: each a source of an installed type. */}
       {tab === 'sources' ? <KnowledgeSourcesCard /> : null}
       {tab === 'finance' ? <FinanceTab /> : null}
-      {/* The morning brief, a goal the switch starts, which is a timetable
-          rather than a connection. */}
-      {tab === 'brief' ? <BriefCard /> : null}
       {tab === 'ideas' ? <IdeasTab /> : null}
       {tab === 'alerts' ? (
         <>
@@ -489,9 +477,6 @@ export function AgentPage() {
   )
 }
 
-// The days the look around may be set to, as the server stores them.
-const LOOK_AROUND_WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
-
 type SaveProps = {
   agent: Agent
   busy: boolean
@@ -499,19 +484,10 @@ type SaveProps = {
 }
 
 // AlertSettings: whether the agent tells the person, unasked, what they
-// should know now; their night, when only what cannot wait is said; and how
-// many a day at most; and the day and hour it looks around their town for
-// what is on. They have a tab of their own with what the agent told
-// them and what they muted, the Alerts card beneath them.
-function AlertSettings({ agent, busy, onSave }: SaveProps) {
+// should know now. They have a tab of their own with what the agent told
+// them and what they muted, the Alerts card beneath it.
+export function AlertSettings({ agent, busy, onSave }: SaveProps) {
   const { t } = useTranslation()
-  const [dailyMost, setDailyMost] = useState(String(agent.alertDailyMost || 5))
-  useEffect(() => setDailyMost(String(agent.alertDailyMost || 5)), [agent.alertDailyMost])
-  const saveDailyMost = () => {
-    const most = Number.parseInt(dailyMost, 10)
-    if (!Number.isFinite(most) || most === (agent.alertDailyMost || 5)) return
-    void onSave({ alertDailyMost: most }, t('agent.saved'))
-  }
   return (
     <SettingsSection card title={t('agent.alerts')} description={t('agent.alertsHint')}>
       <label className="checkbox">
@@ -528,69 +504,6 @@ function AlertSettings({ agent, busy, onSave }: SaveProps) {
         />
         {t('agent.alertsEnabled')}
       </label>
-      <div className="form-narrow">
-        <div className="row alert-settings">
-          <label>
-            <span>{t('agent.alertQuietStart')}</span>
-            <input
-              type="time"
-              disabled={busy || !agent.isAlertsEnabled}
-              value={agent.alertQuietStart || '22:00'}
-              onChange={(event) => void onSave({ alertQuietStart: event.target.value }, t('agent.saved'))}
-            />
-          </label>
-          <label>
-            <span>{t('agent.alertQuietEnd')}</span>
-            <input
-              type="time"
-              disabled={busy || !agent.isAlertsEnabled}
-              value={agent.alertQuietEnd || '07:00'}
-              onChange={(event) => void onSave({ alertQuietEnd: event.target.value }, t('agent.saved'))}
-            />
-          </label>
-          <label className="shrink">
-            <span>{t('agent.alertDailyMost')}</span>
-            <input
-              type="number"
-              min={1}
-              max={50}
-              disabled={busy || !agent.isAlertsEnabled}
-              value={dailyMost}
-              onChange={(event) => setDailyMost(event.target.value)}
-              onBlur={saveDailyMost}
-            />
-          </label>
-        </div>
-      </div>
-      <p className="muted field-hint">{t('agent.alertQuietHint')}</p>
-      <div className="form-narrow">
-        <div className="row alert-settings">
-          <label>
-            <span>{t('agent.lookAroundWeekday')}</span>
-            <Select
-              block
-              value={agent.lookAroundWeekday || 'thursday'}
-              disabled={busy || !agent.isAlertsEnabled}
-              label={t('agent.lookAroundWeekday')}
-              options={LOOK_AROUND_WEEKDAYS.map((weekday) => ({
-                value: weekday,
-                label: t(`agent.weekday.${weekday}`),
-              }))}
-              onChange={(weekday) => void onSave({ lookAroundWeekday: weekday }, t('agent.saved'))}
-            />
-          </label>
-          <label>
-            <span>{t('agent.lookAroundTime')}</span>
-            <input
-              type="time"
-              disabled={busy || !agent.isAlertsEnabled}
-              value={agent.lookAroundTime || '17:00'}
-              onChange={(event) => void onSave({ lookAroundTime: event.target.value }, t('agent.saved'))}
-            />
-          </label>
-        </div>
-      </div>
-      <p className="muted field-hint">{t('agent.lookAroundHint')}</p>
     </SettingsSection>
   )
 }
@@ -1089,12 +1002,6 @@ type DreamState = {
   queuedAt: string | null
   startedAt: string | null
 }
-
-const SET_BRIEF = `
-  mutation ($enabled: Boolean!, $at: String, $days: [Int!]) {
-    SetAgentBrief(enabled: $enabled, at: $at, days: $days) { ${GOAL_FIELDS} }
-  }`
-const RUN_BRIEF = `mutation { RunAgentBriefNow { conversationId } }`
 
 const SERVERS = `
   query {
@@ -3100,117 +3007,6 @@ function DreamCard({
           </label>
         </FormDialog>
       ) : null}
-    </SettingsSection>
-  )
-}
-
-export function BriefCard() {
-  const { t } = useTranslation()
-  const toast = useToast()
-  const navigate = useNavigate()
-  const { data, error, loading, reload } = useQuery(() => graphql<{ ListAgentGoals: Goal[] }>(GOALS, {}), [])
-  const [busy, setBusy] = useState(false)
-  // The goal the switch starts: written by the program, called "Daily brief",
-  // and still kept at (a brief that was met or dropped is not the one).
-  const brief = (data?.ListAgentGoals ?? []).find(
-    (goal) =>
-      goal.goalWrittenBy === 'built_in' &&
-      goal.goalTitle === 'Daily brief' &&
-      ['working', 'waiting', 'paused'].includes(goal.goalState),
-  )
-  const isBriefOn = brief !== undefined && brief.goalState !== 'paused'
-  const [at, setAt] = useState('')
-  // The days the person has chosen, once they have chosen any; until then
-  // the days the brief has.
-  const [days, setDays] = useState<number[] | null>(null)
-  const { language } = useTranslation()
-
-  // What the cron line says, for the time and the days: "30 7 * * 1-5".
-  const fields = (brief?.goalTimes[0] ?? '30 7 * * 1-5').split(/\s+/)
-  const time = at || `${(fields[1] ?? '7').padStart(2, '0')}:${(fields[0] ?? '30').padStart(2, '0')}`
-  const chosenDays = days ?? dayNumbersFromCronField(fields[4] ?? '1-5')
-  const hasNoDay = chosenDays.length === 0
-
-  const save = async (enabled: boolean) => {
-    setBusy(true)
-    try {
-      await graphql(SET_BRIEF, { enabled, at: time, days: chosenDays })
-      toast.done(enabled ? t('agent.briefOn') : t('agent.briefOff'))
-      await reload()
-    } catch (caught) {
-      toast.failed(messageOf(caught))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const sendNow = async () => {
-    setBusy(true)
-    try {
-      await graphql(RUN_BRIEF, {})
-      toast.done(t('agent.briefSending'))
-    } catch (caught) {
-      toast.failed(messageOf(caught))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <SettingsSection card title={t('agent.brief')} description={t('agent.briefHint')}>
-      {error ? <ErrorMessage error={error} /> : null}
-      {loading && !data ? <Loading /> : null}
-      <div className="form-narrow">
-        <div className="row">
-          <label>
-            <span>{t('agent.briefAt')}</span>
-            <input type="time" value={time} disabled={busy} onChange={(change) => setAt(change.target.value)} />
-          </label>
-        </div>
-        <div className="field-label">{t('agent.briefDays')}</div>
-        <WeekdayButtons
-          label={t('agent.briefDays')}
-          weekdays={chosenDays}
-          weekStart={languageWeekStart(language)}
-          disabled={busy}
-          onChange={setDays}
-        />
-        {hasNoDay ? <p className="muted field-hint">{t('agent.briefNoDays')}</p> : null}
-        <div className="page-actions page-actions-end">
-          {isBriefOn ? (
-            <>
-              <button type="button" disabled={busy} onClick={() => void sendNow()}>
-                {t('agent.briefNow')}
-              </button>
-              <button type="button" disabled={busy} onClick={() => void save(false)}>
-                {t('agent.briefStop')}
-              </button>
-              <button type="button" className="primary" disabled={busy || hasNoDay} onClick={() => void save(true)}>
-                {t('agent.briefSave')}
-              </button>
-            </>
-          ) : (
-            <button type="button" className="primary" disabled={busy || hasNoDay} onClick={() => void save(true)}>
-              {t('agent.briefStart')}
-            </button>
-          )}
-        </div>
-        {brief && isBriefOn && brief.goalNextAt ? (
-          <p className="muted">{t('agent.briefNext', { when: formatTime(brief.goalNextAt) })}</p>
-        ) : null}
-        {brief ? (
-          <div>
-            <button
-              type="button"
-              onClick={() => navigate(`/settings/agent/goals?goal=${encodeURIComponent(brief.conversationId)}`)}
-            >
-              {t('agent.briefOpen')}
-            </button>
-          </div>
-        ) : (
-          <p className="muted">{t('agent.briefNotYet')}</p>
-        )}
-      </div>
     </SettingsSection>
   )
 }

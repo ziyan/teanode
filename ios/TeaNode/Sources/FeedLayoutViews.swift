@@ -260,7 +260,7 @@ struct FeedHourColumn: View {
 
     private var hourText: String {
         guard let date = hour.date else { return hour.forecastHour }
-        return date.formatted(.dateTime.hour())
+        return FeedClock.hourText(date, sourceText: hour.forecastHour)
     }
 }
 
@@ -347,7 +347,7 @@ struct FeedAgendaLine: View {
     @ViewBuilder
     private var startText: some View {
         if let startDate = entry.startDate {
-            Text(startDate.formatted(date: .omitted, time: .shortened))
+            Text(FeedClock.timeText(startDate, sourceText: entry.startsAt))
                 .font(.footnote.weight(.semibold))
                 .monospacedDigit()
                 .fixedSize()
@@ -358,7 +358,7 @@ struct FeedAgendaLine: View {
     @ViewBuilder
     private var endText: some View {
         if let endDate = entry.endDate {
-            Text(endDate.formatted(date: .omitted, time: .shortened))
+            Text(FeedClock.timeText(endDate, sourceText: entry.endsAt))
                 .font(.caption)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
@@ -408,5 +408,29 @@ struct FeedAgendaLine: View {
     /// The kind in words, then the detail.
     private var detailText: String {
         entry.agendaDetail.isEmpty ? kindText : "\(kindText) · \(entry.agendaDetail)"
+    }
+}
+
+// MARK: Times in another zone
+
+/// FeedClock writes the time of a card in the zone the card states it in, and
+/// names that zone when it is not the phone's own, so "9:00 AM" is never a
+/// guess at whose morning it is. A time in the phone's zone is written plainly.
+enum FeedClock {
+    /// The time of day, with the zone's name after it when it is not the phone's.
+    static func timeText(_ date: Date, sourceText: String) -> String {
+        zoned(date, sourceText: sourceText) { zone in date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, timeZone: zone)) }
+    }
+
+    /// The hour alone, with the zone's name after it when it is not the phone's.
+    static func hourText(_ date: Date, sourceText: String) -> String {
+        zoned(date, sourceText: sourceText) { zone in date.formatted(Date.FormatStyle(timeZone: zone).hour()) }
+    }
+
+    private static func zoned(_ date: Date, sourceText: String, format: (TimeZone) -> String) -> String {
+        guard let offsetSeconds = AgentFeedZone.foreignOffsetSeconds(of: sourceText), let zone = TimeZone(secondsFromGMT: offsetSeconds) else {
+            return format(.current)
+        }
+        return "\(format(zone)) \(AgentFeedZone.name(offsetSeconds: offsetSeconds))"
     }
 }

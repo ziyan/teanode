@@ -137,7 +137,7 @@ func (self *openAI) Transcribe(ctx context.Context, request *TranscriptionReques
 	for headerName, headerValue := range self.headers() {
 		outgoing.Header.Set(headerName, headerValue)
 	}
-	response, err := self.transcriptionClient().Do(outgoing)
+	response, err := self.client.Do(outgoing)
 	if err != nil {
 		return nil, fmt.Errorf("llm: transcription: %w", err)
 	}
@@ -259,15 +259,8 @@ func decodeTranscription(request *TranscriptionRequest, responseBytes []byte, ca
 
 // transcriptionTimeout bounds one transcription request. Uploading ten
 // minutes of audio and having it transcribed and told apart by speaker can
-// take minutes, past the request timeout chat calls share.
+// take minutes, so it has a total of its own.
 const transcriptionTimeout = 10 * time.Minute
-
-// transcriptionClient is the provider's client without the chat request
-// timeout, which would cut a long transcription short; the request's
-// context bounds it instead (see Transcribe).
-func (self *openAI) transcriptionClient() *http.Client {
-	return &http.Client{Transport: self.client.Transport, CheckRedirect: self.client.CheckRedirect, Jar: self.client.Jar}
-}
 
 // spelledLetters is a word said letter by letter as the diarizing model writes
 // it, each letter followed by an underscore: "P_L_C_".

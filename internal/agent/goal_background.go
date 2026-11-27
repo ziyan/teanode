@@ -189,7 +189,13 @@ func (self *Agent) UpdateGoal(tx db.Transaction, agent *models.Agent, owner *mod
 				changing.GoalWrittenBy = writer
 			}
 		case models.WrittenByPerson, models.WrittenByBuiltIn:
-			if isWordsOrTimesChanged {
+			// The person editing a built-in goal (the times of the daily
+			// brief, say) leaves it built in. A goal written by the person
+			// with times and no mail conditions counts as the person's own
+			// and may use Passwords, while the built-in brief reads mail
+			// that strangers wrote, so an edit must not promote it.
+			isBuiltInKept := writer == models.WrittenByPerson && models.KnownWriter(changing.GoalWrittenBy) == models.WrittenByBuiltIn
+			if isWordsOrTimesChanged && !isBuiltInKept {
 				changing.GoalWrittenBy = writer
 			}
 		}

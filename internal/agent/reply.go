@@ -388,7 +388,7 @@ func (self *Agent) runReply(ctx context.Context, run *Run) error {
 		return self.recordRefusal(ctx, run, mail, refused)
 	}
 
-	message, err := BuildMessageContext(ctx, run.Storage(), mail, configuration.Agent.Limits.MaxBodyCharacters, false)
+	message, err := BuildMessageContext(ctx, run.Storage(), mail, messageBodyCharactersMost, false)
 	if err != nil {
 		return err
 	}

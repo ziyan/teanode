@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { AgentReference, askAgentAbout, graphql, openAgentConversation, subscribe } from '../api'
@@ -24,6 +24,7 @@ import {
   NewspaperIcon,
   PictureIcon,
   PlaneIcon,
+  RestoreIcon,
   ShieldIcon,
   TerminalIcon,
   TrendingUpIcon,
@@ -32,6 +33,8 @@ import {
   WarningIcon,
   WeatherIcon,
 } from '../components/icons'
+import { feedClockTextOf } from '../components/feedClock'
+import { chartBlocksOf, FeedChartBlocks, type FeedChartBlockData } from '../components/feedChart'
 import { FeedLayoutContent, parseFeedLayout, webAddressOf } from '../components/feedLayouts'
 import { FeedMediaGallery } from '../components/feedMedia'
 import {
@@ -45,6 +48,7 @@ import { Markdown } from '../components/markdown'
 import { ReferenceChips } from '../components/agentReferenceChips'
 import { RelativeTime } from '../components/relativeTime'
 import { SettingsEmpty } from '../components/settingsList'
+import { SWIPE_ACTION_PX, SWIPE_STARTS_PX, swipeOffset } from '../components/swipeableLine'
 import { Tooltip } from '../components/tooltip'
 import { useToast } from '../components/toast'
 import { Key, Trans, useTranslation } from '../i18n/i18n'
@@ -125,6 +129,7 @@ export interface FeedItem {
   isLiked: boolean
   isRead: boolean
   isDismissed: boolean
+  dismissedAt: string | null
   postedAt: string
   updatedAt: string
   feedStackKey: string
@@ -135,6 +140,13 @@ export interface FeedItem {
   feedCardLayout: string
   layoutContent: string
   feedMedia: FeedMedia[]
+  // A card whose problem cleared is marked resolved, with a one-line note.
+  isResolved?: boolean
+  resolvedAt?: string | null
+  resolutionNote?: string
+  resolvedByKind?: string
+  // Charts as the server sends them; read with chartBlocksOf.
+  chartBlocks?: FeedChartBlockData[]
 }
 
 interface FeedPageAnswer {
@@ -147,11 +159,13 @@ const ITEM_FIELDS = `feedItemId feedItemKind feedSourceKind feedSourceId feedSou
   pictureSymbol factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl }
   recordReferences { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description }
   choices { choiceKey choiceLabel choiceRole } chosenChoiceKey chosenAt outcomeText isOutcomePending
-  feedUrgency isLiked isRead isDismissed postedAt updatedAt feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent
-  feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }`
+  feedUrgency isLiked isRead isDismissed dismissedAt postedAt updatedAt feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent
+  feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex cameraName capturedAt stillReason playbackUrl liveUrl }
+  isResolved resolvedAt resolutionNote resolvedByKind
+  chartBlocks { chartKind chartTitle unit provenance xLabels series { seriesName seriesRole values } markers { markerAt markerLabel } bars { barLabel barValue } }`
 
-const LIST_FEED = `query ($first: Int, $after: String) {
-  ListAgentFeed(first: $first, after: $after) { feedItems { ${ITEM_FIELDS} } nextCursor unreadCount }
+const LIST_FEED = `query ($first: Int, $after: String, $isDismissedOnly: Boolean) {
+  ListAgentFeed(first: $first, after: $after, isDismissedOnly: $isDismissedOnly) { feedItems { ${ITEM_FIELDS} } nextCursor unreadCount }
 }`
 const LIST_STACK = `query ($feedStackKey: String!, $first: Int, $after: String) {
   ListAgentFeedStack(feedStackKey: $feedStackKey, first: $first, after: $after) { feedItems { ${ITEM_FIELDS} } nextCursor unreadCount }
@@ -175,6 +189,12 @@ const RESTORE_ITEMS = `mutation ($feedItemIds: [String!]!) {
 // Which cards a dismissal closes: the ones named, a stack's, or every read one.
 // Exactly one is given, as the operation wants.
 type DismissSelection = { feedItemIds: string[] } | { feedStackKey: string } | { isEveryReadCard: true }
+const RESOLVE_ITEM = `mutation ($feedItemId: String!, $resolutionNote: String) {
+  ResolveAgentFeedItem(feedItemId: $feedItemId, resolutionNote: $resolutionNote) { ${ITEM_FIELDS} }
+}`
+const UNRESOLVE_ITEM = `mutation ($feedItemId: String!) {
+  UnresolveAgentFeedItem(feedItemId: $feedItemId) { ${ITEM_FIELDS} }
+}`
 const MARK_READ = `mutation ($feedItemIds: [String!]!) { MarkAgentFeedRead(feedItemIds: $feedItemIds) }`
 const DISCUSS_ITEM = `mutation ($feedItemId: String!) { DiscussAgentFeedItem(feedItemId: $feedItemId) }`
 
@@ -265,9 +285,47 @@ function codingSessionPath(feedSourceId: string): string {
   return codingPagePath({ computer: feedSourceId.slice(0, slash), paneId: feedSourceId.slice(slash + 1) })
 }
 
-export function FeedPage() {
+// A dismissed card that sits beside the others of its stack in the list.
+interface DismissedRow {
+  // The card drawn on top: the first entry of the group, with the group's size
+  // and unread count, as the server gives a stack's top card in the feed.
+  item: FeedItem
+  // Every entry of the group, the top one first. One entry for a card alone.
+  entries: FeedItem[]
+}
+
+// groupDismissedItems joins consecutive entries with the same non-empty
+// feedStackKey into one row, which is drawn as a deck. The server lists every
+// dismissed card on its own, so the grouping is the page's.
+export function groupDismissedItems(feedItems: FeedItem[]): DismissedRow[] {
+  const rows: DismissedRow[] = []
+  for (const item of feedItems) {
+    const last = rows[rows.length - 1]
+    if (last && item.feedStackKey !== '' && last.entries[0].feedStackKey === item.feedStackKey) {
+      last.entries.push(item)
+    } else {
+      rows.push({ item, entries: [item] })
+    }
+  }
+  return rows.map((row) => ({
+    item: {
+      ...row.entries[0],
+      stackItemCount: row.entries.length,
+      stackUnreadCount: row.entries.filter((entry) => !entry.isRead).length,
+    },
+    entries: row.entries,
+  }))
+}
+
+// The Dismissed view: the same page, reading the dismissed cards.
+export function DismissedFeedPage() {
+  return <FeedPage isDismissedView />
+}
+
+export function FeedPage({ isDismissedView = false }: { isDismissedView?: boolean }) {
   const { t, plural } = useTranslation()
   const toast = useToast()
+  const navigate = useNavigate()
   const [feedItems, setFeedItems] = useState<FeedItem[] | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -282,7 +340,17 @@ export function FeedPage() {
   const [readItemIds, setReadItemIds] = useState<Set<string>>(() => new Set())
   // Counted at every read of the list, so an open stack reads itself again too.
   const [loadCount, setLoadCount] = useState(0)
+  // The Dismissed view reads the dismissed cards; the feed asks for neither.
+  const dismissedVariables = useMemo(() => (isDismissedView ? { isDismissedOnly: true } : {}), [isDismissedView])
   const feedItemCountRef = useRef(0)
+  // The list as last drawn, for the code that decides whether a removal left
+  // it empty, and the ids this page took off the list with the number of the
+  // read that was latest then. A read that was already on the way when a card
+  // was taken off may still carry it, so every read drops these ids; an id is
+  // forgotten once a read that began after it was taken off comes back without it.
+  const feedItemsRef = useRef<FeedItem[] | null>(null)
+  feedItemsRef.current = feedItems
+  const hiddenItemNumbersRef = useRef<Map<string, number>>(new Map())
   const unreadCountRef = useRef(0)
   const requestNumberRef = useRef(0)
   const pendingReadRef = useRef<Set<string>>(new Set())
@@ -312,14 +380,21 @@ export function FeedPage() {
       const requestNumber = ++requestNumberRef.current
       try {
         const first = Math.min(Math.max(PAGE_SIZE, feedItemCountRef.current), MAXIMUM_REFRESH_SIZE)
-        const answer = await graphql<{ ListAgentFeed: FeedPageAnswer }>(LIST_FEED, { first })
+        const answer = await graphql<{ ListAgentFeed: FeedPageAnswer }>(LIST_FEED, { first, ...dismissedVariables })
         // A newer read has been asked for, so this one is out of date.
         if (requestNumber !== requestNumberRef.current) return
         const page = answer.ListAgentFeed
-        feedItemCountRef.current = page.feedItems.length
-        setFeedItems(page.feedItems)
+        const hiddenNumbers = hiddenItemNumbersRef.current
+        const returnedIds = new Set(page.feedItems.map((item) => item.feedItemId))
+        hiddenNumbers.forEach((hiddenNumber, feedItemId) => {
+          if (requestNumber > hiddenNumber && !returnedIds.has(feedItemId)) hiddenNumbers.delete(feedItemId)
+        })
+        const visibleItems = page.feedItems.filter((item) => !hiddenNumbers.has(item.feedItemId))
+        feedItemCountRef.current = visibleItems.length
+        feedItemsRef.current = visibleItems
+        setFeedItems(visibleItems)
         setNextCursor(page.nextCursor)
-        rememberFresh(page.feedItems)
+        rememberFresh(visibleItems)
         applyUnreadCount(page.unreadCount)
         setError(null)
         setLoadCount((count) => count + 1)
@@ -328,7 +403,7 @@ export function FeedPage() {
         if (!isQuiet) setError(caught)
       }
     },
-    [applyUnreadCount, rememberFresh],
+    [applyUnreadCount, rememberFresh, dismissedVariables],
   )
 
   useEffect(() => {
@@ -390,11 +465,17 @@ export function FeedPage() {
       const answer = await graphql<{ ListAgentFeed: FeedPageAnswer }>(LIST_FEED, {
         first: PAGE_SIZE,
         after: nextCursor,
+        ...dismissedVariables,
       })
       const page = answer.ListAgentFeed
       setFeedItems((previous) => {
         const known = new Set((previous ?? []).map((item) => item.feedItemId))
-        const merged = [...(previous ?? []), ...page.feedItems.filter((item) => !known.has(item.feedItemId))]
+        const merged = [
+          ...(previous ?? []),
+          ...page.feedItems.filter(
+            (item) => !known.has(item.feedItemId) && !hiddenItemNumbersRef.current.has(item.feedItemId),
+          ),
+        ]
         feedItemCountRef.current = merged.length
         return merged
       })
@@ -487,13 +568,67 @@ export function FeedPage() {
       previous ? previous.map((item) => (item.feedItemId === updated.feedItemId ? updated : item)) : previous,
     )
   }, [])
-  const removeItem = useCallback((feedItemId: string) => {
-    setFeedItems((previous) => {
-      const remaining = previous ? previous.filter((item) => item.feedItemId !== feedItemId) : previous
-      feedItemCountRef.current = remaining?.length ?? 0
-      return remaining
-    })
+  // hideItems takes cards off the list at once and keeps them off it, even
+  // from a read that was already on the way.
+  const hideItems = useCallback((feedItemIds: string[]) => {
+    for (const feedItemId of feedItemIds) hiddenItemNumbersRef.current.set(feedItemId, requestNumberRef.current)
+    const gone = new Set(feedItemIds)
+    const remaining = feedItemsRef.current ? feedItemsRef.current.filter((item) => !gone.has(item.feedItemId)) : null
+    feedItemsRef.current = remaining
+    feedItemCountRef.current = remaining?.length ?? 0
+    setFeedItems(remaining)
   }, [])
+  // readAfterRemoval reads the list again after cards were taken off. When
+  // none are left the loading mark is shown meanwhile, so that empty is said
+  // only when the read says so.
+  const readAfterRemoval = useCallback(() => {
+    if (feedItemsRef.current !== null && feedItemsRef.current.length === 0) {
+      feedItemsRef.current = null
+      setFeedItems(null)
+      void loadRef.current(false)
+      return
+    }
+    void loadRef.current(true)
+  }, [])
+  const removeItem = useCallback(
+    (feedItemId: string) => {
+      hideItems([feedItemId])
+      readAfterRemoval()
+    },
+    [hideItems, readAfterRemoval],
+  )
+
+  // restoreItem puts a dismissed card back. It leaves the list at once; a
+  // failure brings it back.
+  const restoreItem = useCallback(
+    async (feedItemId: string) => {
+      hideItems([feedItemId])
+      let restoredIds: string[]
+      try {
+        const answer = await graphql<{ RestoreAgentFeedItems: string[] }>(RESTORE_ITEMS, { feedItemIds: [feedItemId] })
+        restoredIds = answer.RestoreAgentFeedItems
+      } catch (caught) {
+        hiddenItemNumbersRef.current.delete(feedItemId)
+        toastRef.current.failure(caught, t('feed.actionFailed'))
+        void loadRef.current(true)
+        return false
+      }
+      // The server leaves out a card a newer card on its subject replaced,
+      // or one that expired: it is shown again and the person told.
+      if (!restoredIds.includes(feedItemId)) {
+        hiddenItemNumbersRef.current.delete(feedItemId)
+        toastRef.current.failed(t('feed.notRestored'))
+        void loadRef.current(true)
+        return false
+      }
+      toastRef.current.done(t('feed.restored'))
+      readAfterRemoval()
+      return true
+    },
+    // The translation function changes with the language only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hideItems, readAfterRemoval],
+  )
 
   // dismissItems closes cards and offers Undo, which brings back exactly the
   // cards this call closed. The list is read again, so a stack whose top card
@@ -507,18 +642,14 @@ export function FeedPage() {
           toastRef.current.done(t('feed.nothingToDismiss'))
           return true
         }
-        const gone = new Set(dismissedIds)
-        setFeedItems((previous) => {
-          const remaining = previous ? previous.filter((item) => !gone.has(item.feedItemId)) : previous
-          feedItemCountRef.current = remaining?.length ?? 0
-          return remaining
-        })
-        void loadRef.current(true)
+        hideItems(dismissedIds)
+        readAfterRemoval()
         toastRef.current.done(plural(dismissedIds.length, { one: 'feed.dismissedOne', other: 'feed.dismissedOther' }), {
           label: t('common.undo'),
           run: async () => {
             try {
               await graphql(RESTORE_ITEMS, { feedItemIds: dismissedIds })
+              for (const feedItemId of dismissedIds) hiddenItemNumbersRef.current.delete(feedItemId)
               await loadRef.current(true)
             } catch (caught) {
               toastRef.current.failure(caught, t('feed.actionFailed'))
@@ -533,7 +664,7 @@ export function FeedPage() {
     },
     // The translation functions change with the language only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [hideItems, readAfterRemoval],
   )
 
   if (feedItems === null) {
@@ -544,20 +675,41 @@ export function FeedPage() {
       </>
     )
   }
+  const rows: DismissedRow[] = isDismissedView
+    ? groupDismissedItems(feedItems)
+    : feedItems.map((item) => ({ item, entries: [item] }))
   return (
     <div className="feed-page">
-      {feedItems.length > 0 && (
-        <div className="feed-header">
-          <button type="button" onClick={() => void dismissItems({ isEveryReadCard: true })}>
-            {t('feed.dismissRead')}
+      {isDismissedView ? (
+        <div className="feed-header is-dismissed-view">
+          <button type="button" onClick={() => navigate('/feed')}>
+            {t('feed.backToFeed')}
           </button>
+        </div>
+      ) : (
+        <div className="feed-header">
+          <button type="button" onClick={() => navigate('/feed/dismissed')}>
+            {t('feed.dismissedView')}
+          </button>
+          {feedItems.length > 0 && (
+            <button type="button" onClick={() => void dismissItems({ isEveryReadCard: true })}>
+              {t('feed.dismissRead')}
+            </button>
+          )}
         </div>
       )}
       {feedItems.length === 0 ? (
-        <SettingsEmpty>{t('feed.empty')}</SettingsEmpty>
+        isDismissedView ? (
+          <>
+            <SettingsEmpty>{t('feed.dismissedEmpty')}</SettingsEmpty>
+            <SettingsEmpty>{t('feed.dismissedEmptyNote')}</SettingsEmpty>
+          </>
+        ) : (
+          <SettingsEmpty>{t('feed.empty')}</SettingsEmpty>
+        )
       ) : (
         <ul className="feed-list">
-          {feedItems.map((item) => {
+          {rows.map(({ item, entries }) => {
             const isStack = item.stackItemCount > 1 && item.feedStackKey !== ''
             const isOpen = isStack && openStackKeys.has(item.feedStackKey)
             return (
@@ -592,6 +744,7 @@ export function FeedPage() {
                   onChanged={replaceItem}
                   onRemoved={removeItem}
                   onDismissItems={dismissItems}
+                  onRestore={isDismissedView ? restoreItem : undefined}
                   stack={isStack ? { isOpen, onToggle: () => toggleStack(item.feedStackKey) } : undefined}
                 />
                 {isStack && (
@@ -604,6 +757,10 @@ export function FeedPage() {
                     readItemIds={readItemIds}
                     onSeen={markSeen}
                     onDismissItems={dismissItems}
+                    entries={isDismissedView ? entries : undefined}
+                    onEntryChanged={replaceItem}
+                    onEntryRemoved={removeItem}
+                    onRestore={isDismissedView ? restoreItem : undefined}
                   />
                 )}
               </li>
@@ -629,6 +786,7 @@ function FeedCard({
   onChanged,
   onRemoved,
   onDismissItems,
+  onRestore,
   stack,
 }: {
   item: FeedItem
@@ -637,6 +795,9 @@ function FeedCard({
   onChanged: (item: FeedItem) => void
   onRemoved: (feedItemId: string) => void
   onDismissItems: (selection: DismissSelection) => Promise<boolean>
+  // Given in the Dismissed view: the card is put back by the restore button
+  // in its footer, by the info sheet's Restore, and by a swipe on a touch screen.
+  onRestore?: (feedItemId: string) => Promise<boolean>
   // Present on the top card of a stack: whether the rest is shown and how to toggle it.
   stack?: { isOpen: boolean; onToggle: () => void }
 }) {
@@ -646,6 +807,12 @@ function FeedCard({
   const cardRef = useRef<HTMLElement>(null)
   const [isBusy, setIsBusy] = useState(false)
   const [isInfoOpen, setIsInfoOpen] = useState(false)
+  const [isResolveOpen, setIsResolveOpen] = useState(false)
+  // An answered card is folded to its title and one line; this opens it again.
+  const [isUnfolded, setIsUnfolded] = useState(false)
+  // Where a finger came down and how far across a swipe has taken the card.
+  const touchRef = useRef<{ pointerId: number; startX: number; startY: number; isSwiping: boolean } | null>(null)
+  const [swipeAcrossPx, setSwipeAcrossPx] = useState(0)
 
   // Seen once most of the card has been on screen.
   const isUnread = !item.isRead
@@ -738,6 +905,77 @@ function FeedCard({
       await onDismissItems({ feedStackKey: item.feedStackKey })
     })
 
+  const restore = () =>
+    run(async () => {
+      if (onRestore && (await onRestore(item.feedItemId))) setIsInfoOpen(false)
+    })
+
+  // A horizontal swipe of a finger past SWIPE_ACTION_PX restores the card; a
+  // move more down than across is a scroll, left to the browser. A mouse has
+  // the button.
+  const swipeHandlers = onRestore
+    ? {
+        onPointerDown: (event: React.PointerEvent) => {
+          if (event.pointerType !== 'touch') return
+          touchRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            isSwiping: false,
+          }
+        },
+        onPointerMove: (event: React.PointerEvent) => {
+          const touch = touchRef.current
+          if (!touch || touch.pointerId !== event.pointerId) return
+          const acrossPx = event.clientX - touch.startX
+          const downPx = event.clientY - touch.startY
+          if (!touch.isSwiping) {
+            if (Math.abs(downPx) >= SWIPE_STARTS_PX && Math.abs(downPx) > Math.abs(acrossPx)) {
+              touchRef.current = null
+              return
+            }
+            if (Math.abs(acrossPx) < SWIPE_STARTS_PX) return
+            touch.isSwiping = true
+            event.currentTarget.setPointerCapture?.(event.pointerId)
+          }
+          setSwipeAcrossPx(swipeOffset(acrossPx))
+        },
+        onPointerUp: (event: React.PointerEvent) => {
+          const touch = touchRef.current
+          if (!touch || touch.pointerId !== event.pointerId) return
+          touchRef.current = null
+          const acrossPx = event.clientX - touch.startX
+          setSwipeAcrossPx(0)
+          if (touch.isSwiping && Math.abs(acrossPx) >= SWIPE_ACTION_PX) void restore()
+        },
+        onPointerCancel: () => {
+          touchRef.current = null
+          setSwipeAcrossPx(0)
+        },
+      }
+    : {}
+
+  const resolve = (resolutionNote: string) =>
+    run(async () => {
+      const answer = await graphql<{ ResolveAgentFeedItem: FeedItem }>(RESOLVE_ITEM, {
+        feedItemId: item.feedItemId,
+        resolutionNote: resolutionNote.trim(),
+      })
+      onChanged(answer.ResolveAgentFeedItem)
+      setIsResolveOpen(false)
+      toast.done(t('feed.resolvedDone'))
+    })
+
+  const unresolve = () =>
+    run(async () => {
+      const answer = await graphql<{ UnresolveAgentFeedItem: FeedItem }>(UNRESOLVE_ITEM, {
+        feedItemId: item.feedItemId,
+      })
+      onChanged(answer.UnresolveAgentFeedItem)
+      setIsInfoOpen(false)
+      toast.done(t('feed.unresolvedDone'))
+    })
+
   const showLess = () =>
     run(async () => {
       await graphql(SHOW_LESS_ITEM, { feedItemId: item.feedItemId })
@@ -757,26 +995,37 @@ function FeedCard({
     'card',
     'feed-card',
     isFresh ? 'is-fresh' : '',
+    onRestore ? 'is-swipeable' : '',
     weatherGradient ? `is-weather is-${weatherGradient}` : '',
+    item.isResolved ? 'is-resolved' : '',
   ]
     .filter(Boolean)
     .join(' ')
   const isChosen = item.chosenChoiceKey !== null && item.chosenChoiceKey !== ''
+  const isFolded = isChosen && !isUnfolded
+  const chartBlocks = useMemo(() => chartBlocksOf(item.chartBlocks), [item.chartBlocks])
+  const resolvedClock =
+    item.isResolved && item.resolvedAt ? feedClockTextOf(item.resolvedAt, { isHourPadded: true }) : ''
 
   return (
-    <article ref={cardRef} className={cardClassName}>
+    <article
+      ref={cardRef}
+      className={cardClassName}
+      style={swipeAcrossPx !== 0 ? { transform: `translateX(${swipeAcrossPx}px)` } : undefined}
+      {...swipeHandlers}
+    >
       {isFresh && <span className="feed-fresh-dot" role="img" aria-label={t('feed.unread')} />}
-      {hasCardMedia && <FeedMediaGallery cardMedia={cardMedia} />}
+      {hasCardMedia && !isFolded && <FeedMediaGallery cardMedia={cardMedia} />}
       {/* With pictures on top the symbol moves into the header line. */}
-      {!hasCardMedia && (
+      {(!hasCardMedia || isFolded) && (
         <div className="feed-picture">
           <FeedPicture pictureSymbol={item.pictureSymbol} />
         </div>
       )}
       <div className="feed-content">
-        {(headerLabel || hasCardMedia) && (
+        {(headerLabel || (hasCardMedia && !isFolded)) && (
           <p className="feed-kicker muted">
-            {hasCardMedia && (
+            {hasCardMedia && !isFolded && (
               <span className="feed-kicker-symbol" aria-hidden="true">
                 <FeedPicture pictureSymbol={item.pictureSymbol} />
               </span>
@@ -786,68 +1035,99 @@ function FeedCard({
         )}
         <div className="feed-head">
           <h3 className="feed-title">{item.title}</h3>
-          <Tooltip label={t('feed.dismiss')}>
-            <button
-              type="button"
-              className="icon-action feed-dismiss"
-              aria-label={`${item.title}: ${t('feed.dismiss')}`}
-              disabled={isBusy}
-              onClick={() => void dismiss()}
-            >
-              <CloseIcon size={16} />
-            </button>
-          </Tooltip>
+          {!onRestore && (
+            <Tooltip label={t('feed.dismiss')}>
+              <button
+                type="button"
+                className="icon-action feed-dismiss"
+                aria-label={`${item.title}: ${t('feed.dismiss')}`}
+                disabled={isBusy}
+                onClick={() => void dismiss()}
+              >
+                <CloseIcon size={16} />
+              </button>
+            </Tooltip>
+          )}
         </div>
-        {layout ? (
-          <FeedLayoutContent layout={layout} rowMediaByIndex={rowMediaByIndex} />
-        ) : (
-          item.body && (
-            <div className="feed-body">
-              <Markdown text={item.body} />
-            </div>
-          )
-        )}
-        {item.factRows.length > 0 && (
-          <table className="feed-facts">
-            <tbody>
-              {item.factRows.map((row, index) => (
-                <tr key={`${row.factLabel}-${index}`}>
-                  <th scope="row">{row.factLabel}</th>
-                  <td>{row.factValue}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {isChosen ? (
-          <div className="feed-outcome" aria-live="polite">
-            <p className="feed-chosen">
-              {t('feed.chose', { choice: chosen?.choiceLabel ?? item.chosenChoiceKey ?? '' })}
+        {isFolded ? (
+          <div className="feed-folded">
+            <p className="muted feed-folded-line">
+              <span className="feed-folded-part">
+                {t('feed.chose', { choice: chosen?.choiceLabel ?? item.chosenChoiceKey ?? '' })}
+              </span>
+              {item.isOutcomePending ? (
+                <span className="feed-folded-part">
+                  <span className="agent-spinner" aria-hidden="true" /> {t('feed.working')}
+                </span>
+              ) : (
+                item.outcomeText && <span className="feed-folded-part">{item.outcomeText}</span>
+              )}
             </p>
-            {item.isOutcomePending ? (
-              <p className="muted feed-working">
-                <span className="agent-spinner" aria-hidden="true" /> {t('feed.working')}
-              </p>
-            ) : (
-              item.outcomeText && <p className="muted">{item.outcomeText}</p>
-            )}
+            <button type="button" className="feed-unfold" onClick={() => setIsUnfolded(true)}>
+              {t('feed.showCard')}
+            </button>
           </div>
         ) : (
-          item.choices.length > 0 && (
-            <div className="feed-choices">
-              {item.choices.map((choice) => (
-                <button
-                  key={choice.choiceKey}
-                  type="button"
-                  className={choice.choiceRole === 'action' ? 'primary' : undefined}
-                  disabled={isBusy}
-                  onClick={() => choose(choice)}
-                >
-                  {choice.choiceLabel}
+          <>
+            {layout ? (
+              <FeedLayoutContent layout={layout} rowMediaByIndex={rowMediaByIndex} />
+            ) : (
+              item.body && (
+                <div className="feed-body">
+                  <Markdown text={item.body} />
+                </div>
+              )
+            )}
+            {item.isResolved && item.resolutionNote && (
+              <p className="muted feed-resolution-note">{item.resolutionNote}</p>
+            )}
+            <FeedChartBlocks blocks={chartBlocks} />
+            {item.factRows.length > 0 && (
+              <table className="feed-facts">
+                <tbody>
+                  {item.factRows.map((row, index) => (
+                    <tr key={`${row.factLabel}-${index}`}>
+                      <th scope="row">{row.factLabel}</th>
+                      <td>{row.factValue}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {isChosen ? (
+              <div className="feed-outcome" aria-live="polite">
+                <p className="feed-chosen">
+                  {t('feed.chose', { choice: chosen?.choiceLabel ?? item.chosenChoiceKey ?? '' })}
+                </p>
+                {item.isOutcomePending ? (
+                  <p className="muted feed-working">
+                    <span className="agent-spinner" aria-hidden="true" /> {t('feed.working')}
+                  </p>
+                ) : (
+                  item.outcomeText && <p className="muted">{item.outcomeText}</p>
+                )}
+                <button type="button" className="feed-unfold" onClick={() => setIsUnfolded(false)}>
+                  {t('feed.foldCard')}
                 </button>
-              ))}
-            </div>
-          )
+              </div>
+            ) : (
+              item.choices.length > 0 && (
+                <div className="feed-choices">
+                  {item.choices.map((choice) => (
+                    <button
+                      key={choice.choiceKey}
+                      type="button"
+                      className={choice.choiceRole === 'action' ? 'primary' : undefined}
+                      disabled={isBusy}
+                      onClick={() => choose(choice)}
+                    >
+                      {choice.choiceLabel}
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
+          </>
         )}
         <div className="feed-footer">
           <Tooltip label={item.isLiked ? t('feed.unlike') : t('feed.like')}>
@@ -865,9 +1145,27 @@ function FeedCard({
             <ChatIcon size={14} /> {t('feed.discuss')}
           </button>
           <span className="feed-footer-end">
+            {item.isResolved && (
+              <span className="feed-resolved-chip">
+                {resolvedClock ? t('feed.resolvedAt', { time: resolvedClock }) : t('feed.resolved')}
+              </span>
+            )}
             <span className="muted feed-date">
               <RelativeTime value={item.updatedAt} />
             </span>
+            {onRestore && (
+              <Tooltip label={t('feed.restore')}>
+                <button
+                  type="button"
+                  className="icon-action feed-restore"
+                  aria-label={`${item.title}: ${t('feed.restore')}`}
+                  disabled={isBusy}
+                  onClick={() => void restore()}
+                >
+                  <RestoreIcon size={16} />
+                </button>
+              </Tooltip>
+            )}
             <Tooltip label={t('feed.aboutCard')}>
               <button
                 type="button"
@@ -898,21 +1196,74 @@ function FeedCard({
               <span className="muted feed-stack-unread">{t('feed.unreadCount', { count: item.stackUnreadCount })}</span>
             )}
           </button>
-          <button type="button" className="feed-dismiss-all" disabled={isBusy} onClick={() => void dismissStack()}>
-            {t('feed.dismissAll', { count: item.stackItemCount })}
-          </button>
+          {!onRestore && (
+            <button type="button" className="feed-dismiss-all" disabled={isBusy} onClick={() => void dismissStack()}>
+              {t('feed.dismissAll', { count: item.stackItemCount })}
+            </button>
+          )}
         </div>
       )}
       {isInfoOpen && (
         <FeedInfoDialog
           item={item}
           isBusy={isBusy}
+          onResolve={() => {
+            setIsInfoOpen(false)
+            setIsResolveOpen(true)
+          }}
+          onUnresolve={() => void unresolve()}
           onShowLess={() => void showLess()}
           onDismiss={() => void dismiss()}
+          onRestore={onRestore ? () => void restore() : undefined}
           onClose={() => setIsInfoOpen(false)}
         />
       )}
+      {isResolveOpen && (
+        <FeedResolveDialog
+          isBusy={isBusy}
+          onResolve={(note) => void resolve(note)}
+          onClose={() => setIsResolveOpen(false)}
+        />
+      )}
     </article>
+  )
+}
+
+// FeedResolveDialog asks for the optional note a resolution carries: one line,
+// the length the server keeps.
+const RESOLUTION_NOTE_LIMIT = 160
+
+function FeedResolveDialog({
+  isBusy,
+  onResolve,
+  onClose,
+}: {
+  isBusy: boolean
+  onResolve: (resolutionNote: string) => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const [resolutionNote, setResolutionNote] = useState('')
+  return (
+    <FormDialog
+      title={t('feed.resolveTitle')}
+      submitLabel={t('feed.resolve')}
+      busy={isBusy}
+      onSubmit={() => onResolve(resolutionNote)}
+      onClose={onClose}
+    >
+      <p className="muted">{t('feed.resolveHint')}</p>
+      <label>
+        <span>{t('feed.resolutionNoteLabel')}</span>
+        <input
+          type="text"
+          value={resolutionNote}
+          maxLength={RESOLUTION_NOTE_LIMIT}
+          placeholder={t('feed.resolutionNotePlaceholder')}
+          onChange={(event) => setResolutionNote(event.target.value)}
+        />
+      </label>
+    </FormDialog>
   )
 }
 
@@ -922,14 +1273,23 @@ function FeedCard({
 function FeedInfoDialog({
   item,
   isBusy,
+  onResolve,
+  onUnresolve,
   onShowLess,
   onDismiss,
+  onRestore,
   onClose,
 }: {
   item: FeedItem
   isBusy: boolean
+  // Resolve opens a small dialog for the note; Unresolve takes the mark off.
+  onResolve: () => void
+  onUnresolve: () => void
   onShowLess: () => void
   onDismiss: () => void
+  // Given for a dismissed card: Restore is the one way out, in place of
+  // Show less and Dismiss.
+  onRestore?: () => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -955,15 +1315,17 @@ function FeedInfoDialog({
   return (
     <FormDialog
       title={t('feed.infoTitle')}
-      submitLabel={t('feed.showLess')}
+      submitLabel={onRestore ? t('feed.restore') : t('feed.showLess')}
       closeLabel={t('feed.close')}
       busy={isBusy}
-      onSubmit={onShowLess}
+      onSubmit={onRestore ?? onShowLess}
       onClose={onClose}
       otherAction={
-        <button type="button" disabled={isBusy} onClick={onDismiss}>
-          {t('feed.dismiss')}
-        </button>
+        onRestore ? undefined : (
+          <button type="button" disabled={isBusy} onClick={onDismiss}>
+            {t('feed.dismiss')}
+          </button>
+        )
       }
     >
       <p>
@@ -1005,6 +1367,17 @@ function FeedInfoDialog({
           <ReferenceChips references={item.recordReferences} />
         </>
       )}
+      <p>
+        {item.isResolved ? (
+          <button type="button" disabled={isBusy} onClick={onUnresolve}>
+            {t('feed.unresolve')}
+          </button>
+        ) : (
+          <button type="button" disabled={isBusy} onClick={onResolve}>
+            {t('feed.resolve')}
+          </button>
+        )}
+      </p>
       {item.runConversationId && (
         <p>
           <button
@@ -1034,6 +1407,10 @@ function FeedStack({
   readItemIds,
   onSeen,
   onDismissItems,
+  entries,
+  onEntryChanged,
+  onEntryRemoved,
+  onRestore,
 }: {
   feedStackKey: string
   topFeedItemId: string
@@ -1046,10 +1423,18 @@ function FeedStack({
   readItemIds: Set<string>
   onSeen: (feedItemId: string) => void
   onDismissItems: (selection: DismissSelection) => Promise<boolean>
+  // Given in the Dismissed view: the stack's cards are these entries, already
+  // read, because the server's stack read lists only cards that are not
+  // dismissed. Changes to them go to the page's list.
+  entries?: FeedItem[]
+  onEntryChanged?: (item: FeedItem) => void
+  onEntryRemoved?: (feedItemId: string) => void
+  onRestore?: (feedItemId: string) => Promise<boolean>
 }) {
   const { t } = useTranslation()
   const toast = useToast()
-  const [feedItems, setFeedItems] = useState<FeedItem[] | null>(null)
+  const [readItems, setReadItems] = useState<FeedItem[] | null>(null)
+  const feedItems = entries ?? readItems
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const restRef = useRef<HTMLDivElement>(null)
@@ -1117,13 +1502,14 @@ function FeedStack({
   }, [isOpen, feedItems, stackItemCount])
 
   useEffect(() => {
+    if (entries) return
     let isStale = false
     const first = Math.min(Math.max(PAGE_SIZE, countRef.current), MAXIMUM_REFRESH_SIZE)
     graphql<{ ListAgentFeedStack: FeedPageAnswer }>(LIST_STACK, { feedStackKey, first })
       .then((answer) => {
         if (isStale) return
         countRef.current = answer.ListAgentFeedStack.feedItems.length
-        setFeedItems(answer.ListAgentFeedStack.feedItems)
+        setReadItems(answer.ListAgentFeedStack.feedItems)
         setNextCursor(answer.ListAgentFeedStack.nextCursor)
       })
       .catch((caught) => {
@@ -1132,7 +1518,9 @@ function FeedStack({
     return () => {
       isStale = true
     }
-    // The translation function changes with the language only.
+    // The translation function changes with the language only, and entries
+    // only says which of the two sources the stack has, which does not change
+    // while it is drawn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedStackKey, loadCount])
 
@@ -1145,7 +1533,7 @@ function FeedStack({
         first: PAGE_SIZE,
         after: nextCursor,
       })
-      setFeedItems((previous) => {
+      setReadItems((previous) => {
         const known = new Set((previous ?? []).map((item) => item.feedItemId))
         const merged = [
           ...(previous ?? []),
@@ -1173,18 +1561,23 @@ function FeedStack({
               item={readItemIds.has(item.feedItemId) ? { ...item, isRead: true } : item}
               isFresh={!item.isRead}
               onDismissItems={onDismissItems}
+              onRestore={onRestore}
               onSeen={isOpen ? onSeen : ignoreSeen}
               onChanged={(updated) =>
-                setFeedItems((previous) =>
-                  previous
-                    ? previous.map((entry) => (entry.feedItemId === updated.feedItemId ? updated : entry))
-                    : previous,
-                )
+                onEntryChanged
+                  ? onEntryChanged(updated)
+                  : setReadItems((previous) =>
+                      previous
+                        ? previous.map((entry) => (entry.feedItemId === updated.feedItemId ? updated : entry))
+                        : previous,
+                    )
               }
               onRemoved={(feedItemId) =>
-                setFeedItems((previous) =>
-                  previous ? previous.filter((entry) => entry.feedItemId !== feedItemId) : previous,
-                )
+                onEntryRemoved
+                  ? onEntryRemoved(feedItemId)
+                  : setReadItems((previous) =>
+                      previous ? previous.filter((entry) => entry.feedItemId !== feedItemId) : previous,
+                    )
               }
             />
           </li>

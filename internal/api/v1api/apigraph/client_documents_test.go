@@ -73,6 +73,8 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ShowLessLikeAgentFeedItem": client.DocumentShowLessLikeAgentFeedItem,
 		"DismissAgentFeedItems":     client.DocumentDismissAgentFeedItems,
 		"RestoreAgentFeedItems":     client.DocumentRestoreAgentFeedItems,
+		"ResolveAgentFeedItem":      client.DocumentResolveAgentFeedItem,
+		"UnresolveAgentFeedItem":    client.DocumentUnresolveAgentFeedItem,
 		"MarkAgentFeedRead":         client.DocumentMarkAgentFeedRead,
 		"DiscussAgentFeedItem":      client.DocumentDiscussAgentFeedItem,
 		"PostAgentFeedItem":         client.DocumentPostAgentFeedItem,
@@ -209,6 +211,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"BackfillAgentFollowUps": client.DocumentBackfillAgentFollowUps,
 		"ListAgentRuns":          client.DocumentListAgentRuns,
 		"ListAllAgentRuns":       client.DocumentListAllAgentRuns,
+		"ListFailedAgentTurns":   client.DocumentListFailedAgentTurns,
 		"StopAgentRun":           client.DocumentStopAgentRun,
 		"SaveAgentNode":          client.DocumentSaveAgentNode,
 		// Goals, on set times or at their own pace.
@@ -219,8 +222,6 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"RunAgentGoal":      client.DocumentRunAgentGoal,
 		"TellAgentGoal":     client.DocumentTellAgentGoal,
 		"SetAgentGoalState": client.DocumentSetAgentGoalState,
-		"SetAgentBrief":     client.DocumentSetAgentBrief,
-		"RunAgentBriefNow":  client.DocumentRunAgentBriefNow,
 		// A page read on its own carries its overview, the night's record
 		// counts the overviews written, and a person can ask for one again.
 		"AgentGraphPage": client.DocumentAgentGraphPage,

@@ -98,15 +98,6 @@ class GoalsTest {
     }
 
     @Test
-    fun theBriefIsSetAtATimeOnSomeDaysAndAnswersTheGoal() = runBlocking {
-        val (connection, fake) = fakeConnection { """{"data":{"SetAgentBrief":{"conversationId":"b","goalTitle":"Daily brief","goalDescription":"","goalState":"working","goalStatus":"","goalTimes":["30 7 * * 1,2"],"goalWrittenBy":"built_in"}}}""" }
-        val brief = connection.setDailyBrief(true, "07:30", listOf(1, 2))
-        assertEquals("b", brief!!.conversationId)
-        assertEquals(JsonPrimitive("07:30"), sentVariables(fake)["at"])
-        assertEquals(JsonArray(listOf(JsonPrimitive(1), JsonPrimitive(2))), sentVariables(fake)["days"])
-    }
-
-    @Test
     fun theDetailAsksForActivityAndTheTimes() {
         assertTrue(GoalDocuments.GOAL.contains("activity { id createdAt goalActivityKind activityHeadline activityDetail }"))
         assertTrue(GoalDocuments.GOAL.contains("goalTimes goalMailConditions { field header operator value }"))

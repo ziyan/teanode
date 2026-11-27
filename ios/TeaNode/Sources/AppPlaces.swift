@@ -233,7 +233,6 @@ enum AppPlaces {
         add("sources", "Sources", "tray.2", [.knowledgeSources])
         add("memory", "Memory", "brain", [.memory])
         add("dreams", "Dreams", "moon.zzz", [.dreams])
-        add("daily-brief", "Daily brief", "sun.max", [.dailyBrief])
         add("alerts", "Alerts", "bell.badge", [.alerts])
         add("connections", "Connections", "point.3.connected.trianglepath.dotted", [.connections])
         add("activity", "Activity", "list.bullet.rectangle", [.activity])

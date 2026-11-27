@@ -14,57 +14,49 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// The share belongs to the day, not to each night.
-//
-// A night runs as often as every six hours, so four of them in a day each
-// starting from the whole thirty percent spend the day's budget twice
-// over and leave nothing of what the share was protecting. What the day's
-// earlier nights spent is read back from the usage rows and comes off
-// what this one may have.
-func TestASecondNightOfTheDayGetsWhatIsLeft(t *testing.T) {
+// A night has no share of the day of its own: the daily limit is what
+// binds it, less what the day has already spent in conversation and in
+// earlier nights.
+func TestANightGetsWhatTheDailyLimitHasLeft(t *testing.T) {
 	configuration := config.Default()
 	configuration.Agent.Limits.DailyTokensPerAgent = 200000
 	agent := &models.Agent{}
 
-	first := newDreamBudget(configuration, agent, 0.3, 0)
-	if first.allowed != 60000 {
-		t.Fatalf("the first night of the day has the whole share: %d", first.allowed)
+	first := newDreamBudget(configuration, agent, 0)
+	if first.allowed != 200000 {
+		t.Fatalf("the first night of the day has the whole limit: %d", first.allowed)
 	}
-	second := newDreamBudget(configuration, agent, 0.3, 45000)
-	if second.allowed != 15000 {
-		t.Fatalf("the second has what the first left: %d", second.allowed)
+	second := newDreamBudget(configuration, agent, 150000)
+	if second.allowed != 50000 {
+		t.Fatalf("the second has what the day left: %d", second.allowed)
 	}
 	if !second.left() {
 		t.Fatal("and may still spend it")
 	}
-	// A night whose share is gone has nothing, which is not the same
-	// number as a night nothing caps.
-	third := newDreamBudget(configuration, agent, 0.3, 60000)
+	// A day with nothing left has nothing, which is not the same number as
+	// a night nothing caps.
+	third := newDreamBudget(configuration, agent, 200000)
 	if third.left() {
-		t.Fatal("a night whose share today is spent may not call a model")
+		t.Fatal("a night on a day that is spent may not call a model")
 	}
-	// And a deployment that caps nothing still caps nothing, however
-	// much the day has spent.
+	// And a deployment that caps nothing still caps nothing, however much
+	// the day has spent.
 	free := config.Default()
 	free.Agent.Limits.DailyTokensPerAgent = 0
-	if uncapped := newDreamBudget(free, agent, 0.3, 500000); !uncapped.left() {
+	if uncapped := newDreamBudget(free, agent, 500000); !uncapped.left() {
 		t.Fatal("no daily limit still means no cap")
 	}
 
 	// An agent's own limit is what binds where the operator set one.
-	own := newDreamBudget(configuration, &models.Agent{DailyTokens: 10000}, 0.3, 1000)
-	if own.allowed != 2000 {
+	own := newDreamBudget(configuration, &models.Agent{DailyTokens: 10000}, 1000)
+	if own.allowed != 9000 {
 		t.Fatalf("the person's own limit binds first: %d", own.allowed)
 	}
 }
 
-// What a night reads back is the nights' own spending and nobody else's,
-// bounded by the person's own day.
-//
-// The whole of the fix above rests on this number, and a kind spelled one
-// way where it is written and another where it is read would make the
-// share fresh again without anything failing.
-func TestTheDaysDreamSpendIsReadBackByKind(t *testing.T) {
+// What a night is held to is the whole day's spending, every kind of work,
+// from the owner's own midnight.
+func TestTheDaysSpendIsReadBackWhateverTheKind(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
@@ -88,14 +80,9 @@ func TestTheDaysDreamSpendIsReadBackByKind(t *testing.T) {
 			at     time.Time
 			tokens uint64
 		}{
-			// Placed against the owner's own day rather than the
-			// clock of whoever runs the test. The owner keeps London
-			// time; a machine in New York is five hours behind it, so
-			// for the two hours after London midnight -- between
-			// seven and nine in the evening there -- an hour ago is
-			// yesterday to the owner, and rows meant for today fell
-			// outside the sum. The test failed for two hours a day
-			// and passed for twenty-two.
+			// Placed against the owner's own day rather than the clock of
+			// whoever runs the test, so that the hours after the owner's
+			// midnight do not change the answer.
 			{string(models.AgentJobDream), today.Add(time.Minute), 40000},
 			{string(models.AgentJobDream), today.Add(2 * time.Minute), 5000},
 			{"ask", today.Add(time.Minute), 90000},
@@ -108,14 +95,14 @@ func TestTheDaysDreamSpendIsReadBackByKind(t *testing.T) {
 				t.Fatalf("PutAgentUsage: %s", err)
 			}
 		}
-		spent, err := SumSpendOfKind(tx, agentId, string(models.AgentJobDream), today)
+		spent, _, err := SumSpend(tx, config.Default(), agentId, today)
 		if err != nil {
-			t.Fatalf("SumSpendOfKind: %s", err)
+			t.Fatalf("SumSpend: %s", err)
 		}
-		// The conversation's ninety thousand is not the night's, and
-		// yesterday's night is not today's.
-		if spent != 45000 {
-			t.Fatalf("today's nights spent 45000, not %d", spent)
+		// The conversation's ninety thousand counts, and yesterday's night
+		// does not.
+		if spent != 135000 {
+			t.Fatalf("today spent 135000, not %d", spent)
 		}
 	})
 }
@@ -242,7 +229,7 @@ func TestANightThatCouldNotReadHasNotCaughtUp(t *testing.T) {
 // own cap and the other is the account behind the provider.
 func TestTheBudgetSaysWhichOneStoppedTheReading(t *testing.T) {
 	spent := (&dreamBudget{}).whyItStopped()
-	if !strings.Contains(spent, "share of the day") {
+	if !strings.Contains(spent, "what the day allows") {
 		t.Errorf("an allowance that ran out: %q", spent)
 	}
 	refused := &dreamBudget{}

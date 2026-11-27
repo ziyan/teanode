@@ -31,7 +31,6 @@ let expectedMarkersByScreen: [String: [String]] = [
     "recording-text-history": ["transcripte"],
     "recording-text-editor": ["correctedtranscript"],
     "recording-model-settings": ["recordingtranscription"],
-    "recording-quota-settings": ["originalrecordingfilelimit"],
     "recording-attachment-import": ["importrecord"],
     "recording-source-settings": ["editthissource"],
     "recording-citation": ["citedpassage"],

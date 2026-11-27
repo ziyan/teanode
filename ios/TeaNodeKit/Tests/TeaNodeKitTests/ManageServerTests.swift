@@ -46,7 +46,7 @@ final class ManageServerTests: XCTestCase {
         let everything = OperatorAccess(isOperator: true, everywherePermissions: ["agent:audit", "agent:act", "server:manage"])
         XCTAssertEqual(everything.agentAdminTabs, AgentAdminTab.allCases)
         let actor = OperatorAccess(isOperator: true, everywherePermissions: ["agent:act"])
-        XCTAssertEqual(actor.agentAdminTabs, [.usage, .runs])
+        XCTAssertEqual(actor.agentAdminTabs, [.usage, .oversight])
         XCTAssertFalse(OperatorAccess(isOperator: true, domainPermissions: [.init(domainId: "domain-1", permissions: ["server:manage"])]).canManageServer,
             "a server permission is never held through a domain")
         XCTAssertFalse(OperatorAccess(isOperator: false).canOpenAgentAdmin)
@@ -310,10 +310,8 @@ final class ManageServerTests: XCTestCase {
            "choices":["main:model-large"]},
          "features":{"triage":true,"summaries":true,"draftReplies":true,"search":true,"research":true,"autoReply":false,"ask":true,"schedules":true,
            "browser":false,"connectedServers":true,"computer":true,"chatApps":true,"skills":true,"subagents":true,"remember":true,"knowledge":true,"dreaming":true},
-         "limits":{"maxBodyCharacters":20000,"dailyTokensPerAgent":1000000,"monthlyTokensPerServer":0,"dailyCostPerAgent":2.5,"monthlyCostPerServer":0,
-           "maxRoundsPerAsk":20,"maxRoundsPerResearch":10,"maxRoundsPerReply":5,"maxRoundsPerDream":30,"maxToolCallsPerRun":50,"requestTimeout":"2m",
-           "concurrency":4,"scanConcurrency":2,"rewriteConcurrency":2,"dreamShare":0.3,"ingestChunksPerRun":500,"embeddingTokensPerDay":0,
-           "maxRoundsPerSubagent":0,"goalShare":0,"goalTurnsAlone":0,"backgroundWakesAlone":0},
+         "limits":{"dailyTokensPerAgent":1000000,"monthlyTokensPerServer":0,"dailyCostPerAgent":2.5,"monthlyCostPerServer":0,
+           "requestTimeout":"2m","concurrency":4,"maxBodyCharacters":20000},
          "retention":{"runs":"720h","corrections":"2160h"},"currency":"USD","search":{"kind":"brave","hasApiKey":true},
          "tools":{"disabled":["shell"],"confirm":["mail"],"catalog":[
            {"name":"mail_send","family":"mail","risk":"outward","description":"Sends mail.","confirms":true,"core":true,"actions":null},
@@ -537,15 +535,20 @@ final class ManageServerTests: XCTestCase {
             ["tools": .object(["disabled": .array([.string("computer")]), "confirm": .array([.string("mail")])])])
     }
 
-    func testTheLimitsAreSentAsNumbersAndTheTimeoutAsADuration() throws {
+    func testTheLimitsAreTheFourBudgetNumbersAndNothingElse() throws {
+        // The answer still carries keys an older server sends; they are not read and not sent back.
         var limits = AgentLimitsDraft(try agentSettings())
-        XCTAssertEqual(limits.limitTexts["dreamShare"], "0.3")
+        XCTAssertEqual(limits.limitTexts["dailyCostPerAgent"], "2.5")
         XCTAssertEqual(limits.limitTexts["monthlyTokensPerServer"], "0")
-        limits.limitTexts["concurrency"] = "8"
+        XCTAssertEqual(Set(limits.limitTexts.keys), ["dailyTokensPerAgent", "monthlyTokensPerServer", "dailyCostPerAgent", "monthlyCostPerServer"])
+        limits.limitTexts["monthlyCostPerServer"] = "500"
         limits.currency = "EUR"
         let section = limits.agentParameters
-        XCTAssertEqual(section["limits"]?["concurrency"], .number(8))
-        XCTAssertEqual(section["limits"]?["requestTimeout"], .string("2m"))
+        XCTAssertEqual(section["limits"]?["monthlyCostPerServer"], .number(500))
+        XCTAssertEqual(section["limits"]?["dailyTokensPerAgent"], .number(1000000))
+        XCTAssertNil(section["limits"]?["concurrency"])
+        XCTAssertNil(section["limits"]?["requestTimeout"])
+        XCTAssertNil(section["limits"]?["maxBodyCharacters"])
         XCTAssertEqual(section["currency"], .string("EUR"))
         XCTAssertEqual(section["retention"]?["runs"], .string("720h"))
     }
@@ -685,8 +688,94 @@ final class ManageServerTests: XCTestCase {
             try sentVariables(fake.sent[0]),
             [
                 "first": .number(50), "offset": .number(50), "agentId": .string("agent-1"), "jobId": .null,
-                "kinds": .array([.string("triage")]), "query": .string("sorted"),
+                "kinds": .array([.string("triage")]), "query": .string("sorted"), "since": .null, "until": .null, "isRunningOnly": .null,
             ])
+    }
+
+    func testOversightReadsTheOwnerAndWhetherATurnIsRunning() async throws {
+        let (connection, fake) = connection(
+            answering: #"""
+                {"data":{"ListAllAgentRuns":{"total":9,"totalCount":2,"runs":[
+                  {"id":"main-1","agentId":"agent-1","title":"","jobKind":"main","lastAt":"2030-01-01T00:00:00Z",
+                   "ownerUsername":"quinn","ownerName":"Quinn Example","isRunning":true,"usage":{"promptTokens":0,"completionTokens":0,"cost":0}},
+                  {"id":"named-1","agentId":"agent-2","title":"Trip ideas","jobKind":"named","lastAt":"2030-01-01T00:00:00Z",
+                   "ownerUsername":"lee","ownerName":"","isRunning":false,"usage":{"promptTokens":0,"completionTokens":0,"cost":0}}]}}}
+                """#)
+        let filter = ServerAgentRunFilter(
+            jobKind: "main", since: "2030-01-01T00:00:00Z", until: "2030-01-02T00:00:00Z", isRunningOnly: true)
+        let page = try await connection.serverAgentRuns(filter: filter, first: 25)
+        XCTAssertEqual(page.totalCount, 2, "the page's new count wins over the older total")
+        XCTAssertEqual(page.runs.map(\.ownerLabel), ["Quinn Example", "lee"])
+        XCTAssertEqual(page.runs.map(\.isRunning), [true, false])
+        let variables = try sentVariables(fake.sent[0])
+        XCTAssertEqual(variables["kinds"], .array([.string("main")]))
+        XCTAssertEqual(variables["since"], .string("2030-01-01T00:00:00Z"))
+        XCTAssertEqual(variables["until"], .string("2030-01-02T00:00:00Z"))
+        XCTAssertEqual(variables["isRunningOnly"], .bool(true))
+        let document = try sentDocument(fake.sent[0])
+        for name in ["$since", "$until", "$isRunningOnly", "ownerUsername", "ownerName", "isRunning", "totalCount"] {
+            XCTAssertTrue(document.contains(name), name)
+        }
+    }
+
+    func testAnOlderServersRunsStillDecode() throws {
+        let page = try JSONDecoder().decode(
+            ServerAgentRunPage.self,
+            from: Data(
+                #"{"total":7,"runs":[{"id":"run-1","agentId":"agent-1","title":"","jobKind":null,"lastAt":"2030-01-01T00:00:00Z","usage":{"promptTokens":0,"completionTokens":0,"cost":0}}]}"#
+                    .utf8))
+        XCTAssertEqual(page.totalCount, 7)
+        XCTAssertFalse(page.runs[0].isRunning)
+        XCTAssertEqual(page.runs[0].ownerLabel, "")
+    }
+
+    func testTheRangesLookBackByDays() {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        XCTAssertEqual(OversightRange.allCases.map(\.dayCount), [1, 7, 30])
+        let formatter = ISO8601DateFormatter()
+        let since = formatter.date(from: OversightRange.lastWeek.sinceText(now: now))
+        XCTAssertEqual(since?.timeIntervalSince1970, now.timeIntervalSince1970 - 7 * 86400)
+    }
+
+    func testFailedTurnsAreAskedForSinceWhenAndReadWithTheirOwner() async throws {
+        let (connection, fake) = connection(
+            answering: #"""
+                {"data":{"ListFailedAgentTurns":{"totalCount":31,"failedTurns":[
+                  {"conversationId":"conversation-1","conversationKind":"named","conversationTitle":"Trip ideas","ownerUsername":"lee","ownerName":"Lee Example",
+                   "failedAt":"2030-01-01T00:00:00Z","errorText":"The model did not answer.","agentId":"agent-2"}]}}}
+                """#)
+        let page = try await connection.serverFailedAgentTurns(since: "2030-01-01T00:00:00Z", first: 20, offset: 40)
+        XCTAssertEqual(page.totalCount, 31)
+        XCTAssertEqual(page.failedTurns[0].ownerLabel, "Lee Example")
+        XCTAssertEqual(page.failedTurns[0].errorText, "The model did not answer.")
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]),
+            ["first": .number(20), "offset": .number(40), "since": .string("2030-01-01T00:00:00Z"), "agentId": .null])
+        XCTAssertTrue(try sentDocument(fake.sent[0]).contains("ListFailedAgentTurns"))
+    }
+
+    func testAnotherPersonsConversationSaysItIsObserved() async throws {
+        let (connection, fake) = connection(
+            answering: #"""
+                {"data":{"ReadAgentConversation":{"conversation":{"id":"conversation-1","kind":"named","title":"Trip ideas"},
+                  "actingAs":"Quinn Example","isObserved":true,"messages":[],"total":0,"todos":[]},"ListAgentInteractions":[]}}
+                """#)
+        let page = try await connection.conversation("conversation-1")
+        XCTAssertTrue(page.isObserved)
+        XCTAssertEqual(page.actingAs, "Quinn Example")
+        XCTAssertTrue(try sentDocument(fake.sent[0]).contains("isObserved"))
+
+        let (own, _) = self.connection(
+            answering: #"{"data":{"ReadAgentConversation":{"conversation":{"id":"main","kind":"main"},"actingAs":null,"isObserved":false,"messages":[],"total":0},"ListAgentInteractions":[]}}"#)
+        let ownPage = try await own.conversation(nil)
+        XCTAssertFalse(ownPage.isObserved)
+    }
+
+    func testObservingNeedsAgentObserveOrAgentAct() {
+        XCTAssertEqual(OperatorAccess(isOperator: true, everywherePermissions: ["agent:observe"]).agentAdminTabs, [.usage, .oversight])
+        XCTAssertTrue(OperatorAccess(isOperator: true, everywherePermissions: ["agent:observe"]).canOpenAgentAdmin)
+        XCTAssertTrue(OperatorAccess(isOperator: true, everywherePermissions: ["agent:act"]).canObserveAgents)
+        XCTAssertFalse(OperatorAccess(isOperator: true, everywherePermissions: ["agent:audit"]).canObserveAgents)
     }
 
     func testAJobGivenUpOnOpensItsLatestRunOrWhatItRemembered() async throws {
@@ -770,16 +859,10 @@ final class ManageServerTests: XCTestCase {
 }
 
 extension ManageServerTests {
-    func testRecordingSizesRemainByteSizeStringsAndTranscriptionHasNoDefault() throws {
+    func testTranscriptionHasNoDefault() throws {
         let settings = try JSONDecoder().decode(AgentServerSettings.self, from: Data(Self.agentSettingsAnswer.utf8))
         var models = settings.models
         models.transcription = "audio-service:speaker-model"
-        var draft = AgentLimitsDraft(settings)
-        draft.limitTexts["maxRecordingMediaBytes"] = "3 GB"
-        draft.limitTexts["maxRecordingAccountBytes"] = "60 GB"
-        let limits = draft.agentParameters["limits"]
-        XCTAssertEqual(limits?["maxRecordingMediaBytes"], .string("3 GB"))
-        XCTAssertEqual(limits?["maxRecordingAccountBytes"], .string("60 GB"))
         XCTAssertEqual(models[fieldName: "transcription"], "audio-service:speaker-model")
         XCTAssertEqual(models.renaming(provider: "audio-service", to: "new-audio")[fieldName: "transcription"], "new-audio:speaker-model")
         XCTAssertEqual(models.agentParameters["models"]?["transcription"], .string("audio-service:speaker-model"))

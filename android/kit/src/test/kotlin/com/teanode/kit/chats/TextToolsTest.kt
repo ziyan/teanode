@@ -482,3 +482,29 @@ class SharedFilesTest {
         assertEquals("1 of 3 files went; b.pdf did not: It broke. Send again for the rest.", SharedFiles.partialFailure("It broke.", 1, 3, "b.pdf"))
     }
 }
+
+
+class ObservedConversationTest {
+    private fun connectionAnswering(body: String): Pair<com.teanode.kit.Connection, com.teanode.kit.FakeServer> {
+        val fake = com.teanode.kit.FakeServer { _ -> 200 to body }
+        val account = com.teanode.kit.Account(com.teanode.kit.ServerAddress.parse("mail.example.com"), "a-client", "tnt_a", "", Long.MAX_VALUE / 4, "robin")
+        return com.teanode.kit.Connection(account, fake) to fake
+    }
+
+    @Test
+    fun aConversationReadByAnObserverIsMarkedObserved() = runBlocking {
+        val (connection, fake) = connectionAnswering("""{"data":{"ReadAgentConversation":{"conversation":{"id":"c1","kind":"main"},"actingAs":"Robin","isObserved":true,"messages":[],"total":0,"todos":[]},"ListAgentInteractions":[]}}""")
+        val page = connection.conversation("c1")
+        assertTrue(page.isObserved)
+        assertEquals("Robin", page.actingAs)
+        assertTrue(fake.sent.any { request -> request.body?.toString(Charsets.UTF_8).orEmpty().contains("isObserved") })
+    }
+
+    @Test
+    fun anOwnConversationIsNotObserved() = runBlocking {
+        val (connection, _) = connectionAnswering("""{"data":{"ReadAgentConversation":{"conversation":{"id":"c1","kind":"main"},"actingAs":null,"isObserved":false,"messages":[],"total":0,"todos":[]},"ListAgentInteractions":[]}}""")
+        assertFalse(connection.conversation("c1").isObserved)
+        val (olderServer, _) = connectionAnswering("""{"data":{"ReadAgentConversation":{"conversation":{"id":"c1","kind":"main"},"messages":[],"total":0},"ListAgentInteractions":[]}}""")
+        assertFalse(olderServer.conversation("c1").isObserved)
+    }
+}

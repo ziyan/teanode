@@ -58,3 +58,34 @@ func TestATurnSomebodyElseAskedForRunsOnTheDefaultEffort(t *testing.T) {
 		t.Errorf("the owner's turn thinks at %q (%v); want what they chose", owner.Effort, err)
 	}
 }
+
+// A turn somebody else asked for in a chat is held to 8 rounds, 6 searches
+// and 6 fetches: it spends the owner's money by another person's choice. The
+// owner's own turn in the chat keeps no such caps.
+func TestAMemberTurnIsCappedAndTheOwnersIsNot(t *testing.T) {
+	turn := func(isMemberTurn bool) *AskSettings {
+		asker := "ann"
+		if isMemberTurn {
+			asker = "ben"
+		}
+		return &AskSettings{
+			Agent: &models.Agent{ID: "agent-ann", UserID: "ann"}, Owner: &models.User{ID: "ann"},
+			Conversation: &models.AgentConversation{ID: "thread", AgentID: "agent-ann", ChatID: "chat", Kind: models.AgentConversationChat},
+			Chat:         &ChatTurn{ChatID: "chat", MessageID: "message", AskerUserID: asker, IsMemberTurn: isMemberTurn},
+		}
+	}
+	member := turn(true)
+	if err := applyChatSettings(member); err != nil {
+		t.Fatal(err)
+	}
+	if member.MaxRounds != 8 || member.CallLimits["web_search"] != 6 || member.CallLimits["web_fetch"] != 6 {
+		t.Errorf("a member turn has %d rounds and limits %v; want 8, 6 searches and 6 fetches", member.MaxRounds, member.CallLimits)
+	}
+	owner := turn(false)
+	if err := applyChatSettings(owner); err != nil {
+		t.Fatal(err)
+	}
+	if owner.MaxRounds != 0 || len(owner.CallLimits) != 0 {
+		t.Errorf("the owner's turn has %d rounds and limits %v; want none", owner.MaxRounds, owner.CallLimits)
+	}
+}

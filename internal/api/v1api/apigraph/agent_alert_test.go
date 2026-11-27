@@ -42,49 +42,42 @@ func asListener(principal *api.Principal, tx db.Transaction) context.Context {
 	return api.ContextWithTransaction(api.ContextWithPrincipal(context.Background(), principal), tx)
 }
 
-// A new agent alerts, with the default night and day's most; what the
-// person sets is what is read back, and a night nobody can read is
-// refused.
+// A new agent alerts. The quiet hours, the day's most and the look around
+// are no longer used: an older app still sends them, and they are accepted
+// and ignored, so nothing it sends is refused and nothing changes.
 func TestAlertSettingsRoundTrip(t *testing.T) {
 	database, resolver, principal, created := alertAPIFixture(t)
-	if !created.IsAlertsEnabled || created.AlertQuietStart != "" || created.AlertDailyMost != 0 || created.EffectiveAlertDailyMost() != 5 {
-		t.Fatalf("a new agent alerts, with the defaults: %+v", created)
+	if !created.IsAlertsEnabled || created.AlertQuietStart != "" || created.AlertDailyMost != 0 {
+		t.Fatalf("a new agent alerts, with nothing else set: %+v", created)
 	}
-	start, end := created.AlertQuietHours()
-	if start != "22:00" || end != "07:00" {
-		t.Fatalf("the default night is ten to seven: %s to %s", start, end)
-	}
-	if weekday, clock := created.LookAroundSchedule(); created.LookAroundWeekday != "" || weekday != "thursday" || clock != "17:00" {
-		t.Fatalf("the look around defaults to Thursday at 17:00: %s %s", weekday, clock)
-	}
-	isOff, quietStart, quietEnd, dailyMost := false, "21:30", "06:00", 3
-	lookAroundWeekday, lookAroundTime := " Saturday ", "09:15"
+	isOff, quietStart, dailyMost := false, "21:30", 3
+	lookAroundWeekday, lookAroundTime := "saturday", "09:15"
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		view, err := resolver.UpdateAgent(asListener(principal, tx), UpdateAgentArguments{
-			IsAlertsEnabled: &isOff, AlertQuietStart: &quietStart, AlertQuietEnd: &quietEnd, AlertDailyMost: &dailyMost,
+			IsAlertsEnabled: &isOff, AlertQuietStart: &quietStart, AlertDailyMost: &dailyMost,
 			LookAroundWeekday: &lookAroundWeekday, LookAroundTime: &lookAroundTime,
 		})
 		if err != nil {
 			t.Fatalf("UpdateAgent: %s", err)
 		}
-		if view.Agent.IsAlertsEnabled || view.Agent.AlertQuietStart != "21:30" || view.Agent.AlertQuietEnd != "06:00" || view.Agent.AlertDailyMost != 3 ||
-			view.Agent.LookAroundWeekday != "saturday" || view.Agent.LookAroundTime != "09:15" {
-			t.Fatalf("what was set is read back, the day in lower case: %+v", view.Agent)
+		if view.Agent.IsAlertsEnabled || view.Agent.AlertQuietStart != "" || view.Agent.AlertDailyMost != 0 ||
+			view.Agent.LookAroundWeekday != "" || view.Agent.LookAroundTime != "" {
+			t.Fatalf("the switch is kept and the retired fields are ignored: %+v", view.Agent)
 		}
 	})
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		stored, err := tx.GetAgent(created.ID)
-		if err != nil || stored.IsAlertsEnabled || stored.AlertQuietStart != "21:30" || stored.AlertDailyMost != 3 || stored.LookAroundWeekday != "saturday" || stored.LookAroundTime != "09:15" {
-			t.Fatalf("and kept: %+v %v", stored, err)
+		if err != nil || stored.IsAlertsEnabled || stored.AlertQuietStart != "" || stored.AlertDailyMost != 0 || stored.LookAroundWeekday != "" {
+			t.Fatalf("and kept so: %+v %v", stored, err)
 		}
 	})
-	for _, refused := range []UpdateAgentArguments{{AlertQuietStart: new("late")}, {AlertDailyMost: new(-1)}, {LookAroundWeekday: new("someday")}, {LookAroundTime: new("5pm")}} {
-		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-			if _, err := resolver.UpdateAgent(asListener(principal, tx), refused); err == nil {
-				t.Fatalf("refused: %+v", refused)
-			}
-		})
-	}
+	// What an old app sends that used to be refused is accepted now.
+	badNight, badMost := "late", -1
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if _, err := resolver.UpdateAgent(asListener(principal, tx), UpdateAgentArguments{AlertQuietStart: &badNight, AlertDailyMost: &badMost}); err != nil {
+			t.Fatalf("retired fields are ignored, not validated: %s", err)
+		}
+	})
 }
 
 // Muted from an alert, by default and by a scope the person names, or by
@@ -234,7 +227,7 @@ func TestFollowUpKindsAreMuted(t *testing.T) {
 	database, resolver, principal, _ := alertAPIFixture(t)
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		ctx := asListener(principal, tx)
-		for _, target := range []string{"follow_up", "bill", "parcel", "deadline", "event", "nearby"} {
+		for _, target := range []string{"follow_up", "bill", "parcel", "deadline", "event"} {
 			mute, err := resolver.MuteAgentAlert(ctx, MuteAgentAlertArguments{MuteScope: "kind", MuteTarget: " " + strings.ToUpper(target)})
 			if err != nil || mute.MuteScope != models.AlertMuteKind || mute.MuteTarget != target {
 				t.Fatalf("%s: %+v %v", target, mute, err)

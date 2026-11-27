@@ -50,10 +50,13 @@ place at a time, and every surface sees every turn
 
 ## A round
 
-    for round := 0; round < maximumRounds; round++
+    for round := 0; maximumRounds <= 0 || round < maximumRounds; round++
 
-`maximumRounds` is `agent.limits.maxRoundsPerAsk` (40 by default), overridden
-by `settings.MaxRounds`. Each round:
+`maximumRounds` is `settings.MaxRounds`, which is zero for every turn but a
+call built for one answer (a title, a summary) or a few. A turn has no limit
+of its own: it goes on until the model answers, the budget defers it, the loop
+guard stops it (the same call failing three times) or the person stops it.
+Each round:
 
 1. **Budget**, from round 1 on. A `Deferral` stops the turn with a note rather
    than an error. (The same check runs once before round 0, inside the
@@ -253,12 +256,11 @@ restart finds its row running and runs it again. When it finishes, the
 conversation that started it takes a turn that opens with
 `models.BackgroundWorkMarker` and carries the result fenced as untrusted data,
 through the same waker as a background command (`background.go`): the same
-two seconds of gathering, the same twenty woken turns before the person
-writes again, counted together with the commands', and a note instead of a
-turn when out of them or out of budget. The count is the conversation's
-`background_wake_count`, added to when a woken turn starts and set back to
-nothing in the transaction that keeps a message the person wrote, so it holds
-whichever instance each wake lands on. A wake for finished work claims the
+two seconds of gathering, and a note instead of a turn when out of budget.
+Every ending wakes its conversation, however many have woken since the person
+last wrote: the daily and monthly cost limits bound a chain of them, and the
+column `background_wake_count` is no longer read or written. A wake for finished
+work claims the
 row first (`wake_claimed_at`), from the job's own wake and from the sweep
 alike, and only the claimer wakes; a claim older than half an hour is a
 server's that went down mid-wake, and is taken again. Stopped work wakes
@@ -348,7 +350,6 @@ deliberately absent.
 | `askResultCharacters` | 24000 | one tool answer in the history |
 | `concurrentToolCalls` | 6 | calls of one batch running at once |
 | `attachmentImagesPerTurn` | 8 | pictures in one turn |
-| `maxRoundsPerAsk` | 40 | rounds, operator-set |
 | `stopGrace` | 5 seconds | how long `Stop` lets the turns people are reading finish |
 | `resumeWindow` | 15 minutes | how old a cut turn may be and still be carried on |
 | `resumeMostPerAgent` | 3 | conversations carried on per agent at a start |

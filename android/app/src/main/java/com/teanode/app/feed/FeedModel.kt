@@ -12,10 +12,13 @@ import com.teanode.kit.feed.AgentFeedPage
 import com.teanode.kit.feed.chooseAgentFeedItem
 import com.teanode.kit.feed.discussAgentFeedItem
 import com.teanode.kit.feed.dismissAgentFeedItems
+import com.teanode.kit.feed.foldDismissedFeedItems
 import com.teanode.kit.feed.likeAgentFeedItem
 import com.teanode.kit.feed.markAgentFeedRead
+import com.teanode.kit.feed.resolveAgentFeedItem
 import com.teanode.kit.feed.restoreAgentFeedItems
 import com.teanode.kit.feed.showLessLikeAgentFeedItem
+import com.teanode.kit.feed.unresolveAgentFeedItem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -44,9 +47,26 @@ class FeedModel(
     private val onNewlyRead: (Int) -> Unit = {},
     /** Reads a page of one stack's cards, for a deck fanned out in place; null where decks do not open (a stack's own screen). */
     private val readStackPage: (suspend (feedStackKey: String, after: String?) -> AgentFeedPage)? = null,
+    /**
+     * Whether this model is the Dismissed screen's: [readPage] reads the dismissed cards, the cards of one stack are shown
+     * as a deck made from the entries already read, and a swipe or the info sheet restores a card instead of dismissing it.
+     */
+    val isDismissedOnly: Boolean = false,
 ) {
+    /** The cards as read, newest first; the dismissed screen's [list] folds those of one stack into a deck. */
+    private var entries: AgentFeedList? by mutableStateOf(null)
+
+    /** The cards shown: the feed's own list, or in the dismissed screen the entries with each stack folded into its top card. */
     var list: AgentFeedList? by mutableStateOf(null)
         private set
+
+    /** Whether the list was emptied by what the person just did and is being read again, so the screen shows loading and not "empty". */
+    var isReadingAgain: Boolean by mutableStateOf(false)
+        private set
+
+    /** The reader of a stack's cards: the server's, or in the dismissed screen the entries already read. */
+    private val readDeckPage: (suspend (feedStackKey: String, after: String?) -> AgentFeedPage)? =
+        if (isDismissedOnly) { feedStackKey, _ -> AgentFeedPage(entries?.feedItems.orEmpty().filter { card -> card.feedStackKey == feedStackKey }, null, 0) } else readStackPage
 
     /** Why the first read failed, when there is nothing to show instead. */
     var loadFailure: Throwable? by mutableStateOf(null)
@@ -65,6 +85,9 @@ class FeedModel(
     /** Called with the ids of the cards a dismissal took out, for the snackbar that offers Undo; never with an empty list. */
     var onDismissed: (List<String>) -> Unit = {}
 
+    /** Called when cards were brought back from the dismissed screen, for the "Card restored" snackbar. */
+    var onRestored: () -> Unit = {}
+
     /**
      * The decks fanned out in place, by stack key, and the cards each holds (the top card first). A stack's cards are read
      * with the feed, since its deck under the top card is its own next cards.
@@ -77,7 +100,7 @@ class FeedModel(
 
     /** Fans a stack's deck out in place once its cards are read (a deck whose cards cannot be read stays a deck). */
     fun openDeck(feedStackKey: String) {
-        val read = readStackPage ?: return
+        val read = readDeckPage ?: return
         scope.launch {
             if (deckCards[feedStackKey] == null && !refreshDeck(feedStackKey, read)) return@launch
             openDeckKeys[feedStackKey] = true
@@ -91,7 +114,7 @@ class FeedModel(
 
     /** Reads a shown stack's cards for its deck when they are not read yet; a failure is told only when the deck is opened. */
     suspend fun loadDeckIfNeeded(feedStackKey: String) {
-        val read = readStackPage ?: return
+        val read = readDeckPage ?: return
         if (deckCards[feedStackKey] == null) refreshDeck(feedStackKey, read, isQuiet = true)
     }
 
@@ -118,9 +141,9 @@ class FeedModel(
     private val hiddenFeedItemIds = HashSet<String>()
     private val hiddenFeedStackKeys = HashSet<String>()
 
-    val hasLoaded: Boolean get() = list != null
+    val hasLoaded: Boolean get() = entries != null
 
-    val hasPendingOutcome: Boolean get() = list?.hasPendingOutcome == true
+    val hasPendingOutcome: Boolean get() = entries?.hasPendingOutcome == true
 
     fun isLiked(item: AgentFeedItemView): Boolean = likedOverrides[item.feedItemId] ?: item.isLiked
 
@@ -146,7 +169,7 @@ class FeedModel(
             // The stacks shown, open or tucked as decks, are read again with the feed, and those no longer in it are forgotten.
             val shownStackKeys = list?.feedItems.orEmpty().filter { item -> item.isStack }.map { item -> item.feedStackKey }.toSet()
             for (key in deckCards.keys.toList()) if (key !in shownStackKeys) deckCards.remove(key)
-            readStackPage?.let { read -> for (key in deckCards.keys.toList()) refreshDeck(key, read, isQuiet = key !in openDeckKeys) }
+            readDeckPage?.let { read -> for (key in deckCards.keys.toList()) refreshDeck(key, read, isQuiet = key !in openDeckKeys) }
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: Throwable) {
@@ -166,13 +189,13 @@ class FeedModel(
 
     /** Reads the page after the last card shown. */
     fun loadMore() {
-        val current = list ?: return
+        val current = entries ?: return
         val cursor = current.nextCursor
         if (cursor.isNullOrEmpty() || isLoadingMore || isLoading) return
         isLoadingMore = true
         scope.launch {
             try {
-                show((list ?: current).appending(readPage(cursor)))
+                show((entries ?: current).appending(readPage(cursor)))
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Throwable) {
@@ -196,7 +219,7 @@ class FeedModel(
             try {
                 val newlyReadCount = connection.markAgentFeedRead(feedItemIds)
                 readFeedItemIds.addAll(feedItemIds)
-                list?.let { current -> show(current.markedRead(feedItemIds.toSet(), newlyReadCount)) }
+                entries?.let { current -> show(current.markedRead(feedItemIds.toSet(), newlyReadCount)) }
                 onNewlyRead(newlyReadCount)
             } catch (failure: CancellationException) {
                 throw failure
@@ -213,6 +236,29 @@ class FeedModel(
         scope.launch {
             try {
                 replace(connection.chooseAgentFeedItem(item.feedItemId, choice.choiceKey))
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                onProblem(failure)
+            } finally {
+                busyFeedItemIds.remove(item.feedItemId)
+            }
+        }
+    }
+
+    /** Marks a card resolved, with an optional one line note; the card stays where it is and comes back muted. [doneText] is told when it is done. */
+    fun resolve(item: AgentFeedItemView, note: String, doneText: String) = changeResolution(item, doneText) { connection.resolveAgentFeedItem(item.feedItemId, note) }
+
+    /** Takes the resolution off a card. */
+    fun unresolve(item: AgentFeedItemView, doneText: String) = changeResolution(item, doneText) { connection.unresolveAgentFeedItem(item.feedItemId) }
+
+    private fun changeResolution(item: AgentFeedItemView, doneText: String, call: suspend () -> AgentFeedItemView) {
+        if (busyFeedItemIds.containsKey(item.feedItemId)) return
+        busyFeedItemIds[item.feedItemId] = true
+        scope.launch {
+            try {
+                replace(call())
+                onDone(doneText)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Throwable) {
@@ -244,12 +290,40 @@ class FeedModel(
         scope.launch {
             try {
                 connection.showLessLikeAgentFeedItem(item.feedItemId)
+                // Kept out of the read below, which may start before the server's list is without it.
+                hiddenFeedItemIds.add(item.feedItemId)
                 remove(item)
                 onDone(doneText)
+                readAgainIfEmptied(item.feedItemId)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Throwable) {
                 onProblem(failure)
+            }
+        }
+    }
+
+    /** What a swipe or the card's menu does: dismisses the card, or in the dismissed screen restores it. */
+    fun swipeAway(item: AgentFeedItemView) {
+        if (isDismissedOnly) restoreCards(listOf(item.feedItemId)) else dismiss(item)
+    }
+
+    /**
+     * When what the person just did left the list with no cards, the loading mark is shown and the list is read again, and
+     * only that read can say the list is empty. The cards this model took off stay hidden from it.
+     */
+    private fun readAgainIfEmptied(hiddenFeedItemId: String) {
+        if (list?.feedItems?.isEmpty() != true) {
+            hiddenFeedItemIds.remove(hiddenFeedItemId)
+            return
+        }
+        isReadingAgain = true
+        scope.launch {
+            try {
+                refresh()
+            } finally {
+                isReadingAgain = false
+                hiddenFeedItemIds.remove(hiddenFeedItemId)
             }
         }
     }
@@ -260,16 +334,16 @@ class FeedModel(
     /** Dismisses every card of the stack [top] tops. */
     fun dismissStack(top: AgentFeedItemView) {
         val feedStackKey = top.feedStackKey
-        val shownIds = (list?.feedItems.orEmpty() + deckCards[feedStackKey].orEmpty()).filter { item -> item.feedStackKey == feedStackKey }.map { item -> item.feedItemId }
+        val shownIds = (entries?.feedItems.orEmpty() + deckCards[feedStackKey].orEmpty()).filter { item -> item.feedStackKey == feedStackKey }.map { item -> item.feedItemId }
         dismissCards(shownIds, hiddenStackKey = feedStackKey) { connection.dismissAgentFeedItems(feedStackKey = feedStackKey) }
     }
 
     /** Whether any card shown is read and has no choice waiting, which "Dismiss read" would take out. */
-    val hasDismissibleReadCard: Boolean get() = list?.feedItems.orEmpty().any { item -> isReadAndClosed(item) }
+    val hasDismissibleReadCard: Boolean get() = entries?.feedItems.orEmpty().any { item -> isReadAndClosed(item) }
 
     /** Dismisses every card that is read and has no open choice. */
     fun dismissRead() {
-        val shownIds = list?.feedItems.orEmpty().filter { item -> isReadAndClosed(item) }.map { item -> item.feedItemId }
+        val shownIds = entries?.feedItems.orEmpty().filter { item -> isReadAndClosed(item) }.map { item -> item.feedItemId }
         dismissCards(shownIds, isReloaded = true) { connection.dismissAgentFeedItems(isEveryReadCard = true) }
     }
 
@@ -277,6 +351,8 @@ class FeedModel(
 
     /** Brings back cards a dismissal took out, then reads the feed so they are where they were. */
     fun restore(feedItemIds: List<String>) {
+        // A feed with no cards is read again before it says anything.
+        if (list?.feedItems?.isEmpty() == true) isReadingAgain = true
         scope.launch {
             try {
                 connection.restoreAgentFeedItems(feedItemIds)
@@ -285,6 +361,42 @@ class FeedModel(
                 throw failure
             } catch (failure: Throwable) {
                 onProblem(failure)
+            } finally {
+                isReadingAgain = false
+            }
+        }
+    }
+
+    /**
+     * Restores cards from the dismissed screen: they leave the list at once and stay out of any read already on its way,
+     * then [onRestored] says so. When the call fails they are shown again by reading the list.
+     */
+    private fun restoreCards(feedItemIds: List<String>) {
+        hiddenFeedItemIds.addAll(feedItemIds)
+        entries?.let { current -> show(current) }
+        hideInDecks()
+        val isEmptied = list?.feedItems?.isEmpty() == true
+        if (isEmptied) isReadingAgain = true
+        scope.launch {
+            var isFailed = false
+            try {
+                connection.restoreAgentFeedItems(feedItemIds)
+                onRestored()
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                isFailed = true
+                onProblem(failure)
+            } finally {
+                // A card restored stays out of this list for good: the server no longer lists it as dismissed.
+                if (isFailed) hiddenFeedItemIds.removeAll(feedItemIds.toSet())
+                if (isFailed || isEmptied) {
+                    try {
+                        refresh()
+                    } finally {
+                        isReadingAgain = false
+                    }
+                }
             }
         }
     }
@@ -297,12 +409,15 @@ class FeedModel(
      */
     private fun dismissCards(shownIds: List<String>, hiddenStackKey: String? = null, isReloaded: Boolean = false, call: suspend (List<String>) -> List<String>) {
         if (shownIds.isEmpty() && hiddenStackKey == null && !isReloaded) return
-        val shownItems = (list?.feedItems.orEmpty() + deckCards.values.flatten()).filter { item -> item.feedItemId in shownIds }
+        val shownItems = (entries?.feedItems.orEmpty() + deckCards.values.flatten()).filter { item -> item.feedItemId in shownIds }
         val isStackTouched = hiddenStackKey != null || shownItems.any { item -> item.isStack || item.feedStackKey.isNotEmpty() }
         hiddenFeedItemIds.addAll(shownIds)
         hiddenStackKey?.let { key -> hiddenFeedStackKeys.add(key) }
-        list?.let { current -> show(current) }
+        entries?.let { current -> show(current) }
         hideInDecks()
+        // A list this leaves with no cards is read again before it says it is empty.
+        val isEmptied = list?.feedItems?.isEmpty() == true
+        if (isEmptied) isReadingAgain = true
         scope.launch {
             var isFailed = false
             try {
@@ -316,7 +431,13 @@ class FeedModel(
             } finally {
                 hiddenFeedItemIds.removeAll(shownIds.toSet())
                 hiddenStackKey?.let { key -> hiddenFeedStackKeys.remove(key) }
-                if (isFailed || isStackTouched || isReloaded) refresh()
+                if (isFailed || isStackTouched || isReloaded || isEmptied) {
+                    try {
+                        refresh()
+                    } finally {
+                        isReadingAgain = false
+                    }
+                }
             }
         }
     }
@@ -333,7 +454,7 @@ class FeedModel(
     }
 
     private fun replace(item: AgentFeedItemView) {
-        list?.let { current -> show(current.replacing(item)) }
+        entries?.let { current -> show(current.replacing(item)) }
         // A card of a fanned-out deck is changed there too.
         for ((key, cards) in deckCards.toList()) {
             if (cards.any { card -> card.feedItemId == item.feedItemId }) deckCards[key] = cards.map { card -> if (card.feedItemId == item.feedItemId) item.copy(stackItemCount = card.stackItemCount, stackUnreadCount = card.stackUnreadCount) else card }
@@ -341,7 +462,7 @@ class FeedModel(
     }
 
     private fun remove(item: AgentFeedItemView) {
-        list?.let { current -> show(current.removing(item.feedItemId)) }
+        entries?.let { current -> show(current.removing(item.feedItemId)) }
         for ((key, cards) in deckCards.toList()) {
             if (cards.any { card -> card.feedItemId == item.feedItemId }) {
                 deckCards[key] = cards.filter { card -> card.feedItemId != item.feedItemId }
@@ -361,7 +482,8 @@ class FeedModel(
     private fun show(next: AgentFeedList) {
         var shown = next
         for (item in next.feedItems) if (isHidden(item)) shown = shown.removing(item.feedItemId)
-        list = shown
+        entries = shown
+        list = if (isDismissedOnly) shown.copy(feedItems = foldDismissedFeedItems(shown.feedItems)) else shown
         onUnreadCount(shown.unreadCount)
     }
 }

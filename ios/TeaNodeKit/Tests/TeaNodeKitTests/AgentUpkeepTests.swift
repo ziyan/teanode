@@ -212,59 +212,19 @@ final class AgentUpkeepTests: XCTestCase {
         let (connection, fake) = connection(
             answering: #"""
                 {"data":{"UpdateAgent":{"agent":{"id":"agent-1","enabled":true,"operatorDisabledAt":null,"dreamFrom":"02:30","dreamUntil":"",
-                  "dreamBootstrap":false,"isAlertsEnabled":true,"alertQuietStart":"","alertQuietEnd":"","alertDailyMost":0}}}}
+                  "dreamBootstrap":false,"isAlertsEnabled":true}}}}
                 """#)
         let preferences = try await connection.updateAgentUpkeep(dreamFrom: "02:30")
         XCTAssertEqual(try sentVariables(fake.sent[0]), ["dreamFrom": .string("02:30")])
         XCTAssertEqual(preferences?.shownDreamFrom, "02:30")
         XCTAssertEqual(preferences?.shownDreamUntil, "06:00")
-        XCTAssertEqual(preferences?.shownAlertQuietStart, "22:00")
-        XCTAssertEqual(preferences?.shownAlertDailyMost, 5)
-        XCTAssertEqual(preferences?.shownLookAroundWeekday, "thursday")
-        XCTAssertEqual(preferences?.shownLookAroundTime, "17:00")
         XCTAssertEqual(preferences?.isRunning, true)
         XCTAssertEqual(UpkeepClock.hourAndMinute("07:05")?.minute, 5)
         XCTAssertNil(UpkeepClock.hourAndMinute("25:00"))
         XCTAssertEqual(UpkeepClock.text(hour: 7, minute: 5), "07:05")
     }
 
-    func testChangesTheLookAroundDayAndTime() async throws {
-        let (connection, fake) = connection(
-            answering: #"""
-                {"data":{"UpdateAgent":{"agent":{"id":"agent-1","enabled":true,"operatorDisabledAt":null,"dreamFrom":"","dreamUntil":"",
-                  "dreamBootstrap":false,"isAlertsEnabled":true,"alertQuietStart":"","alertQuietEnd":"","alertDailyMost":0,
-                  "lookAroundWeekday":"friday","lookAroundTime":"18:30"}}}}
-                """#)
-        let preferences = try await connection.updateAgentUpkeep(lookAroundWeekday: "friday", lookAroundTime: "18:30")
-        XCTAssertEqual(try sentVariables(fake.sent[0]), ["lookAroundWeekday": .string("friday"), "lookAroundTime": .string("18:30")])
-        XCTAssertEqual(preferences?.shownLookAroundWeekday, "friday")
-        XCTAssertEqual(preferences?.shownLookAroundTime, "18:30")
-        XCTAssertEqual(AgentUpkeepPreferences(id: "agent-1", lookAroundWeekday: "someday", lookAroundTime: "late").shownLookAroundWeekday, "thursday")
-        XCTAssertEqual(AgentUpkeepPreferences(id: "agent-1", lookAroundWeekday: "someday", lookAroundTime: "late").shownLookAroundTime, "17:00")
-    }
-
     // MARK: Schedules
-
-    func testReadsAndWritesTheBriefsTimes() async throws {
-        XCTAssertEqual(DailyBrief.time(fromCron: "5 8 * * 1-5"), "08:05")
-        XCTAssertEqual(DailyBrief.time(fromCron: nil), "07:30")
-        XCTAssertEqual(DailyBrief.dayNumbers(fromCron: "30 7 * * 6,0"), [6, 7])
-        XCTAssertEqual(DailyBrief.dayNumbers(fromCron: "30 7 * * 1-5"), [1, 2, 3, 4, 5])
-        XCTAssertEqual(DailyBrief.dayNumbers(fromCron: nil), [1, 2, 3, 4, 5])
-        XCTAssertEqual(DailyBrief.dayNumbers(fromCron: "30 7 * * */2"), [1, 2, 3, 4, 5])
-        let goals = [
-            AgentGoal(conversationId: "goal-1", goalTitle: "Round-up", goalTimes: ["0 17 * * 5"]),
-            AgentGoal(conversationId: "goal-2", goalTitle: "Daily brief", goalTimes: ["30 7 * * 1-5"], goalWrittenBy: "built_in"),
-            AgentGoal(conversationId: "goal-3", goalTitle: "Daily brief", goalWrittenBy: "person"),
-        ]
-        XCTAssertEqual(DailyBrief.goal(in: goals)?.conversationId, "goal-2")
-
-        let (connection, fake) = connection(
-            answering: #"{"data":{"SetAgentBrief":{"conversationId":"goal-2","goalTitle":"Daily brief","goalState":"working","goalWrittenBy":"built_in","goalTimes":["30 7 * * 1,2"]}}}"#)
-        let brief = try await connection.setDailyBrief(isEnabled: true, at: "07:30", days: [1, 2])
-        XCTAssertEqual(brief?.goalTimes, ["30 7 * * 1,2"])
-        XCTAssertEqual(try sentVariables(fake.sent[0]), ["enabled": .bool(true), "at": .string("07:30"), "days": .array([.number(1), .number(2)])])
-    }
 
     func testReadsTheDaysOfACronLineForTheDayToggles() {
         XCTAssertEqual(ScheduleWeekday.dayNumbers(fromCronField: "*"), [1, 2, 3, 4, 5, 6, 7])

@@ -77,12 +77,8 @@ func (self *Agent) dreamOverviews(ctx context.Context, run *Run, record *models.
 		log.Warningf("cannot list the pages due an overview: %s", err)
 		return
 	}
-	concurrency := run.Configuration().Agent.Limits.RewriteConcurrency
-	if concurrency < 1 {
-		concurrency = 1
-	}
 	for _, batch := range [][]*models.AgentNode{themes, pages} {
-		slots := make(chan struct{}, concurrency)
+		slots := make(chan struct{}, dreamRewriteConcurrency)
 		var group sync.WaitGroup
 		for _, page := range batch {
 			if ctx.Err() != nil || !budget.left() || !budget.overviewingTimeLeft() {

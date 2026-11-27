@@ -31,7 +31,7 @@ func TestTheTimelineWritesAMonthFromTheJournalWithoutAModel(t *testing.T) {
 		}
 	})
 	record := &models.AgentDream{}
-	budget := newDreamBudget(fixture.worker.settings.Configuration(), fixture.run.Agent, 1, 0)
+	budget := newDreamBudget(fixture.worker.settings.Configuration(), fixture.run.Agent, 0)
 	fixture.worker.dreamTimeline(t.Context(), fixture.run, record, budget)
 
 	start, _ := time.ParseInLocation(journal.DayLayout, monthStart, Location(fixture.run.Owner))
