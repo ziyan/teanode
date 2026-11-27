@@ -15,7 +15,7 @@ import (
 // the agent's: a call is the person's own voice.
 
 const (
-	documentListChatCalls = `query ($conversationId: String!, $first: Int) { ListChatCalls(conversationId: $conversationId, first: $first) {
+	documentListChatCalls = `query ($conversationId: String!, $first: Int, $before: DateTime) { ListChatCalls(conversationId: $conversationId, first: $first, before: $before) {
 		id startedByName startedAt answeredAt endedAt endReason isGoing durationMs transcriptState
 		members { name ringState } } }`
 	documentReadChatCall = `query ($callId: String!) { ReadChatCall(callId: $callId) {
@@ -46,11 +46,7 @@ func runCallAction(ctx context.Context, arguments conversationArguments) (*tools
 		if conversationId == "" {
 			return nil, fmt.Errorf("list_calls needs the conversation_id of a chat, which list gives")
 		}
-		first := arguments.Limit
-		if first <= 0 {
-			first = 20
-		}
-		if result, err = operator.Execute(ctx, documentListChatCalls, map[string]any{"conversationId": conversationId, "first": first}); err != nil {
+		if result, err = listCalls(ctx, conversationId, arguments); err != nil {
 			return nil, err
 		}
 	case "read_call":
@@ -71,3 +67,53 @@ func runCallAction(ctx context.Context, arguments conversationArguments) (*tools
 	answer.Untrusted = true
 	return answer, nil
 }
+
+// listCalls is one page of a chat's calls, newest first, after skipping
+// arguments.Offset of them, with whether there are more and where they
+// start. The operation pages by time, so skipping is done by reading on from
+// the oldest call seen.
+func listCalls(ctx context.Context, conversationId string, arguments conversationArguments) (map[string]any, error) {
+	limit := arguments.Limit
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+	offset := max(arguments.Offset, 0)
+	// One more than the page, to know there is another.
+	want := offset + limit + 1
+	var calls []any
+	var before any
+	for len(calls) < want {
+		variables := map[string]any{"conversationId": conversationId, "first": min(want-len(calls), callsPerRead)}
+		if before != nil {
+			variables["before"] = before
+		}
+		answer, err := operator.Execute(ctx, documentListChatCalls, variables)
+		if err != nil {
+			return nil, err
+		}
+		page, _ := answer["ListChatCalls"].([]any)
+		calls = append(calls, page...)
+		if len(page) < variables["first"].(int) {
+			break
+		}
+		last, _ := page[len(page)-1].(map[string]any)
+		if before, _ = last["startedAt"]; before == nil {
+			break
+		}
+	}
+	calls = calls[min(offset, len(calls)):]
+	isMore := len(calls) > limit
+	if isMore {
+		calls = calls[:limit]
+	}
+	listed := map[string]any{"calls": calls, "more": isMore}
+	if isMore {
+		listed["next_offset"] = offset + len(calls)
+		listed["more_note"] = pageNote(len(calls), offset+len(calls), "calls")
+	}
+	return listed, nil
+}
+
+// callsPerRead is how many calls one read of the operation is asked for; the
+// operation gives 200 at most.
+const callsPerRead = 200
