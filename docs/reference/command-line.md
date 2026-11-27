@@ -186,7 +186,8 @@ after this rule.
 A rule files the mail that arrives after it is written. `rule apply` runs the
 stored rules over what is already in a folder, moving, marking, flagging and
 deleting as arrival would have; forwarding is not repeated, because old mail
-is not sent again. `rule test` says what would happen and changes nothing.
+is not sent again. It runs over every message of the folder, a batch of 500 after another, or over
+only the newest `--first N`. `rule test` says what would happen and changes nothing.
 
 Your own messages are `mailbox message`, through the same operations as the
 dashboard's list, reader and composer; `teanode mail` is the operator's log of
