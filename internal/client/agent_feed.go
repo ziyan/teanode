@@ -191,8 +191,8 @@ const (
 	DocumentRestoreAgentFeedItems = `mutation ($feedItemIds: [String!]!) {
 		RestoreAgentFeedItems(feedItemIds: $feedItemIds)
 	}`
-	DocumentWithdrawAgentFeedItem = `mutation ($feedItemId: String!) {
-		WithdrawAgentFeedItem(feedItemId: $feedItemId)
+	DocumentWithdrawAgentFeedItem = `mutation ($feedItemId: String!, $runConversationId: String) {
+		WithdrawAgentFeedItem(feedItemId: $feedItemId, runConversationId: $runConversationId)
 	}`
 	DocumentResolveAgentFeedItem = `mutation ($feedItemId: String!, $resolutionNote: String, $runConversationId: String) {
 		ResolveAgentFeedItem(feedItemId: $feedItemId, resolutionNote: $resolutionNote, runConversationId: $runConversationId) { ` + feedItemFields + ` }

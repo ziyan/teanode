@@ -80,3 +80,28 @@ func checkFeedResolver(resolver *FeedResolver, item *models.AgentFeedItem) error
 	}
 	return nil
 }
+
+// CheckFeedWithdrawal refuses a withdrawal that is not the caller's to make.
+// A card the person answered or resolved is theirs now, and is dismissed
+// instead; a goal's own turn may withdraw only a card it posted.
+func CheckFeedWithdrawal(resolver *FeedResolver, item *models.AgentFeedItem) error {
+	if resolver.Kind == models.FeedResolverGoal && (item.FeedSourceKind != models.FeedSourceGoal || item.FeedSourceID != resolver.ID) {
+		return feedRefusal("a goal's own turn may withdraw only a card it posted")
+	}
+	if item.IsChosen() || (item.IsResolved() && item.ResolvedByKind == models.FeedResolverPerson) {
+		return feedRefusal("the person answered or resolved this card, so it is theirs now; dismiss it instead of withdrawing it")
+	}
+	return nil
+}
+
+// FeedPictureFileIDs are the files of the pictures a card holds in the file
+// store, for deleting them when the card is deleted.
+func FeedPictureFileIDs(item *models.AgentFeedItem) []string {
+	var fileIds []string
+	for _, entry := range item.FeedMedia {
+		if entry.ImageFileID != "" {
+			fileIds = append(fileIds, entry.ImageFileID)
+		}
+	}
+	return fileIds
+}

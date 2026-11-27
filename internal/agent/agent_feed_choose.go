@@ -331,6 +331,10 @@ func (self *Agent) ShowLessLikeFeedItem(ctx context.Context, agentId string, ite
 // person likes and does not like in their feed.
 var feedPreferencePath = models.JoinPath(models.PathSelf, "feed")
 
+// feedPreferenceFactsChecked is how many of the facts of the preference page
+// are read to see whether a preference is on it already.
+const feedPreferenceFactsChecked = 2000
+
 // rememberFeedPreference files a preference as a fact on its page, the way the
 // memory tool files one.
 func (self *Agent) rememberFeedPreference(tx db.Transaction, agentId string, item *models.AgentFeedItem, text string) error {
@@ -344,6 +348,17 @@ func (self *Agent) rememberFeedPreference(tx db.Transaction, agentId string, ite
 	if node == nil {
 		if node, err = tx.PutAgentNode(&models.AgentNode{AgentID: agentId, Path: feedPreferencePath, Kind: models.NodeTopic, Name: "Feed preferences"}); err != nil {
 			return err
+		}
+	}
+	// The same words said again (a second show less on the same card, a like
+	// taken back and given again) are not a second fact.
+	existing, err := tx.ListAgentFacts(agentId, node.ID, true, feedPreferenceFactsChecked)
+	if err != nil {
+		return err
+	}
+	for _, fact := range existing {
+		if strings.TrimSpace(fact.Text) == strings.TrimSpace(text) {
+			return nil
 		}
 	}
 	_, err = tx.AddAgentFact(&models.AgentFact{
@@ -365,11 +380,6 @@ func (self *Agent) SweepAnsweredFeedItems(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		for _, item := range dismissed {
-			if err := self.announceFeedChange(tx, item, models.FeedChangeDismissed); err != nil {
-				return err
-			}
-		}
-		return nil
+		return self.announceFeedChanges(tx, dismissed, models.FeedChangeDismissed)
 	})
 }

@@ -245,6 +245,9 @@ func TestAChartThatCannotBeDrawnIsRefusedWithTheFieldNamed(t *testing.T) {
 		}), "chartBlocks[0].markers has 4 markers"},
 		"bars on a series": {change(func(chart *models.FeedChartBlock) { chart.Bars = []models.FeedChartBar{{BarLabel: "A", BarValue: 1}} }), "chartBlocks[0].bars is for a bars chart"},
 		"negative bar":     {[]models.FeedChartBlock{{ChartKind: models.FeedChartKindBars, Provenance: "Read at 09:40", Bars: []models.FeedChartBar{{BarLabel: "A", BarValue: 3}, {BarLabel: "B", BarValue: -1}}}}, "bars[1].barValue is -1"},
+		"huge value":       {change(func(chart *models.FeedChartBlock) { chart.Series[1].Values[2] = floatPointer(-2e15) }), "chartBlocks[0].series[1].values[2] is -2e+15"},
+		"huge bar":         {[]models.FeedChartBlock{{ChartKind: models.FeedChartKindBars, Provenance: "Read at 09:40", Bars: []models.FeedChartBar{{BarLabel: "A", BarValue: 3e15}}}}, "chartBlocks[0].bars[0].barValue is 3e+15"},
+		"repeated label":   {change(func(chart *models.FeedChartBlock) { chart.XLabels = []string{"Mon", "Tue", "Tue", "Thu"} }), "chartBlocks[0].xLabels[2] is \"Tue\""},
 		"no bars":          {[]models.FeedChartBlock{{ChartKind: models.FeedChartKindBars, Provenance: "Read at 09:40"}}, "chartBlocks[0].bars has 0 bars"},
 		"nine bars":        {[]models.FeedChartBlock{{ChartKind: models.FeedChartKindBars, Provenance: "Read at 09:40", Bars: make([]models.FeedChartBar, 9)}}, "chartBlocks[0].bars has 9 bars"},
 		"axis on bars":     {[]models.FeedChartBlock{{ChartKind: models.FeedChartKindBars, Provenance: "Read at 09:40", XLabels: []string{"a", "b"}, Bars: []models.FeedChartBar{{BarLabel: "A", BarValue: 3}}}}, "chartBlocks[0].xLabels, series and markers are for a series chart"},
@@ -418,10 +421,17 @@ func stillPicture(t *testing.T) []byte {
 // file of the conversation, with its bytes in the store.
 func snapshotAttachment(t *testing.T, world *speakFirstWorld, contentType string, content []byte) *models.AgentAttachment {
 	t.Helper()
+	return snapshotAttachmentInConversation(t, world, "", contentType, content)
+}
+
+// snapshotAttachmentInConversation is a picture a tool left in the named
+// conversation.
+func snapshotAttachmentInConversation(t *testing.T, world *speakFirstWorld, conversationId, contentType string, content []byte) *models.AgentAttachment {
+	t.Helper()
 	var attachment *models.AgentAttachment
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
 		var err error
-		if attachment, err = tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: world.agent.ID, MessageID: "shared", Name: "protect-get-snapshot.png", ContentType: contentType, Size: int64(len(content))}); err != nil {
+		if attachment, err = tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: world.agent.ID, ConversationID: conversationId, MessageID: "shared", Name: "protect-get-snapshot.png", ContentType: contentType, Size: int64(len(content))}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -529,5 +539,33 @@ func TestACameraStillWithNoReadablePictureIsLeftOffAndTheCardPosts(t *testing.T)
 		if _, _, err := world.worker.PostFeedItem(context.Background(), &agent.FeedPost{AgentID: world.agent.ID, Item: &models.AgentFeedItem{Title: "Bad still " + name, FeedMedia: []models.FeedMedia{entry}}}); err == nil || !strings.Contains(err.Error(), "media[0]") {
 			t.Errorf("%s: refused with %v, expected the field named", name, err)
 		}
+	}
+}
+
+// A still is read only from a picture of the conversation of the run that
+// posts it: an image the agent fetched in another conversation is left off
+// with a note, and one of this run's own is kept.
+func TestACameraStillFromAnotherConversationIsLeftOff(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	posted, _, err := world.worker.PostFeedItem(context.Background(), &agent.FeedPost{AgentID: world.agent.ID, Item: &models.AgentFeedItem{Title: "A parcel was left"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := snapshotAttachmentInConversation(t, world, "another-conversation", "image/png", stillPicture(t))
+	here := snapshotAttachmentInConversation(t, world, "this-conversation", "image/png", stillPicture(t))
+
+	updated, err := world.worker.UpdateFeedItem(context.Background(), world.agent.ID, posted.ID, "this-conversation", func(item *models.AgentFeedItem) error {
+		item.FeedMedia = []models.FeedMedia{cameraStillEntry(elsewhere.ID)}
+		return nil
+	})
+	if err != nil || len(updated.FeedMedia) != 0 || len(updated.PostNotes) != 1 || !strings.Contains(updated.PostNotes[0], "not a picture of this conversation") {
+		t.Fatalf("a picture of another conversation: %+v %v", updated, err)
+	}
+	updated, err = world.worker.UpdateFeedItem(context.Background(), world.agent.ID, posted.ID, "this-conversation", func(item *models.AgentFeedItem) error {
+		item.FeedMedia = []models.FeedMedia{cameraStillEntry(here.ID)}
+		return nil
+	})
+	if err != nil || len(updated.FeedMedia) != 1 || updated.FeedMedia[0].ImageFileID == "" || len(updated.PostNotes) != 0 {
+		t.Fatalf("a picture of this conversation: %+v %v", updated, err)
 	}
 }

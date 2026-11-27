@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -630,10 +631,10 @@ func (self *transaction) RestoreAgentFeedItems(userId string, feedItemIds []stri
 		Where(`("coalesce_key" IS NULL OR NOT EXISTS (SELECT 1 FROM "agent_feed_item" "open_item" WHERE "open_item"."agent_id" = "agent_feed_item"."agent_id"
 			AND "open_item"."coalesce_key" = "agent_feed_item"."coalesce_key" AND "open_item"."dismissed_at" IS NULL))`)
 	var candidates []agentFeedItemModel
-	if err := query.Select(`"id"`, `"coalesce_key"`, `"choices"`, `"chosen_choice_key"`).Order(`"dismissed_at" DESC, "id" DESC`).Find(&candidates).Error; err != nil {
+	if err := query.Clauses(clause.Locking{Strength: "UPDATE"}).Select(`"id"`, `"coalesce_key"`, `"choices"`, `"chosen_choice_key"`).Order(`"dismissed_at" DESC, "id" DESC`).Find(&candidates).Error; err != nil {
 		return nil, err
 	}
-	restoredIds, answerClearedIds := []string{}, []string{}
+	restoredIds, answerClearedIds := []string{}, map[string]bool{}
 	restoredKeys := map[string]bool{}
 	for index := range candidates {
 		candidate := &candidates[index]
@@ -654,27 +655,71 @@ func (self *transaction) RestoreAgentFeedItems(userId string, feedItemIds []stri
 		}
 		for _, choice := range choices {
 			if choice.ChoiceKey == *candidate.ChosenChoiceKey && choice.ChoiceRole == models.FeedChoiceDismiss {
-				answerClearedIds = append(answerClearedIds, candidate.ID)
+				answerClearedIds[candidate.ID] = true
 			}
 		}
 	}
-	if len(restoredIds) == 0 {
-		return []*models.AgentFeedItem{}, nil
-	}
-	// "Not now" was an answer that did nothing, so a card put back after it
-	// is waiting again.
-	if len(answerClearedIds) > 0 {
-		if err := self.tx.Model(&agentFeedItemModel{}).Where(`"id" IN ?`, answerClearedIds).Updates(map[string]any{
-			"chosen_choice_key": nil, "chosen_at": nil, "chosen_conversation_id": "", "outcome_text": "", "is_outcome_pending": false,
-		}).Error; err != nil {
+	// One card at a time, each in a savepoint: a post may have opened a card
+	// with the same coalesce key since the candidates were read, which the
+	// unique index refuses. That card is left out, as one whose key is held
+	// is, and the others come back.
+	restored := make([]*models.AgentFeedItem, 0, len(restoredIds))
+	for _, restoredId := range restoredIds {
+		items, isRestored, err := self.restoreAgentFeedItem(restoredId, answerClearedIds[restoredId], now)
+		if err != nil {
 			return nil, err
 		}
+		if isRestored {
+			restored = append(restored, items...)
+		}
 	}
-	return updateFeedItems(self.tx.Where(`"id" IN ?`, restoredIds), map[string]any{"dismissed_at": nil, "updated_at": now})
+	sort.SliceStable(restored, func(first, second int) bool { return restored[first].CreatedAt.Before(restored[second].CreatedAt) })
+	return restored, nil
 }
 
+// restoreAgentFeedItem brings back one card, and says whether it did: a
+// coalesce key taken by an open card meanwhile (SQLSTATE 23505) leaves it out.
+func (self *transaction) restoreAgentFeedItem(feedItemId string, isAnswerCleared bool, now time.Time) ([]*models.AgentFeedItem, bool, error) {
+	savepointName := "restore_" + newID()
+	if err := self.tx.Exec("SAVEPOINT " + savepointName).Error; err != nil {
+		return nil, false, err
+	}
+	items, err := func() ([]*models.AgentFeedItem, error) {
+		// "Not now" was an answer that did nothing, so a card put back after
+		// it is waiting again.
+		if isAnswerCleared {
+			if err := self.tx.Model(&agentFeedItemModel{}).Where(`"id" = ?`, feedItemId).Updates(map[string]any{
+				"chosen_choice_key": nil, "chosen_at": nil, "chosen_conversation_id": "", "outcome_text": "", "is_outcome_pending": false,
+			}).Error; err != nil {
+				return nil, err
+			}
+		}
+		return updateFeedItems(self.tx.Where(`"id" = ?`, feedItemId), map[string]any{"dismissed_at": nil, "updated_at": now})
+	}()
+	if err != nil {
+		var failure *pgconn.PgError
+		if !errors.As(err, &failure) || failure.Code != "23505" {
+			return nil, false, err
+		}
+		if rollbackErr := self.tx.Exec("ROLLBACK TO SAVEPOINT " + savepointName).Error; rollbackErr != nil {
+			return nil, false, errors.Join(err, rollbackErr)
+		}
+		if releaseErr := self.tx.Exec("RELEASE SAVEPOINT " + savepointName).Error; releaseErr != nil {
+			return nil, false, releaseErr
+		}
+		return nil, false, nil
+	}
+	if err := self.tx.Exec("RELEASE SAVEPOINT " + savepointName).Error; err != nil {
+		return nil, false, err
+	}
+	return items, true, nil
+}
+
+// DismissAgentFeedItemsAnsweredBefore dismisses the cards answered before the
+// given time. A card changed since then (a restored one is stamped with the
+// restore time) is left alone, so a restored card stays a full day.
 func (self *transaction) DismissAgentFeedItemsAnsweredBefore(before, now time.Time) ([]*models.AgentFeedItem, error) {
-	query := self.tx.Where(`"chosen_at" IS NOT NULL AND "chosen_at" < ? AND "dismissed_at" IS NULL AND ("expires_at" IS NULL OR "expires_at" > ?)`, before, now)
+	query := self.tx.Where(`"chosen_at" IS NOT NULL AND "chosen_at" < ? AND "updated_at" < ? AND "dismissed_at" IS NULL AND ("expires_at" IS NULL OR "expires_at" > ?)`, before, before, now)
 	return updateFeedItems(query, map[string]any{"dismissed_at": now, "read_at": gorm.Expr(`COALESCE("read_at", ?::timestamptz)`, now), "updated_at": now})
 }
 

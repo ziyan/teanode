@@ -75,8 +75,12 @@ type AgentFeedMutation interface {
 	// Take a card back for good: it is deleted, so it is not among the
 	// dismissed cards and cannot be restored, and its question is stopped.
 	// What the feed tool's withdraw does, when a card no longer holds. It is
-	// announced to open feeds as dismissed. Needs agent:use.
-	WithdrawAgentFeedItem(ctx context.Context, arguments AgentFeedItemArguments) (bool, error)
+	// announced to open feeds as dismissed, and the files of its pictures are
+	// deleted with it. A card the person answered or resolved is refused (it
+	// is theirs now: dismiss it), a goal's own turn (named by
+	// runConversationId) may withdraw only a card it posted, and a shell
+	// command of the agent is refused, as for resolving. Needs agent:use.
+	WithdrawAgentFeedItem(ctx context.Context, arguments WithdrawAgentFeedItemArguments) (bool, error)
 
 	// Mark a card resolved: its problem cleared, which says so on the card
 	// instead of a new card that says all is clear. The card does not move,
@@ -178,6 +182,14 @@ type DismissAgentFeedItemsArguments struct {
 // RestoreAgentFeedItemsArguments name the cards to bring back.
 type RestoreAgentFeedItemsArguments struct {
 	FeedItemIDs []string `json:"feedItemIds"`
+}
+
+// WithdrawAgentFeedItemArguments name a card.
+type WithdrawAgentFeedItemArguments struct {
+	FeedItemID string `json:"feedItemId"`
+
+	// RunConversationID is as for ResolveAgentFeedItem.
+	RunConversationID *string `json:"runConversationId" graphapi:"nullable"`
 }
 
 // ResolveAgentFeedItemArguments name a card and say what cleared.
@@ -831,6 +843,9 @@ func (self *graph) RestoreAgentFeedItems(ctx context.Context, arguments RestoreA
 	if err != nil {
 		return nil, err
 	}
+	if err := requireNotFeedAgentCommand(ctx, "restoring a card"); err != nil {
+		return nil, err
+	}
 	if len(arguments.FeedItemIDs) > feedChangeMost {
 		return nil, fmt.Errorf("%w: at most %d cards at once", api.ErrInvalidArguments, feedChangeMost)
 	}
@@ -857,15 +872,25 @@ func (self *graph) RestoreAgentFeedItems(ctx context.Context, arguments RestoreA
 	return restoredIds, nil
 }
 
-func (self *graph) WithdrawAgentFeedItem(ctx context.Context, arguments AgentFeedItemArguments) (bool, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+func (self *graph) WithdrawAgentFeedItem(ctx context.Context, arguments WithdrawAgentFeedItemArguments) (bool, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
+		return false, err
+	}
+	if err := requireNotFeedAgentCommand(ctx, "withdrawing a card"); err != nil {
 		return false, err
 	}
 	tx := self.transaction(ctx)
 	item, err := self.ownFeedItem(tx, found, arguments.FeedItemID)
 	if err != nil {
 		return false, err
+	}
+	resolver, err := self.feedResolver(ctx, tx, principal, found, arguments.RunConversationID)
+	if err != nil {
+		return false, err
+	}
+	if err := agent.CheckFeedWithdrawal(resolver, item); err != nil {
+		return false, translateError(err)
 	}
 	if item.InteractionID != "" && !item.IsChosen() {
 		if _, err := tx.ClaimAgentInteraction(item.InteractionID, models.InteractionStopped); err != nil {
@@ -875,10 +900,31 @@ func (self *graph) WithdrawAgentFeedItem(ctx context.Context, arguments AgentFee
 	if err := tx.DeleteAgentFeedItem(item.ID); err != nil {
 		return false, err
 	}
+	// The pictures go with the card, once the deletion is committed.
+	if pictureFileIds := agent.FeedPictureFileIDs(item); len(pictureFileIds) > 0 && self.storage != nil {
+		tx.AfterCommit(func() {
+			for _, fileId := range pictureFileIds {
+				if err := self.storage.DeleteFile(context.Background(), fileId); err != nil {
+					log.Warningf("cannot remove the picture %s of a withdrawn card: %s", fileId, err)
+				}
+			}
+		})
+	}
 	if err := self.announceFeedChange(tx, item, models.FeedChangeDismissed); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// requireNotFeedAgentCommand refuses what the agent's own shell command asks
+// of the feed on its own account. Such a command reaches the API with the
+// person's token and says so in api.AgentCommandHeader. These operations are
+// the person's, and the agent's feed tool's, which carries no request.
+func requireNotFeedAgentCommand(ctx context.Context, doing string) error {
+	if request := api.ContextRequest(ctx); request != nil && request.Header.Get(api.AgentCommandHeader) != "" {
+		return fmt.Errorf("%w: %s is for the person, and for the feed tool inside a turn; a command the agent runs does not do it", api.ErrPermissionDenied, doing)
+	}
+	return nil
 }
 
 // announceFeedChange tells the open feeds once the request commits.
@@ -920,6 +966,9 @@ func (self *graph) ResolveAgentFeedItem(ctx context.Context, arguments ResolveAg
 	if err != nil {
 		return nil, err
 	}
+	if err := requireNotFeedAgentCommand(ctx, "resolving a card"); err != nil {
+		return nil, err
+	}
 	tx := self.transaction(ctx)
 	item, err := self.ownFeedItem(tx, found, arguments.FeedItemID)
 	if err != nil {
@@ -946,6 +995,9 @@ func (self *graph) ResolveAgentFeedItem(ctx context.Context, arguments ResolveAg
 func (self *graph) UnresolveAgentFeedItem(ctx context.Context, arguments UnresolveAgentFeedItemArguments) (*AgentFeedItemView, error) {
 	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := requireNotFeedAgentCommand(ctx, "taking the resolved mark off a card"); err != nil {
 		return nil, err
 	}
 	tx := self.transaction(ctx)

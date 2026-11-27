@@ -575,3 +575,89 @@ func TestAResolvedCardIsResolvedOnceAndAReplacementStartsUnresolved(t *testing.T
 		}
 	})
 }
+
+// The hourly sweep leaves a restored card alone: restoring stamps the card
+// with the time, and the sweep takes only cards not touched since the cutoff,
+// so a card answered with an action two days ago stays a day after it is put
+// back.
+func TestARestoredAnsweredCardSurvivesTheSweep(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId, agentId := feedTestAgent(t, tx, "feed-restore-sweep")
+		now := time.Now()
+		card := newTestCard(userId, agentId, "Book the table?")
+		card.FeedItemKind = models.FeedItemDecision
+		card.Choices = []models.FeedChoice{{ChoiceKey: "book", ChoiceLabel: "Book it", ChoiceRole: models.FeedChoiceAction}}
+		stored, _, err := tx.UpsertAgentFeedItem(card, now.Add(-72*time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if isSettled, err := tx.SettleAgentFeedItem(stored.ID, &models.FeedSettlement{ChoiceKey: "book"}, now.Add(-48*time.Hour)); err != nil || !isSettled {
+			t.Fatal(isSettled, err)
+		}
+		if _, err := tx.DismissAgentFeedItems(userId, &db.FeedDismissSelection{FeedItemIDs: []string{stored.ID}}, now.Add(-47*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		restored, err := tx.RestoreAgentFeedItems(userId, []string{stored.ID}, now)
+		if err != nil || len(restored) != 1 || restored[0].ChosenChoiceKey != "book" {
+			t.Fatalf("restored: %+v %v", restored, err)
+		}
+		swept, err := tx.DismissAgentFeedItemsAnsweredBefore(now.Add(-models.FeedAnsweredLifetime), now.Add(time.Minute))
+		if err != nil || len(swept) != 0 {
+			t.Fatalf("the sweep took a card restored a minute ago: %+v %v", swept, err)
+		}
+		// A day after the restore it is swept like any answered card.
+		swept, err = tx.DismissAgentFeedItemsAnsweredBefore(now.Add(time.Hour), now.Add(25*time.Hour))
+		if err != nil || len(swept) != 1 {
+			t.Fatalf("the sweep a day later: %+v %v", swept, err)
+		}
+	})
+}
+
+// A card whose coalesce key an open card took since the restore read its
+// candidates would break the unique index of open cards. That card is left out
+// and the transaction goes on, so the other cards of the call still come back.
+func TestRestoringACardWhoseKeyWasTakenMeanwhileLeavesItOut(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId, agentId := feedTestAgent(t, tx, "feed-restore-race")
+		now := time.Now()
+		post := func(title, coalesceKey string) *models.AgentFeedItem {
+			card := newTestCard(userId, agentId, title)
+			card.CoalesceKey = coalesceKey
+			stored, _, err := tx.UpsertAgentFeedItem(card, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return stored
+		}
+		dismiss := func(card *models.AgentFeedItem) {
+			if _, err := tx.DismissAgentFeedItems(userId, &db.FeedDismissSelection{FeedItemIDs: []string{card.ID}}, now); err != nil {
+				t.Fatal(err)
+			}
+		}
+		dismissed := post("Rain this afternoon", "weather:today")
+		dismiss(dismissed)
+		open := post("Sun this afternoon", "weather:today")
+		plain := post("Something else", "")
+		dismiss(plain)
+
+		items, isRestored, err := db.RestoreOneAgentFeedItem(tx, dismissed.ID, false, now)
+		if err != nil || isRestored || len(items) != 0 {
+			t.Fatalf("a card whose key is taken: %+v %v %v", items, isRestored, err)
+		}
+		if still, _ := tx.GetAgentFeedItem(dismissed.ID); still == nil || still.DismissedAt == nil {
+			t.Fatalf("the card left out is not dismissed any more: %+v", still)
+		}
+		// The transaction is usable after the refusal, and the next card comes back.
+		items, isRestored, err = db.RestoreOneAgentFeedItem(tx, plain.ID, false, now)
+		if err != nil || !isRestored || len(items) != 1 || items[0].DismissedAt != nil {
+			t.Fatalf("the next card: %+v %v %v", items, isRestored, err)
+		}
+		if holder, _ := tx.GetOpenAgentFeedItemByCoalesceKey(agentId, "weather:today"); holder == nil || holder.ID != open.ID {
+			t.Fatalf("the open card on the subject: %+v", holder)
+		}
+	})
+}

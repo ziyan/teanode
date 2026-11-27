@@ -111,6 +111,13 @@ event, and neither moves the card, makes it unread or notifies the phones.
   turn is a goal's own (the same test as the restore refusal), and the operation
   holds it to those rules. A person tapping, or the command line, is `person`;
   the agent's tool outside a goal's own turn is `agent`.
+- **A shell command of the agent** (the command line run by the agent, which
+  sends the `X-Teanode-Agent-Command` header with the person's token) cannot
+  resolve, unresolve, restore or withdraw: the operations answer permission
+  denied, saying these are for the person and for the feed tool inside a turn.
+  This holds whatever `runConversationId` the command sends, so the goal limits
+  above cannot be skipped by leaving it out. The in-process feed tool carries no
+  request and is not affected.
 - **Posting the same subject again** (a coalesce key replace) clears the
   resolution, since it is a new state of the subject. An `update` that changes
   the text keeps it.
@@ -134,6 +141,9 @@ drawn natively by every app.
   `xLabels`.
 - **Bars** are 1 to 8 `{barLabel, barValue}`, never negative. The server sorts
   them largest first.
+- A value of absolute size over 1e15 is refused with its field named, and so is
+  an `xLabels` entry that repeats an earlier one (a marker or a reader could not
+  tell the two places on the axis apart).
 
 A chart that cannot be drawn is refused with the field named, such as
 `chartBlocks[0].series[1].values has 3 entries; give one number for each of the 4
@@ -162,7 +172,8 @@ as a file of the conversation, an `AgentAttachment` whose id the tool's answer
 gives as `files[].attachment_id` (`keepSkillFiles` in `tools_skill.go`). The
 `feed` tool's media entry `{camera_still: {attachment_id, ...}}` names that id.
 As the card is stored, `keepFeedStills` reads the attachment (it must be the
-agent's own and an image), scales it to 1200 pixels on its long side with the
+agent's own and an image, and when the post names the conversation of the run
+that makes it, of that conversation), scales it to 1200 pixels on its long side with the
 same code as a page's picture, keeps it in the file store as `ImageFileID`, and
 the card serves it from `/api/v1/feed/items/{feedItemId}/media/{mediaKey}`. The
 person's own photo of that moment (`photo_id`) is accepted instead, and is served
@@ -257,7 +268,9 @@ one `restored` event each. A card answered "not now" (a dismiss choice) has
 its answer cleared, so it can be answered again; one answered with an action
 keeps its answer, since the action was carried out. A card is left out when a
 card that is not dismissed holds its coalesce key (the newer word on that
-subject), or when it expired; of two dismissed cards on one subject only the
+subject, including one a post opened while the restore was running: the update
+is made one card at a time under a savepoint, and a unique violation on the key
+leaves just that card out), or when it expired; of two dismissed cards on one subject only the
 one dismissed last comes back. A question a dismissal stopped stays stopped,
 though the card's buttons still work because they post to the main
 conversation. Every surface offers Undo after a dismissal, which is a restore
@@ -283,17 +296,27 @@ the info sheet puts a card back.
 card a day after it was answered with a choice
 (`models.FeedAnsweredLifetime`), with a `dismissed` event, so it is found
 among the dismissed cards rather than crowding what still needs the person.
+The sweep takes only a card not changed since the cutoff (`updated_at` as well
+as `chosen_at`), and a restore stamps `updated_at`, so a restored card stays a
+day. It runs last in the hourly cleanup, and its error is logged without
+stopping the other cleanups; it reads the unread count once for each person,
+and still sends one event for each card.
 
 **Withdrawn is gone.** The tool's `withdraw` (`WithdrawAgentFeedItem`,
 `teanode agent feed withdraw`) deletes the card: a card the agent took back
 because it no longer holds is not among the dismissed cards and cannot be put
-back.
+back. A card the person answered or resolved is theirs and is refused ("dismiss
+it instead"); a goal's own turn (the tool sends `runConversationId`, and the
+operation checks it again) may withdraw only a card whose feed source is that
+goal; and the files of the card's pictures are deleted with it, once the
+deletion commits. A shell command of the agent is refused, as for resolving.
 
 ## Liking
 
 A like or an unlike is written to the agent's memory as a preference on the
 page `self/feed`, and "show less like this" writes the opposite and dismisses
-the card. Goals read that page before choosing what to post.
+the card. Goals read that page before choosing what to post. A sentence already
+on the page is not filed twice.
 
 ## Reading and live updates
 

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"regexp"
 	"sort"
@@ -168,6 +169,15 @@ func normalizeFeedChart(item *models.AgentFeedItem, chart *models.FeedChartBlock
 	return feedRefusal("%s.chartKind is %q; use series or bars", path, chart.ChartKind)
 }
 
+// feedChartValueLargest is the largest size a number of a chart may have.
+// Past it the drawing loses the small differences, and the apps' arithmetic
+// can overflow.
+const feedChartValueLargest = 1e15
+
+func isFeedChartValueTooLarge(value float64) bool {
+	return math.Abs(value) > feedChartValueLargest || math.IsNaN(value)
+}
+
 func normalizeFeedSeriesChart(item *models.AgentFeedItem, chart *models.FeedChartBlock, path string) error {
 	if len(chart.XLabels) < models.FeedChartLabelsLeast || len(chart.XLabels) > models.FeedChartLabelsMost {
 		return feedRefusal("%s.xLabels has %d labels; a series has from %d to %d, in order", path, len(chart.XLabels), models.FeedChartLabelsLeast, models.FeedChartLabelsMost)
@@ -175,6 +185,9 @@ func normalizeFeedSeriesChart(item *models.AgentFeedItem, chart *models.FeedChar
 	labels := map[string]bool{}
 	for index := range chart.XLabels {
 		chart.XLabels[index] = feedLine(item, fmt.Sprintf("%s.xLabels[%d]", path, index), chart.XLabels[index], feedChartLabelCharacters)
+		if labels[chart.XLabels[index]] {
+			return feedRefusal("%s.xLabels[%d] is %q, which an earlier label already is; each label names one place on the axis", path, index, chart.XLabels[index])
+		}
 		labels[chart.XLabels[index]] = true
 	}
 	if len(chart.Series) == 0 || len(chart.Series) > models.FeedChartSeriesMost {
@@ -196,7 +209,10 @@ func normalizeFeedSeriesChart(item *models.AgentFeedItem, chart *models.FeedChar
 			return feedRefusal("%s.values has %d entries; give one number for each of the %d xLabels, or null for none", linePath, len(line.Values), len(chart.XLabels))
 		}
 		isNumbered := false
-		for _, value := range line.Values {
+		for valueIndex, value := range line.Values {
+			if value != nil && isFeedChartValueTooLarge(*value) {
+				return feedRefusal("%s.values[%d] is %v; a value is at most %v in size", linePath, valueIndex, *value, feedChartValueLargest)
+			}
 			isNumbered = isNumbered || value != nil
 		}
 		if !isNumbered {
@@ -226,6 +242,9 @@ func normalizeFeedBarsChart(item *models.AgentFeedItem, chart *models.FeedChartB
 		bar := &chart.Bars[index]
 		barPath := fmt.Sprintf("%s.bars[%d]", path, index)
 		bar.BarLabel = feedLine(item, barPath+".barLabel", bar.BarLabel, feedChartLabelCharacters)
+		if isFeedChartValueTooLarge(bar.BarValue) {
+			return feedRefusal("%s.barValue is %v; a value is at most %v in size", barPath, bar.BarValue, feedChartValueLargest)
+		}
 		if bar.BarValue < 0 {
 			return feedRefusal("%s.barValue is %v; a bar is never negative", barPath, bar.BarValue)
 		}
@@ -300,8 +319,12 @@ func carryFeedStills(previous []models.FeedMedia, item *models.AgentFeedItem) {
 // a picture a tool fetched in a run, named by its attachment, is read, scaled
 // as a page's picture is and kept in the file store. A still whose picture
 // cannot be had is left off the card with a note, and the card still posts.
-// It answers the files it wrote, to delete if the card is not stored.
-func (self *Agent) keepFeedStills(ctx context.Context, tx db.Transaction, agentId string, item *models.AgentFeedItem) ([]string, error) {
+// When the post names the conversation of the run that makes it
+// (runConversationId), only a picture of that conversation is kept: a still
+// is of what the run's own camera tool answered with, not of any picture the
+// agent ever fetched. It answers the files it wrote, to delete if the card is
+// not stored.
+func (self *Agent) keepFeedStills(ctx context.Context, tx db.Transaction, agentId, runConversationId string, item *models.AgentFeedItem) ([]string, error) {
 	var written []string
 	kept := make([]models.FeedMedia, 0, len(item.FeedMedia))
 	for _, entry := range item.FeedMedia {
@@ -309,7 +332,7 @@ func (self *Agent) keepFeedStills(ctx context.Context, tx db.Transaction, agentI
 			kept = append(kept, entry)
 			continue
 		}
-		imageFileId, image, reason, err := self.keepFeedStill(ctx, tx, agentId, &entry)
+		imageFileId, image, reason, err := self.keepFeedStill(ctx, tx, agentId, runConversationId, &entry)
 		if err != nil {
 			return written, err
 		}
@@ -327,7 +350,7 @@ func (self *Agent) keepFeedStills(ctx context.Context, tx db.Transaction, agentI
 }
 
 // keepFeedStill is one still; a reason says why its picture cannot be had.
-func (self *Agent) keepFeedStill(ctx context.Context, tx db.Transaction, agentId string, entry *models.FeedMedia) (string, *linkpreview.Image, string, error) {
+func (self *Agent) keepFeedStill(ctx context.Context, tx db.Transaction, agentId, runConversationId string, entry *models.FeedMedia) (string, *linkpreview.Image, string, error) {
 	if entry.AttachmentID == "" {
 		return "", nil, "it has no picture: a still of a new moment needs a new picture, from a camera tool's answer (attachment_id) or one of their photos (photo_id)", nil
 	}
@@ -337,6 +360,9 @@ func (self *Agent) keepFeedStill(ctx context.Context, tx db.Transaction, agentId
 	}
 	if attachment == nil || attachment.AgentID != agentId || !strings.HasPrefix(attachment.ContentType, "image/") {
 		return "", nil, fmt.Sprintf("there is no picture with the attachment_id %s; use the one a camera tool's answer gave", entry.AttachmentID), nil
+	}
+	if runConversationId != "" && attachment.ConversationID != runConversationId {
+		return "", nil, fmt.Sprintf("the attachment_id %s is not a picture of this conversation; use the one a camera tool's answer gave here", entry.AttachmentID), nil
 	}
 	content, err := self.settings.Storage.GetFile(ctx, attachment.ID)
 	if err != nil {

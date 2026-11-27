@@ -15,6 +15,10 @@ import (
 type recordedOperations struct {
 	documents []string
 	variables []map[string]any
+
+	// cardSourceID is the goal the card that GetAgentFeedItem answers with
+	// came from.
+	cardSourceID string
 }
 
 func (self *recordedOperations) Permissions() *models.EffectivePermissions {
@@ -24,7 +28,8 @@ func (self *recordedOperations) Permissions() *models.EffectivePermissions {
 func (self *recordedOperations) Execute(_ context.Context, document string, variables map[string]any, response any) error {
 	self.documents = append(self.documents, document)
 	self.variables = append(self.variables, variables)
-	return json.Unmarshal([]byte(`{"PostAgentFeedItem":{"feedItemId":"card-1"},"DismissAgentFeedItems":["card-1"],"RestoreAgentFeedItems":["card-1"],"WithdrawAgentFeedItem":true,"ResolveAgentFeedItem":{"feedItemId":"card-1","isResolved":true},"UnresolveAgentFeedItem":{"feedItemId":"card-1"},"ListAgentFeed":{"feedItems":[],"unreadCount":0}}`), response)
+	card := `{"feedItemId":"card-1","feedSourceKind":"goal","feedSourceId":"` + self.cardSourceID + `"}`
+	return json.Unmarshal([]byte(`{"GetAgentFeedItem":`+card+`,"PostAgentFeedItem":{"feedItemId":"card-1"},"DismissAgentFeedItems":["card-1"],"RestoreAgentFeedItems":["card-1"],"WithdrawAgentFeedItem":true,"ResolveAgentFeedItem":{"feedItemId":"card-1","isResolved":true},"UnresolveAgentFeedItem":{"feedItemId":"card-1"},"ListAgentFeed":{"feedItems":[],"unreadCount":0}}`), response)
 }
 
 type feedRun struct {
@@ -255,5 +260,43 @@ func TestTheFeedToolDescriptionSaysTheRulesOfACard(t *testing.T) {
 	}
 	if strings.ContainsAny(description, "\u2014\u2013") {
 		t.Error("the description has a dash")
+	}
+}
+
+// A goal's own turn withdraws only a card whose source is that goal: the tool
+// reads the card first, and sends the goal's conversation so that the server
+// checks it again. The person's turn is not held to it.
+func TestAGoalTurnWithdrawsOnlyItsOwnCards(t *testing.T) {
+	goal := &models.AgentConversation{ID: "goal-conversation-1", Kind: models.AgentConversationGoal, Goal: "Watch the parcels"}
+	arguments := []byte(`{"action":"withdraw","feed_item_id":"card-1"}`)
+
+	foreign := &recordedOperations{cardSourceID: "goal-conversation-2"}
+	goalTurn := tools.WithRun(context.Background(), &feedRun{operations: foreign, conversation: goal, isHeadless: true})
+	if _, err := feedTool(t).Run(goalTurn, &tools.Call{ID: "c1", Arguments: arguments}); err == nil || !strings.Contains(err.Error(), "only a card it posted") {
+		t.Fatalf("a goal withdrew another goal's card: %v", err)
+	}
+	for _, document := range foreign.documents {
+		if strings.Contains(document, "WithdrawAgentFeedItem") {
+			t.Fatalf("the withdrawal was sent: %+v", foreign.documents)
+		}
+	}
+
+	own := &recordedOperations{cardSourceID: "goal-conversation-1"}
+	goalTurn = tools.WithRun(context.Background(), &feedRun{operations: own, conversation: goal, isHeadless: true})
+	if _, err := feedTool(t).Run(goalTurn, &tools.Call{ID: "c1", Arguments: arguments}); err != nil {
+		t.Fatal(err)
+	}
+	last := len(own.documents) - 1
+	if !strings.Contains(own.documents[last], "WithdrawAgentFeedItem") || own.variables[last]["runConversationId"] != "goal-conversation-1" {
+		t.Fatalf("the withdrawal does not name the goal's conversation: %+v %+v", own.documents, own.variables)
+	}
+
+	person := &recordedOperations{cardSourceID: "goal-conversation-2"}
+	personTurn := tools.WithRun(context.Background(), &feedRun{operations: person, conversation: goal})
+	if _, err := feedTool(t).Run(personTurn, &tools.Call{ID: "c1", Arguments: arguments}); err != nil {
+		t.Fatalf("the person in a goal's conversation could not withdraw: %v", err)
+	}
+	if _, isNamed := person.variables[len(person.variables)-1]["runConversationId"]; isNamed {
+		t.Fatalf("the person's withdrawal is held to a goal: %+v", person.variables)
 	}
 }

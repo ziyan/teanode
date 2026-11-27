@@ -32,7 +32,7 @@ func init() {
 					"A still from one of their cameras goes in media as {camera_still: {attachment_id (the attachment_id in the camera tool's answer, in this turn), camera_name, captured_at (the camera's own time with its offset, such as 2026-11-19T14:02:11-05:00), still_reason (why this camera, such as the camera at the front door, where the parcel was left), playback_url, live_url (https, optional)}}; a still whose picture cannot be read is left off with a note and the card still posts, and a new moment needs a new still, since an update keeps a still only when its camera and moment are unchanged. " +
 					"A card is held to these rules. It says what happened, why it matters and one or two next steps. Numbers come only from this turn's tool results. One card per subject: `list` first so that nothing is said twice, and never rewrite a card into a different subject. Plain words, with no ids or tool names, and a title that says what the body says. Silence is the default. Em and en dashes are rewritten, and a title, label or caption a little too long is cut, with the cut fields listed in the answer's postNotes. " +
 					"When the problem a card is about clears, `resolve` that card (feed_item_id, and a resolution_note of one line saying what cleared) instead of posting a card that says all is clear: it stays in place, marked resolved. Post a new card only for a new problem, or one that got materially worse. A card is resolved once, and a goal's own turn may resolve only a card it posted and never one the person resolved; `unresolve` takes the mark off, for when it was wrong. Posting the same subject again with its coalesce_key clears the mark. " +
-					"`update` changes a card you posted, by feed_item_id, where it stands, and keeps every field you leave out (title, kind, body, choices, media, charts). `withdraw` takes one back for good when it no longer holds: it is deleted, not put among the dismissed cards. `dismiss` and `restore` are for when the person asks (\"clear my feed\", \"bring that back\"), never on your own and never in a goal's own turn: dismiss closes the cards in feed_item_ids, or every card of a stack_key, or every_read cards the person has read (a decision still waiting for an answer is kept); restore brings feed_item_ids back. `list` shows what is in the feed, to find an id or to see what you already said; with dismissed_only it lists the dismissed cards, the most recently dismissed first.",
+					"`update` changes a card you posted, by feed_item_id, where it stands, and keeps every field you leave out (title, kind, body, choices, media, charts). `withdraw` takes one back for good when it no longer holds: it is deleted, not put among the dismissed cards, and never a card the person answered or resolved (dismiss that), and in a goal's own turn only a card that goal posted. `dismiss` and `restore` are for when the person asks (\"clear my feed\", \"bring that back\"), never on your own and never in a goal's own turn: dismiss closes the cards in feed_item_ids, or every card of a stack_key, or every_read cards the person has read (a decision still waiting for an answer is kept); restore brings feed_item_ids back. `list` shows what is in the feed, to find an id or to see what you already said; with dismissed_only it lists the dismissed cards, the most recently dismissed first.",
 				Parameters: tools.Object(map[string]any{
 					"action":          tools.EnumProperty("what to do", "post", "update", "resolve", "unresolve", "withdraw", "dismiss", "restore", "list"),
 					"feed_item_id":    tools.StringProperty("for update, resolve, unresolve and withdraw: the card, by the id list or post gave"),
@@ -203,7 +203,24 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if feedItemId == "" {
 			return nil, fmt.Errorf("which card? give feed_item_id, from list")
 		}
-		return operate(ctx, client.DocumentWithdrawAgentFeedItem, map[string]any{"feedItemId": feedItemId}, "WithdrawAgentFeedItem", "withdrawn")
+		variables := map[string]any{"feedItemId": feedItemId}
+		// A goal's own turn takes back only a card of its own, which the
+		// operation checks again from the conversation it is told.
+		if here := current.Conversation(); here != nil && here.IsGoal() && current.Headless() {
+			variables["runConversationId"] = here.ID
+			result, err := operator.Execute(ctx, client.DocumentGetAgentFeedItem, map[string]any{"feedItemId": feedItemId})
+			if err != nil {
+				return nil, err
+			}
+			card, isCard := result["GetAgentFeedItem"].(map[string]any)
+			if !isCard {
+				return nil, fmt.Errorf("cannot read card %s to check it is this goal's", feedItemId)
+			}
+			if card["feedSourceKind"] != string(models.FeedSourceGoal) || card["feedSourceId"] != here.ID {
+				return nil, fmt.Errorf("a goal's own turn may withdraw only a card it posted")
+			}
+		}
+		return operate(ctx, client.DocumentWithdrawAgentFeedItem, variables, "WithdrawAgentFeedItem", "withdrawn")
 	case "resolve", "unresolve":
 		if feedItemId == "" {
 			return nil, fmt.Errorf("which card? give feed_item_id, from list")

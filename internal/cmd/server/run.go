@@ -1009,19 +1009,13 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		if err := authenticator.Scavenge(); err != nil {
 			return err
 		}
-		// Cards answered a day ago leave the feed for the dismissed cards.
-		if self.agentWorker != nil {
-			if err := self.agentWorker.SweepAnsweredFeedItems(ctx); err != nil {
-				return err
-			}
-		}
 		// The turns taken of things done once in a while, the buckets of the
 		// limits that every instance counts together, and the long tool
 		// results held for result_more are rows too. No interval in use is
 		// longer than a month (a watch may look as rarely as it likes, and
 		// one rarer than that looks again a little early), no refill longer
 		// than a day, and a result is read on for half an hour.
-		return self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 			now := time.Now()
 			if _, err := tx.DeleteThrottlesTakenBefore(now.Add(-31 * 24 * time.Hour)); err != nil {
 				return err
@@ -1031,7 +1025,17 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 			}
 			_, err := tx.DeleteMcpHeldResultsStoredBefore(now.Add(-time.Hour))
 			return err
-		})
+		}); err != nil {
+			return err
+		}
+		// Cards answered a day ago leave the feed for the dismissed cards.
+		// Last, so that a failure here never skips the cleanups above.
+		if self.agentWorker != nil {
+			if err := self.agentWorker.SweepAnsweredFeedItems(ctx); err != nil {
+				log.Errorf("cannot sweep the answered feed cards: %s", err)
+			}
+		}
+		return nil
 	}, &periodic.Settings{
 		Interval: time.Hour,
 		Name:     "web:scavenge",

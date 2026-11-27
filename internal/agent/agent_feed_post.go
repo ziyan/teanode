@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -193,7 +194,15 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 	var found *models.Agent
 	var readyGoal *models.AgentConversation
 	var removedPictures, keptStills []string
+	// What the card said before any attempt changed it, to start each attempt
+	// from.
+	postedMedia, postedNotes := slices.Clone(item.FeedMedia), slices.Clone(item.PostNotes)
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		// An attempt that is repeated begins again: the stills a failed
+		// attempt kept are deleted, and the card goes back to what it said.
+		self.deleteFeedPictures(keptStills)
+		keptStills, removedPictures = nil, nil
+		item.FeedMedia, item.PostNotes = slices.Clone(postedMedia), slices.Clone(postedNotes)
 		var err error
 		if found, err = tx.GetAgent(post.AgentID); err != nil {
 			return err
@@ -264,7 +273,7 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 		if err := resolveFeedPhotos(tx, found.UserID, item); err != nil {
 			return err
 		}
-		if keptStills, err = self.keepFeedStills(ctx, tx, found.ID, item); err != nil {
+		if keptStills, err = self.keepFeedStills(ctx, tx, found.ID, postingConversationId, item); err != nil {
 			return err
 		}
 		if previous != nil {
@@ -302,16 +311,32 @@ func newFeedCallID() string {
 // announceFeedChange tells the screens that have the feed open, once the
 // change is stored, with the person's unread count as it is then.
 func (self *Agent) announceFeedChange(tx db.Transaction, item *models.AgentFeedItem, change models.FeedChange) error {
-	unreadCount, err := tx.CountUnreadAgentFeedItems(item.UserID, time.Now())
-	if err != nil {
-		return err
-	}
-	event := &models.FeedEvent{UserID: item.UserID, FeedItemID: item.ID, FeedChange: change, UnreadCount: unreadCount}
-	tx.AfterCommit(func() {
-		if err := self.settings.Database.NotifyFeedEvent(event); err != nil {
-			log.Warningf("cannot tell the open feeds of a change: %s", err)
+	return self.announceFeedChanges(tx, []*models.AgentFeedItem{item}, change)
+}
+
+// announceFeedChanges tells the open feeds of one change to each of the
+// cards, one event per card. The unread count is read once for each person,
+// whatever the number of their cards.
+func (self *Agent) announceFeedChanges(tx db.Transaction, items []*models.AgentFeedItem, change models.FeedChange) error {
+	now := time.Now()
+	unreadCounts := map[string]int{}
+	for _, item := range items {
+		unreadCount, isCounted := unreadCounts[item.UserID]
+		if !isCounted {
+			var err error
+			unreadCount, err = tx.CountUnreadAgentFeedItems(item.UserID, now)
+			if err != nil {
+				return err
+			}
+			unreadCounts[item.UserID] = unreadCount
 		}
-	})
+		event := &models.FeedEvent{UserID: item.UserID, FeedItemID: item.ID, FeedChange: change, UnreadCount: unreadCount}
+		tx.AfterCommit(func() {
+			if err := self.settings.Database.NotifyFeedEvent(event); err != nil {
+				log.Warningf("cannot tell the open feeds of a change: %s", err)
+			}
+		})
+	}
 	return nil
 }
 
@@ -362,6 +387,9 @@ func (self *Agent) UpdateFeedItem(ctx context.Context, agentId, feedItemId, post
 	var removedPictures, keptStills []string
 	var postNotes []string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		// An attempt that is repeated begins again.
+		self.deleteFeedPictures(keptStills)
+		keptStills, removedPictures = nil, nil
 		existing, err := tx.GetAgentFeedItem(feedItemId)
 		if err != nil {
 			return err
@@ -380,7 +408,7 @@ func (self *Agent) UpdateFeedItem(ctx context.Context, agentId, feedItemId, post
 			if err := resolveFeedPhotos(tx, existing.UserID, item); err != nil {
 				return err
 			}
-			if keptStills, err = self.keepFeedStills(ctx, tx, existing.AgentID, item); err != nil {
+			if keptStills, err = self.keepFeedStills(ctx, tx, existing.AgentID, postingConversationId, item); err != nil {
 				return err
 			}
 			removedPictures = carryFeedPictures(existing.FeedMedia, item)
