@@ -12,6 +12,7 @@ import (
 
 type invitationOperations struct {
 	invitation string
+	thread     string
 	sent       []string
 }
 
@@ -24,6 +25,10 @@ func (self *invitationOperations) Execute(_ context.Context, document string, _ 
 	switch {
 	case strings.Contains(document, "ListMailboxes"):
 		return json.Unmarshal([]byte(`{"ListMailboxes":[{"mailbox":{"id":"mailbox-one","agent":{"granted":true}},"folders":[{"id":"folder-inbox","mailboxId":"mailbox-one","name":"Inbox","kind":"inbox"}]}]}`), response)
+	case strings.Contains(document, "GetMailboxThread") && self.thread != "":
+		return json.Unmarshal([]byte(self.thread), response)
+	case strings.Contains(document, "GetMailContent"):
+		return json.Unmarshal([]byte(self.invitation), response)
 	case strings.Contains(document, "GetMailboxThread"):
 		return json.Unmarshal([]byte(`{"GetMailboxThread":{"threadId":"thread-one","subject":"Planning","items":[{"folderId":"folder-inbox","item":{"id":"item-one"}}]}}`), response)
 	case strings.Contains(document, "GetMailInvitation"):
@@ -82,3 +87,28 @@ func TestReadInvitationSaysWhenThereIsNone(test *testing.T) {
 		test.Errorf("the result %s does not say there was none", result.Content)
 	}
 }
+
+// A message longer than one read says where to read on, and reading on from
+// there gives the rest, with multi-byte characters kept whole.
+func TestReadPagesALongMessage(test *testing.T) {
+	text := strings.Repeat("é", 30)
+	operations := &invitationOperations{invitation: `{"GetMailContent":{"text":"` + text + `"}}`}
+	operations.thread = `{"GetMailboxThread":{"threadId":"thread-one","subject":"Planning","items":[{"folderId":"folder-inbox","item":{"id":"item-one","mailId":"mail-one","mail":{"id":"mail-one","from":"a@example.com","subject":"Planning"}}}]}}`
+
+	result, err := readWith(test, operations, `{"item_id":"item-one","max_characters":20}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(result.Content, `"next_offset":20`) || !strings.Contains(result.Content, `"has_more":true`) || !strings.Contains(result.Content, `"total_characters":30`) {
+		test.Fatalf("the first page does not say how to read on: %s", result.Content)
+	}
+	result, err = readWith(test, operations, `{"item_id":"item-one","max_characters":20,"offset":20}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if strings.Contains(result.Content, "next_offset") || !strings.Contains(result.Content, strings.Repeat("é", 10)) {
+		test.Fatalf("the last page is wrong: %s", result.Content)
+	}
+}
+
+func (self *invitationRun) Owner() *models.User { return nil }

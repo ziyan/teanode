@@ -24,7 +24,8 @@ func init() {
 					"thread":         tools.BooleanProperty("read the whole conversation, oldest first"),
 					"include_quoted": tools.BooleanProperty("keep the quoted history inside each message; off by default"),
 					"headers":        tools.BooleanProperty("include every header line and the server's facts about the message — SPF, DKIM, DMARC, the spam filter's score, list and automatic-message markers, a Reply-To or Return-Path elsewhere — for judging whether a message is what it claims"),
-					"max_characters": tools.IntegerProperty("bound per message, 12000 by default"),
+					"max_characters": tools.IntegerProperty("how many characters of each message to read at a time, 12000 by default; a longer message says next_offset"),
+					"offset":         tools.IntegerProperty("start this far into the message item_id names, in characters, to read on from a next_offset; every other message of a thread starts at its beginning"),
 					"invitation":     tools.BooleanProperty("read the calendar invitation this message carried instead of its text: what, where, when, who is asked, and the person's own answer so far; answer it with mail_act answer_invitation"),
 				}, "item_id"),
 				Run: runMailRead,
@@ -38,6 +39,7 @@ type mailReadArguments struct {
 	Thread        bool   `json:"thread"`
 	IncludeQuoted bool   `json:"include_quoted"`
 	MaxCharacters int    `json:"max_characters"`
+	Offset        int    `json:"offset"`
 	Headers       bool   `json:"headers"`
 	Invitation    bool   `json:"invitation"`
 }
@@ -104,7 +106,9 @@ func runMailRead(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		Subject     string   `json:"subject"`
 		Text        string   `json:"text"`
 		Attachments []string `json:"attachments,omitempty"`
-		Truncated   bool     `json:"truncated,omitempty"`
+		HasMore     bool     `json:"has_more,omitempty"`
+		NextOffset  int      `json:"next_offset,omitempty"`
+		Characters  int      `json:"total_characters,omitempty"`
 		Facts       []string `json:"facts,omitempty"`
 		Headers     []string `json:"headers,omitempty"`
 	}
@@ -134,16 +138,20 @@ func runMailRead(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if !arguments.IncludeQuoted {
 			text = tools.StripQuoted(text)
 		}
-		truncated := false
-		if len(text) > limit {
-			text = text[:limit]
-			truncated = true
+		offset := 0
+		if entry.Item.ID == arguments.ItemID {
+			offset = arguments.Offset
 		}
+		page := tools.PageCharacters(text, offset, limit)
+		text = page.Text
 		from := entry.Item.Mail.From
 		if entry.Item.Mail.FromName != "" {
 			from = entry.Item.Mail.FromName + " <" + from + ">"
 		}
-		record := message{ItemID: entry.Item.ID, Folder: entry.FolderName, Date: entry.Item.Mail.ReceivedAt.In(location).Format("2006-01-02 15:04"), From: from, To: entry.Item.Mail.Recipients, Subject: entry.Item.Mail.Subject, Text: text, Truncated: truncated}
+		record := message{ItemID: entry.Item.ID, Folder: entry.FolderName, Date: entry.Item.Mail.ReceivedAt.In(location).Format("2006-01-02 15:04"), From: from, To: entry.Item.Mail.Recipients, Subject: entry.Item.Mail.Subject, Text: text, HasMore: page.HasMore, NextOffset: page.NextOffset}
+		if page.HasMore || offset > 0 {
+			record.Characters = page.TotalCharacters
+		}
 		if content != nil {
 			for number, attachment := range content.Attachments {
 				record.Attachments = append(record.Attachments, fmt.Sprintf("%d. %s (%s, %d bytes)", number+1, attachment.Filename, attachment.ContentType, attachment.Size))

@@ -30,6 +30,7 @@ func init() {
 					"kind":    tools.EnumProperty("arriving or leaving", "incoming", "outgoing"),
 					"since":   tools.StringProperty("an ISO date"),
 					"limit":   tools.IntegerProperty("how many, 20 by default"),
+					"offset":  tools.IntegerProperty("skip this many, to read on from a next_offset"),
 				}, "domain"),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
@@ -41,6 +42,7 @@ func init() {
 						Kind    string `json:"kind"`
 						Since   string `json:"since"`
 						Limit   int    `json:"limit"`
+						Offset  int    `json:"offset"`
 					}](call)
 					if err != nil {
 						return nil, err
@@ -86,16 +88,19 @@ func init() {
 					}
 					// The server cuts the page; asking for everything and
 					// keeping the first few would read a busy domain's whole
-					// log.
-					result, err := operator.Execute(ctx, `query ($domainId: String!, $aggregations: [StageInput!], $pagination: PaginationInput) { ListMails(domainId: $domainId, aggregations: $aggregations, pagination: $pagination) { id sender recipients from subject status kind size receivedAt } }`, map[string]any{"domainId": domain.ID, "aggregations": stages, "pagination": map[string]any{"first": limit}})
+					// log. One more than the page is asked for, to know
+					// whether there is a next page.
+					result, err := operator.Execute(ctx, `query ($domainId: String!, $aggregations: [StageInput!], $pagination: PaginationInput) { ListMails(domainId: $domainId, aggregations: $aggregations, pagination: $pagination) { id sender recipients from subject status kind size receivedAt } }`, map[string]any{"domainId": domain.ID, "aggregations": stages, "pagination": pageOf(limit, arguments.Offset)})
 					if err != nil {
 						return nil, err
 					}
 					mails, _ := result["ListMails"].([]any)
-					if len(mails) > limit {
-						mails = mails[:limit]
+					mails, more := pageRows(mails, limit, arguments.Offset)
+					payload := map[string]any{"domain": domain.Domain, "mails": mails}
+					for key, value := range more {
+						payload[key] = value
 					}
-					answer, err := tools.JSONResult(map[string]any{"domain": domain.Domain, "mails": mails})
+					answer, err := tools.JSONResult(payload)
 					if err != nil {
 						return nil, err
 					}
@@ -129,11 +134,12 @@ func init() {
 			{
 				Name: "mail_audit_content", Family: tools.FamilyAudit, Risk: tools.RiskRead, Permissions: audit,
 				Description: "The text of a message of the audit. Reading somebody else's mail: only when the person asked for that message.",
-				Parameters:  tools.Object(map[string]any{"mail_id": tools.StringProperty("the message"), "max_characters": tools.IntegerProperty("bound, 8000 by default")}, "mail_id"),
+				Parameters:  tools.Object(map[string]any{"mail_id": tools.StringProperty("the message"), "max_characters": tools.IntegerProperty("how many characters to read at a time, 8000 by default; a longer message says next_offset"), "offset": tools.IntegerProperty("start this far into the text, in characters, to read on from a next_offset")}, "mail_id"),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						MailID        string `json:"mail_id"`
 						MaxCharacters int    `json:"max_characters"`
+						Offset        int    `json:"offset"`
 					}](call)
 					if err != nil {
 						return nil, err
@@ -154,10 +160,13 @@ func init() {
 					if limit <= 0 {
 						limit = 8000
 					}
-					if len(text) > limit {
-						text = text[:limit]
+					page := tools.PageCharacters(text, arguments.Offset, limit)
+					payload := map[string]any{"text": page.Text, "total_characters": page.TotalCharacters}
+					if page.HasMore {
+						payload["has_more"] = true
+						payload["next_offset"] = page.NextOffset
 					}
-					answer, err := tools.JSONResult(map[string]any{"text": text})
+					answer, err := tools.JSONResult(payload)
 					if err != nil {
 						return nil, err
 					}
@@ -196,11 +205,12 @@ func init() {
 			{
 				Name: "report_list", Family: tools.FamilyAudit, Risk: tools.RiskRead, Permissions: []models.Permission{models.PermissionReportRead},
 				Description: "DMARC aggregate reports received about a domain: who sent as it, and whether it aligned.",
-				Parameters:  tools.Object(map[string]any{"domain": tools.StringProperty("the domain, by name or id"), "limit": tools.IntegerProperty("how many, 20 by default")}, "domain"),
+				Parameters:  tools.Object(map[string]any{"domain": tools.StringProperty("the domain, by name or id"), "limit": tools.IntegerProperty("how many, 20 by default"), "offset": tools.IntegerProperty("skip this many, to read on from a next_offset")}, "domain"),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
 						Domain string `json:"domain"`
 						Limit  int    `json:"limit"`
+						Offset int    `json:"offset"`
 					}](call)
 					if err != nil {
 						return nil, err
@@ -213,15 +223,17 @@ func init() {
 					if limit <= 0 {
 						limit = 20
 					}
-					result, err := operator.Execute(ctx, `query ($domainId: String!, $pagination: PaginationInput) { ListReports(domainId: $domainId, pagination: $pagination) { id domainId beginAt endAt count ip rdns fromDomain senderDomain } }`, map[string]any{"domainId": domain.ID, "pagination": map[string]any{"first": limit}})
+					result, err := operator.Execute(ctx, `query ($domainId: String!, $pagination: PaginationInput) { ListReports(domainId: $domainId, pagination: $pagination) { id domainId beginAt endAt count ip rdns fromDomain senderDomain } }`, map[string]any{"domainId": domain.ID, "pagination": pageOf(limit, arguments.Offset)})
 					if err != nil {
 						return nil, err
 					}
 					reports, _ := result["ListReports"].([]any)
-					if len(reports) > limit {
-						reports = reports[:limit]
+					reports, more := pageRows(reports, limit, arguments.Offset)
+					payload := map[string]any{"domain": domain.Domain, "reports": reports}
+					for key, value := range more {
+						payload[key] = value
 					}
-					answer, err := tools.JSONResult(map[string]any{"domain": domain.Domain, "reports": reports})
+					answer, err := tools.JSONResult(payload)
 					if err != nil {
 						return nil, err
 					}
@@ -244,4 +256,23 @@ func init() {
 			},
 		)
 	})
+}
+
+// pageOf is the pagination that asks the server for one row more than the
+// page, so a full page can tell whether another follows.
+func pageOf(limit, offset int) map[string]any {
+	page := map[string]any{"first": limit + 1}
+	if offset > 0 {
+		page["offset"] = offset
+	}
+	return page
+}
+
+// pageRows keeps the first limit rows of what pageOf asked for and, when the
+// server had more, says where the next page starts.
+func pageRows(rows []any, limit, offset int) ([]any, map[string]any) {
+	if len(rows) <= limit {
+		return rows, nil
+	}
+	return rows[:limit], map[string]any{"has_more": true, "next_offset": offset + limit}
 }

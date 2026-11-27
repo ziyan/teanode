@@ -25,7 +25,8 @@ func init() {
 					"mailbox":  mailbox.MailboxProperty,
 					"key":      tools.StringProperty("for mute, unmute and leave: the list's key, from a list row"),
 					"matching": tools.StringProperty("for list: words in the list's name, address or key"),
-					"limit":    tools.IntegerProperty("for list: how many rows, 30 by default"),
+					"limit":    tools.IntegerProperty("for list: how many rows of each mailbox, 30 by default"),
+					"offset":   tools.IntegerProperty("for list: skip this many rows of each mailbox, to read on from the next_offset a mailbox gives, with its total"),
 				}, "action"),
 				Guidance: "subscription: a sender that puts no list header on its mail is not in the list: its unsubscribe link is at the foot of the message, so read the message and open that link in the person's browser, saying so first, rather than make a rule that deletes their mail.",
 				RiskOf: func(arguments json.RawMessage) tools.Risk {
@@ -66,6 +67,7 @@ type subscriptionArguments struct {
 	Key      string `json:"key"`
 	Matching string `json:"matching"`
 	Limit    int    `json:"limit"`
+	Offset   int    `json:"offset"`
 }
 
 const subscriptionFields = `{ id key name from count unread lastAt lastItemId oneClick unsubscribe stripped mutedAt }`
@@ -98,6 +100,7 @@ func runSubscription(ctx context.Context, call *tools.Call) (*tools.Result, erro
 			limit = 30
 		}
 		var rows []map[string]any
+		var mailboxes []map[string]any
 		for _, view := range targets {
 			var result struct {
 				ListMailboxSubscriptions struct {
@@ -105,13 +108,19 @@ func runSubscription(ctx context.Context, call *tools.Call) (*tools.Result, erro
 					Total         int64                        `json:"total"`
 				} `json:"ListMailboxSubscriptions"`
 			}
-			variables := map[string]any{"mailboxId": view.Mailbox.ID, "first": limit}
+			variables := map[string]any{"mailboxId": view.Mailbox.ID, "first": limit, "offset": arguments.Offset}
 			if arguments.Matching != "" {
 				variables["matching"] = arguments.Matching
 			}
-			if err := operations.Execute(ctx, `query ($mailboxId: String!, $first: Int, $matching: String) { ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, matching: $matching) { subscriptions `+subscriptionFields+` total } }`, variables, &result); err != nil {
+			if err := operations.Execute(ctx, `query ($mailboxId: String!, $first: Int, $offset: Int, $matching: String) { ListMailboxSubscriptions(mailboxId: $mailboxId, first: $first, offset: $offset, matching: $matching) { subscriptions `+subscriptionFields+` total } }`, variables, &result); err != nil {
 				return nil, err
 			}
+			shown := len(result.ListMailboxSubscriptions.Subscriptions)
+			summary := map[string]any{"mailbox": view.Mailbox.Name, "total": result.ListMailboxSubscriptions.Total, "shown": shown}
+			if next := arguments.Offset + shown; int64(next) < result.ListMailboxSubscriptions.Total {
+				summary["next_offset"] = next
+			}
+			mailboxes = append(mailboxes, summary)
 			for _, subscription := range result.ListMailboxSubscriptions.Subscriptions {
 				rows = append(rows, map[string]any{
 					"mailbox": view.Mailbox.Name, "key": subscription.Key, "name": subscription.Name, "from": subscription.From,
@@ -123,7 +132,7 @@ func runSubscription(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		if rows == nil {
 			rows = []map[string]any{}
 		}
-		result, err := tools.JSONResult(map[string]any{"rows": rows})
+		result, err := tools.JSONResult(map[string]any{"rows": rows, "mailboxes": mailboxes})
 		if err != nil {
 			return nil, err
 		}
