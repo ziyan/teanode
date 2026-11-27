@@ -673,6 +673,8 @@ final class ConversationModel {
                 app.openedConversationId = opened
                 return
             }
+            // An idea that started a goal has no opening request.
+            if started.openingRequest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
             await sendSuggestion(started.openingRequest)
         } catch {
             sendProblemText = app.describe(error)

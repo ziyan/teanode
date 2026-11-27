@@ -1148,7 +1148,10 @@ export function openAgentDrawer(): boolean {
 
 // sendToAgentConversation opens a conversation in the drawer and sends a
 // message there as the person's own, so the turn is running when it opens.
+// An empty message (an idea that started a goal has none) only opens the
+// conversation: nothing is sent into it.
 export function sendToAgentConversation(conversationId: string, message: string): boolean {
+  if (message.trim() === '') return openAgentConversation(conversationId)
   const detail: AgentOpenDetail = { conversationId, draft: message, shouldSendDraft: true, handled: false }
   window.dispatchEvent(new CustomEvent<AgentOpenDetail>(AGENT_OPEN_EVENT, { detail }))
   return detail.handled

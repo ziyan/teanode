@@ -35,3 +35,9 @@ func SetStopGrace(grace time.Duration) time.Duration {
 	stopGrace = grace
 	return previous
 }
+
+// IsPersonsOwnGoalForTest is whether a turn the goal wakes counts as the
+// person asking.
+func IsPersonsOwnGoalForTest(goal *models.AgentConversation) bool {
+	return isPersonsOwnGoal(goal)
+}

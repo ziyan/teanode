@@ -465,7 +465,7 @@ func (self *Agent) StartIdea(ctx context.Context, tx db.Transaction, agent *mode
 				return nil, nil, err
 			}
 			if existing != nil {
-				return &localized, existing, nil
+				return withoutOpeningRequestForGoal(&localized, existing), existing, nil
 			}
 		}
 	default:
@@ -505,7 +505,24 @@ func (self *Agent) StartIdea(ctx context.Context, tx db.Transaction, agent *mode
 		return nil
 	})
 	localizeIdeas([]*models.AgentIdea{started}, language)
-	return started, conversation, err
+	if err != nil {
+		return nil, nil, err
+	}
+	return withoutOpeningRequestForGoal(started, conversation), conversation, nil
+}
+
+// withoutOpeningRequestForGoal clears the opening request of the idea given
+// back when it started a goal (the daily brief). The clients send the
+// opening request into the conversation as the person's message, and a
+// goal's own conversation has nothing to be asked: the goal is already
+// running. The stored idea keeps its words.
+func withoutOpeningRequestForGoal(idea *models.AgentIdea, conversation *models.AgentConversation) *models.AgentIdea {
+	if conversation == nil || conversation.Kind != models.AgentConversationGoal {
+		return idea
+	}
+	copied := *idea
+	copied.OpeningRequest = ""
+	return &copied
 }
 
 // SetIdeaStatus is the person saying what became of an idea: done,

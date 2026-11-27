@@ -159,6 +159,13 @@ type AskSettings struct {
 	Headless  bool
 	MaxRounds int
 
+	// CallLimits is how many times the turn may call each named tool. A
+	// call past the limit is answered with an error and does not run, so a
+	// turn that other people ask for, on the owner's money, has a bound the
+	// model cannot talk its way past. A tool not named has none. Only a
+	// member turn in a chat sets it (chat_turn.go).
+	CallLimits map[string]int
+
 	// IsFetchLimitedToSearched holds web_fetch to the addresses a
 	// web_search in this turn returned. For a turn nobody is present for
 	// that reads what strangers wrote: an address it makes up can carry
@@ -448,6 +455,12 @@ type AskRun struct {
 	// waiting on is closed with it. A turn ended any other way -- a
 	// deploy, a deadline -- leaves its cards open for later.
 	isStoppedByPerson atomic.Bool
+
+	// callCounts is how many times each tool in settings.CallLimits has
+	// been called, under callCountsMutex since the calls of a round run
+	// together.
+	callCounts      map[string]int
+	callCountsMutex sync.Mutex
 
 	// changingCallAnswers is what each call that changes something last
 	// answered in this turn, by repeatedCallKey, so the same change sent
@@ -2190,6 +2203,9 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 			}
 		}
 		return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "there is no tool named %s"}`, toolCall.Name))}
+	}
+	if !self.takeCallAllowance(tool.Name) {
+		return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "this run may call %s at most %d times and has used them all; answer with what you have"}`, tool.Name, self.settings.CallLimits[tool.Name]))}
 	}
 	// The intention is the apps' and not the tool's: a tool that reads
 	// its arguments strictly would refuse it, and the same call with other

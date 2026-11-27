@@ -44,12 +44,27 @@ func (self *guardTimeout) Unwrap() error {
 	return context.DeadlineExceeded
 }
 
+// IsProviderTimeout says whether err is one of the two clocks above running
+// out: the provider went quiet or did not finish answering. It is a deadline
+// exceeded to errors.Is, yet it is the provider failing, not the work being
+// stopped, and a caller that requeues deadlines freely must still count it.
+func IsProviderTimeout(err error) bool {
+	var timeout *guardTimeout
+	return errors.As(err, &timeout)
+}
+
+// NewProviderTimeout is the error a clock above reports, with the sentence
+// that says which ran out.
+func NewProviderTimeout(message string) error {
+	return &guardTimeout{message: message}
+}
+
 func idleTimeoutOf(idle time.Duration) error {
-	return &guardTimeout{message: fmt.Sprintf("nothing arrived from the provider for %s", idle)}
+	return NewProviderTimeout(fmt.Sprintf("nothing arrived from the provider for %s", idle))
 }
 
 func plainTimeoutOf(total time.Duration) error {
-	return &guardTimeout{message: fmt.Sprintf("the provider did not finish answering within %s", total)}
+	return NewProviderTimeout(fmt.Sprintf("the provider did not finish answering within %s", total))
 }
 
 // reportTimeout turns the cancellation a clock caused into the reason it

@@ -531,3 +531,43 @@ func TestATurnIsToldWhereThePersonIsAndWhatIsOpen(t *testing.T) {
 		t.Fatalf("the location should be read once a turn, not %d times", reads)
 	}
 }
+
+// The person moving the times of a built-in goal (the daily brief's) leaves
+// it built in: written by the person, with times and no mail conditions, it
+// would count as their own and may use Passwords, while the brief reads mail
+// that strangers wrote. A goal the agent wrote still becomes the person's.
+func TestAPersonEditingABuiltInGoalLeavesItBuiltIn(t *testing.T) {
+	world := startGoalWorld(t, nil, "")
+	defer world.close()
+	start := func(title, writer string) *models.AgentConversation {
+		goal, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+			return world.worker.StartGoal(tx, world.found, world.owner, &agent.GoalStart{
+				GoalTitle: title, GoalDescription: "Tell me about today.", GoalTimes: []string{"30 7 * * 1-5"}, GoalWrittenBy: writer,
+			})
+		})
+		if err != nil {
+			t.Fatalf("StartGoal: %s", err)
+		}
+		return goal
+	}
+	edit := func(goal *models.AgentConversation) *models.AgentConversation {
+		times := []string{"0 9 * * 1-5"}
+		edited, err := inTransaction(t, world.database, func(tx db.Transaction) (*models.AgentConversation, error) {
+			return world.worker.UpdateGoal(tx, world.found, world.owner, goal.ID, &agent.GoalChange{GoalTimes: &times, GoalWrittenBy: models.WrittenByPerson})
+		})
+		if err != nil {
+			t.Fatalf("UpdateGoal: %s", err)
+		}
+		return edited
+	}
+	brief := edit(start("Daily brief", models.WrittenByBuiltIn))
+	if brief.GoalWrittenBy != models.WrittenByBuiltIn || len(brief.GoalTimes) != 1 || brief.GoalTimes[0] != "0 9 * * 1-5" {
+		t.Errorf("the edited brief is written by %q at %v, want built_in at the new time", brief.GoalWrittenBy, brief.GoalTimes)
+	}
+	if agent.IsPersonsOwnGoalForTest(brief) {
+		t.Errorf("the edited brief counts as the person's own")
+	}
+	if theirs := edit(start("Refund", models.WrittenByAgent)); theirs.GoalWrittenBy != models.WrittenByPerson {
+		t.Errorf("an agent's goal the person edited is written by %q, want person", theirs.GoalWrittenBy)
+	}
+}

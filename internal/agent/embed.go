@@ -151,11 +151,6 @@ func (self *Agent) meaningSearch(ctx context.Context, agent *models.Agent, mailb
 	if len(candidates) == 0 {
 		return nil, nil
 	}
-	// Past the person's daily limit or the server's monthly one the search
-	// is by words alone, as it is where there is no embedding model.
-	if agent != nil && !self.isBudgetLeftToEmbed(ctx, agent.ID) {
-		return nil, nil
-	}
 	vectors, usage, err := selection.Embedder.Embed(ctx, llm.EmbedRequest{
 		Model: selection.Model, Inputs: []string{strings.TrimSpace(query)},
 		Dimensions: selection.Dimensions,

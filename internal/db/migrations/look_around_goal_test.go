@@ -11,7 +11,7 @@ import (
 // built in, at the day and time its settings named (Thursday at 17:00 when
 // they named none). One that had alerts off, or was switched off, gets none,
 // and the job's queued runs go. Run again it makes nothing twice, and its
-// reverse takes the goals away and leaves one the person has since reworded.
+// reverse takes away only the goals still as the migration made them.
 func TestTheLookAroundMigrationMakesAGoalForEachAgentThatWasLookingAround(t *testing.T) {
 	t.Parallel()
 
@@ -80,14 +80,37 @@ func TestTheLookAroundMigrationMakesAGoalForEachAgentThatWasLookingAround(t *tes
 		t.Errorf("%s look around jobs are still queued", got)
 	}
 
-	// The person rewords one: it is theirs now, and the reverse leaves it.
-	dbtest.Exec(t, database, `UPDATE "agent_conversation" SET "goal_written_by" = 'person' WHERE "agent_id" = 'around-chosen-agent' AND "goal_title" = 'Look around'`)
+	// The reverse takes away only goals still exactly as the migration made
+	// them. One the person reworded (written by them), paused, moved to
+	// another time or given other words is theirs, with its history, and
+	// stays.
+	update := func(agent, set string) {
+		dbtest.Exec(t, database, `UPDATE "agent_conversation" SET `+set+` WHERE "agent_id" = '`+agent+`' AND "goal_title" = 'Look around'`)
+	}
+	update("around-chosen-agent", `"goal_written_by" = 'person'`)
+	update("around-default-agent", `"goal_state" = 'paused'`)
 	reverse, err := os.ReadFile("0285_look_around_goal.reverse.sql")
 	if err != nil {
 		t.Fatalf("ReadFile: %s", err)
 	}
 	dbtest.Exec(t, database, string(reverse))
-	if got := count(`true`); got != "1" {
-		t.Errorf("%s look around goals are left after the reverse, want the one the person reworded", got)
+	if got := count(`true`); got != "2" {
+		t.Errorf("%s look around goals are left after the reverse, want the reworded and the paused one", got)
+	}
+	if got := count(`"agent_id" = 'around-bad-zone-agent'`); got != "0" {
+		t.Errorf("a goal exactly as made was left: %s", got)
+	}
+
+	// Moved to another time, or given other words, they stay as well.
+	dbtest.Exec(t, database, string(forward))
+	update("around-bad-zone-agent", `"goal_times" = '["0 9 * * 1"]'::jsonb`)
+	dbtest.Exec(t, database, string(reverse))
+	if got := count(`"agent_id" = 'around-bad-zone-agent'`); got != "1" {
+		t.Errorf("a goal moved to another time was deleted: %s", got)
+	}
+	update("around-bad-zone-agent", `"goal_times" = '["0 17 * * 4"]'::jsonb, "goal" = "goal" || ' Also the library.'`)
+	dbtest.Exec(t, database, string(reverse))
+	if got := count(`"agent_id" = 'around-bad-zone-agent'`); got != "1" {
+		t.Errorf("a goal with other words was deleted: %s", got)
 	}
 }

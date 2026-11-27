@@ -52,11 +52,20 @@ type ChatTurn struct {
 	IsMemberTurn bool
 }
 
-// memberTurnsWaitingMost is how many turns of an agent in one chat may be
-// running or waiting before a question from somebody else is refused. It is
-// a queue length; the owner's daily and monthly cost limits are what bound
-// what a member's turns spend.
-const memberTurnsWaitingMost = 3
+// The bounds of a member turn. They protect the owner from other people's
+// use: a member's turn is somebody else's choice to spend the owner's money,
+// and in a deployment where the owner's model costs nothing in the daily
+// accounting no budget would ever stop it. They are not caps on the owner's
+// own work, which has none.
+const (
+	memberTurnMaximumRounds = 8
+	memberTurnSearches      = 6
+	memberTurnFetches       = 6
+
+	// memberTurnsWaitingMost is how many turns of an agent in one chat may be
+	// running or waiting before a question from somebody else is refused.
+	memberTurnsWaitingMost = 3
+)
 
 // ErrAgentBusy says an agent has as many turns waiting in a chat as it takes
 // from other people.
@@ -122,6 +131,8 @@ func applyChatSettings(settings *AskSettings) error {
 	settings.Pictures = nil
 	settings.ReadOnlyTools = nil
 	settings.Research = false
+	settings.MaxRounds = memberTurnMaximumRounds
+	settings.CallLimits = map[string]int{"web_search": memberTurnSearches, "web_fetch": memberTurnFetches}
 	return nil
 }
 

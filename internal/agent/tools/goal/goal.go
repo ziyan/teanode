@@ -359,11 +359,16 @@ func operate(ctx context.Context, document string, variables map[string]any, ope
 // interval is how long until the next turn: what the model asked for, used
 // as given. A model that gives no number gets the default rather than a
 // refusal, since the turn is over by the time this is called and a refusal
-// would leave the goal with no next time at all; a number of zero or less
-// is the next tick.
+// would leave the goal with no next time at all.
+//
+// A wait is never shorter than a minute. This is a loop guard, not a limit
+// on how often work may happen: a number of zero or less would otherwise
+// book the next turn at once and the goal would take a turn at every
+// sweep. A turn takes about a minute anyway, and it is the same minute a
+// goal already waits after the person or another turn.
 func interval(minutes *int) time.Duration {
 	if minutes == nil {
 		return DefaultInterval
 	}
-	return time.Duration(max(*minutes, 0)) * time.Minute
+	return time.Duration(max(*minutes, 1)) * time.Minute
 }

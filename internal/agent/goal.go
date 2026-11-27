@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -267,6 +269,32 @@ func goalBehindTurn(now time.Time) error {
 	return &Deferral{Until: now.Add(goalAfterOtherTurn), Reason: "another turn is running in the conversation"}
 }
 
+// isLookAroundGoal is whether the goal is the one the look around migration
+// wrote for the agent: built in, and with the id that migration made from the
+// agent's (an "la" and 24 characters of the md5 of "look-around:" and the
+// agent's id). The id is the reliable mark: the title is the person's to
+// rename, and an id of this form is never made for any other goal. The turn
+// of this goal searches the web for the town and is shown nothing of the
+// person's own page, as the job it replaced was.
+func isLookAroundGoal(goal *models.AgentConversation) bool {
+	if !isBuiltInGoal(goal) {
+		return false
+	}
+	sum := md5.Sum([]byte("look-around:" + goal.AgentID))
+	return goal.ID == "la"+hex.EncodeToString(sum[:])[:24]
+}
+
+// protectGoalTurn holds the turn of a built-in goal to what its job always
+// was held to: web_fetch only opens addresses its own web_search returned,
+// because built-in goals read what strangers wrote (mail, pages). This is a
+// guard against injection, not a limit on the work. The look around goal,
+// which searches the web for the town, is also shown nothing of the
+// person's own page, so nothing about them can leave in a search.
+func protectGoalTurn(settings *AskSettings, goal *models.AgentConversation) {
+	settings.IsFetchLimitedToSearched = isBuiltInGoal(goal)
+	settings.IsPersonOmitted = isLookAroundGoal(goal)
+}
+
 // goalTurn runs one headless turn in the person's conversation and waits
 // for it, answering with what went wrong when something did.
 func (self *Agent) goalTurn(ctx context.Context, run *Run, operations Operations, conversation *models.AgentConversation, message string, allow map[string]bool, rounds int) (string, error) {
@@ -274,13 +302,15 @@ func (self *Agent) goalTurn(ctx context.Context, run *Run, operations Operations
 	// as their own standing instruction is; one the agent wrote is not, and
 	// Passwords says how to make it theirs.
 	isPersonsOwn := isPersonsOwnGoal(conversation)
-	turn, err := self.Ask(&AskSettings{
+	settings := &AskSettings{
 		Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation,
 		Message: message, Surface: "goal", Headless: true, Allow: allow,
 		UsageKind: string(models.AgentJobGoal), MaxRounds: rounds,
 		IsPersonsGoal: isPersonsOwn, IsAgentsGoal: !isPersonsOwn && !isBuiltInGoal(conversation),
 		shouldYieldToRunningTurn: true,
-	})
+	}
+	protectGoalTurn(settings, conversation)
+	turn, err := self.Ask(settings)
 	if err != nil {
 		return "", err
 	}

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -74,5 +75,33 @@ func TestReachingTheBoundDoesNotConsumeFailureAllowance(test *testing.T) {
 	failed := outcomeForJob(&models.AgentJob{FailureCount: 3}, fmt.Errorf("the model refused"), time.Now())
 	if failed.FailureCount != 4 || failed.NotBefore == nil {
 		test.Errorf("a real failure still waits its turn: %+v", failed)
+	}
+}
+
+// A provider that goes quiet is a deadline to errors.Is, but it is the
+// provider failing: it takes the retry ladder and ends dead, where the job's
+// own bound or a shutdown goes back in the queue with no mark against it.
+func TestAHangingProviderCountsAsAFailure(test *testing.T) {
+	finishedAt := time.Unix(1000, 0)
+	job := &models.AgentJob{}
+	hung := fmt.Errorf("asking: %w", llm.NewProviderTimeout("nothing arrived from the provider for 3m0s"))
+	for failureCount := 1; failureCount <= len(retryLadder)+1; failureCount++ {
+		outcome := outcomeForJob(job, hung, finishedAt)
+		if outcome.FailureCount != failureCount {
+			test.Fatalf("failure count: %+v", outcome)
+		}
+		if failureCount <= len(retryLadder) && (outcome.JobStatus != models.AgentJobQueued || outcome.NotBefore == nil) {
+			test.Fatalf("a hung provider is retried after a wait: %+v", outcome)
+		}
+		if failureCount > len(retryLadder) && outcome.JobStatus != models.AgentJobDead {
+			test.Fatalf("a provider that always hangs ends dead: %+v", outcome)
+		}
+		job.FailureCount = outcome.FailureCount
+	}
+	for name, cause := range map[string]error{"shutdown": context.Canceled, "the job's own bound": context.DeadlineExceeded} {
+		outcome := outcomeForJob(&models.AgentJob{}, fmt.Errorf("working: %w", cause), finishedAt)
+		if outcome.JobStatus != models.AgentJobQueued || outcome.FailureCount != 0 || outcome.NotBefore != nil {
+			test.Errorf("%s requeues freely: %+v", name, outcome)
+		}
 	}
 }

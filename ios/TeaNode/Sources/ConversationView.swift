@@ -554,6 +554,8 @@ struct ConversationFollowing: ViewModifier {
             .onChange(of: app.openingRequest, initial: true) { _, opening in
                 guard let opening, opening.conversationId == model.conversationId else { return }
                 app.openingRequest = nil
+                // An idea that started a goal has no opening request.
+                if opening.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
                 Task { await model.sendSuggestion(opening.text) }
             }
             .onChange(of: scenePhase) { _, phase in

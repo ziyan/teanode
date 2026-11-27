@@ -476,6 +476,13 @@ func TestTheDailyBriefIdeaStartsTheGoal(t *testing.T) {
 		if err != nil || started.IdeaStatus != models.IdeaStarted || goal == nil || started.StartedConversationID != goal.ID {
 			t.Fatalf("started: %+v %+v %v", started, goal, err)
 		}
+		if started.OpeningRequest != "" {
+			t.Fatalf("a goal starting idea has nothing to send into the goal's conversation: %q", started.OpeningRequest)
+		}
+		again, _, err := worker.StartIdea(t.Context(), tx, run.Agent, ideas[0].ID, "", "")
+		if err != nil || again.OpeningRequest != "" {
+			t.Fatalf("started again, it still has nothing to send: %+v %v", again, err)
+		}
 		if goal.Kind != models.AgentConversationGoal || goal.GoalTitle != BriefGoalTitle || len(goal.GoalTimes) != 1 || goal.GoalTimes[0] != "30 7 * * 1-5" ||
 			goal.GoalWrittenBy != models.WrittenByBuiltIn || !goal.IsGoalNotifiedWhenPosted || goal.GoalState != models.GoalWorking {
 			t.Fatalf("the idea started the daily brief goal: %+v", goal)

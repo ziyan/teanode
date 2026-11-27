@@ -153,6 +153,7 @@ type Agent struct {
 	lastDream                            time.Time
 	lastSpeak                            time.Time
 	tripLooks                            map[string]*tripLook
+	tripLooksMutex                       sync.Mutex
 	lastWatch                            time.Time
 	lastFollowUpSweep                    time.Time
 	lastFollowUpBackfill                 time.Time

@@ -40,8 +40,10 @@ How often work starts:
 
 - **A goal's wait.** `goaltool.Soonest` (5 minutes) and `Latest` (a day) and
   their clamp in `interval()` are gone. The wait a goal asks for is the wait it
-  gets. A wait of zero or less is the next tick, and a goal that never gave one
-  keeps `DefaultInterval` (30 minutes).
+  gets, except that it is never under a minute: a wait of zero or less is a
+  minute, a loop guard rather than a limit, since a turn takes about that long
+  and it is the minute a goal already waits after the person or another turn.
+  A goal that never gave one keeps `DefaultInterval` (30 minutes).
 - **Doubling.** `goalDoubled` is gone. A turn that made no goal call, or
   failed, keeps the wait the goal had (`goalKeptWait`).
 - **Stalling.** `GoalTurnsAlone` (24) and the stall it caused are gone.
@@ -68,14 +70,19 @@ How much work runs:
   model answers, the budget defers it, the loop guard stops it or the person
   stops it. A call built for one answer (a title, a summary) still takes one
   round, and the goal's second ask, which offers the goal tool alone, two.
-- **Member turns.** `memberTurnMaximumRounds`, `memberTurnSearches` and
-  `memberTurnFetches` are gone. The owner's cost limits pay for them;
-  `memberTurnsWaitingMost` stays, because it is a queue length.
+- **Member turns keep their caps.** `memberTurnMaximumRounds` (8),
+  `memberTurnSearches` (6) and `memberTurnFetches` (6) stay, with
+  `memberTurnsWaitingMost`. A member's turn is somebody else's choice to spend
+  the owner's money, and where the owner's model costs nothing in the daily
+  accounting (a plan model) no budget would ever stop it. They protect the
+  owner from other people's use; they are not caps on the owner's own work,
+  which has none.
 - **The journal job.** `journalRoundsMost` (5) is gone: the job goes on until
   nothing it has not tried is waiting.
 - **Dreams.** `DreamShare` (0.3) is gone. A night is bounded by the person's
   daily limit like everything else, less what the day has already spent.
 - **Embeddings.** `EmbeddingTokensPerDay`, which nothing read, is gone.
+  Embedding never waits on the daily budget (see Budget coverage).
 
 Two settings pages become goals:
 
@@ -135,7 +142,11 @@ every provider, by two clocks in `internal/llm/timing.go`:
 
 The HTTP clients carry no timeout of their own, since a client timeout bounds
 the whole of a response. Both cuts report `context.DeadlineExceeded`, as the
-old one did, with a sentence that says which clock ran out.
+old one did, with a sentence that says which clock ran out, and as their own
+error type (`llm.IsProviderTimeout` recognizes it). The job policy counts that type as a failure,
+with the normal backoff and dead letter, since a provider that hangs would
+otherwise requeue its job for ever; a cancellation or a shutdown still
+requeues without counting.
 
 The removed YAML keys load with a warning through `deprecatedLimits`. The
 removed GraphQL fields keep answering zero or empty for one release and are
@@ -162,11 +173,12 @@ None of these is a count of how often or how much work runs:
 
 Every kind of work that calls a model checks the daily and monthly limits first
 (`RequireBudget` or `CheckBudget`), which is what makes them the catch-all.
-Reading the code for this decision found three places that did not:
+Reading the code for this decision found two places that did not, one of which was left alone on purpose:
 
-- query-time embeddings (`embed` in `graph_embedding.go`, and the search by
-  meaning in `embed.go`), which now say "compare by words alone" past the limit,
-  as they do where there is no embedding model;
+- embeddings are deliberately not checked, here or at ingest: they stay
+  outside the daily allowance, as `ingest_embedding.go` explains (a first
+  archive load is about 100 million tokens and costs cents). A check added
+  at query time (`graph_embedding.go`, `embed.go`) was taken out again;
 - the title and summary of a conversation (`describe.go`), which now waits and
   marks nothing, so the next look tries again;
 - the recording sub-steps (`recording_accurate.go`, `recording_speaker_merge.go`)

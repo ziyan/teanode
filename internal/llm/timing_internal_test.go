@@ -300,3 +300,21 @@ func TestASignedInStreamIsCutOnlyWhenItGoesSilent(test *testing.T) {
 		test.Fatalf("a silent signed-in stream: %v", failure)
 	}
 }
+
+// Both clocks' errors are recognized as the provider timing out, and a plain
+// deadline or cancellation is not.
+func TestProviderTimeoutsAreRecognized(t *testing.T) {
+	for name, want := range map[string]struct {
+		err error
+		is  bool
+	}{
+		"idle":      {idleTimeoutOf(time.Minute), true},
+		"plain":     {fmt.Errorf("wrapped: %w", plainTimeoutOf(time.Minute)), true},
+		"deadline":  {context.DeadlineExceeded, false},
+		"cancelled": {context.Canceled, false},
+	} {
+		if got := IsProviderTimeout(want.err); got != want.is {
+			t.Errorf("%s: %v, want %v", name, got, want.is)
+		}
+	}
+}
