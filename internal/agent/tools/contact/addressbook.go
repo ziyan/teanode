@@ -28,6 +28,8 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"action":          tools.EnumProperty("what to do", "list", "get", "save", "remove", "remove-picture", "link-account", "unlink-account"),
 					"query":           tools.StringProperty("for list: narrow to contacts whose name, organization, address or number matches"),
+					"limit":           tools.IntegerProperty("for list: how many contacts to read at a time, 200 by default"),
+					"offset":          tools.IntegerProperty("for list: skip this many contacts, to read on from a next_offset"),
 					"id":              tools.StringProperty("for get, remove, remove-picture, and for changing one that is kept: the contact's id, as list gives it"),
 					"contact_id":      tools.StringProperty("for link-account and unlink-account: the contact's id, as list gives it"),
 					"address_book_id": tools.StringProperty("for get, remove, remove-picture, link-account and unlink-account: the address book the contact is in, as list gives it; a contact is named only within its book, so name it when you have more than one. The one you were given when left out"),
@@ -91,6 +93,8 @@ func init() {
 type contactBookArguments struct {
 	Action       string   `json:"action"`
 	Query        string   `json:"query"`
+	Limit        int      `json:"limit"`
+	Offset       int      `json:"offset"`
 	ID           string   `json:"id"`
 	Name         string   `json:"name"`
 	Organization string   `json:"organization"`
@@ -256,12 +260,24 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 			ListContacts []*contactView `json:"ListContacts"`
 		}
 		if err := operations.Execute(ctx, documentBookContacts, map[string]any{
-			"addressBookId": book.ID, "query": emptyToNil(arguments.Query), "first": 200,
+			"addressBookId": book.ID, "query": emptyToNil(arguments.Query),
 		}, &answer); err != nil {
 			return nil, err
 		}
+		// The API answers the whole book (or everything the query matches),
+		// and the page is cut here, so the total is known and the rest is
+		// one offset away.
+		limit := arguments.Limit
+		if limit <= 0 {
+			limit = defaultContactsPerPage
+		}
+		offset := min(max(arguments.Offset, 0), len(answer.ListContacts))
+		end := min(offset+limit, len(answer.ListContacts))
 		answered := map[string]any{
-			"contacts": answer.ListContacts, "kept": len(answer.ListContacts),
+			"contacts": answer.ListContacts[offset:end], "kept": len(answer.ListContacts),
+		}
+		if end < len(answer.ListContacts) {
+			answered["next_offset"] = end
 		}
 		// Offered, never acted on: the person confirms each one. A failure
 		// here only leaves the line out, since the list is good without it.
@@ -276,11 +292,8 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 			} `json:"ListContactAccountSuggestions"`
 		}
 		if err := operations.Execute(ctx, documentBookSuggestions, nil, &suggestions); err == nil && len(suggestions.ListContactAccountSuggestions) > 0 {
-			offered := make([]map[string]any, 0, maximumSuggestionsShown)
+			offered := make([]map[string]any, 0, len(suggestions.ListContactAccountSuggestions))
 			for _, suggestion := range suggestions.ListContactAccountSuggestions {
-				if len(offered) == maximumSuggestionsShown {
-					break
-				}
 				// The book is what link-account takes with the contact, and
 				// is named when there is more than one to tell apart.
 				offer := map[string]any{
@@ -304,7 +317,7 @@ func runContactBook(ctx context.Context, call *tools.Call) (*tools.Result, error
 		if err != nil {
 			return nil, err
 		}
-		result.Note = fmt.Sprintf("read the address book (%d)", len(answer.ListContacts))
+		result.Note = fmt.Sprintf("read the address book (%d of %d)", end-offset, len(answer.ListContacts))
 		return result, nil
 
 	case "get":
@@ -485,8 +498,9 @@ func requireContactInBook(ctx context.Context, operations tools.Operations, give
 	return answer.GetContact.AddressBookID, nil
 }
 
-// maximumSuggestionsShown bounds the links list offers to the person at once.
-const maximumSuggestionsShown = 10
+// defaultContactsPerPage is how many contacts list reads at a time when it is
+// not told; the rest is a next_offset away.
+const defaultContactsPerPage = 200
 
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {

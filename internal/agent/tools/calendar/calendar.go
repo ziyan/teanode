@@ -31,6 +31,7 @@ func init() {
 					"owner": tools.StringProperty("a username to read the calendar they shared with the person, or 'everyone' for every calendar shared with the person " +
 						"and their circles' calendars; leave out for the person's own. Each entry says whose it is and shows only as much as was shared: " +
 						"a title, everything, or just 'busy'"),
+					"offset": tools.IntegerProperty("how many entries to pass over, to read on from a next_offset: a long agenda is answered a page at a time"),
 				}),
 				Run: runAgenda,
 			},
@@ -555,6 +556,10 @@ type windowArguments struct {
 
 	// With are the people free_together asks about, by username.
 	With []string `json:"with"`
+
+	// Offset is how many entries of an agenda to pass over, to read on from
+	// where a page of it ended.
+	Offset int `json:"offset"`
 }
 
 // window is the stretch a caller asked about, in the zone the person keeps
@@ -590,9 +595,6 @@ func window(arguments windowArguments, zone string) (time.Time, time.Time, *time
 	}
 	if !until.After(from) {
 		return time.Time{}, time.Time{}, nil, fmt.Errorf("the window ends before it begins")
-	}
-	if until.Sub(from) > 366*24*time.Hour {
-		return time.Time{}, time.Time{}, nil, fmt.Errorf("that is more than a year; ask about a shorter stretch")
 	}
 	return from, until, where, nil
 }
@@ -685,12 +687,7 @@ func runAgenda(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		rows = append(rows, row)
 	}
-	result, err := tools.JSONResult(map[string]any{
-		"timezone": where.String(),
-		"from":     from.Format("2006-01-02"),
-		"until":    until.Format("2006-01-02"),
-		"events":   rows,
-	})
+	result, err := tools.JSONResult(agendaPage(run, where, from, until, rows, arguments.Offset))
 	if err != nil {
 		return nil, err
 	}
@@ -699,6 +696,42 @@ func runAgenda(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	// information, not this server's word.
 	result.Untrusted = true
 	return result, nil
+}
+
+// agendaReserve is the room an agenda page keeps, in bytes, for what is
+// around its entries.
+const agendaReserve = 600
+
+// agendaPage is the answer of an agenda: the entries from offset on that fit
+// in what the run keeps of a result, and, when there are more, how many and
+// the offset that reads them. At least one entry is always given.
+func agendaPage(run tools.Run, where *time.Location, from, until time.Time, rows []map[string]any, offset int) map[string]any {
+	offset = min(max(offset, 0), len(rows))
+	budget := tools.ResultCharactersOf(run) - agendaReserve
+	end := offset
+	size := 0
+	for end < len(rows) {
+		encoded, err := json.Marshal(rows[end])
+		if err != nil {
+			break
+		}
+		size += len(encoded) + 1
+		if size > budget && end > offset {
+			break
+		}
+		end++
+	}
+	answer := map[string]any{
+		"timezone": where.String(),
+		"from":     from.Format("2006-01-02"),
+		"until":    until.Format("2006-01-02"),
+		"events":   rows[offset:end],
+	}
+	if end < len(rows) {
+		answer["more_events"] = len(rows) - end
+		answer["next_offset"] = end
+	}
+	return answer
 }
 
 // parsedStart is the moment an entry begins, as it was written.

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
@@ -73,8 +72,6 @@ func TestTheCatalogIsWrittenToTheRules(t *testing.T) {
 			switch {
 			case !ok || words.Headline == "" || words.Body == "" || words.OpeningRequest == "":
 				t.Errorf("%s has no %s words", entry.IdeaKey, language)
-			case utf8.RuneCountInString(words.Headline) > ideaHeadlineMostRuneCount || utf8.RuneCountInString(words.Body) > ideaBodyMostRuneCount:
-				t.Errorf("%s is too long in %s", entry.IdeaKey, language)
 			}
 		}
 	}
@@ -116,7 +113,10 @@ func TestAnIdeaPromisesOnlyWhatItsToolsDo(t *testing.T) {
 		{"an emoji of another area", func(idea *models.AgentIdea) { idea.Emoji = "🎲" }, "not one of the emoji"},
 		{"no evidence", func(idea *models.AgentIdea) { idea.Evidence = nil }, "needs the evidence"},
 		{"evidence of no kind", func(idea *models.AgentIdea) { idea.Evidence[0].EvidenceKind = "rumor" }, "not a kind of evidence"},
-		{"a headline too long", func(idea *models.AgentIdea) { idea.Headline = strings.Repeat("a", 81) }, "longer than 80"},
+		{"a long headline is kept whole", func(idea *models.AgentIdea) { idea.Headline = strings.Repeat("a", 200) }, ""},
+		{"a long body is kept whole", func(idea *models.AgentIdea) {
+			idea.Body = "Nothing is sent until you approve it. " + strings.Repeat("b", 600)
+		}, ""},
 		{"no request to start it", func(idea *models.AgentIdea) { idea.OpeningRequest = " " }, "request that starts it"},
 		{"a reason that is a letter", func(idea *models.AgentIdea) { idea.SuggestionReason = strings.Repeat("do this ", 30) }, "reason is longer"},
 		{"evidence that is a letter", func(idea *models.AgentIdea) { idea.Evidence[0].EvidenceSummary = strings.Repeat("and this ", 20) }, "more than 120"},

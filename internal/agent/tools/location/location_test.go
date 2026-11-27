@@ -682,7 +682,7 @@ func TestPathAnswersADayWithASample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if answer["point_count"] != float64(100) || answer["first_at"] != "04:50:00" || answer["last_at"] != "06:29:00" || answer["is_truncated"] != true {
+	if answer["point_count"] != float64(100) || answer["first_at"] != "04:50:00" || answer["last_at"] != "06:29:00" || answer["is_sampled"] != true {
 		t.Errorf("the day: %v", answer)
 	}
 	// 99 steps of 0.001 degrees of latitude are about 11 kilometers.
@@ -704,6 +704,37 @@ func TestPathAnswersADayWithASample(t *testing.T) {
 	}
 	if !result.Untrusted {
 		t.Error("a path is the person's data")
+	}
+	// With an offset every position is listed in order, from there.
+	every, _, err := act(t, runOf(operations), "path", `{"day":"2026-10-17","offset":90}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := every["points"].([]any)
+	if len(listed) != 10 || listed[0].(map[string]any)["time"] != "06:20:00" || every["next_offset"] != nil || every["is_sampled"] != nil {
+		t.Errorf("the last ten positions: %d %v", len(listed), every)
+	}
+	// A run that keeps little of a result gets a page and where the next
+	// starts, and the pages together are every position once.
+	small := &smallResultRun{fakeRun: runOf(operations)}
+	seen, offset := 0, 0
+	for page := 0; page < 100; page++ {
+		pageAnswer, _, err := act(t, small, "path", fmt.Sprintf(`{"day":"2026-10-17","offset":%d}`, offset), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen += len(pageAnswer["points"].([]any))
+		next, more := pageAnswer["next_offset"].(float64)
+		if !more {
+			break
+		}
+		if int(next) != seen {
+			t.Fatalf("the next page starts at %v after %d positions", next, seen)
+		}
+		offset = int(next)
+	}
+	if seen != 100 || offset == 0 {
+		t.Errorf("the pages showed %d positions, in %d reads", seen, offset)
 	}
 	if _, _, err := act(t, runOf(operations), "path", `{"day":"yesterday"}`, false); err == nil {
 		t.Error("a day nobody can read should be refused")
@@ -1116,5 +1147,29 @@ func TestPeopleSaysWhyLessIsSeen(t *testing.T) {
 	}
 	if _, _, err := act(t, runOf(operations), "now", `{"person":"cleo"}`, false); err == nil || !strings.Contains(err.Error(), "sees nothing of cleo") {
 		t.Errorf("cleo's location: %v", err)
+	}
+}
+
+// smallResultRun keeps little of a tool's result, so that a page is short.
+type smallResultRun struct{ *fakeRun }
+
+func (self *smallResultRun) ResultCharacters() int { return 1800 }
+
+// A later page of address matches asks for the matches up to its end, shows
+// the ones after the offset, and says where the next page starts.
+func TestFindAddressPages(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"SearchAddresses": `[{"placeName":"One"},{"placeName":"Two"},{"placeName":"Three"},{"placeName":"Four"}]`,
+	}}
+	answer, _, err := act(t, runOf(operations), "find_address", `{"query":"rue example","limit":2,"offset":2}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent := operations.sent["SearchAddresses"]; sent["limitCount"] != 4 {
+		t.Errorf("the page asked for %v matches", sent["limitCount"])
+	}
+	addresses := answer["addresses"].([]any)
+	if len(addresses) != 2 || addresses[0].(map[string]any)["place_name"] != "Three" || answer["next_offset"] != float64(4) {
+		t.Errorf("the second page: %v", answer)
 	}
 }

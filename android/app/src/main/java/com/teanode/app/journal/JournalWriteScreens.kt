@@ -220,7 +220,7 @@ fun JournalCorrectionScreen(periodKind: JournalPeriodKind?, day: String) {
     var isWorking by remember { mutableStateOf(false) }
     val couldNotSend = stringResource(R.string.journal_write_could_not_send_correction)
     val trimmed = correctionText.trim()
-    val isSendable = trimmed.isNotEmpty() && trimmed.length <= CORRECTION_LIMIT
+    val isSendable = trimmed.isNotEmpty()
     TeaNodeScreen(
         title = stringResource(R.string.journal_something_wrong), onBack = { if (!isWorking) navigator.back() },
         actions = {
@@ -248,12 +248,8 @@ fun JournalCorrectionScreen(periodKind: JournalPeriodKind?, day: String) {
             OutlinedTextField(
                 value = correctionText, onValueChange = { text -> correctionText = text }, enabled = !isWorking,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp).padding(horizontal = 16.dp).semantics { contentDescription = whatIsWrongLabel },
-                supportingText = { Text("${trimmed.length}/$CORRECTION_LIMIT") }, isError = trimmed.length > CORRECTION_LIMIT,
             )
             Footnote(stringResource(R.string.journal_write_correction_footer))
         }
     }
 }
-
-/** The longest a correction can be, as the server takes it. */
-private const val CORRECTION_LIMIT = 500

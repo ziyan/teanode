@@ -3,6 +3,7 @@ package journal
 import (
 	"context"
 	"encoding/json"
+	"github.com/ziyan/teanode/internal/client"
 	"strings"
 	"sync"
 	"testing"
@@ -596,5 +597,15 @@ func TestTakingBackActionsAndTheirRisk(t *testing.T) {
 		if got := merged.RiskFor(json.RawMessage(`{"action":"` + action + `"}`)); got != want {
 			t.Errorf("%s has risk %s, want %s", action, got, want)
 		}
+	}
+}
+
+// A note from the person's notes folder is given whole, not cut to an excerpt.
+func TestNotesFromTheNotesFolderAreGivenWhole(t *testing.T) {
+	text := strings.Repeat("a long note, ", 200)
+	answer := wordsAnswer(&client.JournalWordsView{JournalNotes: []*client.JournalNoteView{{Title: "Plans", Text: text}}})
+	notes := answer["notes_from_their_notes_folder"].([]map[string]any)
+	if len(notes) != 1 || notes[0]["text"] != text {
+		t.Fatalf("the note was cut: %v", notes)
 	}
 }

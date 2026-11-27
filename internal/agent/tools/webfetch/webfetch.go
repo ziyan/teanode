@@ -66,7 +66,8 @@ func webFetchRisk(arguments json.RawMessage) tools.Risk {
 	return tools.RiskRead
 }
 
-// webFetchBytes bounds what is read from a page.
+// webFetchBytes bounds how much of a page is held in memory. A page larger
+// than this is read as far as it goes and the answer says so.
 const webFetchBytes = 4 << 20
 
 func runWebFetch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -113,15 +114,23 @@ func runWebFetch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, fmt.Errorf("cannot fetch %s%s: %w", target, through, err)
 	}
 	defer func() { _ = response.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(response.Body, webFetchBytes))
+	// One byte more than the bound, to know whether the page went on.
+	body, err := io.ReadAll(io.LimitReader(response.Body, webFetchBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	isPageCut := len(body) > webFetchBytes
+	if isPageCut {
+		body = body[:webFetchBytes]
 	}
 	contentType := response.Header.Get("Content-Type")
 	page := string(body)
 	lowered := strings.ToLower(strings.TrimSpace(page))
 	isHTML := strings.Contains(contentType, "html") || strings.HasPrefix(lowered, "<!doctype html") || strings.HasPrefix(lowered, "<html")
 	result := map[string]any{"status": response.StatusCode, "content_type": contentType, "url": target.String()}
+	if isPageCut {
+		result["size_note"] = fmt.Sprintf("the page is larger than %d MiB; only its first %d MiB was read and the rest was not", webFetchBytes>>20, webFetchBytes>>20)
+	}
 	text := page
 	if isHTML {
 		base := response.Request.URL
@@ -131,7 +140,7 @@ func runWebFetch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			case through != "":
 				result["render_note"] = "scripts are not run through a computer; without computer, this server's browser runs them"
 			default:
-				rendered, finalAddress, err := renderPage(ctx, target.String())
+				rendered, finalAddress, isRenderedCut, err := renderPage(ctx, target.String())
 				if err != nil {
 					result["render_note"] = "the page's scripts could not be run: " + err.Error()
 				} else {
@@ -140,6 +149,9 @@ func runWebFetch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					}
 					read = readHTML(rendered, base)
 					result["rendered"] = true
+					if isRenderedCut {
+						result["size_note"] = fmt.Sprintf("the page, once its scripts ran, is larger than %d MiB; only its first %d MiB was read and the rest was not", renderedBytes>>20, renderedBytes>>20)
+					}
 				}
 			}
 		}
@@ -151,6 +163,9 @@ func runWebFetch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		result["title"] = read.title
 		if len(read.media) > 0 {
 			result["media"] = read.media
+		}
+		if read.mediaLeftOut > 0 {
+			result["media_left_out"] = read.mediaLeftOut
 		}
 		text = read.text
 	}

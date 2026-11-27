@@ -170,6 +170,13 @@ type MailboxRuleApplication struct {
 	Deleted    int `json:"deleted"`
 	Skipped    int `json:"skipped"`
 	Failed     int `json:"failed"`
+
+	// Listed is how many messages the call read from the folder.
+	Listed int `json:"listed"`
+
+	// Remaining is how many of the messages looked at are still in the
+	// folder; the next batch of a larger folder skips that many more.
+	Remaining int `json:"remaining"`
 }
 
 const mailboxFields = `{
@@ -217,9 +224,9 @@ const (
 			item { id folderId seen flagged mail { id from fromName subject receivedAt } }
 		}
 	}`
-	DocumentApplyMailboxRules = `mutation ($mailboxId: String!, $folderId: String, $first: Int) {
-		ApplyMailboxRules(mailboxId: $mailboxId, folderId: $folderId, first: $first) {
-			considered matched moved marked flagged deleted skipped failed
+	DocumentApplyMailboxRules = `mutation ($mailboxId: String!, $folderId: String, $first: Int, $offset: Int) {
+		ApplyMailboxRules(mailboxId: $mailboxId, folderId: $folderId, first: $first, offset: $offset) {
+			listed considered matched moved marked flagged deleted skipped failed remaining
 		}
 	}`
 
@@ -381,7 +388,7 @@ func TestMailboxRules(ctx context.Context, connection *Client, mailboxId, folder
 }
 
 // ApplyMailboxRules runs the stored rules over the mail already in a folder.
-func ApplyMailboxRules(ctx context.Context, connection *Client, mailboxId, folderId string, first int) (*MailboxRuleApplication, error) {
+func ApplyMailboxRules(ctx context.Context, connection *Client, mailboxId, folderId string, first, offset int) (*MailboxRuleApplication, error) {
 	var result struct {
 		ApplyMailboxRules *MailboxRuleApplication `json:"ApplyMailboxRules"`
 	}
@@ -392,10 +399,43 @@ func ApplyMailboxRules(ctx context.Context, connection *Client, mailboxId, folde
 	if first > 0 {
 		variables["first"] = first
 	}
+	if offset > 0 {
+		variables["offset"] = offset
+	}
 	if err := connection.Execute(ctx, DocumentApplyMailboxRules, variables, &result); err != nil {
 		return nil, err
 	}
 	return result.ApplyMailboxRules, nil
+}
+
+// ApplyMailboxRulesToFolder runs the stored rules over every message of a
+// folder, one batch after another. A batch is the most one call looks at,
+// which is the server's choice of how much to do in one request; the folder
+// as a whole has no bound.
+func ApplyMailboxRulesToFolder(ctx context.Context, connection *Client, mailboxId, folderId string) (*MailboxRuleApplication, error) {
+	const batchSize = 500
+	total := &MailboxRuleApplication{}
+	offset := 0
+	for {
+		batch, err := ApplyMailboxRules(ctx, connection, mailboxId, folderId, batchSize, offset)
+		if err != nil {
+			return total, err
+		}
+		total.Considered += batch.Considered
+		total.Matched += batch.Matched
+		total.Moved += batch.Moved
+		total.Marked += batch.Marked
+		total.Flagged += batch.Flagged
+		total.Deleted += batch.Deleted
+		total.Skipped += batch.Skipped
+		total.Failed += batch.Failed
+		total.Remaining += batch.Remaining
+		offset += batch.Remaining
+		// A batch that read fewer than it was given reached the end.
+		if batch.Listed < batchSize {
+			return total, nil
+		}
+	}
 }
 
 // ListMailboxAppPasswords returns the app passwords of a mailbox, one per

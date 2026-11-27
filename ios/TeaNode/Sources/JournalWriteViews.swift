@@ -240,12 +240,9 @@ struct JournalCorrectionSheet: View {
     @State private var isWorking = false
     @State private var problemText: String?
 
-    /// The longest a correction can be, as the server takes it.
-    private static let characterLimit = 500
-
     private var isSendable: Bool {
         let trimmed = correctionText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmed.isEmpty && trimmed.count <= Self.characterLimit
+        return !trimmed.isEmpty
     }
 
     var body: some View {

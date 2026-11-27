@@ -233,8 +233,8 @@ func (self *graph) CorrectJournalNarrative(ctx context.Context, arguments Correc
 		return nil, err
 	}
 	correctionText := strings.TrimSpace(arguments.CorrectionText)
-	if correctionText == "" || utf8.RuneCountInString(correctionText) > models.JournalCorrectionCharactersMost {
-		return nil, fmt.Errorf("%w: a correction is 1 to %d characters", api.ErrInvalidArguments, models.JournalCorrectionCharactersMost)
+	if correctionText == "" {
+		return nil, fmt.Errorf("%w: a correction is at least one character", api.ErrInvalidArguments)
 	}
 	isAdded, err := tx.AddJournalCorrection(principal.User.ID, target, journal.Zone(principal.User).String(), correctionText, now)
 	if err != nil {

@@ -183,6 +183,20 @@ func TestHistorySaysWhatHappenedToAPage(t *testing.T) {
 		t.Fatalf("newest first: %q", history)
 	}
 
+	// A short page says where to read on, and reading on gives the rest.
+	first := call(`{"action":"history","path":"projects/portal","limit":1}`)
+	if !strings.Contains(first, "changed a fact") || !strings.Contains(first, "history again with offset: 1") {
+		t.Fatalf("the first page says how to read on: %q", first)
+	}
+	next := call(`{"action":"history","path":"projects/portal","limit":1,"offset":1}`)
+	if !strings.Contains(next, "added a fact") || !strings.Contains(next, "history again with offset: 2") {
+		t.Fatalf("the next page is the earlier change: %q", next)
+	}
+	rest := call(`{"action":"history","path":"projects/portal","offset":1}`)
+	if !strings.Contains(rest, "added a fact") || strings.Contains(rest, "history again") || strings.Contains(rest, "changed a fact") {
+		t.Fatalf("the rest is everything before the newest, with nothing to read on: %q", rest)
+	}
+
 	// A path that is not a page is answered the way a read of one is:
 	// what is near, so the next guess lands.
 	if missed := call(`{"action":"history","path":"projects/portals"}`); !strings.Contains(missed, "no page at projects/portals") {

@@ -523,7 +523,7 @@ order, since a phone in the background sends few positions on the way. `teanode 
 line, and the agent's `location_path` answers the number of positions, the first
 and last time, the distance travelled in kilometers (miles for a person who reads US
 units) and up to 60 positions
-evenly spread, with `is_truncated` saying some were left out.
+evenly spread, with `is_sampled` saying some were left out; with `offset` every position is listed in order, a page at a time, with `next_offset` to read on.
 
 ## Trips and ways of travel
 

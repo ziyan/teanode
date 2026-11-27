@@ -38,14 +38,14 @@ func init() {
 				"`library` says how many photos there are (photo_count, all items, videos among them, as an album counts them, of which video_count are videos), the space used and the largest file. A photo is any item in the library: a picture, a Live Photo or a video. " +
 				"`list` finds photos, newest first, by date (taken_after, taken_before), place (search_text, or near_latitude, near_longitude and near_distance_kilometers), camera and file name (search_text), kind, Favorites or the Trash; it answers a row for each. Every operation that lists (`list`, `album-list`, `album-read`, `people`, `person-photos`, `album-shares`) gives a page at a time: page_size says how many, and when there is more the answer has next_offset, which you pass as offset, with the same other arguments, to read the next page. " +
 				"A search (search_text) matches the words against the place, the file name, the camera, the titles of the albums a photo is in and, for a photo that has been described, its description and the text in the picture, and lists the best matches first. A photo nobody has described is found only by the rest, so when you search for what is in a picture, narrow by date or place too and `look` at the candidates; the answer says how many photos in the range are not described yet. " +
-				"`read` gives one photo's details, its description and the text in the picture, and where it was taken: place_name is the nearest city, location_place (id, place_name, place_label) is one of the person's own Location places the photo was taken inside (such as home), and address_text is the street address when the server looks addresses up and no place of the person's holds the position; say the place of the person's, else the street, else the city. `look` shows you up to 6 photos (photo_ids) as pictures so you can say what is in them; a video shows its first frame; each photo you look at that has no description is also queued to be described, so the next search finds it by what is in it. " +
-				"`describe` asks for a description of one photo or several (photo_id or photo_ids, up to 6), and is_redescribed asks for a new one when it has one; it answers at once and the description arrives in a few seconds. " +
+				"`read` gives one photo's details, its description and the text in the picture, and where it was taken: place_name is the nearest city, location_place (id, place_name, place_label) is one of the person's own Location places the photo was taken inside (such as home), and address_text is the street address when the server looks addresses up and no place of the person's holds the position; say the place of the person's, else the street, else the city. `look` shows you photos (photo_ids) as pictures so you can say what is in them; a video shows its first frame; each photo you look at that has no description is also queued to be described, so the next search finds it by what is in it. " +
+				"`describe` asks for a description of one photo or several (photo_id or photo_ids), and is_redescribed asks for a new one when it has one; it answers at once and the description arrives in a few seconds. " +
 				"`show` puts up to 12 photos (photo_ids) in the conversation for the person to see. " +
-				"`favorite` marks one a favorite (is_favorite false takes it back). `trash` and `restore` move photos (photo_ids) to the Trash and back. `delete` (photo_ids, up to 100) deletes forever photos that are in the Trash, and `empty-trash` deletes forever everything in the Trash; neither can be undone, so both always ask the person first. " +
+				"`favorite` marks one a favorite (is_favorite false takes it back). `trash` and `restore` move photos (photo_ids) to the Trash and back. `delete` (photo_ids, up to 500 at a time) deletes forever photos that are in the Trash, and `empty-trash` deletes forever everything in the Trash; neither can be undone, so both always ask the person first. " +
 				"`set-date` (photo_id, taken_at) corrects the date a photo was taken: an RFC 3339 time whose offset is the offset of the place it was taken, such as 2025-07-12T14:30:00+09:00; the photo is shown at that clock from then on. " +
 				"`search-places` (query, and near_latitude with near_longitude) finds cities by name for `set-location`, best match first: an exact name, then names that start with the words, then the words anywhere in \"City, Country\"; the nearest to the point comes first among equals when one is given, otherwise the largest; text that is two numbers (\"35.0116, 135.7681\") answers that one position; it answers up to 10 rows, each with place_name, latitude and longitude. " +
-				"`set-location` (photo_ids, up to 100) says where photos were taken, for a photo with no GPS or the wrong place: either place, some words whose best match among the cities is used (search first when the words could mean several), or latitude and longitude; the place name follows the nearest city, and the date is not changed. `remove-location` (photo_ids, up to 100) removes the location for good (TeaNode keeps no copy of it), and it stays removed when the file is read again; the file itself is not changed, so copies already shared or downloaded keep it. " +
-				"`retry` (photo_ids, up to 100) makes the thumbnails of photos again (the dashboard and the phone app call it Make thumbnails again): a photo whose thumbnails failed is tried again from the start, and a photo that is ready is done again to replace thumbnails that look wrong; it answers at once and the thumbnails arrive in a minute or so. " +
+				"`set-location` (photo_ids, up to 500 at a time) says where photos were taken, for a photo with no GPS or the wrong place: either place, some words whose best match among the cities is used (search first when the words could mean several), or latitude and longitude; the place name follows the nearest city, and the date is not changed. `remove-location` (photo_ids, up to 500 at a time) removes the location for good (TeaNode keeps no copy of it), and it stays removed when the file is read again; the file itself is not changed, so copies already shared or downloaded keep it. " +
+				"`retry` (photo_ids, up to 500 at a time) makes the thumbnails of photos again (the dashboard and the phone app call it Make thumbnails again): a photo whose thumbnails failed is tried again from the start, and a photo that is ready is done again to replace thumbnails that look wrong; it answers at once and the thumbnails arrive in a minute or so. " +
 				"`save` keeps a picture or video as a photo: from this conversation (source conversation, attachment_id), a message (source mail, item_id and attachment as mail_read lists them) or their computer (source computer, path). " +
 				"Albums are named sets of photos, and a photo can be in several: `album-list` and `album-read` (album_id) show them, `list` with album_id lists an album's photos, and `read` says which albums a photo is in. " +
 				"`album-list` also gives the albums of the person's circles and the albums other people shared with them, each with its owner (owner_name, or circle_name for a circle's album) and level (owner, contribute or view). You read those where they are, except in a chat (everybody there would see them; only the person's own albums and photos are read there): `list` with album_id, `read`, `look` and `show` work on their photos as on the person's own, each photo says whose it is (owner), and a photo that is not the person's comes without its place unless the share includes it, so do not guess where it was taken. Never copy a photo into the person's library unless they ask; `save-shared` (photo_ids) does, and the copy is theirs. " +
@@ -62,7 +62,7 @@ func init() {
 			Parameters: tools.Object(map[string]any{
 				"operation":                tools.EnumProperty("what to do", "library", "list", "read", "look", "show", "favorite", "set-date", "search-places", "set-location", "remove-location", "trash", "restore", "retry", "delete", "empty-trash", "save", "save-shared", "album-list", "album-read", "album-create", "album-rename", "album-delete", "album-add", "album-remove", "album-cover", "album-suggest", "album-share", "album-share-update", "album-unshare", "album-shares", "describe", "people", "person-read", "person-photos", "person-name", "person-unname", "person-hide", "person-remove-face", "person-merge", "faces", "reading"),
 				"photo_id":                 tools.StringProperty("read, favorite, set-date, describe and album-cover: which photo, by the id list gives"),
-				"photo_ids":                tools.ArrayProperty("look and describe (up to 6), show (up to 12), save-shared (up to 25), trash, restore, retry, delete, set-location and remove-location (up to 100), album-create, album-add and album-remove (up to 500): which photos, by the ids list gives", map[string]any{"type": "string"}),
+				"photo_ids":                tools.ArrayProperty("look and describe, show (up to 12), save-shared (up to 25), trash, restore, retry, delete, set-location and remove-location (up to 500), album-create, album-add and album-remove (up to 500): which photos, by the ids list gives", map[string]any{"type": "string"}),
 				"is_redescribed":           tools.BooleanProperty("describe: true asks for a new description of a photo that already has one"),
 				"is_favorite":              tools.BooleanProperty("favorite: true (the default) makes it a favorite, false takes it back. list: true keeps only the favorites"),
 				"is_trashed":               tools.BooleanProperty("list: true lists the Trash instead of the library"),
@@ -187,21 +187,20 @@ type arguments struct {
 
 // The most photos one call names, and a page of a listing.
 const (
-	maximumLookPhotoCount = 6
-	// maximumDescribePhotoCount is as many as a look: each is a model reading
-	// a picture, so a call is kept to what one conversation would look at.
-	maximumDescribePhotoCount = 6
-
 	// maximumFirstSentenceCharacters bounds the sentence a listing's row
 	// carries, whatever the model wrote.
 	maximumFirstSentenceCharacters = 200
 	maximumShowPhotoCount          = 12
-	maximumMovePhotoCount          = 100
-	maximumPageSize                = 100
-	maximumAlbumPhotoCount         = 500
-	maximumSaveSharedPhotoCount    = 25
-	defaultPageSize                = 25
-	defaultRowPageSize             = 50
+	// maximumMovePhotoCount is how many photos the API takes in one request
+	// to trash, restore, delete, retry or change the location of.
+	maximumMovePhotoCount = 500
+	maximumPageSize       = 100
+	// maximumAlbumPhotoCount is how many photos the API takes in one album
+	// request.
+	maximumAlbumPhotoCount      = 500
+	maximumSaveSharedPhotoCount = 25
+	defaultPageSize             = 25
+	defaultRowPageSize          = 50
 	// maximumOffset is as far into a list as the server reads: skipping reads
 	// every row it skips.
 	maximumOffset          = 100000
@@ -878,7 +877,7 @@ func photoIdsOf(asked *arguments, operation string, maximum int) ([]string, erro
 	if len(photoIds) == 0 {
 		return nil, fmt.Errorf("%s needs photo_ids; list gives them", operation)
 	}
-	if len(photoIds) > maximum {
+	if maximum > 0 && len(photoIds) > maximum {
 		return nil, fmt.Errorf("%s takes at most %d photos at once, not %d", operation, maximum, len(photoIds))
 	}
 	return photoIds, nil
@@ -930,7 +929,7 @@ func describePhoto(photo *models.Photo) string {
 }
 
 func look(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
-	photoIds, err := photoIdsOf(asked, "look", maximumLookPhotoCount)
+	photoIds, err := photoIdsOf(asked, "look", 0)
 	if err != nil {
 		return nil, err
 	}
@@ -992,7 +991,7 @@ func look(ctx context.Context, current tools.Run, asked *arguments) (*tools.Resu
 // describe asks for photos to be described and says how each stands. It does
 // not wait: the description is written by a job.
 func describe(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
-	photoIds, err := photoIdsOf(asked, "describe", maximumDescribePhotoCount)
+	photoIds, err := photoIdsOf(asked, "describe", 0)
 	if err != nil {
 		return nil, err
 	}

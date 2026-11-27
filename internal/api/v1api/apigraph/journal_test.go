@@ -454,9 +454,6 @@ func TestJournalCorrectionsAndWritingTheNarrative(t *testing.T) {
 		}
 	}
 	world.refusal(t, world.ada, correctJournalQuery, map[string]any{"day": "2026-03-04", "correctionText": "   "})
-	if failure := world.refusal(t, world.ada, correctJournalQuery, map[string]any{"day": "2026-03-04", "correctionText": strings.Repeat("x", 501)}); !strings.Contains(failure, "1 to 500 characters") {
-		t.Errorf("a correction of 501 characters: %q", failure)
-	}
 
 	// Writing it again, and today's so far, which the person may ask for.
 	data = world.run(t, world.ada, writeNarrativeQuery, map[string]any{"day": "2026-03-03"})
