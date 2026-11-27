@@ -89,8 +89,4 @@
     <string name="goals_said_paused">一時停止しました</string>
     <string name="goals_said_resumed">再開しました</string>
     <string name="goals_said_saved">保存しました</string>
-    <string name="settings_brief_page_title">デイリーブリーフ</string>
-    <string name="settings_brief_time">時刻</string>
-    <string name="settings_brief_next">次回：%s</string>
-    <string name="settings_brief_open_goal">ブリーフの目標を開く</string>
 </resources>

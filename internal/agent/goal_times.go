@@ -315,7 +315,7 @@ func (self *Agent) afterGoalOnTimes(ctx context.Context, run *Run, goal *models.
 	})
 }
 
-// The goals the daily brief's switch and the asset estimates' switch start
+// The goals the daily brief's idea and the asset estimates' switch start
 // are found by their titles.
 const (
 	BriefGoalTitle         = "Daily brief"
@@ -365,6 +365,28 @@ func AssetEstimatePrompt() string {
 		"",
 		"Post one card saying, per asset, its name and the value you recorded, or why you left it. If no asset needed an estimate, post nothing.",
 	}, "\n")
+}
+
+// ideaKeyDailyBrief is the catalog idea whose "Do it" starts the daily
+// brief goal itself.
+const ideaKeyDailyBrief = "daily_brief"
+
+// BriefTimes is when the daily brief runs: weekdays at half past seven, in
+// the person's zone.
+const BriefTimes = "30 7 * * 1-5"
+
+// DailyBriefGoal is the goal the daily brief idea starts: an ordinary goal
+// that the Goals screens show, where its words can be edited, its time
+// changed or the whole thing dropped. Written as built in, not as the
+// person's: the brief reads the inbox, so a turn it wakes does not count as
+// the person asking for Passwords. The person's own words, because they
+// pressed the button: a goal the agent writes for itself arrives as a note
+// about what to do rather than as an instruction.
+func DailyBriefGoal(found *models.Agent, owner *models.User) *GoalStart {
+	return &GoalStart{
+		GoalTitle: BriefGoalTitle, GoalDescription: BriefPrompt(found, owner), GoalTimes: []string{BriefTimes},
+		GoalWrittenBy: models.WrittenByBuiltIn, IsGoalNotifiedWhenPosted: true,
+	}
 }
 
 // BriefPrompt is the daily brief's description, as the person's own words,

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/recording"
@@ -72,13 +73,7 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 			return err
 		}
 	}
-	maximumAccountBytes := self.settings.Configuration().Agent.Limits.MaxRecordingAccountBytes.Bytes()
-	if maximumAccountBytes == 0 {
-		maximumAccountBytes = 64 << 30
-	}
-	if maximumAccountBytes > math.MaxInt64 {
-		return fmt.Errorf("recording account limit exceeds supported bytes")
-	}
+	maximumAccountBytes := int64(config.MaxRecordingAccountBytes)
 	referenceCountByIdentity := map[string]int{}
 	for _, reference := range references {
 		if !reference.IsRevoked {

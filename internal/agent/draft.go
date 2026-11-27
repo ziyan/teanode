@@ -162,7 +162,7 @@ func (self *Agent) DraftReply(ctx context.Context, request *models.AgentDraftReq
 	if err := LoadHeaders(ctx, self.settings.Storage, mail); err != nil {
 		return nil, err
 	}
-	message, err := BuildMessageContext(ctx, self.settings.Storage, mail, configuration.Agent.Limits.MaxBodyCharacters, false)
+	message, err := BuildMessageContext(ctx, self.settings.Storage, mail, messageBodyCharactersMost, false)
 	if err != nil {
 		return nil, err
 	}

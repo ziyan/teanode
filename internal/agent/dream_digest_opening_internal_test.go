@@ -11,9 +11,8 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// A dream reads the whole of a document, and only as much as the operator
-// allows where they bounded it: what a long conversation says after its
-// first exchanges is read.
+// A dream reads the whole of a document: what a long conversation says after
+// its first exchanges is read.
 func TestTheReadingIsShownTheWholeDocument(test *testing.T) {
 	database, worker, run, source := ingestionPageFixture(test)
 	configuration := config.Default()
@@ -37,11 +36,6 @@ func TestTheReadingIsShownTheWholeDocument(test *testing.T) {
 	if text := worker.textOf(test.Context(), run, document, false); !strings.Contains(text, "Lisbon") {
 		test.Fatalf("the whole document is read, not %d runes of it", len([]rune(text)))
 	}
-	configuration.Agent.Limits.DigestDocumentRunes = 1200
-	if text := worker.textOf(test.Context(), run, document, false); strings.Contains(text, "Lisbon") || len([]rune(text)) > 1200 {
-		test.Fatalf("a bound the operator set is kept: %d runes", len([]rune(text)))
-	}
-	configuration.Agent.Limits.DigestDocumentRunes = 0
 
 	// Longer than a call holds, it is read in parts at passage
 	// boundaries, every passage in exactly one part.

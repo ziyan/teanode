@@ -86,7 +86,6 @@ class ManageAdminScreenshotTest {
     @Test fun `features largest text`() = shoot("manage-features-largest-text", fontScale = 2f) { AgentFeaturesScreen(onBack = {}) }
     @Test fun `limits light`() = shoot("manage-limits-light") { AgentLimitsScreen(onBack = {}) }
     @Test fun `limits dark`() = shoot("manage-limits-dark", AppearanceChoice.Dark) { AgentLimitsScreen(onBack = {}) }
-    @Test fun `limits recording quotas`() = shoot("manage-limits-recording-light", before = { scrollTo("Recording storage per account") }) { AgentLimitsScreen(onBack = {}) }
 
     @Test fun `tool policy light`() = shoot("manage-tool-policy-light") { AgentToolPolicyScreen(onBack = {}) }
     @Test fun `tool policy dark`() = shoot("manage-tool-policy-dark", AppearanceChoice.Dark) { AgentToolPolicyScreen(onBack = {}) }

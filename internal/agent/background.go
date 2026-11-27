@@ -315,19 +315,12 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 		return nil
 	}
 
-	// Out of turns or out of budget: the endings are written into the
-	// transcript for the person and the next turn to read, and no model is
-	// asked anything. Commands and work share the count: a survey whose
-	// turn starts a subagent whose turn starts a command is one chain. The
-	// count is the conversation's row, so the bound holds whichever
-	// instance each wake of the chain lands on.
-	backgroundWakesAlone := configuration.Agent.Limits.EffectiveBackgroundWakesAlone()
-	if conversation.BackgroundWakeCount >= backgroundWakesAlone || deferral != nil {
-		reason := fmt.Sprintf("%d turns since you last wrote were woken by background commands and work", backgroundWakesAlone)
-		if deferral != nil {
-			reason = deferral.Reason
-		}
-		note := fmt.Sprintf("%s; not woken again (%s).", backgroundEndedLine(wake.endings, wake.works, wake.settlings, wake.shareCalls), reason)
+	// Out of budget: the endings are written into the transcript for the
+	// person and the next turn to read, and no model is asked anything.
+	// Every other ending wakes the conversation: the daily and monthly
+	// cost limits are what bound a chain of woken turns.
+	if deferral != nil {
+		note := fmt.Sprintf("%s; not woken again (%s).", backgroundEndedLine(wake.endings, wake.works, wake.settlings, wake.shareCalls), deferral.Reason)
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversationId, Role: models.AgentMessageNote, Content: note})
 			return err
@@ -352,15 +345,6 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 	})
 	if err != nil {
 		return err
-	}
-	// Counted once the turn is started, so a wake that failed does not
-	// spend one of the conversation's turns. The turn runs whether or not
-	// the count is written; a count that was not costs the chain one more
-	// turn before the bound, not the turn.
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		return tx.AddAgentConversationBackgroundWake(conversationId)
-	}); err != nil {
-		log.Warningf("cannot count the turn woken in conversation %q: %s", conversationId, err)
 	}
 	events, unsubscribe := turn.Subscribe()
 	defer unsubscribe()

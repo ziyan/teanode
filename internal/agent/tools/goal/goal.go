@@ -20,20 +20,11 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// The bounds on how often the agent may take a turn of its own. Constants
-// rather than a setting: a number nobody has asked to change does not need
-// a page in the dashboard, and the day somebody does it becomes one.
-//
-// The floor is what keeps a goal from spinning: five minutes is long
-// enough that a model which answers "check again in a minute" to
-// everything costs twelve turns an hour rather than sixty. The ceiling is
-// a day, because a goal nothing has happened on for longer than that is
-// one to ask the person about rather than to work on quietly.
-const (
-	Soonest         = 5 * time.Minute
-	Latest          = 24 * time.Hour
-	DefaultInterval = 30 * time.Minute
-)
+// DefaultInterval is how long a goal waits when it never said. It is a
+// default, not a bound: a wait a goal asks for is the wait it gets, and what
+// stops a goal that asks to look every minute is the person's daily cost
+// limit and the server's monthly one.
+const DefaultInterval = 30 * time.Minute
 
 // NoteCharacters is as much of the agent's note as is kept. The note is
 // shown beside the conversation and, while the goal waits, in a bar above
@@ -66,7 +57,7 @@ func init() {
 					})),
 					"is_notified_when_posted": tools.BooleanProperty("for start and set, a goal with times: send one quiet notification, \"<title> is ready\", when the first card of a turn is posted; for a daily brief"),
 					"activity":                tools.StringProperty("for note: one line on what happened, when something did that the person would want in the goal's log; leave it out when you only looked"),
-					"minutes":                 tools.IntegerProperty("for note: how long until your next turn on this, from 5 to 1440; 30 by default"),
+					"minutes":                 tools.IntegerProperty("for note: how many minutes from now until your next turn on this, used as given; 30 when you give none"),
 				}, "action"),
 				Preview: tools.PreviewOf(func(call struct {
 					Action string   `json:"action"`
@@ -106,7 +97,7 @@ type arguments struct {
 	Times                *[]string                      `json:"times"`
 	OnMail               *[]models.MailboxRuleCondition `json:"on_mail"`
 	IsNotifiedWhenPosted *bool                          `json:"is_notified_when_posted"`
-	Minutes              int                            `json:"minutes"`
+	Minutes              *int                           `json:"minutes"`
 }
 
 func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -365,21 +356,19 @@ func operate(ctx context.Context, document string, variables map[string]any, ope
 	return answer, nil
 }
 
-// interval is how long until the next turn: what the model asked for, as
-// the bounds allow. A model that gives no number, or one it made up out of
-// nothing, gets the default rather than a refusal -- the turn is over by
-// the time this is called, and a refusal would leave the goal with no next
-// time at all.
-func interval(minutes int) time.Duration {
-	if minutes <= 0 {
+// interval is how long until the next turn: what the model asked for, used
+// as given. A model that gives no number gets the default rather than a
+// refusal, since the turn is over by the time this is called and a refusal
+// would leave the goal with no next time at all.
+//
+// A wait is never shorter than a minute. This is a loop guard, not a limit
+// on how often work may happen: a number of zero or less would otherwise
+// book the next turn at once and the goal would take a turn at every
+// sweep. A turn takes about a minute anyway, and it is the same minute a
+// goal already waits after the person or another turn.
+func interval(minutes *int) time.Duration {
+	if minutes == nil {
 		return DefaultInterval
 	}
-	asked := time.Duration(minutes) * time.Minute
-	if asked < Soonest {
-		return Soonest
-	}
-	if asked > Latest {
-		return Latest
-	}
-	return asked
+	return time.Duration(max(*minutes, 1)) * time.Minute
 }

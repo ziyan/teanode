@@ -3,7 +3,7 @@ package com.teanode.kit.agent
 /** The GraphQL documents of the agent's upkeep pages (memory, dreams, alerts, connections, activity). Copied from the iPhone app's Documents (ios/TeaNodeKit), text unchanged. */
 object AgentUpkeepDocuments {
     val AGENT_UPKEEP_FIELDS = """
-id enabled operatorDisabledAt dreamFrom dreamUntil dreamBootstrap isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost lookAroundWeekday lookAroundTime
+id enabled operatorDisabledAt dreamFrom dreamUntil dreamBootstrap isAlertsEnabled
 """.trimEnd()
 
     val AGENT_UPKEEP = """
@@ -11,8 +11,8 @@ query { ReadAgent { agent { ${AGENT_UPKEEP_FIELDS} } } }
 """.trimEnd()
 
     val UPDATE_AGENT_UPKEEP = """
-mutation (${'$'}dreamFrom: String, ${'$'}dreamUntil: String, ${'$'}isAlertsEnabled: Boolean, ${'$'}alertQuietStart: String, ${'$'}alertQuietEnd: String, ${'$'}alertDailyMost: Int, ${'$'}lookAroundWeekday: String, ${'$'}lookAroundTime: String) {
-  UpdateAgent(dreamFrom: ${'$'}dreamFrom, dreamUntil: ${'$'}dreamUntil, isAlertsEnabled: ${'$'}isAlertsEnabled, alertQuietStart: ${'$'}alertQuietStart, alertQuietEnd: ${'$'}alertQuietEnd, alertDailyMost: ${'$'}alertDailyMost, lookAroundWeekday: ${'$'}lookAroundWeekday, lookAroundTime: ${'$'}lookAroundTime) {
+mutation (${'$'}dreamFrom: String, ${'$'}dreamUntil: String, ${'$'}isAlertsEnabled: Boolean) {
+  UpdateAgent(dreamFrom: ${'$'}dreamFrom, dreamUntil: ${'$'}dreamUntil, isAlertsEnabled: ${'$'}isAlertsEnabled) {
     agent { ${AGENT_UPKEEP_FIELDS} }
   }
 }

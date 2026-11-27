@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -145,9 +144,6 @@ func TestABackgroundSurveyRunsAsAJobAndWakesItsConversation(t *testing.T) {
 		!strings.Contains(woken[0], "outcome: finished") || !strings.Contains(woken[0], untrustedOpen+"\n## Strengths") ||
 		!strings.Contains(woken[0], "background_work with action read") {
 		t.Fatalf("the wake says what finished and carries the report fenced: %s", woken[0])
-	}
-	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != 1 {
-		t.Errorf("the wake is counted with the commands', on the conversation: %d", wokenCount)
 	}
 
 	_, before := asked()
@@ -345,44 +341,18 @@ func finishedWork(t *testing.T, database db.Database, agentId, conversationId, t
 	return work
 }
 
-// backgroundWakeCountOf is how many turns the conversation's row says
-// were woken since the person last wrote.
-func backgroundWakeCountOf(t *testing.T, database db.Database, conversationId string) int {
-	t.Helper()
-	var conversation *models.AgentConversation
-	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		conversation, _ = tx.GetAgentConversation(conversationId)
-	})
-	if conversation == nil {
-		t.Fatalf("no conversation %s", conversationId)
-	}
-	return conversation.BackgroundWakeCount
-}
-
-// Commands and work share one count of woken turns, kept on the
-// conversation's row so that every instance reads the same: a
-// conversation with nineteen woken by commands takes one more for
-// finished work, and the next is written into the transcript as a note,
-// once, asking no model, until the person writes again, which starts the
-// count from nothing in the transaction that keeps what they wrote.
-// Finished work whose wake was lost is found by the sweep.
-func TestBackgroundWorkSharesTheTwentyWokenTurns(t *testing.T) {
+// Every piece of finished work wakes its conversation: there is no count of
+// woken turns between two messages from the person, so a chain of more than
+// twenty goes on, and what bounds it is the budget. Work whose wake was lost
+// is found by the sweep. Out of budget, a note is written instead of a turn.
+func TestBackgroundWakesPastTwentyStillWake(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 	provider, callCount := answeringProvider(t, "Noted.", nil, nil)
 	worker, run := digestSplitWorld(t, database, provider.URL)
 	conversation := backgroundConversation(t, database, run.Agent.ID)
 
-	// Nineteen woken on some instance or other.
-	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		for range config.BackgroundWakesAloneDefault - 1 {
-			if err := tx.AddAgentConversationBackgroundWake(conversation.ID); err != nil {
-				t.Fatal(err)
-			}
-		}
-	})
-
-	// Its wake was lost: the sweep finds it.
+	// The first, whose wake was lost: the sweep finds it.
 	first := finishedWork(t, database, run.Agent.ID, conversation.ID, "first look")
 	worker.sweepBackgroundWork(t.Context(), time.Now())
 	worker.Wait()
@@ -392,64 +362,22 @@ func TestBackgroundWorkSharesTheTwentyWokenTurns(t *testing.T) {
 	if read := readWork(t, database, run.Agent.ID, first.ID); read.WokenAt == nil {
 		t.Fatalf("marked as told: %+v", read)
 	}
-	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != config.BackgroundWakesAloneDefault {
-		t.Fatalf("the twentieth is counted: %d", wokenCount)
-	}
 
-	second := finishedWork(t, database, run.Agent.ID, conversation.ID, "second look")
-	worker.wakeForBackgroundWork(second)
-	worker.Wait()
+	// Twenty-four more, with the person writing nothing between them.
+	for index := range 24 {
+		work := finishedWork(t, database, run.Agent.ID, conversation.ID, fmt.Sprintf("look %d", index))
+		worker.wakeForBackgroundWork(work)
+		worker.Wait()
+	}
 	woken, notes := wokenMessages(t, database, conversation.ID)
-	if len(woken) != 1 || len(notes) != 1 || callCount() != 1 {
-		t.Fatalf("out of turns, a note and no model: %d wakes, %q, %d calls", len(woken), notes, callCount())
-	}
-	if !strings.Contains(notes[0], `a subagent: "second look"`) || !strings.Contains(notes[0], "not woken again") ||
-		!strings.Contains(notes[0], "background commands and work") {
-		t.Fatalf("the note says what finished and why nothing woke: %s", notes[0])
-	}
-	if read := readWork(t, database, run.Agent.ID, second.ID); read.WokenAt == nil {
-		t.Fatalf("a note is the conversation told: %+v", read)
-	}
-	// Told once: the sweep finds nothing more to say.
-	worker.lastBackgroundSweep = time.Time{}
-	worker.sweepBackgroundWork(t.Context(), time.Now())
-	worker.Wait()
-	if _, notes := wokenMessages(t, database, conversation.ID); len(notes) != 1 {
-		t.Fatalf("the note is written once: %q", notes)
-	}
-	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != config.BackgroundWakesAloneDefault {
-		t.Fatalf("a note is not a woken turn: %d", wokenCount)
-	}
-
-	// A wake of the agent's own is not the person writing; the person
-	// writing starts the count again.
-	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		if _, err := keepPersonTurn(tx, &AskSettings{Conversation: conversation, Message: "A subagent finished.", Surface: backgroundSurface}); err != nil {
-			t.Fatal(err)
-		}
-	})
-	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != config.BackgroundWakesAloneDefault {
-		t.Fatalf("a woken turn's message reset the count: %d", wokenCount)
-	}
-	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		if _, err := keepPersonTurn(tx, &AskSettings{Conversation: conversation, Message: "What did the second look find?", Surface: "drawer"}); err != nil {
-			t.Fatal(err)
-		}
-	})
-	if wokenCount := backgroundWakeCountOf(t, database, conversation.ID); wokenCount != 0 {
-		t.Fatalf("the person writing starts the count again: %d", wokenCount)
-	}
-	third := finishedWork(t, database, run.Agent.ID, conversation.ID, "third look")
-	worker.wakeForBackgroundWork(third)
-	worker.Wait()
-	if woken, _ := wokenMessages(t, database, conversation.ID); len(woken) != 2 {
-		t.Fatalf("woken again after the person wrote: %d", len(woken))
+	if len(woken) != 25 || len(notes) != 0 || callCount() != 25 {
+		t.Fatalf("every ending woke a turn, past twenty: %d wakes, %d notes, %d calls", len(woken), len(notes), callCount())
 	}
 
 	// Work from the API names no conversation, and wakes nothing.
 	worker.wakeForBackgroundWork(&models.AgentBackgroundWork{ID: "from-the-api", AgentID: run.Agent.ID, WorkStatus: models.BackgroundWorkDone})
 	worker.Wait()
-	if woken, _ := wokenMessages(t, database, conversation.ID); len(woken) != 2 {
+	if woken, _ := wokenMessages(t, database, conversation.ID); len(woken) != 25 {
 		t.Fatalf("work from the API woke something: %d", len(woken))
 	}
 }

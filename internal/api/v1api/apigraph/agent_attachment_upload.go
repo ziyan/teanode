@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ziyan/teanode/internal/config"
 	"io"
 	"mime"
 	"net/http"
@@ -45,8 +46,8 @@ func (self *graph) agentAttachmentUploadView(response http.ResponseWriter, reque
 		writeJSON(response, http.StatusConflict, map[string]string{"error": "the file was uploaded already"})
 		return
 	}
-	limit := self.config.Current().Agent.Limits.EffectiveMaxSentFileBytes()
-	content, err := io.ReadAll(http.MaxBytesReader(response, request.Body, int64(limit)))
+	limit := int64(config.MaxSentFileBytes)
+	content, err := io.ReadAll(http.MaxBytesReader(response, request.Body, limit))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
@@ -167,6 +168,6 @@ func (self *graph) SendAgentFileToMainChat(ctx context.Context, arguments SendAg
 	}
 	return &AgentFileUpload{
 		AttachmentID: attachment.ID, Name: attachment.Name, UploadURL: link,
-		MaxBytes: int64(self.config.Current().Agent.Limits.EffectiveMaxSentFileBytes()),
+		MaxBytes: int64(config.MaxSentFileBytes),
 	}, nil
 }

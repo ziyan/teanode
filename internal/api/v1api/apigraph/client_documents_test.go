@@ -222,8 +222,6 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"RunAgentGoal":      client.DocumentRunAgentGoal,
 		"TellAgentGoal":     client.DocumentTellAgentGoal,
 		"SetAgentGoalState": client.DocumentSetAgentGoalState,
-		"SetAgentBrief":     client.DocumentSetAgentBrief,
-		"RunAgentBriefNow":  client.DocumentRunAgentBriefNow,
 		// A page read on its own carries its overview, the night's record
 		// counts the overviews written, and a person can ask for one again.
 		"AgentGraphPage": client.DocumentAgentGraphPage,

@@ -9,10 +9,7 @@
     <string name="mail_manage_published_at">发布于</string>
     <string name="mail_manage_policy">策略</string>
     <string name="mail_manage_teach_header">教过滤器</string>
-    <string name="settings_brief_footer_on">今天有什么安排、有什么在等你，显示在你的动态中。它就是名为“Daily brief”的目标，打开它可以修改它要做的事。</string>
-    <string name="settings_brief_days">星期</string>
     <string name="settings_brief_choose_day">请至少选择一天。</string>
-    <string name="settings_brief_start">给我发简报</string>
     <string name="settings_server_about_available">可用版本</string>
     <string name="settings_server_about_last_checked">上次检查</string>
     <string name="settings_server_about_release_page">发布页面</string>

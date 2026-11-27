@@ -49,11 +49,8 @@ class AgentUpkeepTest {
 
     @Test
     fun theUpkeepSettingsFallBackToTheDefaultsWhenATimeIsNotATime() {
-        val preferences = AgentUpkeepPreferences("a", dreamFrom = "nine", alertQuietStart = "21:30", alertDailyMost = 0, lookAroundWeekday = "someday")
+        val preferences = AgentUpkeepPreferences("a", dreamFrom = "nine")
         assertEquals("01:00", preferences.shownDreamFrom)
-        assertEquals("21:30", preferences.shownAlertQuietStart)
-        assertEquals(5, preferences.shownAlertDailyMost)
-        assertEquals("thursday", preferences.shownLookAroundWeekday)
         assertTrue(preferences.isRunning)
         assertFalse(preferences.copy(operatorDisabledAt = "2030-01-01T00:00:00Z").isRunning)
     }

@@ -12,7 +12,6 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/computer"
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
@@ -36,20 +35,14 @@ import (
 // shut.
 
 // maxAttachmentBytes is the largest file a source carries off a person's
-// machine: its own limit where it has one, the operator's otherwise, and
-// the daemon's own only where an operator has set neither.
+// machine: its own limit where it has one, and computer.DefaultMaxAttachmentBytes
+// otherwise.
 //
 // The daemon is told the number rather than knowing it, so that raising
-// it is a configuration change on the server and not a release everybody
-// has to install.
-func maxAttachmentBytes(configuration *config.Configuration, source *models.AgentKnowledgeSource) int64 {
+// it is a change on the server and not a release everybody has to install.
+func maxAttachmentBytes(source *models.AgentKnowledgeSource) int64 {
 	if source != nil && source.Specification.MaxAttachmentBytes > 0 {
 		return source.Specification.MaxAttachmentBytes
-	}
-	if configuration != nil {
-		if limit := int64(configuration.Agent.Limits.MaxScannedAttachmentBytes.Bytes()); limit > 0 {
-			return limit
-		}
 	}
 	return computer.DefaultMaxAttachmentBytes
 }

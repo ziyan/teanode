@@ -153,10 +153,10 @@ type Agent struct {
 	lastDream                            time.Time
 	lastSpeak                            time.Time
 	tripLooks                            map[string]*tripLook
+	tripLooksMutex                       sync.Mutex
 	lastWatch                            time.Time
 	lastFollowUpSweep                    time.Time
 	lastFollowUpBackfill                 time.Time
-	lastNearbyQueue                      time.Time
 	lastLocationJournal                  time.Time
 	lastPhotoReading                     time.Time
 	lastJournalRefresh                   time.Time
@@ -339,11 +339,7 @@ func New(settings *Settings) *Agent {
 			WaitGroup:     &self.waitGroup,
 		})
 	}
-	concurrency := settings.Configuration().Agent.Limits.Concurrency
-	if concurrency <= 0 {
-		concurrency = 1
-	}
-	self.slots = make(chan struct{}, concurrency)
+	self.slots = make(chan struct{}, config.WorkerConcurrency)
 	self.Register(models.AgentJobNoop, func(ctx context.Context, run *Run) error {
 		log.Debugf("noop job %s ran for agent %s", run.Job.ID, run.Agent.ID)
 		return nil
@@ -379,7 +375,6 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobTaxMail, self.runTaxMail)
 	self.Register(models.AgentJobWatch, self.runWatch)
 	self.Register(models.AgentJobFollowUpSweep, self.runFollowUpSweep)
-	self.Register(models.AgentJobNearby, self.runNearby)
 	self.Register(models.AgentJobJournal, self.runJournal)
 	self.catalog = FullCatalog()
 	return self
@@ -585,7 +580,6 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueWatching(ctx, now)
 	self.queueFollowUpSweeps(ctx, now)
 	self.queueFollowUpBackfills(ctx, now)
-	self.queueNearbyRuns(ctx, now)
 	self.queueLocationJournals(ctx, now)
 	self.queuePhotoReading(ctx, now)
 	self.refreshJournals(ctx, now)

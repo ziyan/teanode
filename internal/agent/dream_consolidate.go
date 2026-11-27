@@ -25,15 +25,11 @@ func (self *Agent) dreamConsolidate(ctx context.Context, run *Run, record *model
 		log.Warningf("cannot list the pages to rewrite: %s", err)
 		return
 	}
-	// A few pages at once, as many as the operator allows: each rewrite
+	// A few pages at once, as many as dreamRewriteConcurrency says: each rewrite
 	// changes its own page and the facts on it and nothing else, so two
 	// pages rewritten side by side touch no row in common. One at a time,
 	// a night on a slower model spent its whole share on a hundred pages.
-	concurrency := run.Configuration().Agent.Limits.RewriteConcurrency
-	if concurrency < 1 {
-		concurrency = 1
-	}
-	slots := make(chan struct{}, concurrency)
+	slots := make(chan struct{}, dreamRewriteConcurrency)
 	var group sync.WaitGroup
 	for _, page := range pages {
 		if ctx.Err() != nil || !budget.left() || !budget.consolidatingTimeLeft() {

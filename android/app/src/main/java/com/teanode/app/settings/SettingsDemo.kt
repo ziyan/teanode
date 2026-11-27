@@ -37,7 +37,7 @@ private const val CIRCLES = """[
  * reached and photographed without a server. Most specific first.
  */
 private const val AGENT_SETTINGS = """{
-  "agent":{"id":"agent-1","name":"Juniper","enabled":true,"instructions":"I am the treasurer of the sailing club; anything from the club is important; sign as R.","language":"","knowledgeLanguage":"en","askModel":"","speechVoice":"","operatorDisabledAt":null,"confirm":["calendar","mail_send"],"unattendedAllowedRisks":["money"],"isSuggestionsEnabled":true,"dreamFrom":"01:00","dreamUntil":"06:00","isAlertsEnabled":true,"alertQuietStart":"22:00","alertQuietEnd":"07:00","alertDailyMost":5,
+  "agent":{"id":"agent-1","name":"Juniper","enabled":true,"instructions":"I am the treasurer of the sailing club; anything from the club is important; sign as R.","language":"","knowledgeLanguage":"en","askModel":"","speechVoice":"","operatorDisabledAt":null,"confirm":["calendar","mail_send"],"unattendedAllowedRisks":["money"],"isSuggestionsEnabled":true,"dreamFrom":"01:00","dreamUntil":"06:00","isAlertsEnabled":true,
     "voice":{"tone":"formal","length":null,"greeting":"Hello","signoff":null},"categories":[{"name":"club","description":"The sailing club"}]},
   "sources":[
     {"mailboxId":"mailbox-1","name":"Robin","addresses":["robin@example.com"],"policy":{"granted":true,"draftReplies":true,"search":false,"research":false,"triage":{"enabled":true,"backfill":"","replyExpectation":"any"},"summaries":null,"autoReply":{"enabled":true,"guidance":"Confirm appointments.","scope":"known","when":"outsideHours","hours":{"from":"09:00","until":"17:30","days":[1,2,3,4,5]}},"alerts":null}},

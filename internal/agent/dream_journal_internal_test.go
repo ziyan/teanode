@@ -15,7 +15,7 @@ import (
 func (self *journalFixture) dream(t *testing.T) *models.AgentDream {
 	t.Helper()
 	record := &models.AgentDream{}
-	self.worker.dreamJournal(t.Context(), self.run, record, newDreamBudget(self.worker.settings.Configuration(), self.run.Agent, 1, 0))
+	self.worker.dreamJournal(t.Context(), self.run, record, newDreamBudget(self.worker.settings.Configuration(), self.run.Agent, 0))
 	return record
 }
 

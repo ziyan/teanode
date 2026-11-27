@@ -447,3 +447,52 @@ func TestWhatThePersonDidMovesACategory(t *testing.T) {
 		t.Fatalf("a personal idea stays above every catalog idea: %v", weights)
 	}
 }
+
+// "Send me a daily brief" is the one idea whose "Do it" starts what it
+// offers: an ordinary goal called the daily brief, at half past seven on
+// weekdays, written as built in and notifying when it posts, and opened as
+// the conversation. Once a goal of that name exists the idea is no longer
+// offered.
+func TestTheDailyBriefIdeaStartsTheGoal(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	provider := scriptedProvider([]string{saidByModel("ok")})
+	defer provider.Close()
+	worker, run := digestSplitWorld(t, database, provider.URL)
+	realChecks := ideaUsedChecks
+	ideaCatalogForTest(t)
+	ideaUsedChecks["daily_brief"] = realChecks["daily_brief"]
+	ideaCatalog = []*ideaEntry{{
+		IdeaKey: ideaKeyDailyBrief, IdeaCategory: "work", Emoji: "🗓️", Headline: "Send me a daily brief on weekday mornings.",
+		Body: "I post what the day holds to your feed.", OpeningRequest: "Send me a daily brief on weekday mornings.", UsedCheck: "daily_brief",
+	}}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ideas, err := worker.ListIdeas(t.Context(), tx, run.Agent, run.Owner, []models.AgentIdeaStatus{models.IdeaOpen}, nil, "")
+		if err != nil || len(ideas) != 1 || ideas[0].IdeaKey != ideaKeyDailyBrief {
+			t.Fatalf("the brief is on offer to a person who has none: %+v %v", ideas, err)
+		}
+		started, goal, err := worker.StartIdea(t.Context(), tx, run.Agent, ideas[0].ID, "", "")
+		if err != nil || started.IdeaStatus != models.IdeaStarted || goal == nil || started.StartedConversationID != goal.ID {
+			t.Fatalf("started: %+v %+v %v", started, goal, err)
+		}
+		if started.OpeningRequest != "" {
+			t.Fatalf("a goal starting idea has nothing to send into the goal's conversation: %q", started.OpeningRequest)
+		}
+		again, _, err := worker.StartIdea(t.Context(), tx, run.Agent, ideas[0].ID, "", "")
+		if err != nil || again.OpeningRequest != "" {
+			t.Fatalf("started again, it still has nothing to send: %+v %v", again, err)
+		}
+		if goal.Kind != models.AgentConversationGoal || goal.GoalTitle != BriefGoalTitle || len(goal.GoalTimes) != 1 || goal.GoalTimes[0] != "30 7 * * 1-5" ||
+			goal.GoalWrittenBy != models.WrittenByBuiltIn || !goal.IsGoalNotifiedWhenPosted || goal.GoalState != models.GoalWorking {
+			t.Fatalf("the idea started the daily brief goal: %+v", goal)
+		}
+		if goal.Goal != BriefPrompt(run.Agent, run.Owner) {
+			t.Fatalf("with the brief's own words: %q", goal.Goal)
+		}
+		isUsed, err := ideaUsedChecks["daily_brief"](tx, run.Agent, run.Owner)
+		if err != nil || !isUsed {
+			t.Fatalf("a person with the goal is not offered the brief again: %v %v", isUsed, err)
+		}
+	})
+}

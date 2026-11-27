@@ -670,12 +670,6 @@ struct SettingsForm: View {
                                 .foregroundStyle(.primary)
                         }
                         NavigationLink {
-                            DailyBriefView(connection: connection)
-                        } label: {
-                            Label("Daily brief", systemImage: "sun.max")
-                                .foregroundStyle(.primary)
-                        }
-                        NavigationLink {
                             MutedAlertsView(connection: connection)
                         } label: {
                             Label("Alerts", systemImage: "bell.badge")
@@ -847,10 +841,9 @@ struct SettingsForm: View {
                 case "alerts": MutedAlertsView(connection: connection)
                 case "alerts-following": MutedAlertsView(connection: connection, focusesFollowing: true)
                 case "activity-run": AgentActivityView(connection: connection)
-                case "daily-brief": DailyBriefView(connection: connection)
-                case "daily-brief-days": BriefDaysDemoScreen(isEmpty: false)
+                case "goal-days": BriefDaysDemoScreen(isEmpty: false)
                 case "tool-lines": ToolLinesDemoScreen()
-                case "daily-brief-days-none": BriefDaysDemoScreen(isEmpty: true)
+                case "goal-days-none": BriefDaysDemoScreen(isEmpty: true)
                 case "goal-detail": GoalDetailDemoScreen(connection: connection)
                 case "goal-when-editor": GoalWhenEditorDemoScreen(connection: connection)
                 case "oversight-running": OversightView(connection: connection, startingSegmentName: "running")

@@ -96,7 +96,7 @@ func (self *Agent) dreamThoughtAbout(ctx context.Context, run *Run, budget *drea
 // once a day (see dreamIdeas). Every other call goes through
 // dreamThoughtAbout and stops when the share does.
 func (self *Agent) dreamThoughtBeyondShare(ctx context.Context, run *Run, budget *dreamBudget, title, prompt string, lookups bool) (*thought, error) {
-	return self.dreamCall(ctx, run, budget, title, prompt, nil, lookups, config.AgentWorkScan, budget.reserveBeyondShare)
+	return self.dreamCall(ctx, run, budget, title, prompt, nil, lookups, config.AgentWorkScan, budget.reserveBeyondAllowance)
 }
 
 // dreamCall is the body of all of them, with work naming the model and
@@ -113,7 +113,7 @@ func (self *Agent) dreamCall(ctx context.Context, run *Run, budget *dreamBudget,
 		// description invites the model to note what it learns, and a
 		// dream that tried to note ran out of rounds refused and never
 		// answered.
-		tools, rounds, think = everyTool, roundsFor(run.Configuration(), models.AgentJobDream), self.thinkAboutFreely
+		tools, rounds, think = everyTool, 0, self.thinkAboutFreely
 		prompt = dreamFrame + "\n\n" + prompt
 		if recordingEvidenceSafetyOf(ctx).isRestricted() {
 			tools, think = lookupTools, self.thinkAbout

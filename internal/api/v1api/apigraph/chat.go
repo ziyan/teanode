@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
+	"github.com/ziyan/teanode/internal/config"
 	"slices"
 	"strings"
 	"time"
@@ -604,8 +604,7 @@ func (self *graph) requireChatAttachmentRoom(tx db.Transaction, agentId string, 
 	if newBytes <= 0 {
 		return nil
 	}
-	limits := self.config.Current().Agent.Limits
-	most := int64(min(limits.EffectiveMaxChatAttachmentAccountBytes(), uint64(math.MaxInt64)))
+	most := int64(config.MaxChatAttachmentAccountBytes)
 	kept, err := tx.ChatAttachmentBytes(agentId)
 	if err != nil {
 		return err

@@ -53,7 +53,7 @@ func TestTwoConsolidationsOfOnePageMergeOnce(t *testing.T) {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			budget := newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0)
+			budget := newDreamBudget(worker.settings.Configuration(), run.Agent, 0)
 			worker.consolidatePage(t.Context(), run, &models.AgentDream{}, page, budget)
 		}()
 	}

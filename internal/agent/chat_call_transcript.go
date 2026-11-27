@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -282,15 +281,7 @@ func (self *Agent) summarizeChatCallRecording(ctx context.Context, chatCall *mod
 // recordingByteLimits are the configured bounds on one original and on an
 // account's recordings.
 func (self *Agent) recordingByteLimits() (int64, int64) {
-	limits := self.settings.Configuration().Agent.Limits
-	maximumMediaBytes, maximumAccountBytes := uint64(limits.MaxRecordingMediaBytes.Bytes()), uint64(limits.MaxRecordingAccountBytes.Bytes())
-	if maximumMediaBytes == 0 {
-		maximumMediaBytes = 2 << 30
-	}
-	if maximumAccountBytes == 0 {
-		maximumAccountBytes = 64 << 30
-	}
-	return int64(min(maximumMediaBytes, math.MaxInt64)), int64(min(maximumAccountBytes, math.MaxInt64))
+	return config.MaxRecordingMediaBytes, config.MaxRecordingAccountBytes
 }
 
 // fileDigest is a file's size and SHA-256.

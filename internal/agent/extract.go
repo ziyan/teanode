@@ -161,7 +161,7 @@ func (self *Agent) runExtract(ctx context.Context, run *Run) error {
 		return nil
 	}
 
-	message, err := BuildMessageContext(ctx, run.Storage(), mail, configuration.Agent.Limits.MaxBodyCharacters, false)
+	message, err := BuildMessageContext(ctx, run.Storage(), mail, messageBodyCharactersMost, false)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,7 @@ func (self *Agent) runExtract(ctx context.Context, run *Run) error {
 		return err
 	}
 	thinking, err := self.think(ctx, run, fmt.Sprintf("Read %q for what it carries", mail.Subject), prompt,
-		extractTools, roundsFor(configuration, models.AgentJobExtract), models.AgentJobExtract, config.AgentWorkTriage)
+		extractTools, 0, models.AgentJobExtract, config.AgentWorkTriage)
 	if err != nil {
 		return err
 	}

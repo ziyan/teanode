@@ -161,7 +161,6 @@ type receiptSource struct {
 // mailbox the person still grants, or an upload of the person's. Nil when
 // it is gone.
 func (self *Agent) readReceiptSource(ctx context.Context, run *Run, sourceId string) (*receiptSource, error) {
-	configuration := run.Configuration()
 	if run.Job.MailboxID != "" {
 		if run.Mailbox == nil || run.Source == nil || !run.Source.Granted {
 			return &receiptSource{unreadableWhy: "the mailbox is no longer granted to the agent"}, nil
@@ -176,7 +175,7 @@ func (self *Agent) readReceiptSource(ctx context.Context, run *Run, sourceId str
 		if mail == nil {
 			return nil, nil
 		}
-		messageContext, err := BuildMessageContext(ctx, run.Storage(), mail, configuration.Agent.Limits.MaxBodyCharacters, false)
+		messageContext, err := BuildMessageContext(ctx, run.Storage(), mail, messageBodyCharactersMost, false)
 		if err != nil {
 			// The message is stored just after the delivery commits; a job
 			// that runs first tries again on the ladder.

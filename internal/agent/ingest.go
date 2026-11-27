@@ -344,7 +344,7 @@ func (self *Agent) runIngest(ctx context.Context, run *Run) error {
 	}
 
 	// Embed what is waiting, bounded.
-	embedded, left, err := self.embedChunks(ctx, run.Agent, configuration.Agent.Limits.IngestChunksPerRun)
+	embedded, left, err := self.embedChunks(ctx, run.Agent, ingestChunksPerRun)
 	if err != nil {
 		log.Warningf("cannot embed what source %q found: %s", source.ID, err)
 	}

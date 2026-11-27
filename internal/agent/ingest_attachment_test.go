@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/computer"
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -110,35 +109,20 @@ func TestAnAttachmentAlreadyStoredIsNotFetchedAgain(t *testing.T) {
 	}
 }
 
-// The bound on one file is the source's where it has one, the operator's
-// where it does not, and the number this program was written with only
-// where an operator has set neither.
-func TestTheBoundOnAnAttachmentIsTheSourcesOrTheServers(t *testing.T) {
-	configuration := config.Default()
-	configuration.Agent.Limits.MaxScannedAttachmentBytes = 8 << 20
+// A source bounds its own attachments; with nothing of its own the bound is
+// the default the daemon falls back to as well, so the two ends agree.
+func TestTheBoundOnAnAttachmentIsTheSourcesOrTheDaemons(t *testing.T) {
 	source := &models.AgentKnowledgeSource{ID: "one", Kind: models.SourceArchive}
 
-	if most := maxAttachmentBytes(configuration, source); most != 8<<20 {
-		t.Fatalf("a source with nothing of its own takes the server's: %d", most)
+	if most := maxAttachmentBytes(source); most != computer.DefaultMaxAttachmentBytes {
+		t.Fatalf("a source with nothing of its own takes the default: %d", most)
 	}
 	source.Specification.MaxAttachmentBytes = 60 << 20
-	if most := maxAttachmentBytes(configuration, source); most != 60<<20 {
+	if most := maxAttachmentBytes(source); most != 60<<20 {
 		t.Fatalf("a source's own bound wins: %d", most)
 	}
-	source.Specification.MaxAttachmentBytes = 0
-	if most := maxAttachmentBytes(configuration, source); most != 8<<20 {
-		t.Fatalf("zero on a source is the server's bound, not no bound: %d", most)
-	}
-
-	// An operator who has set neither gets the one this program was
-	// written with, which is also what a daemon told nothing falls back
-	// to, so the two ends agree.
-	configuration.Agent.Limits.MaxScannedAttachmentBytes = 0
-	if most := maxAttachmentBytes(configuration, source); most != computer.DefaultMaxAttachmentBytes {
-		t.Fatalf("with nothing set anywhere: %d", most)
-	}
-	if most := maxAttachmentBytes(nil, nil); most != computer.DefaultMaxAttachmentBytes {
-		t.Fatalf("with no configuration at all: %d", most)
+	if most := maxAttachmentBytes(nil); most != computer.DefaultMaxAttachmentBytes {
+		t.Fatalf("with no source at all: %d", most)
 	}
 }
 

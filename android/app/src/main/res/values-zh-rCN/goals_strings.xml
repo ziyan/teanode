@@ -89,8 +89,4 @@
     <string name="goals_said_paused">已暂停</string>
     <string name="goals_said_resumed">已恢复</string>
     <string name="goals_said_saved">已保存</string>
-    <string name="settings_brief_page_title">每日简报</string>
-    <string name="settings_brief_time">时间</string>
-    <string name="settings_brief_next">下次：%s</string>
-    <string name="settings_brief_open_goal">打开简报的目标</string>
 </resources>

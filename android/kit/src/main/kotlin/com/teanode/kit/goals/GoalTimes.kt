@@ -48,35 +48,6 @@ object GoalMailTrigger {
     fun variables(conditions: List<GoalMailCondition>): JsonElement = JsonArray(conditions.map { condition -> condition.variables })
 }
 
-/** The morning brief: the goal the server writes itself, with its time and days read from its first cron line. */
-object DailyBrief {
-    const val GOAL_TITLE = "Daily brief"
-    const val WRITTEN_BY = "built_in"
-    private const val DEFAULT_CRON = "30 7 * * 1-5"
-
-    fun goal(goals: List<AgentGoal>): AgentGoal? = goals.firstOrNull { goal -> goal.goalWrittenBy == WRITTEN_BY && goal.goalTitle == GOAL_TITLE }
-
-    /** The cron line the brief runs on: its first weekly time, or the default when it has none. */
-    fun cron(goal: AgentGoal?): String = goal?.goalTimes.orEmpty().firstOrNull { line -> GoalTiming.of(line) != null } ?: DEFAULT_CRON
-
-    private fun fields(cron: String): List<String> = cron.split(' ').filter { field -> field.isNotEmpty() }
-
-    /** The time of day a brief goes out, "HH:MM". */
-    fun time(cron: String): String {
-        val fields = fields(cron)
-        val hour = if (fields.size > 1) fields[1] else "7"
-        val minute = if (fields.isNotEmpty()) fields[0] else "30"
-        return hour.padStart(2, '0') + ":" + minute.padStart(2, '0')
-    }
-
-    /** The days a brief goes out on (1 is Monday); Monday to Friday when the cron line says none. */
-    fun dayNumbers(cron: String): List<Int> {
-        val fields = fields(cron)
-        if (fields.size != 5) return (1..5).toList()
-        return GoalWeekday.dayNumbers(fields[4])?.takeIf { days -> days.isNotEmpty() } ?: (1..5).toList()
-    }
-}
-
 /** Days of the week as the goals number them: 1 is Monday and 7 is Sunday, where cron's 0 is Sunday too. */
 object GoalWeekday {
     val allDayNumbers: List<Int> = (1..7).toList()

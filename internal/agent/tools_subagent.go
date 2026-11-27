@@ -117,7 +117,6 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 		// own would not be held to anything.
 		ReadOnlyTools: parent.settings.ReadOnlyTools,
 		Allow:         allowed,
-		MaxRounds:     self.settings.Configuration().Agent.Limits.EffectiveMaxRoundsPerSubagent(),
 		UsageKind:     "subagent",
 		// Not headless: somebody is present, at the other end of the turn
 		// that started this. Which is what makes the next line work.

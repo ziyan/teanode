@@ -104,24 +104,6 @@ func TestUnattendedAllowedRisksAreValidated(t *testing.T) {
 	}
 }
 
-// Every bound on unattended work is the operator's, and zero is its
-// default.
-func TestUnattendedLimitsResolveTheirDefaults(t *testing.T) {
-	limits := &config.AgentLimits{}
-	if limits.EffectiveGoalShare() != 0.5 || limits.EffectiveGoalTurnsAlone() != 24 ||
-		limits.EffectiveBackgroundWakesAlone() != 20 || limits.EffectiveMaxRoundsPerSubagent() != 20 {
-		t.Fatalf("the defaults: %+v", limits)
-	}
-	limits = &config.AgentLimits{GoalShare: 0.2, GoalTurnsAlone: 500, BackgroundWakesAlone: 80, MaxRoundsPerSubagent: 60}
-	if limits.EffectiveGoalShare() != 0.2 || limits.EffectiveGoalTurnsAlone() != 500 ||
-		limits.EffectiveBackgroundWakesAlone() != 80 || limits.EffectiveMaxRoundsPerSubagent() != 60 {
-		t.Fatalf("what the operator set: %+v", limits)
-	}
-	if config.Default().Agent.Limits.MaxRoundsPerAsk != 150 {
-		t.Fatalf("a turn's rounds: %d", config.Default().Agent.Limits.MaxRoundsPerAsk)
-	}
-}
-
 // Approving or declining a call that waits for the person is the person's act.
 // The agent's shell or terminal running the command that does it always asks,
 // as money, and no allowance for when the person is away covers it, even one

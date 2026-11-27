@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"time"
 )
 
@@ -112,7 +111,7 @@ type AgentJob struct {
 const agentViewSelection = `{
 	agent { id name enabled instructions language knowledgeLanguage askModel speechVoice dreamFrom dreamUntil dreamedAt
 		dailyTokens dailyCost operatorDisabledAt confirm unattendedAllowedRisks
-		isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost feedDestination lookAroundWeekday lookAroundTime
+		isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost feedDestination
 		voice { tone length greeting signoff }
 		categories { name description }
 		notifications { heldReply highPriority runFailed } }
@@ -142,13 +141,12 @@ const (
 	DocumentUpdateAgent = `mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
 		$voice: AgentVoiceInput, $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput,
 		$confirm: [String!], $unattendedAllowedRisks: [String!], $askModel: String, $speechVoice: String, $dreamFrom: String, $dreamUntil: String,
-		$isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $feedDestination: String, $lookAroundWeekday: String, $lookAroundTime: String,
+		$isAlertsEnabled: Boolean, $feedDestination: String,
 		$forget: Boolean) {
 		UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
 			voice: $voice, categories: $categories, notifications: $notifications, confirm: $confirm,
 			unattendedAllowedRisks: $unattendedAllowedRisks, askModel: $askModel, speechVoice: $speechVoice, dreamFrom: $dreamFrom, dreamUntil: $dreamUntil,
-			isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart, alertQuietEnd: $alertQuietEnd,
-			alertDailyMost: $alertDailyMost, feedDestination: $feedDestination, lookAroundWeekday: $lookAroundWeekday, lookAroundTime: $lookAroundTime, forget: $forget) ` + agentViewSelection + `
+			isAlertsEnabled: $isAlertsEnabled, feedDestination: $feedDestination, forget: $forget) ` + agentViewSelection + `
 	}`
 
 	DocumentGrantAgentMailbox = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) {
@@ -162,12 +160,6 @@ const (
 	DocumentGrantAgentSource = `mutation ($kind: String!, $id: String!, $granted: Boolean!) {
 		GrantAgentSource(kind: $kind, id: $id, granted: $granted) ` + agentViewSelection + `
 	}`
-
-	DocumentSetAgentBrief = `mutation ($enabled: Boolean!, $at: String, $days: [Int!]) {
-		SetAgentBrief(enabled: $enabled, at: $at, days: $days) { ` + goalFields + ` }
-	}`
-
-	DocumentRunAgentBriefNow = `mutation { RunAgentBriefNow { ` + goalFields + ` } }`
 
 	DocumentAgentUsage = `query ($since: DateTime, $by: String) {
 		AgentUsage(since: $since, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
@@ -342,35 +334,6 @@ func GrantAgentSource(ctx context.Context, connection *Client, kind, id string, 
 		return nil, err
 	}
 	return result.GrantAgentSource, nil
-}
-
-// SetAgentBrief turns the daily brief on or off and says when it comes.
-func SetAgentBrief(ctx context.Context, connection *Client, enabled bool, at string, days []int) (*AgentGoal, error) {
-	var result struct {
-		SetAgentBrief *AgentGoal `json:"SetAgentBrief"`
-	}
-	variables := map[string]any{"enabled": enabled}
-	if strings.TrimSpace(at) != "" {
-		variables["at"] = at
-	}
-	if len(days) > 0 {
-		variables["days"] = days
-	}
-	if err := connection.Execute(ctx, DocumentSetAgentBrief, variables, &result); err != nil {
-		return nil, err
-	}
-	return result.SetAgentBrief, nil
-}
-
-// RunAgentBriefNow sends one immediately.
-func RunAgentBriefNow(ctx context.Context, connection *Client) (*AgentGoal, error) {
-	var result struct {
-		RunAgentBriefNow *AgentGoal `json:"RunAgentBriefNow"`
-	}
-	if err := connection.Execute(ctx, DocumentRunAgentBriefNow, nil, &result); err != nil {
-		return nil, err
-	}
-	return result.RunAgentBriefNow, nil
 }
 
 // AgentUsage is the caller's own token use.

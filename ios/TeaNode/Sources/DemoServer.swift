@@ -408,10 +408,6 @@
                     #","goalOriginTitle":null,"activity":[{"id":"a1","createdAt":"2026-10-10T07:00:00Z","goalActivityKind":"turn","activityHeadline":"Dropped four articles","activityDetail":"Four pieces had sat unread for a month."},{"id":"a2","createdAt":"2026-10-03T07:00:00Z","goalActivityKind":"turn","activityHeadline":"Checked the list","activityDetail":""}]}"#
                 return #"{"data":{"GetAgentGoal":"# + String(found.json.dropLast()) + activity + "}}"
             }
-            if query.contains("SetAgentBrief") || query.contains("RunAgentBriefNow") {
-                let operation = query.contains("SetAgentBrief") ? "SetAgentBrief" : "RunAgentBriefNow"
-                return #"{"data":{"\#(operation)":"# + demoGoalObjects[2].json + "}}"
-            }
             for operation in ["StartAgentGoal", "UpdateAgentGoal", "RunAgentGoal", "TellAgentGoal", "SetAgentGoalState"] where query.contains(operation) {
                 return #"{"data":{"\#(operation)":{"conversationId":"g2"}}}"#
             }
@@ -973,7 +969,7 @@
                 "confirm":["mail_send","calendar"],"unattendedAllowedRisks":["outward"],"isSuggestionsEnabled":true,
                 "voice":{"tone":"casual","length":"short","greeting":"Hi","signoff":"Robin"},
                 "categories":[{"name":"home","description":"The house, the garden and the people who fix things."},{"name":"travel","description":"Tickets, bookings and plans for trips."}],
-                "dreamFrom":"01:00","dreamUntil":"06:00","dreamBootstrap":false,"isAlertsEnabled":true,"alertQuietStart":"22:00","alertQuietEnd":"07:00","alertDailyMost":5,"lookAroundWeekday":"thursday","lookAroundTime":"17:00"},
+                "dreamFrom":"01:00","dreamUntil":"06:00","dreamBootstrap":false,"isAlertsEnabled":true},
               "sources":[{"mailboxId":"box","name":"Robin","addresses":["robin@example.com"],"policy":{"granted":true,"draftReplies":true,"search":true,"research":false,
                 "triage":{"enabled":true,"backfill":"recent","replyExpectation":"direct"},"summaries":{"enabled":true,"minimumMessages":3,"style":"brief"},
                 "autoReply":null,"alerts":{"enabled":true}}}],

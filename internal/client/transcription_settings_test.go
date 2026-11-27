@@ -15,13 +15,9 @@ func (self recordingSettingsTransport) RoundTrip(request *http.Request) (*http.R
 	return self(request)
 }
 
-func TestRecordingSettingsAreReadWithoutBreakingOlderServers(test *testing.T) {
+func TestTranscriptionSettingsAreReadWithoutBreakingOlderServers(test *testing.T) {
 	for _, isUpdating := range []bool{false, true} {
-		for _, serverCapabilities := range []struct {
-			hasRecordingLimits bool
-			hasTranscription   bool
-		}{{true, true}, {true, false}, {false, true}, {false, false}} {
-			hasRecordingLimits, hasTranscription := serverCapabilities.hasRecordingLimits, serverCapabilities.hasTranscription
+		for _, hasTranscription := range []bool{true, false} {
 			transport := recordingSettingsTransport(func(request *http.Request) (*http.Response, error) {
 				var body struct {
 					Query string `json:"query"`
@@ -32,13 +28,6 @@ func TestRecordingSettingsAreReadWithoutBreakingOlderServers(test *testing.T) {
 				responseJSON := `{"data":{"GetSettings":{"agent":{"models":{"default":"fixture:chat"},"limits":{"dailyTokensPerAgent":1200}}}}}`
 				if strings.Contains(body.Query, "mutation") {
 					responseJSON = strings.ReplaceAll(responseJSON, "GetSettings", "UpdateSettings")
-				}
-				if strings.Contains(body.Query, "maxRecordingMediaBytes") {
-					if hasRecordingLimits {
-						responseJSON = `{"data":{"GetSettings":{"agent":{"limits":{"maxRecordingMediaBytes":"3GB","maxRecordingAccountBytes":"60GB"}}}}}`
-					} else {
-						responseJSON = `{"errors":[{"message":"Cannot query field \"maxRecordingMediaBytes\" on type \"AgentLimitsSettings\"."}]}`
-					}
 				}
 				if strings.Contains(body.Query, "models { transcription }") {
 					if hasTranscription {
@@ -77,9 +66,6 @@ func TestRecordingSettingsAreReadWithoutBreakingOlderServers(test *testing.T) {
 			}
 			if hasTranscription && agentSettings.Models["transcription"] != "fixture:audio" {
 				test.Fatal("CLI omitted transcription assignment")
-			}
-			if hasRecordingLimits && agentSettings.Limits["maxRecordingMediaBytes"] != "3GB" {
-				test.Fatal("CLI omitted recording limits")
 			}
 		}
 	}

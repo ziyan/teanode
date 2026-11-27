@@ -80,8 +80,7 @@ A program over MCP sends bytes it holds with `source: "upload"`: the answer's
 PUT within an hour, signed with the server's secret over a name of its own, so
 an address that opens a file cannot replace one. The row waits with no bytes
 (`message_id` `upload`) until they arrive, and one never uploaded goes with
-the uploads nobody sent. A file is at most `agent.limits.maxSentFileBytes`,
-100 MB by default.
+the uploads nobody sent. A file is at most 100 MB (`config.MaxSentFileBytes`).
 
 A page (HTML or SVG) sent this way is served inline in the artifact sandbox
 and drawn in a frame, and a PDF inline in the browser's viewer; the same file
@@ -320,7 +319,7 @@ Everybody who can chat has an `agent` row, made switched off
 (`EnsureAgent`) for a person who never turned theirs on, because their
 conversations and phones hang from it. Nothing treats that row as "this person
 uses the agent": the sweeps over every agent (the dream, speaking first,
-follow-ups, the weekly look around, evaluation) check `Enabled` or `Active`,
+follow-ups, evaluation) check `Enabled` or `Active`,
 which it is not, and the places that ask whether the person has an agent at all
 (their settings page, the operator's list of agents, granting a mailbox or a
 source, learning from a correction) see a **placeholder** as none
@@ -388,7 +387,7 @@ agent is off is kept, but the text read out of it for a model is not, because
 there is no model to spend it on. A person may send 60 messages a
 minute on one instance (`ratelimit`), a message is at most 16,000 characters,
 and it needs words or a file. A person keeps at most 1GB of the files they sent
-in chats (`agent.limits.maxChatAttachmentAccountBytes`, `db.ChatAttachmentBytes`):
+in chats (`config.MaxChatAttachmentAccountBytes`, `db.ChatAttachmentBytes`):
 a message with files stays until somebody deletes it, and nothing sweeps
 them, so a send past the limit is refused with how much they keep and that
 deleting old messages with files makes room. An edit, a reaction and a deleted

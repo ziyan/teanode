@@ -33,10 +33,6 @@ object GoalDocuments {
     const val SET_GOAL_STATE = """mutation (${'$'}conversationId: String!, ${'$'}goalState: String!) {
   SetAgentGoalState(conversationId: ${'$'}conversationId, goalState: ${'$'}goalState) { $GOAL_FIELDS }
 }"""
-    const val SET_BRIEF = """mutation (${'$'}enabled: Boolean!, ${'$'}at: String, ${'$'}days: [Int!]) {
-  SetAgentBrief(enabled: ${'$'}enabled, at: ${'$'}at, days: ${'$'}days) { $GOAL_FIELDS }
-}"""
-    const val RUN_BRIEF_NOW = """mutation { RunAgentBriefNow { $GOAL_FIELDS } }"""
 }
 
 /** AgentGoal is something the agent works toward on its own, in a conversation of its own, and when it takes its turns. */
@@ -124,12 +120,6 @@ private class TellGoalAnswer(val TellAgentGoal: AgentGoal? = null)
 @Serializable
 private class SetGoalStateAnswer(val SetAgentGoalState: AgentGoal? = null)
 
-@Serializable
-private class SetBriefAnswer(val SetAgentBrief: AgentGoal? = null)
-
-@Serializable
-private class RunBriefAnswer(val RunAgentBriefNow: AgentGoal? = null)
-
 suspend fun Connection.goals(): List<AgentGoal> = execute<GoalsAnswer>(GoalDocuments.GOALS).ListAgentGoals.filterNotNull()
 
 suspend fun Connection.goal(conversationId: String): AgentGoal? =
@@ -165,13 +155,3 @@ suspend fun Connection.setGoalState(conversationId: String, goalState: String) {
         GoalDocuments.SET_GOAL_STATE, mapOf("conversationId" to JsonPrimitive(conversationId), "goalState" to JsonPrimitive(goalState)),
     )
 }
-
-/** Turns the morning brief on or off, at a time on some days (1 is Monday, 7 is Sunday); no days keeps the goal's own. */
-suspend fun Connection.setDailyBrief(isEnabled: Boolean, time: String, days: List<Int>): AgentGoal? {
-    val variables = mutableMapOf<String, JsonElement>("enabled" to JsonPrimitive(isEnabled), "at" to JsonPrimitive(time))
-    if (days.isNotEmpty()) variables["days"] = JsonArray(days.map { day -> JsonPrimitive(day) })
-    return execute<SetBriefAnswer>(GoalDocuments.SET_BRIEF, variables).SetAgentBrief
-}
-
-/** Gives the brief a turn now. */
-suspend fun Connection.runDailyBrief(): AgentGoal? = execute<RunBriefAnswer>(GoalDocuments.RUN_BRIEF_NOW).RunAgentBriefNow

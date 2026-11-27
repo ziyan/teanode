@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/agent/reading"
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -136,8 +135,7 @@ func checkoutPage(source *models.AgentKnowledgeSource, checkout string) string {
 }
 
 // textOf is what the reading is shown of a document: all of it, from its
-// passages in order, or as much as digestDocumentRunes allows where the
-// operator set one; its title alone where the reading is coarse. A
+// passages in order; its title alone where the reading is coarse. A
 // document longer than one call holds is read in parts instead (see
 // digestPartsOf), and never cut here.
 func (self *Agent) textOf(ctx context.Context, run *Run, document *models.AgentDocument, coarse bool) string {
@@ -150,9 +148,6 @@ func (self *Agent) textOf(ctx context.Context, run *Run, document *models.AgentD
 			text.WriteString("\n")
 		}
 		text.WriteString(passage)
-	}
-	if limit := digestDocumentRunes(run.Configuration()); limit > 0 {
-		return cutRunes(text.String(), limit)
 	}
 	return text.String()
 }
@@ -235,14 +230,16 @@ func withoutOverlap(previous, current string) string {
 // parts of this size.
 const digestBatchRunes = 40000
 
-// digestDocumentRunes is the operator's bound on how much of each
-// document is read, or zero for all of it.
-func digestDocumentRunes(configuration *config.Configuration) int {
-	if configuration != nil && configuration.Agent.Limits.DigestDocumentRunes > 0 {
-		return configuration.Agent.Limits.DigestDocumentRunes
-	}
-	return 0
-}
+// dreamScanConcurrency is how many reading calls the nightly reading makes at
+// once, and dreamRewriteConcurrency how many pages it rewrites at once after
+// the reading: enough to finish a night's backlog, few enough that a hosted
+// model's rate limit is not met. They were settings at these values; nobody
+// could say what else they should be. The daily money limit bounds what the
+// night spends however fast it goes.
+const (
+	dreamScanConcurrency    = 6
+	dreamRewriteConcurrency = 4
+)
 
 // chatNamesOf is what the person may be called in a chat archive: their
 // username, and each word of their name, in lower case. A thread whose

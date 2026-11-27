@@ -150,7 +150,7 @@ func TestTheNightKeepsThemesInTwoLevels(t *testing.T) {
 	})
 
 	record := &models.AgentDream{}
-	worker.dreamThemes(t.Context(), run, record, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamThemes(t.Context(), run, record, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	if record.ThemesMade != 3 || len(sentPrompts()) != 3 {
 		t.Fatalf("%d themes made with %d calls; two themes and one of themes were due", record.ThemesMade, len(sentPrompts()))
 	}
@@ -188,7 +188,7 @@ func TestTheNightKeepsThemesInTwoLevels(t *testing.T) {
 	// The overviews: a theme is written from its members, and the theme
 	// of themes last.
 	overviews := &models.AgentDream{}
-	worker.dreamOverviews(t.Context(), run, overviews, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamOverviews(t.Context(), run, overviews, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	var themePrompt string
 	for _, prompt := range sentPrompts() {
 		if strings.Contains(prompt, `## The page\n\nthemes/outdoor-life/orchard-work `) {
@@ -215,7 +215,7 @@ func TestTheNightKeepsThemesInTwoLevels(t *testing.T) {
 	})
 	asked := len(sentPrompts())
 	again := &models.AgentDream{}
-	worker.dreamThemes(t.Context(), run, again, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamThemes(t.Context(), run, again, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	if again.ThemesMade != 0 || len(sentPrompts()) != asked {
 		t.Errorf("a night with the same groups made %d themes and asked %d times", again.ThemesMade, len(sentPrompts())-asked)
 	}
@@ -244,7 +244,7 @@ func TestTheNightKeepsThemesInTwoLevels(t *testing.T) {
 		}
 	})
 	apart := &models.AgentDream{}
-	worker.dreamThemes(t.Context(), run, apart, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamThemes(t.Context(), run, apart, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		if tides := mustPage(t, tx, run.Agent.ID, "themes/outdoor-life/tide-tables"); !tides.Dormant {
 			t.Errorf("the tide theme is still awake")
@@ -269,7 +269,7 @@ func TestTheNightKeepsThemesInTwoLevels(t *testing.T) {
 	})
 	asked = len(sentPrompts())
 	back := &models.AgentDream{}
-	worker.dreamThemes(t.Context(), run, back, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamThemes(t.Context(), run, back, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	if back.ThemesMade != 0 || len(sentPrompts()) != asked {
 		t.Errorf("the tides coming back made %d themes and asked %d times", back.ThemesMade, len(sentPrompts())-asked)
 	}

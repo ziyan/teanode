@@ -193,9 +193,11 @@ The agent also starts a conversation for reasons of its own
 (`internal/agent/speak_first.go`): its introduction, a new phone's tour, a trip,
 a memory check, an idea. The person need not have the app open, since what it
 says reaches their phone. It holds to its rules all the same: not within half an
-hour of their last word, once a day but for the introduction and a tour, never
-while snoozed, and, with no app or dashboard in front of them, not during their
-quiet hours. Somebody with no phone taking notifications and no chat app could
+hour of their last word, never while snoozed, and each subject (the
+introduction, a waiting goal, a fact, an idea) once: there is no gap of a day
+between turns and no quiet hours, since a card lands in the feed at any hour and
+the phone's own Focus or Do Not Disturb decides whether it makes a sound.
+Somebody with no phone taking notifications and no chat app could
 not read it, so for them it waits until they come.
 
 A trip (`speak_first_trip.go`) is spoken about up to three days ahead with a plan
@@ -246,9 +248,9 @@ called unexpected at any of the three. The model writes the alerts in the agent'
 code keeps the bounds, because a model talked into interrupting somebody
 by a stranger's message is what bounds are for:
 
-- at most five a day, the urgent first;
-- nothing in the person's night, 22:00 to 07:00 in their zone, unless it
-  cannot wait; what waited is decided again in the morning;
+- no count a day and no night: every alert the model decided on is
+  delivered at once, the urgent first (a sixth in a day included), and the
+  phone's own Focus or Do Not Disturb decides whether it makes a sound;
 - nothing said twice in a week under the same subject key, unless the model
   says what changed;
 - no web address, host name, link shortener, email address or telephone
@@ -268,9 +270,10 @@ of the agent's own (`internal/channel/relay.go`).
 
 **The person's say.** Alerts are on for every agent (`isAlertsEnabled`) and
 for every mailbox the agent sorts (`AgentMailbox.alerts`, absent meaning
-on). The night and the day's most are theirs to change (`alertQuietStart`,
-`alertQuietEnd`, `alertDailyMost`; the same time at both ends is no night), as
-are the day and time of the look around.
+on). There are no quiet hours and no daily most: `alertQuietStart`,
+`alertQuietEnd`, `alertDailyMost`, `lookAroundWeekday` and `lookAroundTime`
+are no longer used, still answered by the API for one release and ignored when
+sent.
 Saying an alert was theirs, or that it is handled, settles that alert and mutes nothing: the next decision reads their answer. "Don't tell me about these" is a **mute**, a row of `agent_alert_mute`
 naming a sender's address, a domain (and its subdomains), a subject key, or
 a kind: `burst`, or a category of the sorting such as `notification`. The
@@ -284,7 +287,7 @@ burst of an alert about one, the sender of an alert about a message, not
 the subject key the model chose, which the next alert may word
 differently. A target named without a scope is read as an address, a
 domain, or else a subject. The same operations serve every door: the
-agent page's Alerts tab (the switch, quiet hours and daily most, then what
+agent page's Alerts tab (the switch, then what
 was said and what is muted), the Mail tab's switch per mailbox, `teanode agent alert` and `agent settings
 set`, and `agent_profile`'s `no_alerts`, `alerts_on`, `mute_alert` and
 `unmute_alert`, which the agent calls when the person answers an alert with
@@ -329,22 +332,17 @@ bill long past are let go by the sweep without a word.
 `BackfillAgentFollowUps` and `teanode agent follow backfill` run it again on
 demand, for someone who turned alerts on later.
 
-**The look around.** Once a week, on the day and at the time the person set
-(`lookAroundWeekday`, `lookAroundTime`; Thursday at 17:00 in their zone by
-default), each agent with alerts on is queued a `nearby` job (`nearby.go`, subject the slot,
-like the sweep). It reads the person's town and household from the self page
-and the place pages (one model call that is told to leave out any street
-address; `cleanHomeArea` strips what is left), and with a town runs one turn
-with nobody present that has only `web_search` and `web_fetch`, at most 12
-searches and 10 page reads (`AskSettings.CallLimits`: the loop refuses the
-call past them). What it finds is written as `event` and `deadline`
-follow-ups with `source_url`, the page. It then tells the weekend in one
-message (`tellWeekend`: the open events and deadlines due from tomorrow through
-Sunday, from the look around and from mail), and the Sunday roundup lists the
-rest. When
-memory gives no town the run searches nothing and offers the person one idea,
-once (`nearby_home_area`), asking which town to look around. The kind mute
-`nearby` stops the run and keeps what it wrote out of the roundup.
+**The look around.** An ordinary goal, called "Look around", on set times
+(Thursday at 17:00 in the person's zone unless they chose another day and time
+before it became a goal). Migration 0285 made one, built in, for each agent
+that was on and had alerts on. Its words tell a turn to find the person's town
+from the place they labeled home or from memory, to search the web with the town
+and the kind of thing and nothing else, to post the best of what it finds to the
+feed with the feed tool, and to add a follow-up with `agent_profile`'s
+`add_follow_up` for anything with a day. It is on the Goals screens, where its
+words and time can be changed or the goal dropped; there is no job of its own
+(`nearby` is gone), no weekend message, and no kind mute `nearby`. A follow-up
+it adds is told in the Sunday roundup like any other.
 
 ## Runs
 

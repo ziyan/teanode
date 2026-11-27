@@ -200,8 +200,7 @@ func followUpDueWords(days int) string {
 // and deadlines due from tomorrow through the week, that no roundup has
 // listed. Only once a Sunday, by its subject key, and none on any other day
 // or before the evening. A kind the person muted is left out of it, so that
-// muting events leaves the deadlines, and so is what the look around found
-// when nearby is muted.
+// muting events leaves the deadlines.
 func roundupFollowUps(tx db.Transaction, agent *models.Agent, mutes []*models.AgentAlertMute, followUps []*models.AgentFollowUp, local, today, now time.Time) (*models.AgentAlertCandidate, error) {
 	if local.Weekday() != time.Sunday || local.Hour() < followUpRoundupHour {
 		return nil, nil
@@ -213,8 +212,8 @@ func roundupFollowUps(tx db.Transaction, agent *models.Agent, mutes []*models.Ag
 // writeRoundup writes one candidate listing the open events and deadlines
 // due from tomorrow through lastDay days ahead that no roundup has listed,
 // leaving out a kind the person muted, and marks them listed. The Sunday
-// roundup is one; the look around's weekend message, on the day the person
-// set, is the other, and what it listed is not listed again on Sunday.
+// roundup is the only one now; what a roundup listed is not listed again
+// on the next.
 func writeRoundup(tx db.Transaction, agent *models.Agent, mutes []*models.AgentAlertMute, followUps []*models.AgentFollowUp, today time.Time, lastDay int, reason, subjectKey string, now time.Time) (*models.AgentAlertCandidate, error) {
 	var coming []*models.AgentFollowUp
 	for _, followUp := range followUps {
@@ -225,13 +224,7 @@ func writeRoundup(tx db.Transaction, agent *models.Agent, mutes []*models.AgentA
 		if !hasDay || followUp.FollowUpState != models.AgentFollowUpOpen || days < 1 || days > lastDay || followUp.ToldState == models.AgentFollowUpToldRoundup {
 			continue
 		}
-		kinds := []string{models.AlertKindFollowUp, string(followUp.FollowUpKind)}
-		// What the look around wrote is muted by its own kind too, so that
-		// "no more of what is on near me" leaves the school's events.
-		if isNearbyFollowUp(followUp) {
-			kinds = append(kinds, models.AlertKindNearby)
-		}
-		if mutedBy(mutes, &alertFacts{kinds: kinds}) != nil {
+		if mutedBy(mutes, &alertFacts{kinds: []string{models.AlertKindFollowUp, string(followUp.FollowUpKind)}}) != nil {
 			continue
 		}
 		coming = append(coming, followUp)
@@ -276,12 +269,6 @@ const followUpRoundupKeyPrefix = "follow-up-roundup:"
 // given.
 func followUpRoundupSubjectKey(sunday time.Time) string {
 	return followUpRoundupKeyPrefix + sunday.Format(time.DateOnly)
-}
-
-// followUpWeekendSubjectKey is the subject key of the weekend message the
-// look around writes on the day given.
-func followUpWeekendSubjectKey(runDay time.Time) string {
-	return followUpRoundupKeyPrefix + "weekend-" + runDay.Format(time.DateOnly)
 }
 
 // writeFollowUpCandidate writes a follow_up candidate, and answers it when

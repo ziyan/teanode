@@ -6598,6 +6598,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                         sendToAgentConversation(startedIn, openingRequest)
                         return
                       }
+                      // A goal's own conversation has no opening request.
+                      if (openingRequest.trim() === '') return
                       remember(draftKey(startedIn), openingRequest)
                       sendWhenOpen.current = startedIn
                       setDraft(openingRequest)
