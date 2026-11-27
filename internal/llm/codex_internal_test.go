@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -100,7 +101,7 @@ func TestAConversationBecomesResponseItems(test *testing.T) {
 	if body.Input[1].CallID != "call-1" || body.Input[1].Name != "calendar" {
 		test.Errorf("the call came out %+v", body.Input[1])
 	}
-	if body.Input[2].CallID != "call-1" || body.Input[2].Output != "Nothing." {
+	if body.Input[2].CallID != "call-1" || body.Input[2].Output == nil || *body.Input[2].Output != "Nothing." {
 		test.Errorf("what the tool answered came out %+v", body.Input[2])
 	}
 	if len(body.Tools) != 1 || body.Tools[0].Type != "function" || body.Tools[0].Name != "calendar" {
@@ -676,5 +677,54 @@ func TestASecondMessageAfterALineBreakIsOneBlankLineDown(test *testing.T) {
 	}
 	if answer.Message.Content != "Checking.\n\nDone." {
 		test.Errorf("it said %q", answer.Message.Content)
+	}
+}
+
+// A policy flag in the stream is told apart from the service being down: it
+// is a refusal of the request, which IsPolicyRefusal names.
+func TestAPolicyFlagIsARefusalNotAnOutage(test *testing.T) {
+	test.Parallel()
+
+	made, server := signedIn(test, func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(writer, "data: "+`{"type":"response.failed","response":{"error":{"message":"Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt."}}}`+"\n\n")
+	})
+	defer server.Close()
+
+	_, err := made.Chat(context.Background(), &ChatRequest{Model: "gpt-5.5", Messages: []ChatMessage{{Role: RoleUser, Content: "Match these receipt lines."}}})
+	var apiError *APIError
+	if !IsPolicyRefusal(err) || !errors.As(err, &apiError) || apiError.Status != http.StatusBadRequest {
+		test.Fatalf("a policy flag came back as %#v", err)
+	}
+	if IsPolicyRefusal(errors.New("llm: the answer stopped: context deadline exceeded")) {
+		test.Error("a timeout was taken for a policy flag")
+	}
+}
+
+// A tool that answered nothing, and a call made with no arguments, still send
+// the fields the service requires: it refused the whole request over an
+// answer with no output field.
+func TestAnEmptyAnswerAndACallWithoutArgumentsKeepTheirFields(test *testing.T) {
+	test.Parallel()
+
+	made, server := signedIn(test, nil)
+	defer server.Close()
+
+	encoded, err := made.encode(&ChatRequest{
+		Model: "gpt-5.5",
+		Messages: []ChatMessage{
+			{Role: RoleUser, Content: "Tidy the inbox."},
+			{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "call-1", Name: "mail_sort"}}},
+			{Role: RoleTool, ToolCallID: "call-1", Content: ""},
+		},
+	})
+	if err != nil {
+		test.Fatalf("encode: %s", err)
+	}
+	text := string(encoded)
+	if !strings.Contains(text, `"output":""`) {
+		test.Errorf("an empty answer was sent without its output: %s", text)
+	}
+	if !strings.Contains(text, `"arguments":"{}"`) {
+		test.Errorf("a call without arguments was sent without them: %s", text)
 	}
 }

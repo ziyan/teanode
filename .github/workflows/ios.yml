@@ -686,6 +686,15 @@ jobs:
           shoot agent-speak-first-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-speak-first
           shoot agent-speak-first-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-speak-first
           shoot manage-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen manage
+          # Oversight: every person's agent conversations, read-only. The recent list, running now and failed turns, and a transcript opened from it with the observing note in place of the composer.
+          for oversight_screen in oversight oversight-observed; do
+            shoot "$oversight_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$oversight_screen"
+            shoot "$oversight_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$oversight_screen"
+            shoot "$oversight_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$oversight_screen"
+          done
+          shoot oversight-running-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen oversight-running
+          shoot oversight-failed-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen oversight-failed
+          shoot oversight-failed-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen oversight-failed
           shoot people-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen people
           shoot domain-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen domain
           shoot domain-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen domain

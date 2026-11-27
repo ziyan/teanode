@@ -7,6 +7,9 @@ val RUN_JOB_KINDS: List<String> = listOf(
     "triage", "reply", "research", "summarize", "remember", "ingest", "recording", "dream", "schedule", "extract", "draft", "describe", "compact", "evaluate", "survey", "subagent", "mcp", "goal", "background", "speak_first", "alert", "categorize", "statement_import", "read_receipt", "describe_photo", "statement_photo", "tax_document", "tax_mail", "watch", "follow_up_sweep", "nearby", "journal", "match_shopping", "shopping_picture", "shopping_import",
 )
 
+/** The kinds the oversight filter offers: a person's own conversations, then the run kinds. */
+val OVERSIGHT_KINDS: List<String> = listOf("main", "named") + RUN_JOB_KINDS
+
 /** What a kind of run is called, or null for a kind a newer server added. */
 fun runKindNameResource(jobKind: String): Int? = when (jobKind) {
     "triage" -> R.string.manage_runkind_triage
@@ -45,5 +48,7 @@ fun runKindNameResource(jobKind: String): Int? = when (jobKind) {
     "shopping_picture" -> R.string.manage_runkind_shopping_picture
     "shopping_import" -> R.string.manage_runkind_shopping_import
     "journal" -> R.string.manage_runkind_journal
+    "main" -> R.string.manage_oversight_kind_main
+    "named" -> R.string.manage_oversight_kind_named
     else -> null
 }

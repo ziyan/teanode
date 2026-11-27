@@ -223,6 +223,7 @@ fun permissionLabel(permissionKey: String): String {
         "passwords:use" -> R.string.settings_permission_passwords_use
         "shopping:use" -> R.string.settings_permission_shopping_use
         "agent:audit" -> R.string.settings_permission_agent_audit
+        "agent:observe" -> R.string.settings_permission_agent_observe
         "agent:act" -> R.string.settings_permission_agent_act
         else -> null
     }

@@ -1688,6 +1688,7 @@ private enum AccessWords {
         case "shopping:use": String(localized: "Keep shopping lists, share them, and check items off together")
         case "agent:audit": String(localized: "See every person's agent: what it may reach, its usage and limits, never its content")
         case "agent:act": String(localized: "Read every person's agent conversations and runs, and speak to their agent as them")
+        case "agent:observe": String(localized: "Read every person's agent conversations and runs, without acting; each read is logged")
         default: permissionKey
         }
     }

@@ -67,6 +67,25 @@ func IsOutOfCreditError(err error) bool {
 		strings.Contains(message, "billing details")
 }
 
+// IsPolicyRefusal says whether a provider refused a request as against its
+// usage policy. Such a flag is not always about the words: the same prompt
+// that was refused once has been accepted a minute later, so a caller may
+// try once more before it gives up.
+func IsPolicyRefusal(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	var apiError *APIError
+	if errors.As(err, &apiError) {
+		message = apiError.Message
+	}
+	message = strings.ToLower(message)
+	return strings.Contains(message, "flagged as potentially violating") ||
+		strings.Contains(message, "violating our usage policy") ||
+		strings.HasPrefix(strings.TrimSpace(message), "invalid prompt")
+}
+
 // IsContextLengthError says whether a provider refused because the request
 // was too long for the model, which is the one error a caller can fix by
 // sending less.

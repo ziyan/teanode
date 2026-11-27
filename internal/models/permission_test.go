@@ -78,7 +78,7 @@ func TestSeededRoles(t *testing.T) {
 	}
 	for _, permission := range SeededRolePermissions(RoleNameOperator) {
 		switch permission {
-		case PermissionUserManage, PermissionGroupManage, PermissionRoleManage, PermissionAgentAct:
+		case PermissionUserManage, PermissionGroupManage, PermissionRoleManage, PermissionAgentObserve, PermissionAgentAct:
 			t.Errorf("the operator holds %s", permission)
 		}
 	}

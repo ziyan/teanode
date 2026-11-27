@@ -404,6 +404,17 @@ func (self *AskRun) sayNote(kind models.AgentNoteKind, detail string) {
 
 // AskRun is one turn in flight.
 type AskRun struct {
+	// lastHistoryTokens is the history the turn's last round carried, and
+	// lastContextLength the model's window when it was asked for (zero when
+	// the history never came near needing it): what the turn leaves for a
+	// compaction once the conversation is quiet (compact_idle.go).
+	lastHistoryTokens int
+	lastContextLength int
+
+	// isQuietCompaction says the run is over and compacts its
+	// conversation while nobody waits on it, so it says nothing.
+	isQuietCompaction bool
+
 	// comingUpBlock is the turn's <coming_up> overlay, read once: every
 	// round of a turn would otherwise read every calendar again.
 	comingUpBlock   string
@@ -625,6 +636,10 @@ const (
 	// definitions ride beside it, and a run that answered at thirty
 	// thousand sent thirty-three to a window of thirty-two.
 	askReadThenAnswerTokens = 24000
+
+	// policyRefusalRetryAfter is how long a round the model refused as
+	// against its policy waits before it is asked once more.
+	policyRefusalRetryAfter = 2 * time.Second
 
 	// askTailMessages is how many recent messages stay verbatim through a
 	// compaction.
@@ -1226,6 +1241,7 @@ func (self *AskRun) loop() {
 		self.notifyAnswer(answer)
 	}
 	self.emit(Event{Kind: EventDone})
+	self.agent.compactWhenIdle(self)
 }
 
 // isCutShortByStop says the server stopping ended this turn, which a
@@ -1248,16 +1264,14 @@ func (self *AskRun) turn() error {
 	self.modelName = modelName
 	// The model's window is asked for only once the history passes what
 	// any window holds, which most runs never do.
-	historyLimitTokens := 0
-	historyLimitFor := func(historyTokens int) int {
-		if historyLimitTokens == 0 {
-			if historyTokens <= askHistoryTokens/2 {
-				return askHistoryTokens
-			}
-			historyLimitTokens = historyLimit(registry.ContextLength(ctx, modelName))
+	contextLength, hasAskedContextLength := 0, false
+	contextLengthFor := func(historyTokens int) int {
+		if !hasAskedContextLength && historyTokens > askHistoryTokens/2 {
+			contextLength, hasAskedContextLength = registry.ContextLength(ctx, modelName), true
 		}
-		return historyLimitTokens
+		return contextLength
 	}
+	historyLimitFor := func(historyTokens int) int { return historyLimit(contextLengthFor(historyTokens)) }
 
 	// The person's turn, kept before anything is asked.
 	var history []llm.ChatMessage
@@ -1514,7 +1528,7 @@ func (self *AskRun) turn() error {
 	// A compaction that failed is not tried again this turn, and a request
 	// the provider refused for its size is compacted hard and sent once
 	// more.
-	compactFailed, overflowed := false, false
+	compactFailed, overflowed, isRefusalRetried := false, false, false
 	// A call that failed the same way three times is not going to work
 	// the fourth: the turn stops rather than spending its rounds on it.
 	failures := map[string]int{}
@@ -1537,7 +1551,7 @@ func (self *AskRun) turn() error {
 			self.modelName = modelName
 			// The larger model's window is its own, and the hand-off, and
 			// its guidance for a small model, are not offered to it.
-			historyLimitTokens = 0
+			contextLength, hasAskedContextLength = 0, false
 			withoutThinkHarder := self.offered[:0:0]
 			for _, tool := range self.offered {
 				if tool.Name != thinkHarderToolName {
@@ -1576,12 +1590,15 @@ func (self *AskRun) turn() error {
 		// history fills; anything else has its older turns compacted.
 		answerNow := false
 		historyTokens := llm.EstimateTokens(renderHistory(history))
+		// Past the soft limit the conversation is compacted once it is quiet
+		// (compact_idle.go); only past the hard one does the person wait on
+		// it here.
 		if settings.ReadThenAnswer && historyTokens > askReadThenAnswerTokens {
 			answerNow = true
-		} else if historyTokens > historyLimitFor(historyTokens) {
-			if settings.ReadThenAnswer {
-				answerNow = true
-			} else if !compactFailed && !settings.isMemberTurn() {
+		} else if settings.ReadThenAnswer && historyTokens > historyLimitFor(historyTokens) {
+			answerNow = true
+		} else if historyTokens > hardHistoryLimit(contextLengthFor(historyTokens)) {
+			if !compactFailed && !settings.isMemberTurn() {
 				compacted, err := self.compact(ctx, provider, model, modelName, history, askTailMessages)
 				if err != nil {
 					log.Warningf("cannot compact the conversation %q: %s", settings.Conversation.ID, err)
@@ -1592,6 +1609,7 @@ func (self *AskRun) turn() error {
 			}
 		}
 		compactedTokens := llm.EstimateTokens(renderHistory(history))
+		self.lastHistoryTokens, self.lastContextLength = compactedTokens, contextLengthFor(compactedTokens)
 		compact := settings.Short || compactedTokens > historyLimitFor(compactedTokens)/2
 		sent, deferred := Split(self.Offered(), self.loaded, compact)
 		// Where a round's time goes, said in the log: a turn that feels
@@ -1676,6 +1694,23 @@ func (self *AskRun) turn() error {
 					round--
 					continue
 				}
+			}
+			// A model's policy flag on a request is not always about its
+			// words: the same prompt refused once has passed a minute later.
+			// The round is asked once more before the turn gives up.
+			if llm.IsPolicyRefusal(err) && !isRefusalRetried && (response == nil || strings.TrimSpace(response.Message.Content) == "") {
+				isRefusalRetried = true
+				log.Noticef("the model refused round %d of a %s turn of %q as against its policy (%d messages); asking once more", round+1, usageKind, settings.Owner.Username, len(messages))
+				select {
+				case <-time.After(policyRefusalRetryAfter):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				round--
+				continue
+			}
+			if llm.IsPolicyRefusal(err) {
+				return fmt.Errorf("the model refused this request as against its usage policy, twice: %w", err)
 			}
 			if errors.Is(err, context.Canceled) && response != nil && strings.TrimSpace(response.Message.Content) != "" {
 				// Stopped mid-sentence: the words that had come stay in
