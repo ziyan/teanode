@@ -60,8 +60,14 @@ export function feedClockOf(
   }
   const writtenOffset = writtenOffsetMinutes(written)
   const viewerOffset = viewerOffsetMinutes ?? -moment.getTimezoneOffset()
-  if (writtenOffset === null || writtenOffset === viewerOffset) {
+  if (writtenOffset === null) {
     return { clockText: moment.toLocaleTimeString(undefined, format), zoneName: '' }
+  }
+  if (writtenOffset === viewerOffset) {
+    // The viewer's own zone, read at the offset given rather than the
+    // machine's, which a caller that passes one need not be in.
+    const atViewer = new Date(moment.getTime() + viewerOffset * 60_000)
+    return { clockText: atViewer.toLocaleTimeString(undefined, { ...format, timeZone: 'UTC' }), zoneName: '' }
   }
   // The wall clock of the written zone: shift the moment by its offset and
   // read the result as UTC.
