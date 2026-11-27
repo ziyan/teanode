@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"reflect"
 	"slices"
 	"testing"
@@ -76,5 +77,36 @@ func TestTheWindowColumnSaysWhereTheFigureCameFrom(test *testing.T) {
 		if got := formatContextWindow(entry); got != want {
 			test.Errorf("%+v read %q, want %q", entry, got, want)
 		}
+	}
+}
+
+// Giving a price sets the model's own, and --input 0 is a price of zero; the
+// entry keeps its prices when none is given, and --provider-price drops them.
+func TestModelFlagsSetOrDropTheModelsOwnPrice(test *testing.T) {
+	test.Parallel()
+
+	run := func(entry *client.AgentModelEntry, arguments ...string) *client.AgentModelEntry {
+		test.Helper()
+		command := &cli.Command{Name: "set", Flags: settingsAgentModelFlags(), Action: func(ctx context.Context, command *cli.Command) error {
+			applySettingsAgentModelFlags(command, entry)
+			return nil
+		}}
+		if err := command.Run(context.Background(), append([]string{"set"}, arguments...)); err != nil {
+			test.Fatal(err)
+		}
+		return entry
+	}
+	if entry := run(&client.AgentModelEntry{Model: "alpha"}, "--name", "Alpha"); entry.Pricing != nil {
+		test.Fatalf("no price flag leaves the price unset: %+v", entry.Pricing)
+	}
+	if entry := run(&client.AgentModelEntry{Model: "alpha"}, "--input", "0"); entry.Pricing == nil || *entry.Pricing != (client.AgentPricing{}) {
+		test.Fatalf("--input 0 is a price of zero: %+v", entry.Pricing)
+	}
+	kept := &client.AgentPricing{Input: 1, Output: 2}
+	if entry := run(&client.AgentModelEntry{Model: "alpha", Pricing: kept}, "--output", "5"); entry.Pricing == nil || entry.Pricing.Input != 1 || entry.Pricing.Output != 5 {
+		test.Fatalf("a price flag changes only its own field: %+v", entry.Pricing)
+	}
+	if entry := run(&client.AgentModelEntry{Model: "alpha", Pricing: &client.AgentPricing{Input: 1}}, "--provider-price"); entry.Pricing != nil {
+		test.Fatalf("--provider-price drops the prices: %+v", entry.Pricing)
 	}
 }

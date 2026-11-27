@@ -52,11 +52,9 @@ func (self *graph) SaveAgentModelEntry(ctx context.Context, arguments SaveAgentM
 		if provider == nil {
 			return fmt.Errorf("%w: no provider called %q is declared", api.ErrNotFound, providerName)
 		}
-		for index := range provider.ModelEntries {
-			if provider.ModelEntries[index].Model == entry.Model {
-				provider.ModelEntries[index] = entry
-				return nil
-			}
+		if index := provider.ExactModelEntryIndexFor(entry.Model); index >= 0 {
+			provider.ModelEntries[index] = entry
+			return nil
 		}
 		provider.ModelEntries = append(provider.ModelEntries, entry)
 		return nil

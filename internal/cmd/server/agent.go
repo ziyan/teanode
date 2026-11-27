@@ -67,6 +67,10 @@ func (self *server) openAgentWorker(configuration *config.Configuration) error {
 		return nil
 	}
 	self.agentRegistry = registry
+	// A model added in the settings is offered at once, not after a restart.
+	self.onClose(self.store.Subscribe(func(current *config.Configuration) {
+		registry.RefreshModelEntries(&current.Agent)
+	}))
 	self.keepSignIns(registry)
 	self.keepPlanUsage(registry)
 	self.agentWorker = agent.New(&agent.Settings{

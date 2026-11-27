@@ -128,7 +128,7 @@ func TestSavingAndDeletingModelEntries(test *testing.T) {
 			test.Fatalf("changing a model: %s", message)
 		}
 		entries = world.store.Current().Agent.Provider("alpha").ModelEntries
-		if len(entries) != 4 || entries[3].Name != "Middle" || entries[3].Pricing.Input != 0 {
+		if len(entries) != 4 || entries[3].Name != "Middle" || entries[3].Pricing != nil {
 			test.Fatalf("changing replaced nothing or added a second: %+v", entries)
 		}
 
@@ -260,4 +260,65 @@ func TestModelEntryClientDocumentsMatchTheSchema(test *testing.T) {
 			test.Errorf("%s is not valid against the schema: %s", name, failure.Message)
 		}
 	}
+}
+
+// An id saved with an "@" and digits is its own entry, a price of zero is the
+// model's own and a null price is the provider's, and the model the voice
+// settings use cannot be deleted.
+func TestModelEntryIdentityPricingAndImplicitRoles(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	userId := dbtest.CreateUser(test, database, "model-manager")
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		world := newModelEntryWorld(test, transaction, userId)
+
+		save := func(entry map[string]any) map[string]any {
+			test.Helper()
+			data, message := world.run(test, transaction, world.manager, saveModelEntryDocument, map[string]any{"providerName": "alpha", "entry": entry})
+			if message != "" {
+				test.Fatalf("saving %v: %s", entry, message)
+			}
+			saved, _ := data["SaveAgentModelEntry"].(map[string]any)
+			return saved
+		}
+		save(map[string]any{"model": "foo"})
+		save(map[string]any{"model": "foo@512", "name": "Narrow"})
+		save(map[string]any{"model": "foo@512", "name": "Narrower"})
+		alpha := world.store.Current().Agent.Provider("alpha")
+		if entry := alpha.ModelEntryFor("foo@512"); entry == nil || entry.Name != "Narrower" {
+			test.Fatalf("foo@512 is found as its own entry: %+v", alpha.ModelEntries)
+		}
+		if entry := alpha.ModelEntryFor("foo"); entry == nil || entry.Name != "" {
+			test.Fatalf("saving foo@512 left foo alone: %+v", alpha.ModelEntries)
+		}
+
+		saved := save(map[string]any{"model": "alpha-free", "pricing": map[string]any{"input": 0, "output": 0}})
+		if pricing, isSet := saved["pricing"].(map[string]any); !isSet || pricing["input"] != float64(0) {
+			test.Fatalf("a zero price reads back as a price: %+v", saved)
+		}
+		if entry := world.store.Current().Agent.Provider("alpha").ModelEntryFor("alpha-free"); entry == nil || entry.Pricing == nil {
+			test.Fatal("the zero price is stored as set")
+		}
+		saved = save(map[string]any{"model": "alpha-free", "pricing": nil})
+		if saved["pricing"] != nil {
+			test.Fatalf("a null price reads back as null: %+v", saved)
+		}
+		if entry := world.store.Current().Agent.Provider("alpha").ModelEntryFor("alpha-free"); entry == nil || entry.Pricing != nil {
+			test.Fatal("a null price is stored as unset")
+		}
+
+		voiceModel := world.store.Current().Agent.Voice.EffectiveTranscriptionModel()
+		saved = save(map[string]any{"model": voiceModel})
+		if usedFor, _ := saved["usedFor"].([]any); len(usedFor) != 1 || usedFor[0] != "voice.transcriptionModel" {
+			test.Fatalf("the voice model is used: %+v", saved)
+		}
+		if _, message := world.run(test, transaction, world.manager, deleteModelEntryDocument, map[string]any{"providerName": "alpha", "model": voiceModel}); !strings.Contains(message, "voice.transcriptionModel") {
+			test.Fatalf("deleting it is refused and names the role: %q", message)
+		}
+		if _, message := world.run(test, transaction, world.manager, saveModelEntryDocument, map[string]any{
+			"providerName": "alpha", "entry": map[string]any{"model": voiceModel, "isEnabled": false},
+		}); message == "" {
+			test.Fatal("switching the voice model off was accepted")
+		}
+	})
 }

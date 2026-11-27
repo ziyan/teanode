@@ -3,6 +3,7 @@ package com.teanode.kit.manage
 import com.teanode.kit.TeaNodeJson
 import com.teanode.kit.access.OperatorAccess
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -152,7 +153,7 @@ class AgentServerSettingsTest {
         assertEquals("Large", large.displayName)
         assertEquals(200000, large.reportedContextWindow)
         assertEquals(listOf("default"), large.usedFor)
-        assertEquals(4.5, large.pricing.audioInput, 0.0)
+        assertEquals(4.5, large.pricing?.audioInput ?: -1.0, 0.0)
         val small = settings.providers[0].models[1]
         assertEquals("model-small", small.displayName)
         assertEquals(64000, small.contextWindow)
@@ -171,6 +172,23 @@ class AgentServerSettingsTest {
         assertEquals("true", json.text("isEnabled"))
         assertNull(json["usedFor"])
         assertNull(json["reportedContextWindow"])
+    }
+
+    @Test
+    fun aPriceOfZeroIsSentAndAnEmptyOneIsNull() {
+        val free = AgentModelEntryDraft.of(AgentModelEntry(model = "model-free", pricing = AgentModelPricing()))
+        assertEquals("0", free.inputText)
+        assertEquals("0", free.entry.toJson().text("pricing", "input"))
+        val unset = AgentModelEntryDraft.of(AgentModelEntry(model = "model-unset"))
+        assertTrue(unset.isPricingEmpty)
+        assertNull(unset.entry.pricing)
+        assertTrue(unset.entry.toJson()["pricing"] is JsonNull)
+    }
+
+    @Test
+    fun theTranscriptionPickerListsEntriesAMatchingCapabilityIsKnownFor() {
+        val listed = AgentModelChoices.offeredWithCapability(listOf("main:model-large", "main:not-an-entry", "main:model-small"), settings.providers)
+        assertEquals(listOf("main:model-large"), listed.map { option -> option.value })
     }
 
     @Test

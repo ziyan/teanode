@@ -21,8 +21,9 @@ type AgentModelEntry struct {
 	// reports none).
 	ContextWindow int `yaml:"contextWindow,omitempty"`
 
-	// Pricing is what it costs per million tokens; zero fields are unknown.
-	Pricing AgentPricing `yaml:"pricing,omitempty"`
+	// Pricing is what it costs per million tokens. Nil takes the provider's
+	// price; a value, even all zeros, is the model's own (all zeros is free).
+	Pricing *AgentPricing `yaml:"pricing,omitempty"`
 
 	// Enabled keeps the entry while switching it off. Unset means on.
 	Enabled *bool `yaml:"enabled,omitempty"`
@@ -46,9 +47,9 @@ func (self *AgentModelEntry) DisplayName() string {
 	return self.Model
 }
 
-// HasPricing says the entry has prices of its own.
+// HasPricing says the entry has prices of its own, all zeros included.
 func (self *AgentModelEntry) HasPricing() bool {
-	return self.Pricing != AgentPricing{}
+	return self.Pricing != nil
 }
 
 // modelWithoutWidth is a model as the provider names it. "text-embedding-3-
@@ -58,15 +59,40 @@ func (self *AgentModelEntry) HasPricing() bool {
 // charged at the provider's default rate for chat input, seven and a half
 // times what it cost, and the dashboard said forty-seven dollars on a day the
 // provider billed six.
+//
+// Only a suffix of "@" and digits at the end is a width: an id that has an
+// "@" of its own, such as @cf/meta/llama-3-8b or model@rev, keeps it.
 func modelWithoutWidth(model string) string {
-	name, _, _ := strings.Cut(model, "@")
-	return name
+	position := strings.LastIndex(model, "@")
+	if position < 0 || position == len(model)-1 {
+		return model
+	}
+	for _, character := range model[position+1:] {
+		if character < '0' || character > '9' {
+			return model
+		}
+	}
+	return model[:position]
 }
 
 // ModelEntryIndexFor is the position in ModelEntries of the entry for a
 // model, or -1 when the provider has none.
+//
+// An entry whose id is the whole name wins; only then is a width suffix cut
+// off and the entry for the model without it looked for.
 func (self *AgentProvider) ModelEntryIndexFor(model string) int {
-	model = modelWithoutWidth(model)
+	if index := self.ExactModelEntryIndexFor(model); index >= 0 {
+		return index
+	}
+	if bare := modelWithoutWidth(model); bare != model {
+		return self.ExactModelEntryIndexFor(bare)
+	}
+	return -1
+}
+
+// ExactModelEntryIndexFor is the position in ModelEntries of the entry whose
+// id is exactly the given one, or -1.
+func (self *AgentProvider) ExactModelEntryIndexFor(model string) int {
 	for index := range self.ModelEntries {
 		if self.ModelEntries[index].Model == model {
 			return index
@@ -93,7 +119,7 @@ func (self *AgentProvider) Offers(model string) bool {
 // when it has any, else the provider's own.
 func (self *AgentProvider) PricingFor(model string) AgentPricing {
 	if entry := self.ModelEntryFor(model); entry != nil && entry.HasPricing() {
-		return entry.Pricing
+		return *entry.Pricing
 	}
 	return self.Pricing
 }
@@ -179,11 +205,26 @@ func (self *Agent) RoleModels() []AgentRoleModel {
 // configuration with the defaults would fail it), but the provider offers it
 // all the same.
 func (self *Agent) implicitModels() []string {
+	var names []string
+	for _, role := range self.implicitRoleModels() {
+		names = append(names, role.Model)
+	}
+	return names
+}
+
+// implicitRoleModels are the implicit models written as roles, so that the
+// settings show them as used, deleting one is refused and switching one off
+// fails validation, the same as for a role the configuration names.
+func (self *Agent) implicitRoleModels() []AgentRoleModel {
 	provider := self.VoiceProvider()
 	if provider == nil {
 		return nil
 	}
-	return []string{provider.Name + ":" + self.Voice.EffectiveTranscriptionModel()}
+	return []AgentRoleModel{{
+		Field: "agent.voice.transcriptionModel",
+		Role:  "voice.transcriptionModel",
+		Model: provider.Name + ":" + self.Voice.EffectiveTranscriptionModel(),
+	}}
 }
 
 // OffersModel says an enabled provider offers a "provider:model": it has an
@@ -226,13 +267,18 @@ func (self *Agent) usedModelNames() []string {
 }
 
 // RolesUsing is the names of the roles that point at a model of a provider,
-// each once, in the order of RoleModels.
+// each once, in the order of RoleModels, then the implicit ones. A role that
+// names a model at a width counts as using the model without it.
 func (self *Agent) RolesUsing(providerName, model string) []string {
 	roles := []string{}
 	seen := map[string]bool{}
-	for _, role := range self.RoleModels() {
+	provider := self.Provider(providerName)
+	for _, role := range append(self.RoleModels(), self.implicitRoleModels()...) {
 		name, rest := SplitModelName(role.Model)
-		if name != providerName || rest != model || seen[role.Role] {
+		if name != providerName || seen[role.Role] {
+			continue
+		}
+		if rest != model && (provider == nil || provider.ExactModelEntryIndexFor(rest) >= 0 || modelWithoutWidth(rest) != model) {
 			continue
 		}
 		seen[role.Role] = true
@@ -342,7 +388,10 @@ func validateModelEntries(agent *Agent, validator *validator) {
 			if entry.ContextWindow != 0 && entry.ContextWindow < MinimumContextWindow {
 				validator.add(field+".contextWindow", "must be 0 (the provider's own figure) or at least %d tokens", MinimumContextWindow)
 			}
-			pricing := entry.Pricing
+			pricing := AgentPricing{}
+			if entry.Pricing != nil {
+				pricing = *entry.Pricing
+			}
 			if pricing.Input < 0 || pricing.Output < 0 || pricing.CacheRead < 0 || pricing.CacheWrite < 0 || pricing.AudioInput < 0 {
 				validator.add(field+".pricing", "prices cannot be negative")
 			}

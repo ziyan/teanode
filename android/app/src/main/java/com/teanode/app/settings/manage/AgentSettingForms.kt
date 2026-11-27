@@ -124,7 +124,8 @@ fun AgentModelsScreen(onBack: () -> Unit) {
         ModelRow("categorize", choices.forDeciding + choices.forWork, draft, onChange, settings.providers)
         TeaNodeSectionHeader(stringResource(R.string.manage_recording_transcription))
         ModelRow(
-            "transcription", capabilities.filter { capability -> capability.canAttributeRecordingSpeakers }.map { capability -> AgentModelChoices.optionFor(capability.name, settings.providers) },
+            "transcription",
+            AgentModelChoices.offeredWithCapability(capabilities.filter { capability -> capability.canAttributeRecordingSpeakers }.map { capability -> capability.name }, settings.providers),
             draft, onChange, settings.providers,
         )
         val capability = capabilities.firstOrNull { candidate -> candidate.name == draft.transcription }

@@ -1495,6 +1495,15 @@ func (self *Configuration) validateAgent(validator *validator) {
 	for index, choice := range agent.Models.Choices {
 		checkModel(fmt.Sprintf("agent.models.choices[%d]", index), choice)
 	}
+	for _, role := range agent.implicitRoleModels() {
+		// Not checkModel: a configuration with the defaults has no entry
+		// for it and offers it all the same; only a switched off one is
+		// refused.
+		providerName, model := SplitModelName(role.Model)
+		if entry := agent.Provider(providerName).ModelEntryFor(model); entry != nil && !entry.IsEnabled() {
+			validator.add(role.Field, "%q is used for voice messages and is switched off on provider %q", role.Model, providerName)
+		}
+	}
 	if agent.Limits.MaxRecordingMediaBytes.Bytes() > math.MaxInt64 {
 		validator.add("agent.limits.maxRecordingMediaBytes", "exceeds supported byte sizes")
 	}

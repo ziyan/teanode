@@ -82,7 +82,7 @@ func TestTheAudioInputPriceIsSavedAndReadBack(t *testing.T) {
 	configuration := &config.Configuration{}
 	providers := []*AgentProviderParameters{{
 		Name: "priced", Kind: config.AgentProviderKindOpenAI, Enabled: true, PricingInput: 2.5, PricingAudioInput: 6,
-		Models:       []*AgentModelEntry{{Model: "transcriber", Pricing: AgentPricing{Input: 2.5, Output: 10, AudioInput: 7}}},
+		Models:       []*AgentModelEntry{{Model: "transcriber", Pricing: &AgentPricing{Input: 2.5, Output: 10, AudioInput: 7}}},
 		ModelPricing: []*AgentModelPricingSettings{{Model: "ignored", Input: 99}},
 		Allow:        []string{"ignored"},
 	}}

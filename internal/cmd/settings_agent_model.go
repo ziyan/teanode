@@ -69,11 +69,12 @@ func settingsAgentModelFlags() []cli.Flag {
 		JSONFlag(),
 		&cli.StringFlag{Name: "name", Usage: "what people read instead of the id; empty for the id"},
 		&cli.IntFlag{Name: "context-window", Usage: "the window in tokens, correcting the provider's figure; 0 takes the provider's"},
-		&cli.Float64Flag{Name: "input", Usage: "price per million input tokens; 0 is unknown"},
+		&cli.Float64Flag{Name: "input", Usage: "price per million input tokens; giving any price sets the model's own, and 0 means free"},
 		&cli.Float64Flag{Name: "output", Usage: "price per million output tokens"},
 		&cli.Float64Flag{Name: "cache-read", Usage: "price per million cached input tokens"},
 		&cli.Float64Flag{Name: "cache-write", Usage: "price per million tokens written to the cache"},
 		&cli.Float64Flag{Name: "audio-input", Usage: "price per million audio input tokens"},
+		&cli.BoolFlag{Name: "provider-price", Usage: "drop the model's own prices so it takes the provider's"},
 		&cli.BoolFlag{Name: "enabled", Usage: "whether the model is offered; --enabled=false keeps it listed but off"},
 	}
 }
@@ -118,9 +119,14 @@ func runSettingsAgentModelList(ctx context.Context, command *cli.Command) error 
 			if !entry.IsEnabled {
 				state = "off"
 			}
+			inputPrice, outputPrice := "provider's", "provider's"
+			if entry.Pricing != nil {
+				inputPrice = strconv.FormatFloat(entry.Pricing.Input, 'f', -1, 64)
+				outputPrice = strconv.FormatFloat(entry.Pricing.Output, 'f', -1, 64)
+			}
 			rows = append(rows, []string{
 				provider.ProviderName, forTerminal(name), forTerminal(entry.Model), formatContextWindow(entry),
-				formatPricePerMillion(entry.Pricing.Input), formatPricePerMillion(entry.Pricing.Output), state, strings.Join(entry.UsedFor, ", "),
+				inputPrice, outputPrice, state, strings.Join(entry.UsedFor, ", "),
 			})
 		}
 	}
@@ -171,12 +177,25 @@ func applySettingsAgentModelFlags(command *cli.Command, entry *client.AgentModel
 	if command.IsSet("context-window") {
 		entry.ContextWindow = int(command.Int("context-window"))
 	}
-	for flag, price := range map[string]*float64{
-		"input": &entry.Pricing.Input, "output": &entry.Pricing.Output, "cache-read": &entry.Pricing.CacheRead,
-		"cache-write": &entry.Pricing.CacheWrite, "audio-input": &entry.Pricing.AudioInput,
-	} {
-		if command.IsSet(flag) {
-			*price = command.Float64(flag)
+	if command.Bool("provider-price") {
+		entry.Pricing = nil
+	} else {
+		prices := client.AgentPricing{}
+		if entry.Pricing != nil {
+			prices = *entry.Pricing
+		}
+		isPriceGiven := false
+		for flag, price := range map[string]*float64{
+			"input": &prices.Input, "output": &prices.Output, "cache-read": &prices.CacheRead,
+			"cache-write": &prices.CacheWrite, "audio-input": &prices.AudioInput,
+		} {
+			if command.IsSet(flag) {
+				*price = command.Float64(flag)
+				isPriceGiven = true
+			}
+		}
+		if isPriceGiven {
+			entry.Pricing = &prices
 		}
 	}
 	if command.IsSet("enabled") {

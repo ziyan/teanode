@@ -12,8 +12,8 @@ func TestPricingPerModel(t *testing.T) {
 		Name:    "openai",
 		Pricing: AgentPricing{Input: 1, Output: 2, CacheRead: 0.5},
 		ModelEntries: []AgentModelEntry{
-			{Model: "gpt-5.6-terra", Pricing: AgentPricing{Input: 10, Output: 40, CacheRead: 5}},
-			{Model: "gpt-5.6-luna", Pricing: AgentPricing{Input: 3, Output: 9, CacheRead: 1}},
+			{Model: "gpt-5.6-terra", Pricing: &AgentPricing{Input: 10, Output: 40, CacheRead: 5}},
+			{Model: "gpt-5.6-luna", Pricing: &AgentPricing{Input: 3, Output: 9, CacheRead: 1}},
 			{Model: "whisper"},
 		},
 	}}}
@@ -41,8 +41,8 @@ func TestPricingMatchesIDsWithSlashes(t *testing.T) {
 	agent := &Agent{Providers: []AgentProvider{{
 		Name: "router",
 		ModelEntries: []AgentModelEntry{
-			{Model: "vendor-a/claude-sonnet", Pricing: AgentPricing{Input: 3}},
-			{Model: "*", Pricing: AgentPricing{Input: 1}},
+			{Model: "vendor-a/claude-sonnet", Pricing: &AgentPricing{Input: 3}},
+			{Model: "*", Pricing: &AgentPricing{Input: 1}},
 		},
 	}}}
 	if cost := agent.CostOf("router:vendor-a/claude-sonnet", 1_000_000, 0, 0, 0, 0); cost != 3 {
@@ -72,8 +72,8 @@ func TestCostPricesAudioInputApart(t *testing.T) {
 		Name:    "one",
 		Pricing: AgentPricing{Input: 2.5, Output: 10},
 		ModelEntries: []AgentModelEntry{
-			{Model: "transcriber", Pricing: AgentPricing{Input: 2.5, Output: 10, AudioInput: 6}},
-			{Model: "unpriced-audio", Pricing: AgentPricing{Input: 2.5, Output: 10}},
+			{Model: "transcriber", Pricing: &AgentPricing{Input: 2.5, Output: 10, AudioInput: 6}},
+			{Model: "unpriced-audio", Pricing: &AgentPricing{Input: 2.5, Output: 10}},
 		},
 	}}}
 	if cost := agent.CostOf("one:transcriber", 0, 1_000_000, 0, 0, 0); cost != 6 {
@@ -133,7 +133,7 @@ func TestPricingForIgnoresTheWidthSuffix(t *testing.T) {
 	provider := AgentProvider{
 		Pricing: AgentPricing{Input: 0.15, Output: 0.6},
 		ModelEntries: []AgentModelEntry{
-			{Model: "text-embedding-3-small", Pricing: AgentPricing{Input: 0.02}},
+			{Model: "text-embedding-3-small", Pricing: &AgentPricing{Input: 0.02}},
 		},
 	}
 	if got := provider.PricingFor("text-embedding-3-small@512").Input; got != 0.02 {

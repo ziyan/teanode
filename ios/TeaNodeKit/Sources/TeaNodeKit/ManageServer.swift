@@ -1290,8 +1290,8 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
     public var models: [AgentModelEntry] { modelEntries ?? [] }
 }
 
-/// AgentModelPricing is what one model costs per million tokens; zero is
-/// unknown.
+/// AgentModelPricing is what one model costs per million tokens. An entry
+/// that has one has its own price, all zeros meaning free.
 public struct AgentModelPricing: Codable, Hashable, Sendable {
     public let input: Double
     public let output: Double
@@ -1319,7 +1319,8 @@ public struct AgentModelEntry: Codable, Hashable, Sendable, Identifiable {
     public let contextWindow: Int
     /// The provider's own figure, zero when it reports none.
     public let reportedContextWindow: Int
-    public let pricing: AgentModelPricing
+    /// The model's own price, or nil when it takes the provider's.
+    public let pricing: AgentModelPricing?
     public let isEnabled: Bool
     /// The roles that point at it: default, quick, embedding and so on.
     public let usedFor: [String]
@@ -1331,7 +1332,7 @@ public struct AgentModelEntry: Codable, Hashable, Sendable, Identifiable {
 
     public init(
         model: String, name: String = "", contextWindow: Int = 0, reportedContextWindow: Int = 0,
-        pricing: AgentModelPricing = AgentModelPricing(), isEnabled: Bool = true, usedFor: [String] = []
+        pricing: AgentModelPricing? = nil, isEnabled: Bool = true, usedFor: [String] = []
     ) {
         self.model = model
         self.name = name
@@ -1365,11 +1366,16 @@ public struct AgentModelEntryDraft: Hashable, Sendable {
         model = entry.model
         name = entry.name
         contextWindowText = entry.contextWindow == 0 ? "" : String(entry.contextWindow)
-        inputText = SettingsList.text(entry.pricing.input)
-        outputText = SettingsList.text(entry.pricing.output)
-        cacheReadText = SettingsList.text(entry.pricing.cacheRead)
-        cacheWriteText = SettingsList.text(entry.pricing.cacheWrite)
-        audioInputText = SettingsList.text(entry.pricing.audioInput)
+        if let pricing = entry.pricing {
+            inputText = SettingsList.text(pricing.input)
+            outputText = SettingsList.text(pricing.output)
+            cacheReadText = SettingsList.text(pricing.cacheRead)
+            cacheWriteText = SettingsList.text(pricing.cacheWrite)
+            audioInputText = SettingsList.text(pricing.audioInput)
+            // A price of zero is the model's own (free), so it is shown as
+            // typed rather than as empty, which would be sent as unset.
+            if pricing == AgentModelPricing() { inputText = "0" }
+        }
         isEnabled = entry.isEnabled
     }
 
@@ -1383,15 +1389,22 @@ public struct AgentModelEntryDraft: Hashable, Sendable {
         !model.trimmingCharacters(in: .whitespaces).isEmpty && (contextWindow == 0 || contextWindow >= 1000)
     }
 
+    /// Whether every price field is empty, which sends no price of its own
+    /// so the model takes the provider's.
+    public var isPricingEmpty: Bool {
+        [inputText, outputText, cacheReadText, cacheWriteText, audioInputText].allSatisfy { $0.trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+
     public var entryValue: JSONValue {
-        .object([
+        let pricingValue: JSONValue = isPricingEmpty ? .null : .object([
+            "input": .number(SettingsList.number(inputText)), "output": .number(SettingsList.number(outputText)),
+            "cacheRead": .number(SettingsList.number(cacheReadText)), "cacheWrite": .number(SettingsList.number(cacheWriteText)),
+            "audioInput": .number(SettingsList.number(audioInputText)),
+        ])
+        return .object([
             "model": .string(model.trimmingCharacters(in: .whitespaces)), "name": .string(name.trimmingCharacters(in: .whitespaces)),
             "contextWindow": .number(Double(contextWindow)),
-            "pricing": .object([
-                "input": .number(SettingsList.number(inputText)), "output": .number(SettingsList.number(outputText)),
-                "cacheRead": .number(SettingsList.number(cacheReadText)), "cacheWrite": .number(SettingsList.number(cacheWriteText)),
-                "audioInput": .number(SettingsList.number(audioInputText)),
-            ]),
+            "pricing": pricingValue,
             "isEnabled": .bool(isEnabled),
         ])
     }
@@ -1551,26 +1564,41 @@ public struct AgentModelChoiceGroup: Hashable, Sendable, Identifiable {
 /// AgentModelChoices are the models the providers offer, split the way the
 /// models form offers them: a deciding provider (kind typesafe) answers only
 /// the decide and categorize slots, and the server refuses it anywhere else.
+/// What is offered is each enabled provider's enabled entries, as the
+/// dashboard's pickers list them, not what a provider's live list says.
 public struct AgentModelChoices: Hashable, Sendable {
     public let forWork: [String]
     public let forDeciding: [String]
 
-    public init(knownModels: [String], providers: [AgentProviderSettings]) {
+    public init(providers: [AgentProviderSettings]) {
         let deciderNames = Set(providers.filter { $0.providerKind == "typesafe" }.map(\.name))
         let isDecider: (String) -> Bool = { model in
             deciderNames.contains(String(model.split(separator: ":", maxSplits: 1).first ?? ""))
         }
-        forWork = knownModels.filter { !isDecider($0) }
-        forDeciding = knownModels.filter(isDecider)
+        let offered = Self.offered(providers: providers)
+        forWork = offered.filter { !isDecider($0) }
+        forDeciding = offered.filter(isDecider)
+    }
+
+    /// Every provider:model the enabled providers offer: the enabled entries
+    /// of each provider that is on, in the order they are listed.
+    public static func offered(providers: [AgentProviderSettings]) -> [String] {
+        providers.filter(\.isEnabled).flatMap { provider in
+            provider.models.filter(\.isEnabled).map { "\(provider.name):\($0.model)" }
+        }
     }
 
     /// The role picker's sections: one per provider, in the order the
     /// providers are listed, then one for values naming no known provider.
-    /// A row reads "Provider · Model", the model by its entry's name when
-    /// the provider has one; a value is always provider:model. A model of a
-    /// disabled entry is left out unless it is the one chosen.
-    public static func grouped(_ known: [String], chosen: String, providers: [AgentProviderSettings]) -> [AgentModelChoiceGroup] {
-        let values = listed(known, chosen: chosen)
+    /// The values are the offered ones, narrowed to onlyModels when it is
+    /// given (the models a capability is known for), plus the one chosen
+    /// when it is not among them. A row reads "Provider · Model", the model
+    /// by its entry's name when the provider has one; a value is always
+    /// provider:model. A model of a disabled entry is left out unless it is
+    /// the one chosen.
+    public static func grouped(chosen: String, providers: [AgentProviderSettings], onlyModels: [String]? = nil) -> [AgentModelChoiceGroup] {
+        let offered = Self.offered(providers: providers)
+        let values = listed(onlyModels.map { allowed in offered.filter { allowed.contains($0) } } ?? offered, chosen: chosen)
         var groups: [AgentModelChoiceGroup] = []
         var placed = Set<String>()
         for provider in providers {
@@ -1578,11 +1606,6 @@ public struct AgentModelChoices: Hashable, Sendable {
             for value in values where value.hasPrefix(provider.name + ":") {
                 let modelID = String(value.dropFirst(provider.name.count + 1))
                 let entry = provider.models.first { $0.model == modelID }
-                if let entry, !entry.isEnabled, value != chosen {
-                    // Switched off: left out, not listed with the unknown ones.
-                    placed.insert(value)
-                    continue
-                }
                 rows.append(.init(value: value, label: "\(provider.name) · \(entry?.displayName ?? modelID)"))
                 placed.insert(value)
             }
@@ -1593,10 +1616,10 @@ public struct AgentModelChoices: Hashable, Sendable {
         return groups
     }
 
-    /// What a picker lists: the known models, with the one chosen first
-    /// when the list does not know it.
-    public static func listed(_ known: [String], chosen: String) -> [String] {
-        chosen.isEmpty || known.contains(chosen) ? known : [chosen] + known
+    /// What a picker lists: the offered models, with the one chosen first
+    /// when the list does not have it.
+    public static func listed(_ offered: [String], chosen: String) -> [String] {
+        chosen.isEmpty || offered.contains(chosen) ? offered : [chosen] + offered
     }
 }
 

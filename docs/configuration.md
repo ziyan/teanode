@@ -1362,7 +1362,9 @@ off. Unset means on. A model that a role uses cannot be switched off.
 `input`, `output`, `cacheRead`, `cacheWrite` and `audioInput`. Optional; it lets the usage view show
 money beside tokens, which is the number an operator budgets. On a provider it
 is what every model costs that has no prices of its own; on a model entry it
-is that model's prices, and an entry with none takes the provider's.
+is that model's prices, and an entry with none takes the provider's. An entry
+with a `pricing` block, even one of all zeros, has its own price: all zeros
+means the model is free. Leave `pricing` out to take the provider's.
 
 **`input`**, **`output`**, **`cacheRead`**, **`cacheWrite`**, **`audioInput`** — The five
 prices. `cacheWrite` is what putting a prompt into the cache costs, which some
@@ -1381,7 +1383,9 @@ a configuration loads, converted, and not written back:
 - the provider gets an entry for every model a role names on it, and for every
   `modelPricing` entry whose model is a plain id and not a pattern;
 - each entry gets the price the first matching `modelPricing` entry gave it,
-  patterns included, so what a model costs does not change;
+  patterns included, so what a model costs does not change; an old entry of
+  all zeros stays a price of zero (free) and does not fall back to the
+  provider's;
 - `allow` and `deny` are dropped, with a warning in the log. No entry is made
   for a model that no role uses and no price names; add those from the
   provider's list of models;

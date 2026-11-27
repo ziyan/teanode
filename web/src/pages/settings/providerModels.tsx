@@ -33,7 +33,9 @@ export type AgentModelEntry = {
   contextWindow: number
   // The provider's own figure, read-only; zero when it reports none.
   reportedContextWindow: number
-  pricing: ModelPricing
+  // Null takes the provider's prices; an object, even all zeros, is the
+  // model's own (all zeros is free).
+  pricing: ModelPricing | null
   isEnabled: boolean
   // The roles that point at this model: default, quick, embedding, ...
   usedFor: string[]
@@ -239,7 +241,7 @@ function AddModelDialog({
           model,
           name: '',
           contextWindow: 0,
-          pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, audioInput: 0 },
+          pricing: null,
           isEnabled: true,
         },
       })
@@ -295,6 +297,27 @@ function AddModelDialog({
 
 type PriceField = keyof ModelPricing
 
+// priceText is a price as the field shows it: empty when the entry has no
+// prices of its own, and a typed zero kept as "0" when it is free.
+function priceText(pricing: ModelPricing | null, field: PriceField): string {
+  return pricing === null ? '' : String(pricing[field])
+}
+
+// pricingToSend is null when every field is empty, so the model takes the
+// provider's prices; otherwise the model's own, an empty field being zero.
+function pricingToSend(prices: Record<PriceField, string>): ModelPricing | null {
+  if (PRICE_FIELDS.every(({ field }) => prices[field].trim() === '')) {
+    return null
+  }
+  return {
+    input: Number(prices.input) || 0,
+    output: Number(prices.output) || 0,
+    cacheRead: Number(prices.cacheRead) || 0,
+    cacheWrite: Number(prices.cacheWrite) || 0,
+    audioInput: Number(prices.audioInput) || 0,
+  }
+}
+
 const PRICE_FIELDS: { field: PriceField; label: Key }[] = [
   { field: 'input', label: 'agentSettings.modelPriceInput' },
   { field: 'output', label: 'agentSettings.modelPriceOutput' },
@@ -322,11 +345,11 @@ function ModelDialog({
   const [name, setName] = useState(entry.name)
   const [contextWindow, setContextWindow] = useState(entry.contextWindow ? String(entry.contextWindow) : '')
   const [prices, setPrices] = useState<Record<PriceField, string>>(() => ({
-    input: entry.pricing.input ? String(entry.pricing.input) : '',
-    output: entry.pricing.output ? String(entry.pricing.output) : '',
-    cacheRead: entry.pricing.cacheRead ? String(entry.pricing.cacheRead) : '',
-    cacheWrite: entry.pricing.cacheWrite ? String(entry.pricing.cacheWrite) : '',
-    audioInput: entry.pricing.audioInput ? String(entry.pricing.audioInput) : '',
+    input: priceText(entry.pricing, 'input'),
+    output: priceText(entry.pricing, 'output'),
+    cacheRead: priceText(entry.pricing, 'cacheRead'),
+    cacheWrite: priceText(entry.pricing, 'cacheWrite'),
+    audioInput: priceText(entry.pricing, 'audioInput'),
   }))
   const [isEnabled, setIsEnabled] = useState(entry.isEnabled)
   const [busy, setBusy] = useState(false)
@@ -341,13 +364,7 @@ function ModelDialog({
           model: entry.model,
           name: name.trim(),
           contextWindow: Number(contextWindow) || 0,
-          pricing: {
-            input: Number(prices.input) || 0,
-            output: Number(prices.output) || 0,
-            cacheRead: Number(prices.cacheRead) || 0,
-            cacheWrite: Number(prices.cacheWrite) || 0,
-            audioInput: Number(prices.audioInput) || 0,
-          },
+          pricing: pricingToSend(prices),
           isEnabled,
         },
       })

@@ -5,7 +5,7 @@ import "context"
 // The models a provider offers, one entry at a time: the same operations as
 // the provider page's "Add model" and a model's own page.
 
-// AgentPricing is what a model costs per million tokens; zero is unknown.
+// AgentPricing is what a model costs per million tokens.
 type AgentPricing struct {
 	Input      float64 `json:"input"`
 	Output     float64 `json:"output"`
@@ -23,9 +23,11 @@ type AgentModelEntry struct {
 	// ContextWindow is the override of the provider's window, zero for none.
 	ContextWindow int `json:"contextWindow"`
 	// ReportedContextWindow is the provider's own figure, zero when unknown.
-	ReportedContextWindow int          `json:"reportedContextWindow"`
-	Pricing               AgentPricing `json:"pricing"`
-	IsEnabled             bool         `json:"isEnabled"`
+	ReportedContextWindow int `json:"reportedContextWindow"`
+	// Pricing is nil when the entry takes the provider's prices; a value,
+	// even all zeros, is the model's own.
+	Pricing   *AgentPricing `json:"pricing"`
+	IsEnabled bool          `json:"isEnabled"`
 	// UsedFor is the roles that point at it.
 	UsedFor []string `json:"usedFor"`
 }
@@ -69,10 +71,13 @@ func AgentProviderModelList(ctx context.Context, connection *Client) ([]*AgentPr
 func SaveAgentModelEntry(ctx context.Context, connection *Client, providerName string, entry *AgentModelEntry) (*AgentModelEntry, error) {
 	input := map[string]any{
 		"model": entry.Model, "name": entry.Name, "contextWindow": entry.ContextWindow, "isEnabled": entry.IsEnabled,
-		"pricing": map[string]any{
+		"pricing": nil,
+	}
+	if entry.Pricing != nil {
+		input["pricing"] = map[string]any{
 			"input": entry.Pricing.Input, "output": entry.Pricing.Output, "cacheRead": entry.Pricing.CacheRead,
 			"cacheWrite": entry.Pricing.CacheWrite, "audioInput": entry.Pricing.AudioInput,
-		},
+		}
 	}
 	var result struct {
 		SaveAgentModelEntry *AgentModelEntry `json:"SaveAgentModelEntry"`

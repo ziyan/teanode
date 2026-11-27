@@ -1857,8 +1857,6 @@ final class AgentAdminModel {
     let connection: Connection
     private(set) var access: OperatorAccess?
     private(set) var settings: AgentServerSettings?
-    /// The models the enabled providers offer, for the model pickers.
-    private(set) var knownModels: [String] = []
     private(set) var recordingModelCapabilities: [RecordingModelCapability] = []
     private(set) var isLoading = false
     var doneText: String?
@@ -1882,7 +1880,6 @@ final class AgentAdminModel {
             // its row says why.
             if let capabilities = try? await connection.recordingModelCapabilities() {
                 recordingModelCapabilities = capabilities
-                knownModels = capabilities.map(\.name)
             }
         } catch {
             problemText = error.localizedDescription
@@ -1898,7 +1895,6 @@ final class AgentAdminModel {
             doneText = said
             if agentParameters["providers"] != nil, let capabilities = try? await connection.recordingModelCapabilities() {
                 recordingModelCapabilities = capabilities
-                knownModels = capabilities.map(\.name)
             }
             return true
         } catch {
@@ -1913,13 +1909,7 @@ final class AgentAdminModel {
         settings = try await connection.agentServerSettings()
         if let capabilities = try? await connection.recordingModelCapabilities() {
             recordingModelCapabilities = capabilities
-            knownModels = capabilities.map(\.name)
         }
-    }
-
-    /// Adds what one provider said it offers to the pickers' list.
-    func addKnownModels(_ names: [String]) {
-        knownModels = Array(Set(knownModels + names)).sorted()
     }
 }
 
@@ -3119,7 +3109,6 @@ private struct AgentProvidersView: View {
             let countText = names.count.formatted()
             let sampleText = names.prefix(5).joined(separator: ", ")
             model.doneText = String(localized: "\(countText) models, for example \(sampleText)")
-            model.addKnownModels(names)
         } catch {
             model.problemText = error.localizedDescription
         }
@@ -3742,7 +3731,9 @@ private struct ModelChoiceList: View {
     let title: LocalizedStringKey
     /// What choosing nothing means, or nil when nothing is no choice.
     let emptyTitle: String?
-    let knownModels: [String]
+    /// The models to list when only some are wanted, such as the ones a
+    /// capability is known for; nil lists every offered model.
+    let onlyModels: [String]?
     /// The providers, whose models are listed under each one's name as
     /// "Provider · Model".
     let providers: [AgentProviderSettings]
@@ -3770,7 +3761,7 @@ private struct ModelChoiceList: View {
                     choiceRow(text: emptyTitle, modelName: "")
                 }
             }
-            ForEach(AgentModelChoices.grouped(knownModels, chosen: selection, providers: providers)) { group in
+            ForEach(AgentModelChoices.grouped(chosen: selection, providers: providers, onlyModels: onlyModels)) { group in
                 Section {
                     ForEach(group.rows) { row in
                         choiceRow(text: row.label, modelName: row.value)
@@ -3813,23 +3804,23 @@ private struct AgentModelsFormView: View {
 
     var body: some View {
         AgentSettingsForm(model: model, title: "Models", makeDraft: { $0.models }, parameters: { $0.agentParameters }) { draft, settings in
-            let choices = AgentModelChoices(knownModels: model.knownModels, providers: settings.providers)
+            let choices = AgentModelChoices(providers: settings.providers)
             Section {
                 ForEach(AgentModelAssignments.baseFieldNames, id: \.self) { fieldName in
-                    modelRow(fieldName, known: choices.forWork, draft: draft)
+                    modelRow(fieldName, onlyModels: choices.forWork, draft: draft)
                 }
             } footer: {
                 Text("Which model does which work. Default is anything not named; fast is used for sorting, summaries and compaction unless overridden; quick answers what you type first and hands anything that needs reasoning to the conversations model; embedding enables search by meaning.")
             }
             Section("Per kind of work") {
                 ForEach(AgentModelAssignments.workFieldNames.filter { $0 != "transcription" }, id: \.self) { fieldName in
-                    modelRow(fieldName, known: choices.forWork, draft: draft)
+                    modelRow(fieldName, onlyModels: choices.forWork, draft: draft)
                 }
-                modelRow("decide", known: choices.forDeciding, draft: draft)
-                modelRow("categorize", known: choices.forDeciding + choices.forWork, draft: draft)
+                modelRow("decide", onlyModels: choices.forDeciding, draft: draft)
+                modelRow("categorize", onlyModels: choices.forDeciding + choices.forWork, draft: draft)
             }
             Section {
-                modelRow("transcription", known: model.recordingModelCapabilities.filter(\.canAttributeRecordingSpeakers).map(\.name), draft: draft)
+                modelRow("transcription", onlyModels: model.recordingModelCapabilities.filter(\.canAttributeRecordingSpeakers).map(\.name), draft: draft)
                 if let capability = model.recordingModelCapabilities.first(where: { $0.name == draft.wrappedValue.transcription }), capability.canAttributeRecordingSpeakers {
                     LabeledContent("Voice references", value: capability.hasSpeakerReferences == true ? String(localized: "Supported") : String(localized: "Unavailable"))
                     if let maximumAudioBytes = capability.maximumAudioBytes, maximumAudioBytes > 0 {
@@ -3850,7 +3841,7 @@ private struct AgentModelsFormView: View {
                 NavigationLink {
                     ModelChoiceList(
                         title: "Add a model people may pick", emptyTitle: nil,
-                        knownModels: choices.forWork.filter { !draft.wrappedValue.choices.contains($0) },
+                        onlyModels: choices.forWork.filter { !draft.wrappedValue.choices.contains($0) },
                         providers: settings.providers,
                         selection: Binding(
                             get: { "" },
@@ -3871,15 +3862,15 @@ private struct AgentModelsFormView: View {
 
     /// A chosen provider:model as "Provider · Model", as the picker lists it.
     private func chosenLabel(_ chosen: String) -> String {
-        AgentModelChoices.grouped([], chosen: chosen, providers: model.settings?.providers ?? []).first?.rows.first?.label ?? chosen
+        AgentModelChoices.grouped(chosen: chosen, providers: model.settings?.providers ?? [], onlyModels: []).first?.rows.first?.label ?? chosen
     }
 
-    private func modelRow(_ fieldName: String, known: [String], draft: Binding<AgentModelAssignments>) -> some View {
+    private func modelRow(_ fieldName: String, onlyModels: [String], draft: Binding<AgentModelAssignments>) -> some View {
         let chosen = draft.wrappedValue[fieldName: fieldName]
         let placeholder = AgentWords.modelPlaceholder(fieldName)
         return NavigationLink {
             ModelChoiceList(
-                title: AgentWords.modelLabel(fieldName), emptyTitle: placeholder, knownModels: known,
+                title: AgentWords.modelLabel(fieldName), emptyTitle: placeholder, onlyModels: onlyModels,
                 providers: model.settings?.providers ?? [],
                 selection: Binding(get: { draft.wrappedValue[fieldName: fieldName] }, set: { draft.wrappedValue[fieldName: fieldName] = $0 }))
         } label: {

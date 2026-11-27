@@ -16,7 +16,7 @@ afterEach(() => {
   vi.resetAllMocks()
 })
 
-const noPricing = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, audioInput: 0 }
+const noPricing = null
 
 const named: AgentModelEntry = {
   model: 'alpha-large-1',
@@ -183,6 +183,26 @@ it('shows a model’s settings and saves them with the entry the server takes', 
       pricing: { input: 2.75, output: 8, cacheRead: 0, cacheWrite: 2.5, audioInput: 0 },
       isEnabled: false,
     },
+  })
+})
+
+it('sends null prices when every price field is empty, and zeros when a zero is typed', async () => {
+  const onSaved = renderProviders()
+  fireEvent.click(screen.getByRole('button', { name: 'alpha-small-2: Edit' }))
+  let dialog = await screen.findByRole('dialog', { name: 'Model: alpha-small-2' })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
+  expect(mutationCalls()[0][1]).toMatchObject({ entry: { model: 'alpha-small-2', pricing: null } })
+
+  cleanup()
+  const onSavedAgain = renderProviders()
+  fireEvent.click(screen.getByRole('button', { name: 'alpha-small-2: Edit' }))
+  dialog = await screen.findByRole('dialog', { name: 'Model: alpha-small-2' })
+  fireEvent.change(within(dialog).getAllByRole('textbox', { name: 'Input' })[0], { target: { value: '0' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(onSavedAgain).toHaveBeenCalled())
+  expect(mutationCalls()[1][1]).toMatchObject({
+    entry: { pricing: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, audioInput: 0 } },
   })
 })
 

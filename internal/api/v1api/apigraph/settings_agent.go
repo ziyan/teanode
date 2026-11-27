@@ -146,9 +146,10 @@ type AgentModelEntry struct {
 	// not said. Read only.
 	ReportedContextWindow int `json:"reportedContextWindow" graphapi:"outputonly"`
 
-	// Pricing is what it costs per million tokens; zero fields are
-	// unknown, and an entry with none takes the provider's prices.
-	Pricing AgentPricing `json:"pricing" graphapi:"nullable"`
+	// Pricing is what it costs per million tokens. Null means the entry has
+	// none of its own and takes the provider's prices; a value, even all
+	// zeros, is the model's own price (all zeros is free).
+	Pricing *AgentPricing `json:"pricing" graphapi:"nullable"`
 
 	// IsEnabled keeps the entry while switching it off.
 	IsEnabled *bool `json:"isEnabled" graphapi:"nullable"`
@@ -174,16 +175,20 @@ func modelEntrySettings(agent *config.Agent, provider *config.AgentProvider) []*
 	for index := range provider.ModelEntries {
 		entry := &provider.ModelEntries[index]
 		isEnabled := entry.IsEnabled()
+		var pricing *AgentPricing
+		if entry.Pricing != nil {
+			pricing = &AgentPricing{
+				Input: entry.Pricing.Input, Output: entry.Pricing.Output, CacheRead: entry.Pricing.CacheRead,
+				CacheWrite: entry.Pricing.CacheWrite, AudioInput: entry.Pricing.AudioInput,
+			}
+		}
 		settings = append(settings, &AgentModelEntry{
 			Model:         entry.Model,
 			Name:          entry.Name,
 			ContextWindow: entry.ContextWindow,
-			Pricing: AgentPricing{
-				Input: entry.Pricing.Input, Output: entry.Pricing.Output, CacheRead: entry.Pricing.CacheRead,
-				CacheWrite: entry.Pricing.CacheWrite, AudioInput: entry.Pricing.AudioInput,
-			},
-			IsEnabled: &isEnabled,
-			UsedFor:   agent.RolesUsing(provider.Name, entry.Model),
+			Pricing:       pricing,
+			IsEnabled:     &isEnabled,
+			UsedFor:       agent.RolesUsing(provider.Name, entry.Model),
 		})
 	}
 	return settings
@@ -192,15 +197,19 @@ func modelEntrySettings(agent *config.Agent, provider *config.AgentProvider) []*
 // configEntry is an entry as the configuration holds it.
 func (self *AgentModelEntry) configEntry() config.AgentModelEntry {
 	isEnabled := self.IsEnabled == nil || *self.IsEnabled
+	var pricing *config.AgentPricing
+	if self.Pricing != nil {
+		pricing = &config.AgentPricing{
+			Input: self.Pricing.Input, Output: self.Pricing.Output, CacheRead: self.Pricing.CacheRead,
+			CacheWrite: self.Pricing.CacheWrite, AudioInput: self.Pricing.AudioInput,
+		}
+	}
 	return config.AgentModelEntry{
 		Model:         strings.TrimSpace(self.Model),
 		Name:          strings.TrimSpace(self.Name),
 		ContextWindow: self.ContextWindow,
-		Pricing: config.AgentPricing{
-			Input: self.Pricing.Input, Output: self.Pricing.Output, CacheRead: self.Pricing.CacheRead,
-			CacheWrite: self.Pricing.CacheWrite, AudioInput: self.Pricing.AudioInput,
-		},
-		Enabled: &isEnabled,
+		Pricing:       pricing,
+		Enabled:       &isEnabled,
 	}
 }
 

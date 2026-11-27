@@ -26,11 +26,50 @@ type Registry struct {
 
 	cacheMutex sync.Mutex
 	cache      map[string]cachedModels
+
+	// entriesMutex guards each provider's ModelEntries, which
+	// RefreshModelEntries replaces when the settings change. The slice is
+	// replaced whole and never changed in place, so a reader that has
+	// taken it under the read lock may keep using it after letting go.
+	entriesMutex sync.RWMutex
 }
 
 type providerEntry struct {
 	configuration config.AgentProvider
 	service       Service
+}
+
+// offered is the provider's configuration with the model entries as they
+// are now.
+func (self *Registry) offered(entry *providerEntry) *config.AgentProvider {
+	self.entriesMutex.RLock()
+	defer self.entriesMutex.RUnlock()
+	provider := entry.configuration
+	return &provider
+}
+
+// RefreshModelEntries has each provider offer the model entries the given
+// configuration lists now, so that a model added in the settings resolves
+// without a restart. Providers, keys and roles are not touched: those still
+// take effect when the server starts.
+func (self *Registry) RefreshModelEntries(configuration *config.Agent) {
+	if self == nil || configuration == nil {
+		return
+	}
+	copied := *configuration
+	copied.Providers = make([]config.AgentProvider, len(configuration.Providers))
+	for index, declared := range configuration.Providers {
+		declared.ModelEntries = append([]config.AgentModelEntry(nil), declared.ModelEntries...)
+		copied.Providers[index] = declared
+	}
+	copied.OfferRoleModels()
+	self.entriesMutex.Lock()
+	defer self.entriesMutex.Unlock()
+	for index := range copied.Providers {
+		if entry := self.providers[copied.Providers[index].Name]; entry != nil {
+			entry.configuration.ModelEntries = copied.Providers[index].ModelEntries
+		}
+	}
 }
 
 type cachedModels struct {
@@ -175,7 +214,7 @@ func (self *Registry) resolve(name string) (*providerEntry, string, error) {
 	if entry == nil {
 		return nil, "", fmt.Errorf("llm: provider %q is not declared or not enabled", providerName)
 	}
-	if !entry.configuration.Offers(model) {
+	if !self.offered(entry).Offers(model) {
 		return nil, "", fmt.Errorf("llm: provider %q has no enabled model %q", providerName, model)
 	}
 	return entry, model, nil
@@ -308,8 +347,9 @@ func (self *Registry) ListModels(ctx context.Context) []ProviderModel {
 		} else {
 			reported = listed
 		}
-		for index := range entry.configuration.ModelEntries {
-			modelEntry := &entry.configuration.ModelEntries[index]
+		provider := self.offered(entry)
+		for index := range provider.ModelEntries {
+			modelEntry := &provider.ModelEntries[index]
 			if !modelEntry.IsEnabled() {
 				continue
 			}
@@ -348,7 +388,7 @@ func (self *Registry) ContextLength(ctx context.Context, name string) int {
 	if entry == nil {
 		return 0
 	}
-	if modelEntry := entry.configuration.ModelEntryFor(model); modelEntry != nil && modelEntry.ContextWindow > 0 {
+	if modelEntry := self.offered(entry).ModelEntryFor(model); modelEntry != nil && modelEntry.ContextWindow > 0 {
 		return modelEntry.ContextWindow
 	}
 	listed, err := self.listProvider(ctx, providerName, entry, false)

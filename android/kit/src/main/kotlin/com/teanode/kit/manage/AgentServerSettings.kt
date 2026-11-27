@@ -84,7 +84,7 @@ data class AgentPlanWindow(val usedPercent: Int = 0, val windowMinutes: Int = 0,
 @Serializable
 data class AgentPlanUsage(val planName: String = "", val observedAt: String = "", val windows: List<AgentPlanWindow> = emptyList())
 
-/** What a model costs per million tokens; a zero is a price not known. */
+/** What a model costs per million tokens. An entry that has one has its own price, all zeros meaning free. */
 @Serializable
 data class AgentModelPricing(
     val input: Double = 0.0, val output: Double = 0.0, val cacheRead: Double = 0.0, val cacheWrite: Double = 0.0, val audioInput: Double = 0.0,
@@ -104,7 +104,8 @@ data class AgentModelEntry(
     val contextWindow: Int = 0,
     /** The provider's own figure, read-only; zero when it reports none. */
     val reportedContextWindow: Int = 0,
-    val pricing: AgentModelPricing = AgentModelPricing(),
+    /** The model's own price, or null when it takes the provider's. */
+    val pricing: AgentModelPricing? = null,
     val isEnabled: Boolean = true,
     /** The roles that point at it: default, quick, embedding, and so on. */
     val usedFor: List<String> = emptyList(),
@@ -114,7 +115,7 @@ data class AgentModelEntry(
 
     /** As the server takes it: what is read-only (the reported window, the roles) is left out. */
     fun toJson(): JsonObject = objectOf(
-        "model" to model, "name" to name, "contextWindow" to contextWindow, "pricing" to pricing.toJson(), "isEnabled" to isEnabled,
+        "model" to model, "name" to name, "contextWindow" to contextWindow, "pricing" to pricing?.toJson(), "isEnabled" to isEnabled,
     )
 }
 
@@ -128,10 +129,13 @@ data class AgentModelEntryDraft(
     /** The server refuses a window under a thousand tokens, other than none at all. */
     val canSave: Boolean get() = model.trim().isNotEmpty() && (contextWindow == 0 || contextWindow >= AgentModelEntryDraft.MINIMUM_CONTEXT_WINDOW)
 
+    /** Whether every price field is empty, which sends no price of its own so the model takes the provider's. */
+    val isPricingEmpty: Boolean get() = listOf(inputText, outputText, cacheReadText, cacheWriteText, audioInputText).all { text -> text.isBlank() }
+
     val entry: AgentModelEntry
         get() = AgentModelEntry(
             model = model.trim(), name = name.trim(), contextWindow = contextWindow,
-            pricing = AgentModelPricing(
+            pricing = if (isPricingEmpty) null else AgentModelPricing(
                 SettingsList.number(inputText), SettingsList.number(outputText), SettingsList.number(cacheReadText), SettingsList.number(cacheWriteText),
                 SettingsList.number(audioInputText),
             ),
@@ -141,11 +145,16 @@ data class AgentModelEntryDraft(
     companion object {
         const val MINIMUM_CONTEXT_WINDOW = 1000
 
-        fun of(entry: AgentModelEntry) = AgentModelEntryDraft(
-            model = entry.model, name = entry.name, contextWindowText = if (entry.contextWindow > 0) entry.contextWindow.toString() else "",
-            inputText = SettingsList.text(entry.pricing.input), outputText = SettingsList.text(entry.pricing.output), cacheReadText = SettingsList.text(entry.pricing.cacheRead),
-            cacheWriteText = SettingsList.text(entry.pricing.cacheWrite), audioInputText = SettingsList.text(entry.pricing.audioInput), isEnabled = entry.isEnabled,
-        )
+        fun of(entry: AgentModelEntry): AgentModelEntryDraft {
+            val pricing = entry.pricing
+            // A price of zero is the model's own (free), so it is shown as zero rather than as empty, which would be sent as unset.
+            val inputText = if (pricing == AgentModelPricing()) "0" else SettingsList.text(pricing?.input ?: 0.0)
+            return AgentModelEntryDraft(
+                model = entry.model, name = entry.name, contextWindowText = if (entry.contextWindow > 0) entry.contextWindow.toString() else "",
+                inputText = inputText, outputText = SettingsList.text(pricing?.output ?: 0.0), cacheReadText = SettingsList.text(pricing?.cacheRead ?: 0.0),
+                cacheWriteText = SettingsList.text(pricing?.cacheWrite ?: 0.0), audioInputText = SettingsList.text(pricing?.audioInput ?: 0.0), isEnabled = entry.isEnabled,
+            )
+        }
     }
 }
 
@@ -274,6 +283,10 @@ data class AgentModelChoices(val forWork: List<AgentModelOption>, val forDecidin
             val entry = providers.firstOrNull { provider -> provider.name == providerName }?.models?.firstOrNull { candidate -> candidate.model == modelId }
             return AgentModelOption(value, providerName, entry?.displayName ?: modelId.ifEmpty { value })
         }
+
+        /** The offered models narrowed to the ones a capability is known for (by provider:model); an entry is never added to the list. */
+        fun offeredWithCapability(capableNames: Collection<String>, providers: List<AgentProviderSettings>): List<AgentModelOption> =
+            offered(providers).filter { option -> capableNames.contains(option.value) }
 
         fun of(options: List<AgentModelOption>, providers: List<AgentProviderSettings>): AgentModelChoices {
             val deciderNames = providers.filter { provider -> provider.providerKind == "typesafe" }.map { provider -> provider.name }.toSet()

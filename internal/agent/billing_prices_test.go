@@ -126,10 +126,10 @@ func newBillingFixture(test *testing.T) *billingFixture {
 		BillingAPIKey: billingTestKey, BaseURL: fixture.server.URL + "/v1",
 		Pricing: config.AgentPricing{Input: 1, Output: 4, CacheRead: 0.1},
 		ModelEntries: []config.AgentModelEntry{
-			{Model: "alpha-model", Pricing: config.AgentPricing{Input: 0.2, Output: 1.25, CacheRead: 0.02}},
+			{Model: "alpha-model", Pricing: &config.AgentPricing{Input: 0.2, Output: 1.25, CacheRead: 0.02}},
 			{Model: "beta-model"},
-			{Model: "gamma-model", Pricing: config.AgentPricing{Output: 5}},
-			{Model: "delta-one", Pricing: config.AgentPricing{Output: 1}},
+			{Model: "gamma-model", Pricing: &config.AgentPricing{Output: 5}},
+			{Model: "delta-one", Pricing: &config.AgentPricing{Output: 1}},
 		},
 	}}
 	fixture.store = config.NewMemoryStore(configuration)
@@ -206,7 +206,7 @@ func (self *billingFixture) entry(test *testing.T, model string) *config.AgentPr
 	test.Helper()
 	provider := self.provider()
 	if entry := provider.ModelEntryFor(model); entry != nil {
-		return &entry.Pricing
+		return entry.Pricing
 	}
 	return nil
 }

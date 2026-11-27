@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -104,10 +105,10 @@ func TestOldProviderModelsConvertToEntriesOnLoad(test *testing.T) {
 	if got := strings.Join(entryModels(plan), ","); got != "gpt-9-large,gpt-9-small" {
 		test.Fatalf("the signed-in provider offers what its roles name, in the order of the roles: %s", got)
 	}
-	if got := entryOf(test, plan, "gpt-9-large").Pricing; got != (AgentPricing{Input: 5, Output: 20, CacheRead: 0.5}) {
+	if got := entryOf(test, plan, "gpt-9-large").Pricing; got == nil || *got != (AgentPricing{Input: 5, Output: 20, CacheRead: 0.5}) {
 		test.Fatalf("the plain id keeps its own price, not the pattern after it: %+v", got)
 	}
-	if got := entryOf(test, plan, "gpt-9-small").Pricing; got != (AgentPricing{Input: 2, Output: 8}) {
+	if got := entryOf(test, plan, "gpt-9-small").Pricing; got == nil || *got != (AgentPricing{Input: 2, Output: 8}) {
 		test.Fatalf("a model the pattern covered gets the pattern's price: %+v", got)
 	}
 
@@ -115,16 +116,16 @@ func TestOldProviderModelsConvertToEntriesOnLoad(test *testing.T) {
 	if got := strings.Join(entryModels(keyed), ","); got != "embed-small,listen-v2,gpt-spare,gpt-4o-transcribe,priced-only" {
 		test.Fatalf("roles in order, the voice transcription model, then priced ids no role names: %s", got)
 	}
-	if got := entryOf(test, keyed, "embed-small").Pricing; got != (AgentPricing{Input: 0.02}) {
+	if got := entryOf(test, keyed, "embed-small").Pricing; got == nil || *got != (AgentPricing{Input: 0.02}) {
 		test.Fatalf("embedding price from its pattern: %+v", got)
 	}
-	if got := entryOf(test, keyed, "listen-v2").Pricing; got != (AgentPricing{Input: 2.5, Output: 10, AudioInput: 6}) {
+	if got := entryOf(test, keyed, "listen-v2").Pricing; got == nil || *got != (AgentPricing{Input: 2.5, Output: 10, AudioInput: 6}) {
 		test.Fatalf("transcription price from its pattern, audio included: %+v", got)
 	}
-	if got := entryOf(test, keyed, "gpt-spare").Pricing; got != (AgentPricing{Input: 0.4}) {
+	if got := entryOf(test, keyed, "gpt-spare").Pricing; got == nil || *got != (AgentPricing{Input: 0.4}) {
 		test.Fatalf("a choice gets its own price: %+v", got)
 	}
-	if got := entryOf(test, keyed, "priced-only").Pricing; got != (AgentPricing{Input: 0.7}) {
+	if got := entryOf(test, keyed, "priced-only").Pricing; got == nil || *got != (AgentPricing{Input: 0.7}) {
 		test.Fatalf("a priced plain id with no role still gets an entry: %+v", got)
 	}
 	if entryOf(test, keyed, "gpt-4o-transcribe").HasPricing() {
@@ -208,7 +209,7 @@ func TestConvertedProvidersAreSavedInTheNewShape(test *testing.T) {
 			test.Fatalf("%s lost entries on the way back: %+v then %+v", name, before.ModelEntries, after.ModelEntries)
 		}
 		for index := range before.ModelEntries {
-			if before.ModelEntries[index].Model != after.ModelEntries[index].Model || before.ModelEntries[index].Pricing != after.ModelEntries[index].Pricing {
+			if before.ModelEntries[index].Model != after.ModelEntries[index].Model || !reflect.DeepEqual(before.ModelEntries[index].Pricing, after.ModelEntries[index].Pricing) {
 				test.Fatalf("%s entry %d changed: %+v then %+v", name, index, before.ModelEntries[index], after.ModelEntries[index])
 			}
 		}
@@ -250,7 +251,7 @@ func TestParseReadsBothShapes(test *testing.T) {
 	}
 	plan := current.Agent.Provider("plan")
 	large := entryOf(test, plan, "gpt-9-large")
-	if large.Name != "Large" || large.ContextWindow != 150000 || large.Pricing.Input != 5 || !large.IsEnabled() {
+	if large.Name != "Large" || large.ContextWindow != 150000 || large.Pricing == nil || large.Pricing.Input != 5 || !large.IsEnabled() {
 		test.Fatalf("large: %+v", large)
 	}
 	if small := entryOf(test, plan, "gpt-9-small"); small.IsEnabled() || small.DisplayName() != "gpt-9-small" {
@@ -311,13 +312,13 @@ func TestEntriesAreValidated(test *testing.T) {
 		entries []AgentModelEntry
 		want    string
 	}{
-		{"valid", []AgentModelEntry{{Model: "alpha-one", ContextWindow: 1000, Pricing: AgentPricing{Input: 1}}, {Model: "alpha-two"}}, ""},
+		{"valid", []AgentModelEntry{{Model: "alpha-one", ContextWindow: 1000, Pricing: &AgentPricing{Input: 1}}, {Model: "alpha-two"}}, ""},
 		{"empty model", []AgentModelEntry{{Model: "  "}}, "agent.providers[0].models[0].model"},
 		{"twice", []AgentModelEntry{{Model: "alpha-one"}, {Model: "alpha-one"}}, "listed twice"},
 		{"small window", []AgentModelEntry{{Model: "alpha-one", ContextWindow: 999}}, "contextWindow"},
 		{"negative window", []AgentModelEntry{{Model: "alpha-one", ContextWindow: -5}}, "contextWindow"},
-		{"negative price", []AgentModelEntry{{Model: "alpha-one", Pricing: AgentPricing{Output: -1}}}, "prices cannot be negative"},
-		{"negative audio price", []AgentModelEntry{{Model: "alpha-one", Pricing: AgentPricing{AudioInput: -1}}}, "prices cannot be negative"},
+		{"negative price", []AgentModelEntry{{Model: "alpha-one", Pricing: &AgentPricing{Output: -1}}}, "prices cannot be negative"},
+		{"negative audio price", []AgentModelEntry{{Model: "alpha-one", Pricing: &AgentPricing{AudioInput: -1}}}, "prices cannot be negative"},
 	}
 	for _, each := range cases {
 		problems := problemsOf(agentWithProvider(each.entries, AgentModels{Default: "alpha:alpha-two"}))
@@ -364,7 +365,7 @@ func TestPricingReadsTheEntry(test *testing.T) {
 		Name:    "alpha",
 		Pricing: AgentPricing{Input: 1, Output: 2},
 		ModelEntries: []AgentModelEntry{
-			{Model: "alpha-large", Pricing: AgentPricing{Input: 7, Output: 9}},
+			{Model: "alpha-large", Pricing: &AgentPricing{Input: 7, Output: 9}},
 			{Model: "alpha-plain"},
 		},
 	}
@@ -405,5 +406,165 @@ func TestOffersModelIncludesTheVoiceTranscriptionModel(test *testing.T) {
 	agent.Providers[0].ModelEntries = append(agent.Providers[0].ModelEntries, AgentModelEntry{Model: "alpha-hear", Enabled: &isOff})
 	if agent.OffersModel("alpha:alpha-hear") {
 		test.Error("an entry that is switched off wins over the implicit offer")
+	}
+}
+
+// An id with an "@" of its own is a whole id: only "@" and digits at the end
+// is a width.
+func TestAnAtSignInAnIdIsNotAWidth(test *testing.T) {
+	test.Parallel()
+
+	for model, bare := range map[string]string{
+		"text-embedding-3-small@512": "text-embedding-3-small",
+		"@cf/meta/llama-3-8b":        "@cf/meta/llama-3-8b",
+		"model@rev":                  "model@rev",
+		"model@":                     "model@",
+		"model@12x":                  "model@12x",
+		"plain":                      "plain",
+	} {
+		if got := modelWithoutWidth(model); got != bare {
+			test.Errorf("modelWithoutWidth(%q) = %q, want %q", model, got, bare)
+		}
+	}
+
+	provider := &AgentProvider{Name: "alpha", ModelEntries: []AgentModelEntry{
+		{Model: "text-embedding-3-small"}, {Model: "foo@512"}, {Model: "foo"}, {Model: "@cf/meta/llama-3-8b"}, {Model: "model@rev"},
+	}}
+	for model, position := range map[string]int{
+		"text-embedding-3-small@512": 0,
+		"foo@512":                    1,
+		"foo@256":                    2,
+		"foo":                        2,
+		"@cf/meta/llama-3-8b":        3,
+		"model@rev":                  4,
+		"model@7":                    -1,
+		"@cf/other":                  -1,
+	} {
+		if got := provider.ModelEntryIndexFor(model); got != position {
+			test.Errorf("ModelEntryIndexFor(%q) = %d, want %d", model, got, position)
+		}
+	}
+	if !provider.Offers("@cf/meta/llama-3-8b") || provider.PricingFor("model@rev") != (AgentPricing{}) {
+		test.Fatal("an entry whose id has an @ is offered")
+	}
+}
+
+// An old configuration whose roles name an id with an "@" converts, validates
+// and resolves.
+func TestOldConfigurationWithAtSignIdsLoads(test *testing.T) {
+	test.Parallel()
+
+	settings := `
+enabled: true
+providers:
+  - name: edge
+    kind: openai
+    apiKey: key-one
+    models: {}
+    modelPricing:
+      - model: "@cf/meta/llama-3-8b"
+        input: 0.3
+models:
+  default: edge:@cf/meta/llama-3-8b
+  fast: edge:model@rev
+`
+	rows := &db.ConfigurationRows{Settings: map[string]string{settingAgent: settings}}
+	configuration, err := FromRows(rows, nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	edge := configuration.Agent.Provider("edge")
+	if got := strings.Join(entryModels(edge), ","); !strings.HasPrefix(got, "@cf/meta/llama-3-8b,model@rev") {
+		test.Fatalf("both ids become entries: %s", got)
+	}
+	valid := validConfiguration()
+	valid.Agent = configuration.Agent
+	if problems := problemsOf(valid); problems != "" {
+		test.Fatalf("validation: %s", problems)
+	}
+	if !configuration.Agent.OffersModel("edge:@cf/meta/llama-3-8b") || edge.PricingFor("@cf/meta/llama-3-8b").Input != 0.3 {
+		test.Fatal("the id with an @ is offered and priced")
+	}
+}
+
+// A zero price that an old list gave a model meant free; it stays free next
+// to a provider that charges, and an unpriced entry takes the provider's.
+func TestZeroPriceIsSetAndNilIsUnset(test *testing.T) {
+	test.Parallel()
+
+	settings := `
+enabled: true
+providers:
+  - name: alpha
+    kind: openai
+    apiKey: key-one
+    models: {}
+    pricing:
+      input: 2
+      output: 8
+    modelPricing:
+      - model: alpha-free
+        input: 0
+        output: 0
+      - model: alpha-priced
+        input: 1
+models:
+  default: alpha:alpha-free
+  fast: alpha:alpha-priced
+  quick: alpha:alpha-plain
+`
+	configuration, err := FromRows(&db.ConfigurationRows{Settings: map[string]string{settingAgent: settings}}, nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	alpha := configuration.Agent.Provider("alpha")
+	free := entryOf(test, alpha, "alpha-free")
+	if free.Pricing == nil || *free.Pricing != (AgentPricing{}) || !free.HasPricing() {
+		test.Fatalf("an old zero entry becomes a set price of zero: %+v", free.Pricing)
+	}
+	if entryOf(test, alpha, "alpha-plain").HasPricing() {
+		test.Fatal("an entry no price named has none of its own")
+	}
+	if got := alpha.PricingFor("alpha-free"); got != (AgentPricing{}) {
+		test.Fatalf("free stays free: %+v", got)
+	}
+	if got := alpha.PricingFor("alpha-plain"); got.Input != 2 || got.Output != 8 {
+		test.Fatalf("an unset entry takes the provider's prices: %+v", got)
+	}
+
+	// Saved and read again, a zero stays set and an unset stays unset.
+	written, err := yaml.Marshal(alpha)
+	if err != nil {
+		test.Fatal(err)
+	}
+	var again AgentProvider
+	if err := yaml.Unmarshal(written, &again); err != nil {
+		test.Fatal(err)
+	}
+	if entryOf(test, &again, "alpha-free").Pricing == nil || entryOf(test, &again, "alpha-plain").Pricing != nil {
+		test.Fatalf("the stored shape keeps the difference:\n%s", written)
+	}
+}
+
+// The voice transcription model is used by the voice settings, so it counts
+// as used and cannot be switched off.
+func TestImplicitVoiceModelCountsAsUsed(test *testing.T) {
+	test.Parallel()
+
+	configuration := agentWithProvider(nil, AgentModels{})
+	configuration.Agent.Providers[0].ModelEntries = []AgentModelEntry{{Model: "alpha-large"}}
+	configuration.Agent.Models = AgentModels{Default: "alpha:alpha-large"}
+	voiceModel := configuration.Agent.Voice.EffectiveTranscriptionModel()
+	configuration.Agent.Providers[0].ModelEntries = append(configuration.Agent.Providers[0].ModelEntries, AgentModelEntry{Model: voiceModel})
+	if roles := configuration.Agent.RolesUsing("alpha", voiceModel); !reflect.DeepEqual(roles, []string{"voice.transcriptionModel"}) {
+		test.Fatalf("roles: %v", roles)
+	}
+	if problems := problemsOf(configuration); problems != "" {
+		test.Fatalf("on it is valid: %s", problems)
+	}
+	isOff := false
+	configuration.Agent.Providers[0].ModelEntries[1].Enabled = &isOff
+	if problems := problemsOf(configuration); !strings.Contains(problems, "agent.voice.transcriptionModel") || !strings.Contains(problems, "switched off") {
+		test.Fatalf("switching it off is refused: %q", problems)
 	}
 }

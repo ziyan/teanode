@@ -115,6 +115,19 @@ Check what the settings CLI is called today and fit in.
   and Roborazzi shots.
 - Strings in English, Simplified Chinese and Japanese on every surface.
 
+## Known limits of the conversion
+
+- Pattern prices carry over only for models a role uses or that are priced by
+  a plain id. A pattern such as `embed-*` prices the entries made from roles
+  and plain ids that it matches; models it would have matched but nobody uses
+  get no entry, so they take the provider's price once added.
+- An old app's price edits are ignored until it updates: a build from before
+  the entry's `pricing` could be null does not know an entry can have no
+  price of its own, so update the apps before editing prices from them.
+- An entry's `pricing` is a pointer: nil takes the provider's price, a value
+  (even all zeros) is the model's own, and an old zero entry converts to a
+  value of zero because the first match used to win.
+
 ## Validation
 
 - Config:

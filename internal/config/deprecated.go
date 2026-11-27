@@ -105,14 +105,16 @@ type deprecatedModelPricing struct {
 
 // priceFor is what the old list priced a model at: the first entry that
 // names it, by pattern or by id.
-func (self *deprecatedProvider) priceFor(model string) AgentPricing {
+// It is nil when none does, and a value when one does, all zeros included,
+// because the old list read a matching zero entry as free.
+func (self *deprecatedProvider) priceFor(model string) *AgentPricing {
 	model = modelWithoutWidth(model)
 	for _, priced := range self.Pricing {
 		if matchesAny([]string{priced.Model}, model) {
-			return AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite, AudioInput: priced.AudioInput}
+			return &AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite, AudioInput: priced.AudioInput}
 		}
 	}
-	return AgentPricing{}
+	return nil
 }
 
 // migrateDeprecated adopts what it can from the older layout and says what it

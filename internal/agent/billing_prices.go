@@ -365,9 +365,10 @@ func applyPriceChanges(provider *config.AgentProvider, changes []models.AgentPri
 			continue
 		}
 		if !entry.HasPricing() {
-			entry.Pricing = provider.PricingFor(change.Model)
+			inherited := provider.PricingFor(change.Model)
+			entry.Pricing = &inherited
 		}
-		if price := pricePointer(&entry.Pricing, change.TokenKind); price != nil {
+		if price := pricePointer(entry.Pricing, change.TokenKind); price != nil {
 			*price = change.AfterPerMillion
 		}
 	}
