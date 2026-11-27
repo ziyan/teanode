@@ -176,8 +176,8 @@ const (
 	DocumentGetAgentFeedItem = `query ($feedItemId: String!) {
 		GetAgentFeedItem(feedItemId: $feedItemId) { ` + feedItemFields + ` }
 	}`
-	DocumentChooseAgentFeedItem = `mutation ($feedItemId: String!, $choiceKey: String!) {
-		ChooseAgentFeedItem(feedItemId: $feedItemId, choiceKey: $choiceKey) { ` + feedItemFields + ` }
+	DocumentChooseAgentFeedItem = `mutation ($feedItemId: String!, $choiceKey: String!, $runConversationId: String) {
+		ChooseAgentFeedItem(feedItemId: $feedItemId, choiceKey: $choiceKey, runConversationId: $runConversationId) { ` + feedItemFields + ` }
 	}`
 	DocumentLikeAgentFeedItem = `mutation ($feedItemId: String!, $isLiked: Boolean!) {
 		LikeAgentFeedItem(feedItemId: $feedItemId, isLiked: $isLiked) { ` + feedItemFields + ` }

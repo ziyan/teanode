@@ -32,10 +32,13 @@ func init() {
 					"A still from one of their cameras goes in media as {camera_still: {attachment_id (the attachment_id in the camera tool's answer, in this turn), camera_name, captured_at (the camera's own time with its offset, such as 2026-11-19T14:02:11-05:00), still_reason (why this camera, such as the camera at the front door, where the parcel was left), playback_url, live_url (https, optional)}}; a still whose picture cannot be read is left off with a note and the card still posts, and a new moment needs a new still, since an update keeps a still only when its camera and moment are unchanged. " +
 					"A card is held to these rules. It says what happened, why it matters and one or two next steps. Numbers come only from this turn's tool results. One card per subject: `list` first so that nothing is said twice, and never rewrite a card into a different subject. Plain words, with no ids or tool names, and a title that says what the body says. Silence is the default. Em and en dashes are rewritten, and a title, label or caption a little too long is cut, with the cut fields listed in the answer's postNotes. " +
 					"When the problem a card is about clears, `resolve` that card (feed_item_id, and a resolution_note of one line saying what cleared) instead of posting a card that says all is clear: it stays in place, marked resolved. Post a new card only for a new problem, or one that got materially worse. A card is resolved once, and a goal's own turn may resolve only a card it posted and never one the person resolved; `unresolve` takes the mark off, for when it was wrong. Posting the same subject again with its coalesce_key clears the mark. " +
-					"`update` changes a card you posted, by feed_item_id, where it stands, and keeps every field you leave out (title, kind, body, choices, media, charts). `withdraw` takes one back for good when it no longer holds: it is deleted, not put among the dismissed cards, and never a card the person answered or resolved (dismiss that), and in a goal's own turn only a card that goal posted. `dismiss` and `restore` are for when the person asks (\"clear my feed\", \"bring that back\"), never on your own and never in a goal's own turn: dismiss closes the cards in feed_item_ids, or every card of a stack_key, or every_read cards the person has read (a decision still waiting for an answer is kept); restore brings feed_item_ids back. `list` shows what is in the feed, to find an id or to see what you already said; with dismissed_only it lists the dismissed cards, the most recently dismissed first.",
+					"`update` changes a card you posted, by feed_item_id, where it stands, and keeps every field you leave out (title, kind, body, choices, media, charts). `withdraw` takes one back for good when it no longer holds: it is deleted, not put among the dismissed cards, and never a card the person answered or resolved (dismiss that), and in a goal's own turn only a card that goal posted. `dismiss` and `restore` are for when the person asks (\"clear my feed\", \"bring that back\"), never on your own and never in a goal's own turn: dismiss closes the cards in feed_item_ids, or every card of a stack_key, or every_read cards the person has read (a decision still waiting for an answer is kept); restore brings feed_item_ids back. `list` shows what is in the feed, to find an id or to see what you already said; with dismissed_only it lists the dismissed cards, the most recently dismissed first, and a page whose nextCursor is not empty goes on with after. `show` reads one card whole, and `stack` the cards of one stack_key. " +
+					"The person's own buttons are yours too when they ask in words (\"like the rail card\", \"yes, unsubscribe me\", \"mark them all read\", \"less of these\"), never on your own and never in a goal's own turn: `choose` answers a card with its choice_key, and for an action you then carry it out yourself in this turn, since no turn of its own starts; `like` and `unlike` say whether they want more like it; `less` is show less like this, which also dismisses it; `read` marks the feed_item_ids read.",
 				Parameters: tools.Object(map[string]any{
-					"action":          tools.EnumProperty("what to do", "post", "update", "resolve", "unresolve", "withdraw", "dismiss", "restore", "list"),
-					"feed_item_id":    tools.StringProperty("for update, resolve, unresolve and withdraw: the card, by the id list or post gave"),
+					"action":          tools.EnumProperty("what to do", "post", "update", "resolve", "unresolve", "withdraw", "dismiss", "restore", "list", "show", "stack", "choose", "like", "unlike", "less", "read"),
+					"feed_item_id":    tools.StringProperty("for update, resolve, unresolve, withdraw, show, choose, like, unlike and less: the card, by the id list or post gave"),
+					"choice_key":      tools.StringProperty("for choose: the card's choice the person picked, by its choiceKey from list or show"),
+					"after":           tools.StringProperty("for list and stack: the nextCursor the page before gave, for the page after it"),
 					"resolution_note": tools.StringProperty("for resolve: one line, at most 160 characters, saying what cleared"),
 					"title":           tools.StringProperty("for post: the headline, a line"),
 					"body":            tools.StringProperty("for post and update: a few lines, Markdown, links allowed"),
@@ -46,7 +49,7 @@ func init() {
 					"stack_title":     tools.StringProperty("names the stack, once, on any of its cards: \"Morning brief, Wed Nov 19\""),
 					"card_layout":     tools.EnumProperty("how the card is drawn; the body is still filled in", "text", "list", "weather", "agenda"),
 					"layout_content":  map[string]any{"type": "object", "description": "the layout's content: for list {listRows}, for weather {placeName, currentTemperature, temperatureUnit, conditionText, ...}, for agenda {agendaEntries}; see the tool's description"},
-					"stack_key":       tools.StringProperty("for dismiss: the stack to close. For post: cards of one source pile into a stack shown as one entry; a goal's cards stack by their source on their own, so name one only to stack cards of your own posting; a card with choices that act never stacks"),
+					"stack_key":       tools.StringProperty("for stack: the stack to read, by the feedStackKey list gave. For dismiss: the stack to close. For post: cards of one source pile into a stack shown as one entry; a goal's cards stack by their source on their own, so name one only to stack cards of your own posting; a card with choices that act never stacks"),
 					"chart_blocks": tools.ArrayProperty("for post and update: at most two charts, each with a provenance", tools.Object(map[string]any{
 						"chartKind":  tools.EnumProperty("a series over time, or bars", "series", "bars"),
 						"chartTitle": tools.StringProperty("what the chart shows"),
@@ -101,12 +104,12 @@ func init() {
 						"choice_label": tools.StringProperty("what the button says, in their language"),
 						"choice_role":  tools.EnumProperty("action: you do it when they press it; dismiss: it only closes the card; discuss: they want to talk it over", "action", "dismiss", "discuss"),
 					}, "choice_key", "choice_label", "choice_role")),
-					"feed_item_ids":     tools.ArrayProperty("for dismiss and restore: the cards, at most 500, by the ids list gave", tools.StringProperty("a card's id")),
+					"feed_item_ids":     tools.ArrayProperty("for dismiss, restore and read: the cards, at most 500, by the ids list gave", tools.StringProperty("a card's id")),
 					"every_read":        tools.BooleanProperty("for dismiss: every card the person has read, except a decision still waiting for an answer"),
 					"include_dismissed": tools.BooleanProperty("for list: the dismissed cards too"),
 					"dismissed_only":    tools.BooleanProperty("for list: only the dismissed cards, the most recently dismissed first"),
 				}, "action"),
-				Guidance: "feed: post to the feed what the person did not ask for (news, a report, an idea, something they should decide) and keep the main conversation for answering them. One card per subject; `list` first when you may have posted it already; `resolve` a card when its problem clears instead of posting an all clear. Write the card for them to read: plain words, no ids or tool names, links in the body. A choice is something you can carry out when pressed, not a way to end the card.",
+				Guidance: "feed: post to the feed what the person did not ask for (news, a report, an idea, something they should decide) and keep the main conversation for answering them. One card per subject; `list` first when you may have posted it already; `resolve` a card when its problem clears instead of posting an all clear. Write the card for them to read: plain words, no ids or tool names, links in the body. A choice is something you can carry out when pressed, not a way to end the card. When they ask you to tend their feed (answer, like, read, less, dismiss, restore), do it here.",
 				Run:      run,
 			},
 		}
@@ -179,6 +182,8 @@ type arguments struct {
 	IsDismissedOnly  bool              `json:"dismissed_only"`
 	FeedItemIDs      []string          `json:"feed_item_ids"`
 	IsEveryRead      bool              `json:"every_read"`
+	ChoiceKey        string            `json:"choice_key"`
+	After            string            `json:"after"`
 }
 
 func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -198,7 +203,32 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if asked.IsDismissedOnly {
 			variables["isDismissedOnly"] = true
 		}
-		return operate(ctx, client.DocumentListAgentFeed, variables, "ListAgentFeed", "")
+		if after := strings.TrimSpace(asked.After); after != "" {
+			variables["after"] = after
+		}
+		return operate(ctx, client.DocumentListAgentFeed, variables, "ListAgentFeed", pageNote)
+	case "stack":
+		stackKey := strings.TrimSpace(asked.StackKey)
+		if stackKey == "" {
+			return nil, fmt.Errorf("which stack? give stack_key, the feedStackKey list gave")
+		}
+		variables := map[string]any{"feedStackKey": stackKey, "first": 30}
+		if after := strings.TrimSpace(asked.After); after != "" {
+			variables["after"] = after
+		}
+		return operate(ctx, client.DocumentListAgentFeedStack, variables, "ListAgentFeedStack", pageNote)
+	case "show":
+		if feedItemId == "" {
+			return nil, fmt.Errorf("which card? give feed_item_id, from list")
+		}
+		return operate(ctx, client.DocumentGetAgentFeedItem, map[string]any{"feedItemId": feedItemId}, "GetAgentFeedItem", "")
+	case "choose", "like", "unlike", "less", "read":
+		// These are the person's own answers, done for them when they ask in
+		// words; a goal working on its own does not answer for them.
+		if here := current.Conversation(); here != nil && here.IsGoal() && current.Headless() {
+			return nil, fmt.Errorf("a goal's own turn cannot %s a card for the person; only they, or you when they ask, do that", action)
+		}
+		return answer(ctx, current, action, feedItemId, &asked)
 	case "withdraw":
 		if feedItemId == "" {
 			return nil, fmt.Errorf("which card? give feed_item_id, from list")
@@ -295,7 +325,48 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		return operate(ctx, client.DocumentPostAgentFeedItem, variables, "PostAgentFeedItem", note)
 	}
-	return nil, fmt.Errorf("%q is not post, update, resolve, unresolve, withdraw, dismiss, restore or list", asked.Action)
+	return nil, fmt.Errorf("%q is not post, update, resolve, unresolve, withdraw, dismiss, restore, list, show, stack, choose, like, unlike, less or read", asked.Action)
+}
+
+// pageNote is said with a page of cards, for the pages after it.
+const pageNote = "when nextCursor is not empty there are more cards: pass it as after for the next page"
+
+// answer does for the person, who asked in words, what their buttons on a
+// card do: choose one of its choices, like it or take the like back, show
+// less like it, or mark cards read.
+func answer(ctx context.Context, current tools.Run, action, feedItemId string, asked *arguments) (*tools.Result, error) {
+	if action == "read" {
+		if len(asked.FeedItemIDs) == 0 {
+			return nil, fmt.Errorf("which cards? give feed_item_ids")
+		}
+		return operate(ctx, client.DocumentMarkAgentFeedRead, map[string]any{"feedItemIds": asked.FeedItemIDs}, "MarkAgentFeedRead", "marked read")
+	}
+	if feedItemId == "" {
+		return nil, fmt.Errorf("which card? give feed_item_id, from list")
+	}
+	variables := map[string]any{"feedItemId": feedItemId}
+	switch action {
+	case "choose":
+		choiceKey := strings.TrimSpace(asked.ChoiceKey)
+		if choiceKey == "" {
+			return nil, fmt.Errorf("which choice? give choice_key, from the card's choices")
+		}
+		variables["choiceKey"] = choiceKey
+		// This turn carries an action out itself: the answer is recorded on
+		// the card, and no turn of its own starts.
+		if here := current.Conversation(); here != nil {
+			variables["runConversationId"] = here.ID
+		}
+		return operate(ctx, client.DocumentChooseAgentFeedItem, variables, "ChooseAgentFeedItem", "the answer is recorded on the card; if the choice is an action, carry it out now, in this turn")
+	case "like", "unlike":
+		variables["isLiked"] = action == "like"
+		note := "liked: more like it will come"
+		if action == "unlike" {
+			note = "the like is taken back"
+		}
+		return operate(ctx, client.DocumentLikeAgentFeedItem, variables, "LikeAgentFeedItem", note)
+	}
+	return operate(ctx, client.DocumentShowLessLikeAgentFeedItem, variables, "ShowLessLikeAgentFeedItem", "less like it will come, and the card is dismissed")
 }
 
 // postVariables is what the operation takes, from what the model gave.

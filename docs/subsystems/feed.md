@@ -113,8 +113,9 @@ event, and neither moves the card, makes it unread or notifies the phones.
   the agent's tool outside a goal's own turn is `agent`.
 - **A shell command of the agent** (the command line run by the agent, which
   sends the `X-Teanode-Agent-Command` header with the person's token) cannot
-  resolve, unresolve, restore or withdraw: the operations answer permission
-  denied, saying these are for the person and for the feed tool inside a turn.
+  resolve, unresolve, restore, withdraw, answer, like or show less: the
+  operations answer permission denied, saying these are for the person and for
+  the feed tool inside a turn.
   This holds whatever `runConversationId` the command sends, so the goal limits
   above cannot be skipped by leaving it out. The in-process feed tool carries no
   request and is not affected.
@@ -255,6 +256,13 @@ speaking first and what goals post back to the main conversation.
   conversation (`DiscussAgentFeedItem` answers the main conversation's id and
   marks the card read) or the session.
 
+The agent answers for the person when they ask it to in words ("yes,
+unsubscribe me"): the feed tool's `choose` sends the turn's own conversation as
+`runConversationId`. An action is then only recorded, with that conversation,
+and starts no turn of its own, since the turn that chose carries it out; the
+card has no outcome to wait for. A conversation that is not the person's is
+refused.
+
 ## Dismissing and restoring
 
 `DismissAgentFeedItems` closes cards: exactly one of `feedItemIds` (at most
@@ -310,6 +318,17 @@ it instead"); a goal's own turn (the tool sends `runConversationId`, and the
 operation checks it again) may withdraw only a card whose feed source is that
 goal; and the files of the card's pictures are deleted with it, once the
 deletion commits. A shell command of the agent is refused, as for resolving.
+
+## Doing the person's part for them
+
+Everything a person's button does, the feed tool does too when they ask in
+words: `choose`, `like` and `unlike`, `less` (show less like this) and `read`,
+next to `dismiss` and `restore`. `show` reads one card and `stack` one stack,
+and `list` and `stack` page on with `after`, the `nextCursor` of the page before.
+A goal's own turn may do none of these, the same test as the restore refusal: it
+never answers for the person. Only discussing has no action, since asking the
+agent about a card is already the conversation discussing opens. A shell
+command of the agent cannot choose, like or show less either, as for resolving.
 
 ## Liking
 

@@ -159,6 +159,12 @@ type AgentFeedItemArguments struct {
 type ChooseAgentFeedItemArguments struct {
 	FeedItemID string `json:"feedItemId"`
 	ChoiceKey  string `json:"choiceKey"`
+
+	// RunConversationID is the conversation of the turn that answers for
+	// the person, who asked it to in words; the feed tool sends it, and a
+	// screen leaves it out. That turn carries an action out itself, so the
+	// answer is recorded and no turn of its own starts.
+	RunConversationID *string `json:"runConversationId" graphapi:"nullable"`
 }
 
 // LikeAgentFeedItemArguments name a card and say whether it is liked.
@@ -723,6 +729,9 @@ func (self *graph) ChooseAgentFeedItem(ctx context.Context, arguments ChooseAgen
 	if err != nil {
 		return nil, err
 	}
+	if err := requireNotFeedAgentCommand(ctx, "answering a card"); err != nil {
+		return nil, err
+	}
 	worker := self.agentWorker()
 	if worker == nil {
 		return nil, agent.ErrUnavailable
@@ -732,11 +741,20 @@ func (self *graph) ChooseAgentFeedItem(ctx context.Context, arguments ChooseAgen
 	if err != nil {
 		return nil, err
 	}
+	answeringConversationId := ""
+	if arguments.RunConversationID != nil && strings.TrimSpace(*arguments.RunConversationID) != "" {
+		conversation, err := self.ownConversation(tx, found, *arguments.RunConversationID, true)
+		if err != nil {
+			return nil, err
+		}
+		answeringConversationId = conversation.ID
+	}
 	chosen, err := worker.ChooseFeedItem(ctx, &agent.FeedChoiceSettings{
 		Agent: found, Owner: principal.User,
 		Operations:   &agentOperations{graph: self, user: principal.User, permissions: principal.Permissions, impersonator: principal.Impersonator},
 		IsPersonsTap: principal.IsPersonsTap(), IsOperatorActingAsPerson: principal.IsImpersonation(),
 		Item: item, ChoiceKey: strings.TrimSpace(arguments.ChoiceKey),
+		AnsweringConversationID: answeringConversationId,
 	})
 	if err != nil {
 		return nil, translateError(err)
@@ -747,6 +765,9 @@ func (self *graph) ChooseAgentFeedItem(ctx context.Context, arguments ChooseAgen
 func (self *graph) LikeAgentFeedItem(ctx context.Context, arguments LikeAgentFeedItemArguments) (*AgentFeedItemView, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := requireNotFeedAgentCommand(ctx, "liking a card"); err != nil {
 		return nil, err
 	}
 	worker := self.agentWorker()
@@ -768,6 +789,9 @@ func (self *graph) LikeAgentFeedItem(ctx context.Context, arguments LikeAgentFee
 func (self *graph) ShowLessLikeAgentFeedItem(ctx context.Context, arguments AgentFeedItemArguments) (*AgentFeedItemView, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := requireNotFeedAgentCommand(ctx, "showing less like a card"); err != nil {
 		return nil, err
 	}
 	worker := self.agentWorker()

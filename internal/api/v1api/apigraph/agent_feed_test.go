@@ -413,10 +413,11 @@ func TestResolvingAndUnresolvingACard(t *testing.T) {
 }
 
 // A shell command of the agent reaches the API with the person's own token and
-// the agent-command header. Resolving, unresolving, restoring and withdrawing
-// are the person's, and the feed tool's inside a turn, so they are refused to
-// it, with a message that says whose they are.
-func TestAnAgentCommandCannotResolveUnresolveRestoreOrWithdraw(t *testing.T) {
+// the agent-command header. Resolving, unresolving, restoring, withdrawing,
+// answering, liking and showing less are the person's, and the feed tool's
+// inside a turn, so they are refused to it, with a message that says whose
+// they are.
+func TestAnAgentCommandCannotChangeTheFeedForThePerson(t *testing.T) {
 	world := newFeedWorld(t)
 	world.within(world.person, func(ctx context.Context) {
 		card, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: "A card"})
@@ -446,6 +447,18 @@ func TestAnAgentCommandCannotResolveUnresolveRestoreOrWithdraw(t *testing.T) {
 				_, err := world.resolver.WithdrawAgentFeedItem(commandContext, WithdrawAgentFeedItemArguments{FeedItemID: card.FeedItemID})
 				return err
 			},
+			"choose": func() error {
+				_, err := world.resolver.ChooseAgentFeedItem(commandContext, ChooseAgentFeedItemArguments{FeedItemID: card.FeedItemID, ChoiceKey: "go"})
+				return err
+			},
+			"like": func() error {
+				_, err := world.resolver.LikeAgentFeedItem(commandContext, LikeAgentFeedItemArguments{FeedItemID: card.FeedItemID, IsLiked: true})
+				return err
+			},
+			"less": func() error {
+				_, err := world.resolver.ShowLessLikeAgentFeedItem(commandContext, AgentFeedItemArguments{FeedItemID: card.FeedItemID})
+				return err
+			},
 		} {
 			if err := call(); !errors.Is(err, api.ErrPermissionDenied) || !strings.Contains(err.Error(), "for the person, and for the feed tool") {
 				t.Errorf("%s by an agent command: %v", name, err)
@@ -457,6 +470,40 @@ func TestAnAgentCommandCannotResolveUnresolveRestoreOrWithdraw(t *testing.T) {
 		}
 		if isWithdrawn, err := world.resolver.WithdrawAgentFeedItem(ctx, WithdrawAgentFeedItemArguments{FeedItemID: card.FeedItemID}); err == nil || isWithdrawn {
 			t.Fatalf("a card the person resolved was withdrawn: %v %v", isWithdrawn, err)
+		}
+	})
+}
+
+// The feed tool answers a card in the turn the person asked it in, naming
+// that turn's conversation: an action is recorded with it and starts no turn
+// of its own, and a conversation that is not the person's is refused.
+func TestACardAnsweredInATurnIsRecordedWithItsConversation(t *testing.T) {
+	world := newFeedWorld(t)
+	var strangerConversationId string
+	world.within(world.stranger, func(ctx context.Context) {
+		goal, err := world.resolver.StartAgentGoal(ctx, StartAgentGoalArguments{GoalTitle: "Somebody else's goal", GoalDescription: "Watch the weather."})
+		if err != nil {
+			t.Fatal(err)
+		}
+		strangerConversationId = goal.ConversationID
+	})
+	world.within(world.person, func(ctx context.Context) {
+		goal, err := world.resolver.StartAgentGoal(ctx, StartAgentGoalArguments{GoalTitle: "Tidy the mail", GoalDescription: "Unsubscribe from what I do not read."})
+		if err != nil {
+			t.Fatal(err)
+		}
+		card, err := world.resolver.PostAgentFeedItem(ctx, PostAgentFeedItemArguments{Title: "Unsubscribe from three shops?", FeedItemKind: "decision", Choices: []models.FeedChoice{
+			{ChoiceKey: "unsubscribe", ChoiceLabel: "Unsubscribe", ChoiceRole: models.FeedChoiceAction},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := world.resolver.ChooseAgentFeedItem(ctx, ChooseAgentFeedItemArguments{FeedItemID: card.FeedItemID, ChoiceKey: "unsubscribe", RunConversationID: &strangerConversationId}); !errors.Is(err, api.ErrNotFound) {
+			t.Fatalf("answered in somebody else's conversation: %v", err)
+		}
+		chosen, err := world.resolver.ChooseAgentFeedItem(ctx, ChooseAgentFeedItemArguments{FeedItemID: card.FeedItemID, ChoiceKey: "unsubscribe", RunConversationID: &goal.ConversationID})
+		if err != nil || chosen.ChosenChoiceKey != "unsubscribe" || chosen.IsOutcomePending {
+			t.Fatalf("recorded, with no turn of its own to wait for: %+v %v", chosen, err)
 		}
 	})
 }
