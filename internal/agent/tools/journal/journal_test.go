@@ -3,6 +3,7 @@ package journal
 import (
 	"context"
 	"encoding/json"
+	"github.com/ziyan/teanode/internal/client"
 	"strings"
 	"sync"
 	"testing"
@@ -549,4 +550,14 @@ func TestACorrectionSaysWhatTheNarrativeKeeps(t *testing.T) {
 // operationsDay is the day count days from today in Ada's zone (UTC).
 func operationsDay(count int) string {
 	return time.Now().UTC().AddDate(0, 0, count).Format(time.DateOnly)
+}
+
+// A note from the person's notes folder is given whole, not cut to an excerpt.
+func TestNotesFromTheNotesFolderAreGivenWhole(t *testing.T) {
+	text := strings.Repeat("a long note, ", 200)
+	answer := wordsAnswer(&client.JournalWordsView{JournalNotes: []*client.JournalNoteView{{Title: "Plans", Text: text}}})
+	notes := answer["notes_from_their_notes_folder"].([]map[string]any)
+	if len(notes) != 1 || notes[0]["text"] != text {
+		t.Fatalf("the note was cut: %v", notes)
+	}
 }

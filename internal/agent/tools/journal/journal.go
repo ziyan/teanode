@@ -121,7 +121,7 @@ func init() {
 					"It is kept as a fact every later writing must follow, and the narrative is written again at once. Send each correction once: the answer lists what the narrative keeps, and words it already keeps add nothing. Only in a conversation the person started, or for a program they connected over MCP.",
 				Parameters: tools.Object(map[string]any{
 					"day":             dayProperty,
-					"correction_text": tools.StringProperty("what is wrong, as the person said it, at most 500 characters"),
+					"correction_text": tools.StringProperty("what is wrong, as the person said it"),
 					"period_kind":     tools.EnumProperty("correct the narrative of the week, month or year that contains the day", "week", "month", "year"),
 				}, "correction_text"),
 				Run: withWriteGate(runCorrect),

@@ -24,10 +24,6 @@ const (
 	// defaultDayCount is how many days journal_days goes back when no range
 	// is given, counting the last day.
 	defaultDayCount = 30
-
-	// excerptCharacters is how much of a note from the person's notes folder
-	// is given.
-	excerptCharacters = 500
 )
 
 // elsewhereWords is the whole answer of every action in a run whose answer
@@ -255,7 +251,7 @@ func wordsAnswer(words *client.JournalWordsView) map[string]any {
 		answer["modified_at"] = words.ModifiedAt.Format(time.RFC3339)
 	}
 	for _, note := range words.JournalNotes {
-		answer["notes_from_their_notes_folder"] = append(notesOf(answer), map[string]any{"title": note.Title, "text": cutText(note.Text, excerptCharacters)})
+		answer["notes_from_their_notes_folder"] = append(notesOf(answer), map[string]any{"title": note.Title, "text": note.Text})
 	}
 	return answer
 }
@@ -263,13 +259,6 @@ func wordsAnswer(words *client.JournalWordsView) map[string]any {
 func notesOf(answer map[string]any) []map[string]any {
 	notes, _ := answer["notes_from_their_notes_folder"].([]map[string]any)
 	return notes
-}
-
-func cutText(text string, characters int) string {
-	if utf8.RuneCountInString(text) <= characters {
-		return text
-	}
-	return string([]rune(text)[:characters]) + "..."
 }
 
 func recordAnswer(record *client.JournalRecordView) map[string]any {

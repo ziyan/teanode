@@ -900,9 +900,7 @@ export function isConflict(caught: unknown): boolean {
   return caught instanceof Error && /conflict/i.test(caught.message)
 }
 
-// The most a correction may hold, and the most a page may carry, as the
-// server limits them.
-export const CORRECTION_MOST_CHARACTERS = 500
+// The most corrections a page may carry, as the server limits them.
 export const CORRECTION_MOST_COUNT = 20
 
 // How often a page asks again while a touched-up text or a narrative is on

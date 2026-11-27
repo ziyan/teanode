@@ -640,7 +640,7 @@ func TestJournalNarrativeReplacesChoicesAndKeepsPinsAndHiddenOnes(t *testing.T) 
 	})
 }
 
-// A correction is kept with its time, at most 20 of at most 500 characters; one
+// A correction is kept with its time, at most 20 of any length; one
 // is removed by its place; both ask for the narrative to be written again.
 func TestJournalCorrectionsAreLimitedAndAskForANewNarrative(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
@@ -656,11 +656,8 @@ func TestJournalCorrectionsAreLimitedAndAskForANewNarrative(t *testing.T) {
 		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "   ", journalTestAt(8)); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("an empty correction: %v", err)
 		}
-		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, strings.Repeat("é", models.JournalCorrectionCharactersMost+1), journalTestAt(8)); !errors.Is(err, db.ErrInvalidArguments) {
-			t.Errorf("a correction of 501 characters: %v", err)
-		}
-		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, strings.Repeat("é", models.JournalCorrectionCharactersMost), journalTestAt(8)); err != nil {
-			t.Fatalf("a correction of 500 characters: %v", err)
+		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, strings.Repeat("é", 5000), journalTestAt(8)); err != nil {
+			t.Fatalf("a correction of 5000 characters: %v", err)
 		}
 		for index := 1; index < models.JournalCorrectionsMost; index++ {
 			if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "Correction "+strings.Repeat("x", index), journalTestAt(9)); err != nil {

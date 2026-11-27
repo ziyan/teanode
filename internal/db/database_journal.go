@@ -1004,8 +1004,8 @@ func (self *transaction) AddJournalCorrection(userId string, target models.Journ
 		return false, err
 	}
 	correctionText = strings.TrimSpace(correctionText)
-	if correctionText == "" || utf8.RuneCountInString(correctionText) > models.JournalCorrectionCharactersMost || hasNullCharacter(correctionText) {
-		return false, fmt.Errorf("%w: a correction is 1 to %d characters", ErrInvalidArguments, models.JournalCorrectionCharactersMost)
+	if correctionText == "" || hasNullCharacter(correctionText) {
+		return false, fmt.Errorf("%w: a correction is at least one character", ErrInvalidArguments)
 	}
 	if _, err := subject.ensure(self.tx, userId, target, timeZone, at); err != nil {
 		return false, err
