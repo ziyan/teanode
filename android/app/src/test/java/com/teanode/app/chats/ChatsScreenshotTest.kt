@@ -99,6 +99,9 @@ class ChatsScreenshotTest {
     @Test fun `long message light`() = conversation("demo-long", Look.Light, "long-message", "Understood")
     @Test fun `goal conversation light`() = conversation("demo-goal", Look.Light, "goal", "Which month do they belong to")
     @Test fun `run record light`() = conversation("demo-run", Look.Light, "run", "Two new threads")
+    @Test fun `observed conversation light`() = conversation("demo-observed", Look.Light, "observed", "You are observing it and cannot write here")
+    @Test fun `observed conversation dark`() = conversation("demo-observed", Look.Dark, "observed", "You are observing it and cannot write here")
+    @Test fun `observed conversation at the largest text`() = conversation("demo-observed", Look.Light, "observed-largest-text", "You are observing it and cannot write here", 2f)
     @Test fun `direct chat light`() {
         draw(Look.Light) { ConversationScreen(conversationId = "demo-sam", onBack = {}, onOpenConversation = {}) }
         waitFor("Tonight's menu")

@@ -412,6 +412,7 @@
     <string name="settings_people_set_password_for">Set a password for %s</string>
     <string name="settings_people_title">People</string>
     <string name="settings_permission_agent_act">Read every person\'s agent conversations and runs, and speak to their agent as them</string>
+    <string name="settings_permission_agent_observe">Read every person\'s agent conversations and runs, without writing; each read is logged</string>
     <string name="settings_permission_agent_audit">See every person\'s agent: what it may reach, its usage and limits, never its content</string>
     <string name="settings_permission_agent_use">Have an agent, grant it own mailboxes, and talk to it</string>
     <string name="settings_permission_audit_read">Read the audit log</string>

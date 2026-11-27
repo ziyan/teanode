@@ -41,11 +41,14 @@ data class OperatorAccess(
     /** Everybody's agents, their limits and what they cost need agent:audit. */
     val canAuditAgents: Boolean get() = holdsEverywhere("agent:audit")
 
-    /** The runs are content, and are behind agent:act. */
+    /** Speaking to a person's agent as them, and everything agent:observe opens, needs agent:act. */
     val canActAsAgents: Boolean get() = holdsEverywhere("agent:act")
 
+    /** Reading every person's agent conversations and runs, without writing: agent:observe, which agent:act implies. */
+    val canObserveAgents: Boolean get() = holdsEverywhere("agent:observe") || canActAsAgents
+
     /** Whether the agents page is offered at all. */
-    val canOpenAgentAdmin: Boolean get() = canAuditAgents || canActAsAgents
+    val canOpenAgentAdmin: Boolean get() = canAuditAgents || canObserveAgents
 
     /** Whether the Manage page lists anything the person may open. */
     val canOpenManage: Boolean get() = isOperator || canOpenMailDelivery || canManageServer || canOpenAgentAdmin

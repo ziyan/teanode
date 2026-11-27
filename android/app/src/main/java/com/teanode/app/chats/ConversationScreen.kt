@@ -38,6 +38,7 @@ import androidx.compose.material.icons.automirrored.outlined.ExitToApp
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.MoreVert
@@ -506,7 +507,13 @@ fun ConversationScreen(conversationId: String?, onBack: () -> Unit, onOpenConver
                 if (model.todos.isNotEmpty() && (model.runningRunId != null || model.todos.any { todo -> !todo.isDone })) TodoPanel(model.todos)
                 val voiceCall = model.agentVoiceCall
                 val activeVoiceCall by (com.teanode.app.calls.LocalCallCenter.current?.agentVoice ?: kotlinx.coroutines.flow.MutableStateFlow(null)).collectAsState()
-                if (voiceCall != null && voiceCall === activeVoiceCall) com.teanode.app.calls.AgentVoiceCallBar(voiceCall) else Composer(model, environment, dictation)
+                if (model.isObserved) {
+                    ObservedNote(model.actingAs.orEmpty())
+                } else if (voiceCall != null && voiceCall === activeVoiceCall) {
+                    com.teanode.app.calls.AgentVoiceCallBar(voiceCall)
+                } else {
+                    Composer(model, environment, dictation)
+                }
             }
         }
 
@@ -563,11 +570,22 @@ private fun readersFromLines(lines: List<TranscriptLine>, members: List<com.tean
     return readers
 }
 
+/** What stands in place of the composer in somebody else's conversation, read as an observer. */
+@Composable
+private fun ObservedNote(ownerName: String) {
+    Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Outlined.Visibility, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.chats_observed_note, ownerName), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 @Composable
 private fun ConversationBanners(model: ConversationModel, reader: MessageReader, onBackToMain: () -> Unit, onOpenGoal: () -> Unit) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (reader.isReading) Banner(Icons.AutoMirrored.Outlined.VolumeUp, stringResource(R.string.chats_reading_aloud), onClick = { reader.stop() })
-        model.actingAs?.let { actingAs -> Banner(Icons.Outlined.AdminPanelSettings, stringResource(R.string.chats_acting_as, actingAs, actingAs)) }
+        if (!model.isObserved) model.actingAs?.let { actingAs -> Banner(Icons.Outlined.AdminPanelSettings, stringResource(R.string.chats_acting_as, actingAs, actingAs)) }
         if (model.conversation?.kind == "run") Banner(Icons.Outlined.History, stringResource(R.string.chats_run_record), onClick = onBackToMain)
         val found = model.conversation
         if (found != null && found.kind == "goal" && !found.goal.isNullOrEmpty()) GoalHeader(found, found.goal!!, onOpenGoal)

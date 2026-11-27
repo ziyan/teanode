@@ -3,6 +3,9 @@ package com.teanode.app.settings.manage
 import com.teanode.app.demo.DemoAnswerer
 import com.teanode.app.demo.DemoResponse
 import com.teanode.app.demo.graphQLField
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 
 /** The operator's agent settings as the invented server stores them. */
 private const val AGENT_SETTINGS = """{
@@ -58,6 +61,19 @@ private const val SOURCE_TYPES = """[
    "guide":"","readable":false,"problem":"the archive tool is not installed","settings":[],"secrets":[]}
 ]"""
 
+/** One conversation of the invented oversight list: whose, what, when, and whether a turn is in flight. */
+private class OversightDemoRun(val id: String, val agentId: String, val title: String, val jobKind: String, val lastAt: String, val ownerUsername: String, val ownerName: String, val isRunning: Boolean, val usageJson: String) {
+    val json: String get() = """{"id":"$id","agentId":"$agentId","title":"$title","jobKind":"$jobKind","lastAt":"$lastAt","ownerUsername":"$ownerUsername","ownerName":"$ownerName","isRunning":$isRunning,"usage":$usageJson}"""
+}
+
+private val OVERSIGHT_DEMO_RUNS: List<OversightDemoRun> = listOf(
+    OversightDemoRun("demo-observed", "agent-1", "Planning the trip", "named", "2030-01-05T09:10:00Z", "robin", "Robin Hale", true, """{"promptTokens":4200,"completionTokens":900,"cost":0.02,"cacheReadTokens":1500}"""),
+    OversightDemoRun("run-1", "agent-1", "Sorted new mail", "triage", "2030-01-05T09:00:00Z", "robin", "Robin Hale", false, """{"promptTokens":1200,"completionTokens":300,"cost":0.004,"cacheReadTokens":800}"""),
+    OversightDemoRun("run-2", "agent-2", "Looked up the club meeting day", "research", "2030-01-05T08:00:00Z", "alex", "Alex Moreno", false, """{"promptTokens":9000,"completionTokens":1500,"cost":0.05,"cacheReadTokens":0}"""),
+    OversightDemoRun("demo-observed", "agent-2", "Main conversation", "main", "2030-01-05T07:45:00Z", "alex", "Alex Moreno", false, """{"promptTokens":3100,"completionTokens":600,"cost":0.01,"cacheReadTokens":null}"""),
+    OversightDemoRun("run-3", "agent-1", "Morning brief", "schedule", "2030-01-05T07:30:00Z", "robin", "Robin Hale", false, """{"promptTokens":2500,"completionTokens":700,"cost":0.0,"cacheReadTokens":null}"""),
+)
+
 private fun field(name: String, valueJson: String, whenAsking: String): DemoAnswerer = DemoAnswerer { request ->
     if (request.document.contains(whenAsking) && Regex("""\b$name\b\s*[({]""").containsMatchIn(request.document)) DemoResponse("""{"data":{"$name":$valueJson}}""") else null
 }
@@ -103,12 +119,17 @@ val manageDemoAnswerers: List<DemoAnswerer> = listOf(
           "changed":[{"model":"model-large","tokenKind":"output","beforePerMillion":7.5,"afterPerMillion":8.0}]}]""",
     ),
     graphQLField("CheckAgentProviderPrices", """[{"providerName":"main","checkedAt":"2030-01-06T03:00:00Z","errorMessage":"","compared":[],"changed":[]}]"""),
+    graphQLField("ListAllAgentRuns") { variables ->
+        val isRunningOnly = (variables["isRunningOnly"] as? JsonPrimitive)?.booleanOrNull == true
+        val kinds = (variables["kinds"] as? JsonArray)?.map { kind -> (kind as JsonPrimitive).content }.orEmpty()
+        val matching = OVERSIGHT_DEMO_RUNS.filter { run -> (!isRunningOnly || run.isRunning) && (kinds.isEmpty() || kinds.contains(run.jobKind)) }
+        """{"total":${matching.size},"totalCount":${matching.size},"runs":[${matching.joinToString(",") { run -> run.json }}]}"""
+    },
     graphQLField(
-        "ListAllAgentRuns",
-        """{"total":3,"runs":[
-          {"id":"run-1","agentId":"agent-1","title":"Sorted new mail","jobKind":"triage","lastAt":"2030-01-05T09:00:00Z","usage":{"promptTokens":1200,"completionTokens":300,"cost":0.004,"cacheReadTokens":800}},
-          {"id":"run-2","agentId":"agent-2","title":"Looked up the club meeting day","jobKind":"research","lastAt":"2030-01-05T08:00:00Z","usage":{"promptTokens":9000,"completionTokens":1500,"cost":0.05,"cacheReadTokens":0}},
-          {"id":"run-3","agentId":"agent-1","title":"Morning brief","jobKind":"schedule","lastAt":"2030-01-05T07:30:00Z","usage":{"promptTokens":2500,"completionTokens":700,"cost":0.0,"cacheReadTokens":null}}]}""",
+        "ListFailedAgentTurns",
+        """{"totalCount":2,"failedTurns":[
+          {"conversationId":"demo-observed","conversationKind":"main","conversationTitle":null,"ownerUsername":"robin","ownerName":"Robin Hale","failedAt":"2030-01-05T08:40:00Z","errorText":"The model did not answer in time.","agentId":"agent-1"},
+          {"conversationId":"demo-observed","conversationKind":"named","conversationTitle":"Club newsletter","ownerUsername":"alex","ownerName":"Alex Moreno","failedAt":"2030-01-04T17:05:00Z","errorText":"A tool call was refused: the mailbox is read-only.","agentId":"agent-2"}]}""",
     ),
     graphQLField(
         "GetUpgrade",

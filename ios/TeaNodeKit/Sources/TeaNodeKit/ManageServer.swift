@@ -23,19 +23,22 @@ extension OperatorAccess {
     public var canManageServer: Bool { holdsEverywhere("server:manage") }
     /// Everybody's agents, their limits and what they cost need agent:audit.
     public var canAuditAgents: Bool { holdsEverywhere("agent:audit") }
-    /// The runs are content, and are behind agent:act.
+    /// Speaking to somebody's agent as them needs agent:act.
     public var canActAsAgents: Bool { holdsEverywhere("agent:act") }
+    /// Reading every person's agent conversations, read-only and audited,
+    /// needs agent:observe; agent:act implies it.
+    public var canObserveAgents: Bool { holdsEverywhere("agent:observe") || canActAsAgents }
 
     /// Whether the agents page is offered at all, as the dashboard's rail
     /// decides it.
-    public var canOpenAgentAdmin: Bool { canAuditAgents || canActAsAgents }
+    public var canOpenAgentAdmin: Bool { canAuditAgents || canObserveAgents }
 
     /// The agents page's tabs this person may open, in the dashboard's
-    /// order: the runs need agent:act, and the operator's settings, General
-    /// among them, need server:manage.
+    /// order: Oversight needs agent:observe (or agent:act), and the
+    /// operator's settings, General among them, need server:manage.
     public var agentAdminTabs: [AgentAdminTab] {
         AgentAdminTab.allCases.filter { tab in
-            if tab == .runs { return canActAsAgents }
+            if tab == .oversight { return canObserveAgents }
             if tab.isOperatorSettings { return canManageServer }
             return true
         }
@@ -58,13 +61,13 @@ public enum ServerSettingsTab: String, CaseIterable, Sendable, Identifiable {
 
 /// AgentAdminTab is one tab of the dashboard's agents page.
 public enum AgentAdminTab: String, CaseIterable, Sendable, Identifiable {
-    case general, usage, runs, models, tools, skills, sources
+    case general, usage, oversight, models, tools, skills, sources
 
     public var id: String { rawValue }
 
     /// Whether it is one of the operator's agent settings, which need
     /// server:manage.
-    public var isOperatorSettings: Bool { self != .usage && self != .runs }
+    public var isOperatorSettings: Bool { self != .usage && self != .oversight }
 }
 
 // MARK: - Words the forms share
@@ -2410,40 +2413,120 @@ public struct AgentLimitDraft: Hashable, Sendable {
     public var dailyCost: Double { SettingsList.number(costText) }
 }
 
-/// ServerAgentRun is one run any agent made: whose, what it was about, its
-/// kind, when it last spoke and what it used. Its id opens its transcript.
+/// ServerAgentRun is one conversation any person's agent has: a run, or a
+/// person's main or named conversation. It says whose, what it was about,
+/// its kind, when it last spoke, what it used and whether a turn is in
+/// flight. Its id opens its transcript.
 public struct ServerAgentRun: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let agentId: String
     public let title: String
+    /// A run's kind, or "main" or "named" for a person's own conversations.
     public let jobKind: String?
     public let lastAt: String
     public let usage: AgentUsage
+    /// The owner's username, and their name when they have one.
+    public let ownerUsername: String
+    public let ownerName: String
+    /// Whether a turn is in flight on any instance.
+    public let isRunning: Bool
 
     /// Every token it used: read fresh, read from the cache, and written.
     public var tokenCount: Int { usage.promptTokens + (usage.cacheReadTokens ?? 0) + usage.completionTokens }
+
+    /// How the owner is named in a row: their name, or their username.
+    public var ownerLabel: String { ownerName.isEmpty ? ownerUsername : ownerName }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, agentId, title, jobKind, lastAt, usage, ownerUsername, ownerName, isRunning
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        agentId = try values.decode(String.self, forKey: .agentId)
+        title = try values.decode(String.self, forKey: .title)
+        jobKind = try values.decodeIfPresent(String.self, forKey: .jobKind)
+        lastAt = try values.decode(String.self, forKey: .lastAt)
+        usage = try values.decode(AgentUsage.self, forKey: .usage)
+        ownerUsername = try values.decodeIfPresent(String.self, forKey: .ownerUsername) ?? ""
+        ownerName = try values.decodeIfPresent(String.self, forKey: .ownerName) ?? ""
+        isRunning = try values.decodeIfPresent(Bool.self, forKey: .isRunning) ?? false
+    }
 }
 
-/// ServerAgentRunPage is one page of every agent's runs, and how many match
-/// in all.
+/// ServerAgentRunPage is one page of every person's agent conversations, and
+/// how many match in all.
 public struct ServerAgentRunPage: Codable, Hashable, Sendable {
-    public let total: Int
+    public let totalCount: Int
     public let runs: [ServerAgentRun]
+
+    private enum CodingKeys: String, CodingKey {
+        case total, totalCount, runs
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        runs = try values.decode([ServerAgentRun].self, forKey: .runs)
+        // The page's older name for the count is read too, so a server that
+        // has not been upgraded still pages.
+        totalCount = try values.decodeIfPresent(Int.self, forKey: .totalCount) ?? values.decodeIfPresent(Int.self, forKey: .total) ?? runs.count
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(totalCount, forKey: .totalCount)
+        try values.encode(runs, forKey: .runs)
+    }
 }
 
-/// ServerAgentRunFilter narrows every agent's runs, on the server: to one
-/// agent, one job given up on, kinds of run, and words in the title.
+/// OversightRange is how far back the Oversight screen looks, on the
+/// conversation's last activity.
+public enum OversightRange: String, CaseIterable, Sendable, Identifiable {
+    case lastDay, lastWeek, lastMonth
+
+    public var id: String { rawValue }
+
+    public var dayCount: Int {
+        switch self {
+        case .lastDay: 1
+        case .lastWeek: 7
+        case .lastMonth: 30
+        }
+    }
+
+    /// The start of the range as the server takes it, RFC 3339.
+    public func sinceText(now: Date = .now) -> String {
+        ISO8601DateFormatter().string(from: now.addingTimeInterval(-Double(dayCount) * 86400))
+    }
+}
+
+/// ServerAgentRunFilter narrows every person's agent conversations, on the
+/// server: to one agent, one job given up on, a kind, a time range, only
+/// those with a turn in flight, and words in the title.
 public struct ServerAgentRunFilter: Hashable, Sendable {
     public var agentId: String?
     public var jobId: String?
+    /// A run's kind, or "main" or "named"; nil is everything but chats
+    /// between people.
     public var jobKind: String?
     public var query = ""
+    /// RFC 3339 bounds on the conversation's last activity.
+    public var since: String?
+    public var until: String?
+    public var isRunningOnly = false
 
-    public init(agentId: String? = nil, jobId: String? = nil, jobKind: String? = nil, query: String = "") {
+    public init(
+        agentId: String? = nil, jobId: String? = nil, jobKind: String? = nil, query: String = "", since: String? = nil, until: String? = nil,
+        isRunningOnly: Bool = false
+    ) {
         self.agentId = agentId
         self.jobId = jobId
         self.jobKind = jobKind
         self.query = query
+        self.since = since
+        self.until = until
+        self.isRunningOnly = isRunningOnly
     }
 
     func variables(first: Int, offset: Int) -> [String: JSONValue] {
@@ -2452,8 +2535,37 @@ public struct ServerAgentRunFilter: Hashable, Sendable {
             "first": .number(Double(first)), "offset": .number(Double(offset)), "agentId": agentId.map { .string($0) } ?? .null,
             "jobId": jobId.map { .string($0) } ?? .null, "kinds": jobKind.map { .array([.string($0)]) } ?? .null,
             "query": trimmedQuery.isEmpty ? .null : .string(trimmedQuery),
+            "since": since.map { .string($0) } ?? .null, "until": until.map { .string($0) } ?? .null,
+            // Null, not false, when everything is wanted: the argument is a filter, not a switch.
+            "isRunningOnly": isRunningOnly ? .bool(true) : .null,
         ]
     }
+}
+
+/// ServerFailedTurn is one turn that ended in a failed note in somebody's
+/// conversation, with whose it is and what went wrong.
+public struct ServerFailedTurn: Codable, Hashable, Sendable, Identifiable {
+    public let conversationId: String
+    public let conversationKind: String
+    public let conversationTitle: String
+    public let ownerUsername: String
+    public let ownerName: String
+    public let failedAt: String
+    public let errorText: String
+    public let agentId: String
+
+    /// A conversation can fail more than once, so the time is part of it.
+    public var id: String { conversationId + "/" + failedAt }
+
+    /// How the owner is named in a row: their name, or their username.
+    public var ownerLabel: String { ownerName.isEmpty ? ownerUsername : ownerName }
+}
+
+/// ServerFailedTurnPage is one page of failed turns, newest first, and how
+/// many there are in all.
+public struct ServerFailedTurnPage: Codable, Hashable, Sendable {
+    public let failedTurns: [ServerFailedTurn]
+    public let totalCount: Int
 }
 
 // MARK: - Skills and source types
@@ -2808,10 +2920,19 @@ extension Documents {
         mutation ($jobId: String!) { RetryAgentJob(jobId: $jobId) { id } }
         """
     public static let manageAllAgentRuns = """
-        query ($first: Int, $offset: Int, $agentId: String, $jobId: String, $kinds: [String!], $query: String) {
-          ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, jobId: $jobId, kinds: $kinds, query: $query) {
+        query ($first: Int, $offset: Int, $agentId: String, $jobId: String, $kinds: [String!], $query: String, $since: String, $until: String, $isRunningOnly: Boolean) {
+          ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, jobId: $jobId, kinds: $kinds, query: $query, since: $since, until: $until, isRunningOnly: $isRunningOnly) {
             total
-            runs { id agentId title jobKind lastAt usage { promptTokens cacheReadTokens completionTokens cost } }
+            totalCount
+            runs { id agentId title jobKind lastAt ownerUsername ownerName isRunning usage { promptTokens cacheReadTokens completionTokens cost } }
+          }
+        }
+        """
+    public static let manageFailedAgentTurns = """
+        query ($first: Int, $offset: Int, $since: String, $agentId: String) {
+          ListFailedAgentTurns(first: $first, offset: $offset, since: $since, agentId: $agentId) {
+            failedTurns { conversationId conversationKind conversationTitle ownerUsername ownerName failedAt errorText agentId }
+            totalCount
           }
         }
         """
@@ -3055,6 +3176,18 @@ extension Connection {
         struct Answer: Decodable, Sendable { let ListAllAgentRuns: ServerAgentRunPage }
         return try await execute(Documents.manageAllAgentRuns, variables: filter.variables(first: first, offset: offset), as: Answer.self)
             .ListAllAgentRuns
+    }
+
+    /// One page of the turns that ended in a failed note, newest first.
+    public func serverFailedAgentTurns(since: String? = nil, agentId: String? = nil, first: Int = 50, offset: Int = 0) async throws
+        -> ServerFailedTurnPage
+    {
+        struct Answer: Decodable, Sendable { let ListFailedAgentTurns: ServerFailedTurnPage }
+        let variables: [String: JSONValue] = [
+            "first": .number(Double(first)), "offset": .number(Double(offset)), "since": since.map { .string($0) } ?? .null,
+            "agentId": agentId.map { .string($0) } ?? .null,
+        ]
+        return try await execute(Documents.manageFailedAgentTurns, variables: variables, as: Answer.self).ListFailedAgentTurns
     }
 
     /// The conversation that shows what a job given up on tried: its latest

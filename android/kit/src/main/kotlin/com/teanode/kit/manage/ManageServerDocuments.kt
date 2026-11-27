@@ -232,10 +232,20 @@ mutation (${'$'}jobId: String!) { RetryAgentJob(jobId: ${'$'}jobId) { id } }
 """.trimEnd()
 
     val MANAGE_ALL_AGENT_RUNS = """
-query (${'$'}first: Int, ${'$'}offset: Int, ${'$'}agentId: String, ${'$'}jobId: String, ${'$'}kinds: [String!], ${'$'}query: String) {
-  ListAllAgentRuns(first: ${'$'}first, offset: ${'$'}offset, agentId: ${'$'}agentId, jobId: ${'$'}jobId, kinds: ${'$'}kinds, query: ${'$'}query) {
+query (${'$'}first: Int, ${'$'}offset: Int, ${'$'}agentId: String, ${'$'}jobId: String, ${'$'}kinds: [String!], ${'$'}query: String, ${'$'}since: String, ${'$'}until: String, ${'$'}isRunningOnly: Boolean) {
+  ListAllAgentRuns(first: ${'$'}first, offset: ${'$'}offset, agentId: ${'$'}agentId, jobId: ${'$'}jobId, kinds: ${'$'}kinds, query: ${'$'}query, since: ${'$'}since, until: ${'$'}until, isRunningOnly: ${'$'}isRunningOnly) {
     total
-    runs { id agentId title jobKind lastAt usage { promptTokens cacheReadTokens completionTokens cost } }
+    totalCount
+    runs { id agentId title jobKind lastAt ownerUsername ownerName isRunning usage { promptTokens cacheReadTokens completionTokens cost } }
+  }
+}
+""".trimEnd()
+
+    val MANAGE_FAILED_AGENT_TURNS = """
+query (${'$'}first: Int, ${'$'}offset: Int, ${'$'}since: String, ${'$'}agentId: String) {
+  ListFailedAgentTurns(first: ${'$'}first, offset: ${'$'}offset, since: ${'$'}since, agentId: ${'$'}agentId) {
+    failedTurns { conversationId conversationKind conversationTitle ownerUsername ownerName failedAt errorText agentId }
+    totalCount
   }
 }
 """.trimEnd()

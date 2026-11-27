@@ -35,8 +35,24 @@ func (self *transaction) TakeThrottle(throttleKey string, interval time.Duration
 	if err != nil || !isLocked {
 		return false, err
 	}
+	return self.takeThrottleRow(throttleKey, interval, now)
+}
+
+// TakeThrottleWait is TakeThrottle for work that must not be skipped because
+// another transaction is taking the same turn at this moment: it waits for that
+// transaction to commit or roll back, then says whether the turn was free. Of
+// two parallel takers exactly one gets it, and the other is told it was taken.
+// Only for a turn whose holders commit quickly, such as one request's audit row.
+func (self *transaction) TakeThrottleWait(throttleKey string, interval time.Duration, now time.Time) (bool, error) {
+	if err := self.tx.Exec("SELECT pg_advisory_xact_lock(?)", LockKey("throttle:"+throttleKey)).Error; err != nil {
+		return false, err
+	}
+	return self.takeThrottleRow(throttleKey, interval, now)
+}
+
+func (self *transaction) takeThrottleRow(throttleKey string, interval time.Duration, now time.Time) (bool, error) {
 	var takenKeys []string
-	err = self.tx.Raw(`INSERT INTO "throttle" ("throttle_key", "taken_at") VALUES (?, ?)
+	err := self.tx.Raw(`INSERT INTO "throttle" ("throttle_key", "taken_at") VALUES (?, ?)
 		ON CONFLICT ("throttle_key") DO UPDATE SET "taken_at" = excluded."taken_at"
 		WHERE "throttle"."taken_at" <= ?
 		RETURNING "throttle_key"`, throttleKey, now, now.Add(-interval)).Scan(&takenKeys).Error

@@ -210,7 +210,7 @@ func (self *graph) ReadLinkPreviews(ctx context.Context, arguments ReadLinkPrevi
 				return err
 			}
 		}
-		conversation, other, _, err := self.conversationFor(tx, principal, found, arguments.ConversationID, true)
+		conversation, other, owner, err := self.conversationFor(tx, principal, found, arguments.ConversationID, true)
 		if err != nil {
 			return err
 		}
@@ -221,6 +221,12 @@ func (self *graph) ReadLinkPreviews(ctx context.Context, arguments ReadLinkPrevi
 		}
 		if err := requireConversationUse(principal, found, conversation); err != nil {
 			return err
+		}
+		// Reading the links of another person's conversation is reading it.
+		if other != nil {
+			if err := recordObservedRead(phaseContext, tx, principal, conversation, owner); err != nil {
+				return err
+			}
 		}
 		limitKey = principal.User.ID
 		// Only a link somebody other than the agent wrote is looked up or
