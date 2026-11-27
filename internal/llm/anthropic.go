@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // anthropic speaks the Messages API.
@@ -15,15 +17,27 @@ type anthropic struct {
 	baseUrl string
 	apiKey  string
 	client  *http.Client
+
+	// maxOutputTokens is what each model the API listed says it may write in
+	// one answer, read once from the model list the first time it is needed.
+	maxOutputTokens     map[string]int
+	maxOutputTokensLock sync.Mutex
 }
 
 const (
 	anthropicDefaultBaseURL = "https://api.anthropic.com"
 	anthropicVersion        = "2023-06-01"
 
-	// anthropicDefaultMaxTokens is sent when the caller left MaxTokens
-	// unset, because this API requires one.
-	anthropicDefaultMaxTokens = 4096
+	// anthropicLargestMaxTokens is sent as max_tokens when the caller left
+	// MaxTokens unset and the model list does not say what the model may
+	// write. This API requires a max_tokens on every request, so unlike the
+	// other providers it cannot be left out; 64000 is the largest answer the
+	// current Claude models accept, so it never shortens an answer.
+	anthropicLargestMaxTokens = 64000
+
+	// anthropicModelPageSize is how many models one page of the list asks for,
+	// the most this API gives.
+	anthropicModelPageSize = 1000
 )
 
 func newAnthropic(baseUrl, apiKey string, client *http.Client) *anthropic {
@@ -56,10 +70,10 @@ type anthropicRequest struct {
 // text apart from the messages, user and assistant strictly alternating,
 // tool results as blocks inside a user message, and a cache mark where the
 // caller asked for one.
-func (self *anthropic) encode(request *ChatRequest, stream bool) *anthropicRequest {
+func (self *anthropic) encode(ctx context.Context, request *ChatRequest, stream bool) *anthropicRequest {
 	body := &anthropicRequest{Model: request.Model, MaxTokens: request.MaxTokens, Temperature: request.Temperature, Stream: stream}
 	if body.MaxTokens <= 0 {
-		body.MaxTokens = anthropicDefaultMaxTokens
+		body.MaxTokens = self.modelMaxTokens(ctx, request.Model)
 	}
 	var system []any
 	var messages []map[string]any
@@ -183,7 +197,7 @@ type anthropicResponse struct {
 
 func (self *anthropic) Chat(ctx context.Context, request *ChatRequest) (*ChatResponse, error) {
 	var response anthropicResponse
-	if err := doJSON(ctx, self.client, http.MethodPost, self.baseUrl+"/v1/messages", self.headers(), self.encode(request, false), &response); err != nil {
+	if err := doJSON(ctx, self.client, http.MethodPost, self.baseUrl+"/v1/messages", self.headers(), self.encode(ctx, request, false), &response); err != nil {
 		return nil, err
 	}
 	result := &ChatResponse{ID: response.ID, Model: response.Model, FinishReason: normalizeFinish(response.StopReason)}
@@ -198,7 +212,7 @@ func (self *anthropic) Chat(ctx context.Context, request *ChatRequest) (*ChatRes
 		}
 	}
 	result.Message.Content = text.String()
-	if len(result.Message.ToolCalls) > 0 {
+	if len(result.Message.ToolCalls) > 0 && result.FinishReason != "length" {
 		result.FinishReason = "tool_calls"
 	}
 	if response.Usage != nil {
@@ -208,7 +222,7 @@ func (self *anthropic) Chat(ctx context.Context, request *ChatRequest) (*ChatRes
 }
 
 func (self *anthropic) ChatStream(ctx context.Context, request *ChatRequest) (<-chan StreamEvent, error) {
-	body, err := openStream(ctx, self.client, self.baseUrl+"/v1/messages", self.headers(), self.encode(request, true))
+	body, err := openStream(ctx, self.client, self.baseUrl+"/v1/messages", self.headers(), self.encode(ctx, request, true))
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +326,7 @@ func (self *anthropic) ChatStream(ctx context.Context, request *ChatRequest) (<-
 			return
 		}
 		response.Message.Content = text.String()
-		if len(response.Message.ToolCalls) > 0 {
+		if len(response.Message.ToolCalls) > 0 && response.FinishReason != "length" {
 			response.FinishReason = "tool_calls"
 		}
 		events <- StreamEvent{Kind: StreamDone, Response: response}
@@ -320,19 +334,57 @@ func (self *anthropic) ChatStream(ctx context.Context, request *ChatRequest) (<-
 	return events, nil
 }
 
+// modelMaxTokens is the most the model may write in one answer: what the
+// model list says of it, or anthropicLargestMaxTokens when the list does not
+// say or could not be read.
+func (self *anthropic) modelMaxTokens(ctx context.Context, model string) int {
+	self.maxOutputTokensLock.Lock()
+	defer self.maxOutputTokensLock.Unlock()
+	if self.maxOutputTokens == nil {
+		// Only a list that was read is kept: after a failure the next request
+		// asks again.
+		if models, err := self.ListModels(ctx); err == nil {
+			self.maxOutputTokens = make(map[string]int, len(models))
+			for _, listed := range models {
+				self.maxOutputTokens[listed.ID] = listed.MaxOutputTokens
+			}
+		}
+	}
+	if limit := self.maxOutputTokens[model]; limit > 0 {
+		return limit
+	}
+	return anthropicLargestMaxTokens
+}
+
+// ListModels is every model the API lists, read a page at a time until it
+// says there are no more.
 func (self *anthropic) ListModels(ctx context.Context) ([]ModelInformation, error) {
-	var response struct {
-		Data []struct {
-			ID        string `json:"id"`
-			CreatedAt string `json:"created_at"`
-		} `json:"data"`
-	}
-	if err := doJSON(ctx, self.client, http.MethodGet, self.baseUrl+"/v1/models?limit=100", self.headers(), nil, &response); err != nil {
-		return nil, err
-	}
-	models := make([]ModelInformation, 0, len(response.Data))
-	for _, model := range response.Data {
-		models = append(models, ModelInformation{ID: model.ID})
+	var models []ModelInformation
+	afterID := ""
+	for {
+		address := fmt.Sprintf("%s/v1/models?limit=%d", self.baseUrl, anthropicModelPageSize)
+		if afterID != "" {
+			address += "&after_id=" + url.QueryEscape(afterID)
+		}
+		var response struct {
+			Data []struct {
+				ID             string `json:"id"`
+				MaxInputTokens int    `json:"max_input_tokens"`
+				MaxTokens      int    `json:"max_tokens"`
+			} `json:"data"`
+			HasMore bool   `json:"has_more"`
+			LastID  string `json:"last_id"`
+		}
+		if err := doJSON(ctx, self.client, http.MethodGet, address, self.headers(), nil, &response); err != nil {
+			return nil, err
+		}
+		for _, model := range response.Data {
+			models = append(models, ModelInformation{ID: model.ID, ContextLength: model.MaxInputTokens, MaxOutputTokens: model.MaxTokens})
+		}
+		if !response.HasMore || response.LastID == "" || response.LastID == afterID {
+			break
+		}
+		afterID = response.LastID
 	}
 	sort.Slice(models, func(left, right int) bool { return models[left].ID < models[right].ID })
 	return models, nil

@@ -412,11 +412,13 @@ type codexStreamItem struct {
 
 // codexFinish is the word this package uses for how the answer ended.
 func codexFinish(event string, calls []ToolCall) string {
-	if len(calls) > 0 {
-		return "tool_calls"
-	}
+	// A response cut short stays "length" even with calls in it: the last call
+	// may be cut off, and the turn loop does not run calls of a cut round.
 	if event == "response.incomplete" {
 		return "length"
+	}
+	if len(calls) > 0 {
+		return "tool_calls"
 	}
 	return "stop"
 }

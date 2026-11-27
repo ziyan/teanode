@@ -89,8 +89,9 @@ type ChatRequest struct {
 	Messages []ChatMessage
 	Tools    []ToolDefinition
 
-	// MaxTokens bounds the answer. Zero lets the provider choose, except
-	// where the provider requires a value.
+	// MaxTokens bounds the answer. Zero lets the provider choose, and where
+	// the provider requires a value (Anthropic's max_tokens) it is the most the
+	// model may write.
 	MaxTokens   int
 	Temperature *float64
 
@@ -189,7 +190,8 @@ type StreamEvent struct {
 
 // ModelInformation is one model a provider offers.
 type ModelInformation struct {
-	ID            string
-	ContextLength int   // 0 when the provider does not say
-	Created       int64 // unix seconds, 0 when unknown
+	ID              string
+	ContextLength   int   // 0 when the provider does not say
+	MaxOutputTokens int   // the most the model writes in one answer, 0 when the provider does not say
+	Created         int64 // unix seconds, 0 when unknown
 }

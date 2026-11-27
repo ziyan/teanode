@@ -288,7 +288,7 @@ func TestAnthropicChatEncodesAlternationAndDecodesToolUse(t *testing.T) {
 	if system["cache_control"] == nil {
 		t.Fatal("the cache breakpoint on the system message was not sent")
 	}
-	if sent["max_tokens"] != float64(anthropicDefaultMaxTokens) {
+	if sent["max_tokens"] != float64(anthropicLargestMaxTokens) {
 		t.Fatalf("max_tokens %v", sent["max_tokens"])
 	}
 
@@ -573,5 +573,42 @@ func TestAnEmptyAccountIsNotARateLimit(t *testing.T) {
 	}
 	if IsOutOfCreditError(nil) {
 		t.Error("no error is not an empty account")
+	}
+}
+
+// The model list is read page by page until the API says there are no more,
+// and the longest answer a model may write, as the list gives it, is what is
+// sent as max_tokens when the caller set none.
+func TestAnthropicListsEveryPageAndUsesTheModelsOutputLimit(t *testing.T) {
+	var sent map[string]any
+	var listRequests []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/v1/models" {
+			listRequests = append(listRequests, request.URL.RawQuery)
+			if request.URL.Query().Get("after_id") == "" {
+				_, _ = writer.Write([]byte(`{"data":[{"id":"claude-b","max_input_tokens":200000,"max_tokens":32000}],"has_more":true,"last_id":"claude-b"}`))
+				return
+			}
+			_, _ = writer.Write([]byte(`{"data":[{"id":"claude-a","max_input_tokens":1000000,"max_tokens":48000}],"has_more":false,"last_id":"claude-a"}`))
+			return
+		}
+		_ = json.NewDecoder(request.Body).Decode(&sent)
+		_, _ = writer.Write([]byte(`{"id":"m","model":"claude-a","content":[{"type":"text","text":"Hi."}],"stop_reason":"max_tokens","usage":{}}`))
+	}))
+	defer server.Close()
+	provider, _ := chatFor("anthropic", server.URL, "k")
+	models, err := provider.ListModels(context.Background())
+	if err != nil || len(models) != 2 || models[0].ID != "claude-a" || models[0].MaxOutputTokens != 48000 || models[1].ContextLength != 200000 {
+		t.Fatalf("models %+v, error %v", models, err)
+	}
+	if len(listRequests) != 2 || !strings.Contains(listRequests[1], "after_id=claude-b") {
+		t.Fatalf("list requests %v", listRequests)
+	}
+	response, err := provider.Chat(context.Background(), &ChatRequest{Model: "claude-a", Messages: []ChatMessage{{Role: RoleUser, Content: "hi"}}})
+	if err != nil || response.FinishReason != "length" {
+		t.Fatalf("response %+v, error %v", response, err)
+	}
+	if sent["max_tokens"] != float64(48000) {
+		t.Fatalf("max_tokens %v, want the model's own 48000", sent["max_tokens"])
 	}
 }
