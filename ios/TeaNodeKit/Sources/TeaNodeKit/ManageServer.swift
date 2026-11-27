@@ -1578,7 +1578,11 @@ public struct AgentModelChoices: Hashable, Sendable {
             for value in values where value.hasPrefix(provider.name + ":") {
                 let modelID = String(value.dropFirst(provider.name.count + 1))
                 let entry = provider.models.first { $0.model == modelID }
-                if let entry, !entry.isEnabled, value != chosen { continue }
+                if let entry, !entry.isEnabled, value != chosen {
+                    // Switched off: left out, not listed with the unknown ones.
+                    placed.insert(value)
+                    continue
+                }
                 rows.append(.init(value: value, label: "\(provider.name) · \(entry?.displayName ?? modelID)"))
                 placed.insert(value)
             }

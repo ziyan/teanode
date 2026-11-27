@@ -2899,7 +2899,8 @@ private struct PlanUsageRows: View {
                 let leftText = (100 - usedPercent).formatted()
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
-                        Text("\(windowText): \(leftText)% left")
+                        // The row is a button, whose tint would make this green.
+                        Text("\(windowText): \(leftText)% left").foregroundStyle(Color(.label))
                         Spacer()
                         if let resetsAt = window.resetsAt, let resetDate = ServerTime.date(resetsAt) {
                             let atText = resetDate.formatted(.dateTime.weekday(.abbreviated).hour().minute())
@@ -3080,7 +3081,10 @@ private struct AgentProvidersView: View {
                     UpkeepTag(text: String(localized: "off"))
                 }
             }
-            Text(verbatim: entry.model).font(.footnote.monospaced()).foregroundStyle(Color(.secondaryLabel))
+            // The id under the name, once: a model with no name is called by its id.
+            if entry.displayName != entry.model {
+                Text(verbatim: entry.model).font(.footnote).foregroundStyle(Color(.secondaryLabel))
+            }
         }
     }
 
@@ -3105,15 +3109,10 @@ private struct AgentProvidersView: View {
                 parts = [provider.hasRefreshToken ? String(localized: "signed in") : String(localized: "not signed in")]
             }
         } else {
-            parts = [
-                provider.baseUrl.isEmpty ? String(localized: "its own endpoint") : provider.baseUrl,
-                provider.hasApiKey ? String(localized: "key set") : String(localized: "no key"),
-            ]
-        }
-        if provider.pricingInput != 0 || provider.pricingOutput != 0 {
-            let inputText = provider.pricingInput.formatted()
-            let outputText = provider.pricingOutput.formatted()
-            parts.append(String(localized: "\(inputText) in / \(outputText) out per million tokens"))
+            // The key, and the address only when it is not the service's own:
+            // prices belong to the models below.
+            parts = [provider.hasApiKey ? String(localized: "key set") : String(localized: "no key")]
+            if !provider.baseUrl.isEmpty { parts.append(provider.baseUrl) }
         }
         return parts.joined(separator: " · ")
     }
