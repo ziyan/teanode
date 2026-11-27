@@ -1,6 +1,7 @@
 package com.teanode.app.feed
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.animation.core.FiniteAnimationSpec
@@ -141,6 +142,8 @@ fun FeedCard(
     onOpenStack: ((AgentFeedItemView) -> Unit)? = null,
     /** Whether the deck this card tops is fanned out: its row then says "Show Less", which gathers the deck back. */
     isDeckOpen: Boolean = false,
+    /** Whether a swipe takes the whole deck this card tops, as Dismiss All does: a closed deck's top card. */
+    isSwipeWholeDeck: Boolean = false,
 ) {
     val isStackShown = onOpenStack != null && item.isStack
     val cardColor = feedCardColor()
@@ -153,7 +156,16 @@ fun FeedCard(
         var isMenuOpen by remember { mutableStateOf(false) }
         // On the dismissed screen the swipe, the menu and the accessibility action put the card back.
         val isRestoring = actions.model.isDismissedOnly
-        val dismissText = stringResource(if (isRestoring) R.string.feed_restore else R.string.feed_info_dismiss)
+        val isWholeDeck = isSwipeWholeDeck && isStackShown
+        val dismissText = stringResource(
+            when {
+                isRestoring && isWholeDeck -> R.string.feed_restore_all
+                isRestoring -> R.string.feed_restore
+                isWholeDeck -> R.string.feed_swipe_dismiss_all
+                else -> R.string.feed_info_dismiss
+            },
+        )
+        val swipeAway = { if (isWholeDeck) actions.model.swipeAwayDeck(item) else actions.model.swipeAway(item) }
         // A card swipes away either way, as a mail does; the page under it shows what the swipe does. It goes only
         // past two fifths of its width, so a short flick while scrolling leaves it, and it is dismissed once
         // however often the swipe settles.
@@ -163,7 +175,7 @@ fun FeedCard(
                 val isSwiped = target != SwipeToDismissBoxValue.Settled
                 if (isSwiped && !isSwipedAway) {
                     isSwipedAway = true
-                    actions.model.swipeAway(item)
+                    swipeAway()
                 }
                 isSwiped
             },
@@ -173,8 +185,17 @@ fun FeedCard(
             swipeState,
             backgroundContent = {
                 if (swipeState.dismissDirection != SwipeToDismissBoxValue.Settled) {
-                    Box(Modifier.fillMaxSize().padding(horizontal = 24.dp), contentAlignment = if (swipeState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd) {
-                        Icon(if (isRestoring) Icons.Outlined.Restore else Icons.Outlined.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // The action's color under the card, in its shape: red to dismiss, the accent green to restore.
+                    val swipeColor = if (isRestoring) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    val swipeContentColor = if (isRestoring) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onError
+                    Box(
+                        Modifier.fillMaxSize().background(swipeColor, CARD_SHAPE).padding(horizontal = 24.dp),
+                        contentAlignment = if (swipeState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(if (isRestoring) Icons.Outlined.Restore else Icons.Outlined.Close, contentDescription = null, tint = swipeContentColor)
+                            Text(dismissText, color = swipeContentColor, style = MaterialTheme.typography.labelLarge)
+                        }
                     }
                 }
             },
@@ -185,7 +206,7 @@ fun FeedCard(
                     // A soft shadow lifts the card off the page in light mode; a long press opens the card's menu.
                     Modifier.fillMaxWidth().shadow(8.dp, CARD_SHAPE, ambientColor = shadowColor, spotColor = shadowColor)
                         .pointerInput(item.feedItemId) { detectTapGestures(onLongPress = { isMenuOpen = true }) }
-                        .semantics { customActions = listOf(CustomAccessibilityAction(dismissText) { actions.model.swipeAway(item); true }) },
+                        .semantics { customActions = listOf(CustomAccessibilityAction(dismissText) { swipeAway(); true }) },
                     shape = CARD_SHAPE,
                     color = if (item.isResolved) feedMutedCardColor() else cardColor,
                     border = BorderStroke(0.5.dp, edgeBorder),

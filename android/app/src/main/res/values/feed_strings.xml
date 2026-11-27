@@ -61,6 +61,8 @@
     <string name="feed_dismissed_title">Dismissed cards</string>
     <string name="feed_dismissed_empty_title">Nothing dismissed</string>
     <string name="feed_dismissed_empty_description">Dismissed cards are kept until they expire.</string>
+    <string name="feed_swipe_dismiss_all">Dismiss All</string>
+    <string name="feed_restore_all">Restore All</string>
     <string name="feed_restore">Restore</string>
     <string name="feed_restored">Card restored</string>
     <string name="feed_info_dismissed">Dismissed</string>

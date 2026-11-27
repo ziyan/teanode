@@ -91,6 +91,7 @@ fun FeedDeck(top: AgentFeedItemView, model: FeedModel, actions: FeedActions, onS
             modifier = Modifier.zIndex(1f).onSizeChanged { size -> topCardHeight = size.height },
             onOpenStack = { if (isOpen) model.closeDeck(top.feedStackKey) else model.openDeck(top.feedStackKey) },
             isDeckOpen = isOpen,
+            isSwipeWholeDeck = !isOpen,
         )
         if (others.isEmpty()) {
             // Until the cards are read, the room their feet will take, so nothing below moves when they come.

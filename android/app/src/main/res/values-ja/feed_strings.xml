@@ -61,6 +61,8 @@
     <string name="feed_dismissed_title">閉じたカード</string>
     <string name="feed_dismissed_empty_title">閉じたカードはありません</string>
     <string name="feed_dismissed_empty_description">閉じたカードは期限が切れるまで保管されます。</string>
+    <string name="feed_swipe_dismiss_all">すべて閉じる</string>
+    <string name="feed_restore_all">すべて戻す</string>
     <string name="feed_restore">復元</string>
     <string name="feed_restored">カードを復元しました</string>
     <string name="feed_info_dismissed">閉じた日時</string>
