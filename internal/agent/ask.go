@@ -237,8 +237,9 @@ type AskSettings struct {
 	isUnattended bool
 
 	// subagentDepth is how deep in subagents this run is: zero for a turn
-	// somebody asked for, one inside a subagent. One is the limit, and it
-	// is what keeps the subagent tool out of its own catalog.
+	// somebody asked for, more inside a subagent. It only tells a subagent
+	// from a turn somebody asked for; how many a run may start is bounded
+	// by what they cost.
 	subagentDepth int
 
 	// shouldYieldToRunningTurn refuses the turn, with errTurnRunning,
@@ -1379,30 +1380,27 @@ func (self *AskRun) turn() error {
 		}
 	}
 	// Handing work to a run of its own. Built rather than registered,
-	// because starting a run is the agent's to do; and not offered inside
-	// one, which is the whole of the depth limit.
-	if settings.subagentDepth == 0 && FeatureAllowed(configuration, "subagents") {
+	// because starting a run is the agent's to do.
+	if FeatureAllowed(configuration, "subagents") {
 		if subagent := self.agent.subagentTool(); !listed(configuration.Agent.Tools.Disabled, subagent) {
 			self.offered = append(self.offered, subagent)
 			self.loaded[subagent.Name] = true
 		}
 	}
 	// A survey over the graph, built for the same reason: it starts runs.
-	// Behind the same switch and depth as the subagent, since it is runs
-	// handed work in the same way, many of them. In the round from the
+	// Behind the same switch as the subagent, since it is runs handed
+	// work in the same way, many of them. In the round from the
 	// start, since its guidance is what tells the model to reach for it
 	// on a broad question instead of answering from the few facts recall
 	// carried. In a run with nobody present too: a schedule or a goal may
 	// need the broad answer as much as the person does.
-	if survey := self.agent.surveyTool(); settings.subagentDepth == 0 &&
-		FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, survey) {
+	if survey := self.agent.surveyTool(); FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, survey) {
 		self.offered = append(self.offered, survey)
 		self.loaded[survey.Name] = true
 	}
 	// What the two above leave running in the background, to read and to
-	// stop, wherever either can start it: any turn, not inside a subagent.
-	if work := self.agent.backgroundWorkTool(); settings.subagentDepth == 0 &&
-		FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, work) {
+	// stop, wherever either can start it.
+	if work := self.agent.backgroundWorkTool(); FeatureAllowed(configuration, "subagents") && !listed(configuration.Agent.Tools.Disabled, work) {
 		self.offered = append(self.offered, work)
 		self.loaded[work.Name] = true
 	}
@@ -2833,7 +2831,7 @@ func (self *AskRun) goalLines(ctx context.Context) []string {
 		if conversation.Kind != models.AgentConversationMain {
 			return nil
 		}
-		going, err := tx.ListAgentGoals(conversation.AgentID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, goalsInPromptMost)
+		going, err := tx.ListAgentGoals(conversation.AgentID, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting}, 0)
 		for _, goal := range going {
 			if goal.GoalState == models.GoalWaiting {
 				waiting = append(waiting, goal)

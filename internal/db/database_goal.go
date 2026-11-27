@@ -62,9 +62,6 @@ type agentGoalArtifactModel struct {
 func (agentGoalArtifactModel) TableName() string { return "agent_goal_artifact" }
 
 func (self *transaction) ListAgentGoals(agentId string, goalStates []models.AgentGoalState, limit int) ([]*models.AgentConversation, error) {
-	if limit <= 0 {
-		limit = 200
-	}
 	query := self.tx.Where(`"agent_id" = ? AND "kind" = ? AND "goal" <> ''`, agentId, string(models.AgentConversationGoal))
 	if len(goalStates) > 0 {
 		states := make([]string, 0, len(goalStates))
@@ -73,8 +70,13 @@ func (self *transaction) ListAgentGoals(agentId string, goalStates []models.Agen
 		}
 		query = query.Where(`"goal_state" IN ?`, states)
 	}
+	query = query.Order(`"last_at" DESC`)
+	// A limit of zero or less lists every goal.
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
 	var found []agentConversationModel
-	if err := query.Order(`"last_at" DESC`).Limit(limit).Find(&found).Error; err != nil {
+	if err := query.Find(&found).Error; err != nil {
 		return nil, err
 	}
 	conversations := make([]*models.AgentConversation, 0, len(found))

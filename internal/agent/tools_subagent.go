@@ -26,13 +26,6 @@ import (
 // context, and one answer back. What it costs is that nobody reads the
 // middle of it as it happens, which is why its transcript is a run of its
 // own that can be read afterwards.
-const (
-	// subagentWait is how long the turn waits for it. A turn blocked on a
-	// subagent is a person watching nothing happen, so this is minutes,
-	// not the hour a background job may take.
-	subagentWait = 10 * time.Minute
-)
-
 // subagentTool is the tool as the catalog holds it. It is built here
 // rather than registered in an init like the others, because carrying it
 // out starts another run, and only the agent can do that.
@@ -77,10 +70,6 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 	if !ok {
 		return nil, fmt.Errorf("a subagent can only be started from a turn")
 	}
-	if parent.settings.subagentDepth > 0 {
-		// Belt and braces; the tool is not offered inside one.
-		return nil, fmt.Errorf("a subagent cannot start another")
-	}
 	title := strings.TrimSpace(arguments.Title)
 	if title == "" {
 		title = cutAtWord(prompt, 60)
@@ -94,13 +83,11 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 		return nil, err
 	}
 
-	// The tools the parent has, less this one. That is what "the same as
-	// the parent" means, and it is also what keeps the depth at one.
+	// The tools the parent has: that is what "the same as the parent"
+	// means.
 	allowed := map[string]bool{}
 	for _, tool := range parent.Offered() {
-		if tool.Name != "subagent" {
-			allowed[tool.Name] = true
-		}
+		allowed[tool.Name] = true
 	}
 
 	turn, err := self.Ask(&AskSettings{
@@ -126,7 +113,7 @@ func (self *Agent) runSubagent(ctx context.Context, call *Call) (*Result, error)
 	if err != nil {
 		return nil, err
 	}
-	answer, calls, hasPrivateCall, err := followSubagent(ctx, turn, conversation.ID, subagentWait)
+	answer, calls, hasPrivateCall, err := followSubagent(ctx, turn, conversation.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,16 +160,13 @@ func (self *Agent) createSubagentRun(ctx context.Context, agentId, title, parent
 	return conversation, nil
 }
 
-// followSubagent waits for a subagent's turn to end, at most wait, and
-// says what it answered, how many tools it called and whether any of them was
-// a private tool (privateturn.IsToolCall). A turn still going
-// when the wait is up, or when ctx ends, is stopped.
-func followSubagent(ctx context.Context, turn *AskRun, conversationId string, wait time.Duration) (string, int, bool, error) {
+// followSubagent waits for a subagent's turn to end, and says what it
+// answered, how many tools it called and whether any of them was a private
+// tool (privateturn.IsToolCall). A turn still going when ctx ends is stopped.
+func followSubagent(ctx context.Context, turn *AskRun, conversationId string) (string, int, bool, error) {
 	events, unsubscribe := turn.Subscribe()
 	defer unsubscribe()
 
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
 	answer, failure, calls, hasPrivateCall := "", "", 0, false
 	for waiting := true; waiting; {
 		select {
@@ -202,10 +186,6 @@ func followSubagent(ctx context.Context, turn *AskRun, conversationId string, wa
 			case EventError:
 				failure = event.Error
 			}
-		case <-timer.C:
-			turn.Stop()
-			failure = fmt.Sprintf("it was still going after %s and was stopped", wait)
-			waiting = false
 		case <-ctx.Done():
 			turn.Stop()
 			return "", calls, hasPrivateCall, ctx.Err()
@@ -222,9 +202,8 @@ func followSubagent(ctx context.Context, turn *AskRun, conversationId string, wa
 }
 
 // startBackgroundSubagent starts a subagent that the turn does not wait
-// for. Its tools are the parent's less the ones that start or manage work
-// of this kind, fixed now and kept with the work, so that a run after a
-// restart has the same.
+// for. Its tools are the parent's, fixed now and kept with the work, so that
+// a run after a restart has the same.
 func (self *Agent) startBackgroundSubagent(ctx context.Context, parent *AskRun, prompt, title string) (*Result, error) {
 	request := models.AgentBackgroundWorkRequest{Prompt: prompt, IsReadOnly: parent.ReadOnly(), AllowedToolNames: []string{}}
 	// What this turn may do, which the subagent is held to when it runs:
@@ -236,10 +215,6 @@ func (self *Agent) startBackgroundSubagent(ctx context.Context, parent *AskRun, 
 		request.StartingTurnPermissions = models.NewEffectivePermissions(nil)
 	}
 	for _, tool := range parent.Offered() {
-		switch tool.Name {
-		case "subagent", "survey", "background_work":
-			continue
-		}
 		request.AllowedToolNames = append(request.AllowedToolNames, tool.Name)
 	}
 	for name, isReadOnly := range parent.settings.ReadOnlyTools {

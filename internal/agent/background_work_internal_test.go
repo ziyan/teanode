@@ -479,8 +479,8 @@ func TestTheToolsStartReadAndStopBackgroundWork(t *testing.T) {
 	subagentId := started(worker.subagentTool().Run(ctx, &tools.Call{Arguments: json.RawMessage(`{"prompt": "Count the invoices.", "title": "count invoices", "background": true}`)}))
 	subagent := readWork(t, database, run.Agent.ID, subagentId)
 	if subagent.WorkKind != models.BackgroundWorkSubagent || subagent.WorkRequest.Prompt != "Count the invoices." || subagent.Title != "count invoices" ||
-		strings.Join(subagent.WorkRequest.AllowedToolNames, ",") != "mail_search,memory" || strings.Join(subagent.WorkRequest.ReadOnlyToolNames, ",") != "memory" {
-		t.Fatalf("the subagent keeps the turn's tools less the ones that start work: %+v", subagent)
+		strings.Join(subagent.WorkRequest.AllowedToolNames, ",") != "background_work,mail_search,memory,subagent,survey" || strings.Join(subagent.WorkRequest.ReadOnlyToolNames, ",") != "memory" {
+		t.Fatalf("the subagent keeps the turn's tools: %+v", subagent)
 	}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		queued, err := tx.CountAgentJobs(&db.AgentJobFilter{AgentID: run.Agent.ID, Kinds: []models.AgentJobKind{models.AgentJobBackground}, Statuses: []models.AgentJobStatus{models.AgentJobQueued}})
