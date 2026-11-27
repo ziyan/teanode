@@ -279,7 +279,7 @@ is refused when the question on screen is no longer that one.
 
 `send` can carry files: attachment ids on every surface (the tool takes this
 conversation's, the dashboard and `--attach` upload first). The server reads
-them out of storage, at most ten and 32 MiB together, and only a program that
+them out of storage, 32 MiB together, and only a program that
 names the `herdr_files` feature is sent them. The program writes each into a
 directory of its own send under `~/.cache/teanode/herdr-files/`, its name kept
 to letters, digits, dots, dashes and underscores, clears out sends older than
