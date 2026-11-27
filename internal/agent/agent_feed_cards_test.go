@@ -335,9 +335,10 @@ func TestDashesAreRewrittenInEveryText(t *testing.T) {
 	}
 }
 
-// A title, label or caption a little too long is cut with an ellipsis and
-// listed in the post's notes instead of refusing the card; a card that is
-// changed does not list again what an earlier post cut.
+// A card's title is kept whole however long; a label or caption a little too
+// long is cut with an ellipsis and listed in the post's notes instead of
+// refusing the card; a card that is changed does not list again what an
+// earlier post cut.
 func TestATextThatIsTooLongIsCutAndListedNotRefused(t *testing.T) {
 	world := newSpeakFirstWorld(t)
 	long := func(characters int) string { return strings.Repeat("w", characters) }
@@ -351,11 +352,14 @@ func TestATextThatIsTooLongIsCutAndListedNotRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len([]rune(posted.Title)) != 201 || !strings.HasSuffix(posted.Title, "…") || len([]rune(posted.ChartBlocks[0].Provenance)) != 121 {
-		t.Fatalf("the title and provenance were not cut: %d %d", len([]rune(posted.Title)), len([]rune(posted.ChartBlocks[0].Provenance)))
+	if posted.Title != long(230) || len([]rune(posted.ChartBlocks[0].Provenance)) != 121 {
+		t.Fatalf("the title was not kept whole, or the provenance was not cut: %d %d", len([]rune(posted.Title)), len([]rune(posted.ChartBlocks[0].Provenance)))
 	}
 	notes := strings.Join(posted.PostNotes, "; ")
-	for _, expected := range []string{"title was cut to 200", "factRows[0].factLabel was cut to 200", "choices[0].choiceLabel was cut to 80", "chartBlocks[0].chartTitle was cut to 80", "chartBlocks[0].provenance was cut to 120"} {
+	if strings.Contains(strings.Join(posted.PostNotes, "; "), "title was cut") {
+		t.Errorf("the notes say the title was cut: %v", posted.PostNotes)
+	}
+	for _, expected := range []string{"factRows[0].factLabel was cut to 200", "choices[0].choiceLabel was cut to 80", "chartBlocks[0].chartTitle was cut to 80", "chartBlocks[0].provenance was cut to 120"} {
 		if !strings.Contains(notes, expected) {
 			t.Errorf("the notes %q do not say %q", notes, expected)
 		}

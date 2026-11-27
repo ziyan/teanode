@@ -29,7 +29,7 @@ func TestACardWithChartsAStillAndAResolutionIsPrinted(t *testing.T) {
 		},
 		FeedMedia:  []client.AgentFeedMedia{{FeedMediaKind: "camera_still", ImageURL: "/api/v1/feed/items/card-1/media/m1", CameraName: "Front door", CapturedAt: "2026-11-19T14:02:11-05:00", StillReason: "Where the parcel was left"}},
 		IsResolved: true, ResolvedAt: &resolvedAt, ResolvedByKind: "goal", ResolutionNote: "It arrived",
-		PostNotes: []string{"title was cut to 200 characters"},
+		PostNotes: []string{"factRows[0].factLabel was cut to 80 characters"},
 	}
 	var written bytes.Buffer
 	if err := printFeedItem(&cli.Command{Writer: &written}, item); err != nil {
@@ -38,7 +38,7 @@ func TestACardWithChartsAStillAndAResolutionIsPrinted(t *testing.T) {
 	for _, expected := range []string{
 		"chart, series: Balance (USD)", "This week (measured): Mon=1200.5 Tue=none", "marker at Tue: Rent paid", "Read from the bank at 09:40 EST",
 		"chart, bars: Shops", "Market: 80.25", "camera still: /api/v1/feed/items/card-1/media/m1, Front door at 2026-11-19T14:02:11-05:00: Where the parcel was left",
-		"by goal: It arrived", "note: title was cut to 200 characters",
+		"by goal: It arrived", "note: factRows[0].factLabel was cut to 80 characters",
 	} {
 		if !strings.Contains(written.String(), expected) {
 			t.Errorf("the output does not say %q:\n%s", expected, written.String())

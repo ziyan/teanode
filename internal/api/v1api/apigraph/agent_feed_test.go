@@ -300,8 +300,8 @@ func TestTheDismissedCardsAndAWithdrawnCard(t *testing.T) {
 	})
 }
 
-// A card carries charts through the API as it is posted, a title a little too
-// long is cut and said so in the answer, three fact rows that are a series are
+// A card carries charts through the API as it is posted, a long title is kept
+// whole and not listed as cut, three fact rows that are a series are
 // refused as an invalid argument, and a camera still with no readable picture
 // is left off with a note while the card posts.
 func TestAPostCarriesChartsAndAnswersWhatItCut(t *testing.T) {
@@ -321,7 +321,7 @@ func TestAPostCarriesChartsAndAnswersWhatItCut(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len([]rune(view.Title)) != 201 || len(view.PostNotes) != 2 || !strings.Contains(view.PostNotes[0], "title was cut to 200") || !strings.Contains(view.PostNotes[1], "the still from Front door was left off") {
+		if len([]rune(view.Title)) != 230 || len(view.PostNotes) != 1 || !strings.Contains(view.PostNotes[0], "the still from Front door was left off") {
 			t.Fatalf("the notes: %v %q", view.PostNotes, view.Title)
 		}
 		if len(view.FeedMedia) != 0 || len(view.ChartBlocks) != 1 || view.ChartBlocks[0].Series[0].Values[1] != nil || *view.ChartBlocks[0].Series[0].Values[0] != 1200.5 || view.ChartBlocks[0].Markers == nil || view.ChartBlocks[0].Bars == nil {
