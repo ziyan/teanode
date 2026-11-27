@@ -131,13 +131,15 @@ func init() {
 					"they speak in, and memory pages about them. Give their username (from people) or user_id, or a contact of the person's " +
 					"as address_book_id and contact_id. Each part says sectionState: shown, notShared (they have not shared it), " +
 					"needsContact (the person has no contact linked to them; the contact tool links one), unavailable (the person may not " +
-					"use that part, or the contact is not an account) or failed. Somebody the person shares no circle with is not found.",
+					"use that part, or the contact is not an account) or failed. A part that says it has more (hasMore, hasMorePhotos, hasMoreAlbums, hasMoreTodayVisits) is a short sample: " +
+					"read the rest with that part's own tool, which pages: location for visits, health, photo with person for photos and albums, mail_search for mail, recording, memory. " +
+					"Somebody the person shares no circle with is not found.",
 				Parameters: tools.Object(map[string]any{
 					"username":        tools.StringProperty("the exact username of a person they share a circle with, from people"),
 					"user_id":         tools.StringProperty("their account id, from people, instead of a username"),
 					"address_book_id": tools.StringProperty("the address book of one of the person's contacts, with contact_id, instead of a username"),
 					"contact_id":      tools.StringProperty("one of the person's contacts, with address_book_id, instead of a username"),
-					"item_limit":      tools.IntegerProperty("how many items to keep of each part, 3 unless said, at most 10"),
+					"item_limit":      tools.IntegerProperty("how many items to keep of each part, 3 unless said; the card gives at most 10, and the rest of a part is read with its own tool"),
 				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
