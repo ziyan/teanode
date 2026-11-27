@@ -17,8 +17,10 @@ const (
 	// each, within indexTokens like every other line.
 	indexThemes = 12
 
-	// runIndexTokens is what a run with nobody present carries. Larger,
-	// because such a run cannot ask for more.
+	// runIndexTokens is what a run with nobody present carries: less than a
+	// turn's indexTokens, since a run is given the facts addressed to it
+	// besides (promptRunMemories) and its index only has to say what
+	// exists.
 	runIndexTokens = 1000
 
 	// selfSummary is how much of the self page's opening always goes in,
