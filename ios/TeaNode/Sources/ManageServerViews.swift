@@ -3336,7 +3336,8 @@ private struct AgentModelPage: View {
 
     private func priceField(_ label: LocalizedStringKey, text: Binding<String>) -> some View {
         LabeledContent(label) {
-            TextField(label, text: Binding(get: { text.wrappedValue }, set: { text.wrappedValue = SettingsList.price($0) }))
+            // "Not set" rather than the label again: an empty price is the provider's.
+            TextField("Not set", text: Binding(get: { text.wrappedValue }, set: { text.wrappedValue = SettingsList.price($0) }))
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
         }
@@ -3628,7 +3629,8 @@ struct AgentProviderForm: View {
 
     private func priceField(_ label: LocalizedStringKey, text: Binding<String>) -> some View {
         LabeledContent(label) {
-            TextField(label, text: Binding(get: { text.wrappedValue }, set: { text.wrappedValue = SettingsList.price($0) }))
+            // "Not set" rather than the label again: an empty price is the provider's.
+            TextField("Not set", text: Binding(get: { text.wrappedValue }, set: { text.wrappedValue = SettingsList.price($0) }))
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
         }
