@@ -10,14 +10,9 @@ import (
 )
 
 // When a memory check is worth the person's time: memory has to know
-// enough about them for the questions to be about something, and checks
-// come every two weeks, weekly while the set is still small.
-const (
-	memoryCheckFactCount          = 100
-	memoryCheckApart              = 14 * 24 * time.Hour
-	memoryCheckApartWhileSmall    = 7 * 24 * time.Hour
-	memoryCheckSmallQuestionCount = 30
-)
+// enough about them for the questions to be about something. The agent asks
+// to start one once; a later one is started by the person.
+const memoryCheckFactCount = 100
 
 // memoryCheckReason is the agent asking whether it may check a few things
 // it remembers about the person.
@@ -45,7 +40,7 @@ func (self *Agent) memoryCheckReason() speakFirstReason {
 			if !agent.IsSuggestionsEnabled || agent.OnboardedAt == nil {
 				return false, nil
 			}
-			return memoryCheckDue(tx, agent, now)
+			return memoryCheckDue(tx, agent)
 		},
 		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time, prepared map[string]string) (string, error) {
 			return speakFirstMessage(owner, now, models.MemoryCheckOpening+": a few questions about things you remember about them, to learn how well your memory answers.", prepared) + strings.Join([]string{
@@ -63,30 +58,13 @@ func (self *Agent) memoryCheckReason() speakFirstReason {
 	}
 }
 
-// memoryCheckDue says whether memory holds enough about the person and
-// the last check was long enough ago.
-func memoryCheckDue(tx db.Transaction, agent *models.Agent, now time.Time) (bool, error) {
+// memoryCheckDue says whether memory holds enough about the person and no
+// question has been put to them yet.
+func memoryCheckDue(tx db.Transaction, agent *models.Agent) (bool, error) {
 	factCount, err := tx.CountAgentFactsToCheck(agent.ID)
 	if err != nil || factCount < memoryCheckFactCount {
 		return false, err
 	}
 	questions, err := tx.ListAgentEvaluationQuestions(agent.ID, nil)
-	if err != nil {
-		return false, err
-	}
-	if len(questions) == 0 {
-		return true, nil
-	}
-	answeredCount := 0
-	for _, question := range questions {
-		if question.QuestionState.IsEvaluated() {
-			answeredCount++
-		}
-	}
-	apart := memoryCheckApart
-	if answeredCount < memoryCheckSmallQuestionCount {
-		apart = memoryCheckApartWhileSmall
-	}
-	// Newest first: the last check is when its latest question was put.
-	return now.Sub(questions[0].CreatedAt) >= apart, nil
+	return len(questions) == 0, err
 }

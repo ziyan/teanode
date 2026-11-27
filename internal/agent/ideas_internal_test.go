@@ -318,9 +318,9 @@ func TestAnExpiredIdeaSaysWhyAndComesBackByIt(t *testing.T) {
 	})
 }
 
-// The agent offers one idea a day at most, the best one the person has
-// not seen, to somebody who has the dashboard open and has gone quiet.
-func TestTheAgentOffersTheBestUnseenIdeaAtMostDaily(t *testing.T) {
+// The agent offers the best idea the person has not seen, each idea once, to
+// somebody who has the dashboard open and has gone quiet.
+func TestTheAgentOffersTheBestUnseenIdeaOnceEach(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 	provider := scriptedProvider([]string{saidByModel("ok")})
@@ -356,14 +356,15 @@ func TestTheAgentOffersTheBestUnseenIdeaAtMostDaily(t *testing.T) {
 		if isDue, _ := reason.isDue(t.Context(), tx, agent, run.Owner, 10*time.Minute, now); isDue {
 			t.Fatal("nothing unseen is left")
 		}
+		// No gap of a day: an idea unseen is offered at the next quiet moment.
 		if _, err := worker.Enqueue(tx, models.AgentJobSpeakFirst, agent.ID, "", SpeakFirstIdea); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := tx.UpdateAgentIdea(agent.ID, ideas[0].ID, func(idea *models.AgentIdea) error { idea.ShownAt = nil; return nil }); err != nil {
 			t.Fatal(err)
 		}
-		if isDue, _ := reason.isDue(t.Context(), tx, agent, run.Owner, 10*time.Minute, now); isDue {
-			t.Fatal("one offer a day")
+		if isDue, err := reason.isDue(t.Context(), tx, agent, run.Owner, 10*time.Minute, now); err != nil || !isDue {
+			t.Fatalf("an idea unseen is offered right after the last: %v %v", isDue, err)
 		}
 	})
 }
