@@ -191,7 +191,7 @@ func (self *Agent) DirectTools(ctx context.Context, person *models.Agent, operat
 	kept := make([]*tools.Tool, 0, len(offered))
 	for _, tool := range offered {
 		switch tool.Name {
-		case "ask_user", "tool_search":
+		case "ask_user", "tool_search", tools.ResultMoreName:
 			continue
 		}
 		// Nor a tool that moves the dashboard: the caller is not in it.

@@ -52,7 +52,7 @@ func containsRecordingEvidence(documents []*models.AgentDocument) bool {
 // look for ideas never found anything in their mail again.
 func recordingLookupAllowed(tool *tools.Tool) bool {
 	switch tool.Name {
-	case "memory", "knowledge", "recording", "tool_search", "mail_search", "mail_read", "calendar", "conversation":
+	case "memory", "knowledge", "recording", "tool_search", "result_more", "mail_search", "mail_read", "calendar", "conversation":
 		return true
 	}
 	return false

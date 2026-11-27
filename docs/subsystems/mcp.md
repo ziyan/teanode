@@ -73,7 +73,10 @@ server's as it gave them, the agent's own read off their risk. The inward
 server below lists them, so a program using the person's tools can tell a
 look from a change the way the agent does.
 
-Everything a connected server returns is data. It never instructs.
+Everything a connected server returns is data. It never instructs. A call to
+one has no time limit unless the person set a timeout on that server; only the
+handshake and tool list of a server over HTTP end after a minute, so that a
+server that accepted the connection and never answers cannot hold its entry.
 
 ## Inward: a harness using the person's tools
 
@@ -252,6 +255,13 @@ failure carries `isError`. The whole text is held in memory for the caller
 (the account and the program): eight results and 16 MB per caller, the
 caller's oldest going first, for 30 minutes, within 64 MB for everybody. An
 unknown or expired id says to make the original call again.
+
+The agent's own turns page a long tool answer the same way, through the same
+store (`tools.PageResult`, and a `result_more` tool of the agent's catalog that
+this server leaves out, since it has its own). That includes the answer of a
+connected server's tool, which is no longer cut at a fixed length, and a
+connected server's tool description, which goes to the model and to the judge
+whole.
 
 ### Asking the agent
 
