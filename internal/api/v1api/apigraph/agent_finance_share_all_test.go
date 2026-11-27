@@ -357,7 +357,7 @@ func TestAllFinanceShareArgumentsAndOwnership(t *testing.T) {
 // The person's agent has no tool for sharing finance or for reading what
 // others share, and the API refuses it the same way if it reaches the
 // operations some other way, as a command the agent ran on the computer does.
-func TestTheAgentCannotShareOrReadSharedAllFinance(t *testing.T) {
+func TestTheAgentCannotShareOrReadSharedAllFinanceButCanEndAShare(t *testing.T) {
 	world := newFinanceShareWorld(t)
 	share := world.shareAllAsTap(t, world.ben.ID, nil, "transactions")
 	byOwner := map[string]any{"ownerUserId": world.ada.ID}
@@ -369,7 +369,6 @@ func TestTheAgentCannotShareOrReadSharedAllFinance(t *testing.T) {
 			variables map[string]any
 		}{
 			"share":        {shareAllFinanceQuery, map[string]any{"granteeUserId": world.dave.ID, "financeShareLevel": "spending"}},
-			"unshare":      {unshareAllFinanceQuery, map[string]any{"financeShareId": share["id"]}},
 			"shares":       {allFinanceSharesQuery, nil},
 			"shared":       {sharedAllFinanceQuery, nil},
 			"spending":     {allSpendingQuery, byOwner},
@@ -404,6 +403,15 @@ func TestTheAgentCannotShareOrReadSharedAllFinance(t *testing.T) {
 	// The person's own reads still work as the person.
 	if listed := world.run(t, world.ben, sharedAllFinanceQuery, nil)["ListSharedFinance"].([]any); len(listed) != 1 {
 		t.Errorf("ben reads what ada shares with him: %v", listed)
+	}
+	// Ending a share discloses nothing, so the owner's agent may.
+	ownerAgent := &agentOperations{graph: world.graph, user: world.ada, permissions: &models.EffectivePermissions{Everywhere: []models.Permission{models.PermissionAgentUse}}}
+	var unshared map[string]any
+	if err := ownerAgent.Execute(t.Context(), unshareAllFinanceQuery, map[string]any{"financeShareId": share["id"]}, &unshared); err != nil {
+		t.Errorf("the owner's agent could not end the share: %v", err)
+	}
+	if listed := world.run(t, world.ben, sharedAllFinanceQuery, nil)["ListSharedFinance"].([]any); len(listed) != 0 {
+		t.Errorf("ben still reads what ada stopped sharing: %v", listed)
 	}
 }
 

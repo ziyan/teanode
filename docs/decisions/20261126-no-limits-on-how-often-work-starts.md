@@ -198,3 +198,17 @@ Reading the code for this decision found two places that did not, one of which w
   sets `dailyCostPerAgent` and `monthlyCostPerServer` instead.
 - A person who had set quiet hours or a daily most of alerts no longer has
   them. Their phone's Focus is the control.
+
+## Addendum: settings nobody sets, and what the agent may undo
+
+- A new server starts with no token cap (`agent.limits.dailyTokensPerAgent`
+  is 0), as production does. The money limits are the budget.
+- `agent.retention.runs` and `corrections` (30 and 90 days), and
+  `agent.browser.idleTimeout` and `maxContexts` (5 minutes and 4) are
+  constants in `internal/config/agent.go`, each with its reason. The keys
+  still load with one warning, and the settings GraphQL answers them empty for
+  one release and ignores them when sent.
+- The agent may end or decline a finance share, and stop a touch-up, remove a
+  correction or a pin, delete a narrative, change the journal's settings and
+  erase the journal. The last two are destructive, so the person's card comes
+  first. It still may not share finance or read what others share.

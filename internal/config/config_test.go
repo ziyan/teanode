@@ -457,3 +457,52 @@ func TestTheRetiredGoalCapsStillLoad(t *testing.T) {
 		}
 	}
 }
+
+// The retention and browser bounds are fixed now: an older file that sets
+// them loads, and they are not written again.
+func TestTheRetiredRetentionAndBrowserKeysStillLoad(t *testing.T) {
+	filename, _ := writeValidConfiguration(t, nil)
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	agentAt := strings.Index(text, "\nagent:\n")
+	if agentAt < 0 {
+		t.Fatalf("the saved file has no agent section:\n%s", text)
+	}
+	agentAt += len("\nagent:\n")
+	browserAt := strings.Index(text[agentAt:], "\n  browser:\n")
+	if browserAt < 0 {
+		t.Fatalf("the saved file has no agent browser section:\n%s", text)
+	}
+	browserAt += agentAt + len("\n  browser:\n")
+	text = text[:browserAt] + "    idleTimeout: 1m\n    maxContexts: 9\n" + text[browserAt:]
+	text = text[:agentAt] + "  retention:\n    runs: 10d\n    corrections: 20d\n" + text[agentAt:]
+	if err := os.WriteFile(filename, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(filename)
+	if err != nil {
+		t.Fatalf("a configuration with the retired retention keys is refused: %s", err)
+	}
+	if err := config.Save(filename, loaded); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"retention:", "runs:", "corrections:", "idleTimeout:", "maxContexts:"} {
+		if strings.Contains(string(saved), key) {
+			t.Errorf("the retired key %s is written again", key)
+		}
+	}
+}
+
+// A new server has no token cap: the money limits are the budget.
+func TestANewServerHasNoTokenCap(t *testing.T) {
+	if tokens := config.Default().Agent.Limits.DailyTokensPerAgent; tokens != 0 {
+		t.Errorf("a new server caps a day at %d tokens", tokens)
+	}
+}

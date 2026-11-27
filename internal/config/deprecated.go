@@ -95,6 +95,22 @@ type deprecatedLimits struct {
 	RetiredConcurrency                   int      `yaml:"concurrency,omitempty"`
 }
 
+// deprecatedAgent covers agent.retention, which is a pair of constants now
+// (AgentRunRetention and AgentCorrectionRetention).
+type deprecatedAgent struct {
+	Retention struct {
+		Runs        Duration `yaml:"runs,omitempty"`
+		Corrections Duration `yaml:"corrections,omitempty"`
+	} `yaml:"retention,omitempty"`
+}
+
+// deprecatedBrowser covers the browser bounds that were settings, and are
+// BrowserIdleTimeout and BrowserMaxContexts now.
+type deprecatedBrowser struct {
+	RetiredIdleTimeout Duration `yaml:"idleTimeout,omitempty"`
+	RetiredMaxContexts int      `yaml:"maxContexts,omitempty"`
+}
+
 // retiredLimitNotices lists each retired key that is set, with the line
 // that says where it went.
 func (self *deprecatedLimits) retiredLimitNotices() []string {
@@ -194,6 +210,30 @@ func (self *Configuration) migrateDeprecated() {
 	self.migrateAcme()
 	self.migrateGoalLimits()
 	self.Agent.migrateProviderModels()
+	self.migrateRetiredAgentBounds()
+}
+
+// migrateRetiredAgentBounds reports the retention and browser keys that are
+// constants now.
+func (self *Configuration) migrateRetiredAgentBounds() {
+	const fixed = "is no longer a setting: it is a fixed technical bound now"
+	retention := self.Agent.Retention
+	if retention.Runs > 0 {
+		log.Warningf("agent.retention.runs %s", fixed)
+	}
+	if retention.Corrections > 0 {
+		log.Warningf("agent.retention.corrections %s", fixed)
+	}
+	self.Agent.deprecatedAgent = deprecatedAgent{}
+
+	browser := self.Agent.Browser.deprecatedBrowser
+	if browser.RetiredIdleTimeout > 0 {
+		log.Warningf("agent.browser.idleTimeout %s", fixed)
+	}
+	if browser.RetiredMaxContexts > 0 {
+		log.Warningf("agent.browser.maxContexts %s", fixed)
+	}
+	self.Agent.Browser.deprecatedBrowser = deprecatedBrowser{}
 }
 
 func (self *Configuration) migrateGoalLimits() {

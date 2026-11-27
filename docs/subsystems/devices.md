@@ -495,8 +495,6 @@ should not land in a browser signed in as nobody.
 | `agent.browser.cdpEndpoint` | where it is |
 | `agent.browser.attachTabs` | whether people may attach their own tab |
 | `agent.browser.allowPrivateAddresses` | networks the page guard admits |
-| `agent.browser.idleTimeout` | when an unused context is closed |
-| `agent.browser.maxContexts` | how many exist at once |
 
 The tool families `computer` and `browser` can be named in the operator's
 disabled or confirm lists, and a person can add either to their own.

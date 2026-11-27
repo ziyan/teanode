@@ -313,10 +313,6 @@ data class AgentLimits(
     val dailyTokensPerAgent: Double = 0.0, val dailyCostPerAgent: Double = 0.0, val monthlyCostPerServer: Double = 0.0, val monthlyTokensPerServer: Double = 0.0,
 )
 
-/** How long run transcripts and corrections are kept. */
-@Serializable
-data class AgentRetention(val runs: String = "", val corrections: String = "")
-
 @Serializable
 data class AgentWebSearch(@SerialName("kind") val searchKind: String = "", val hasApiKey: Boolean = false)
 
@@ -339,7 +335,7 @@ data class AgentRecordingOptions(val isLiveTranscriptionEnabled: Boolean = true,
 @Serializable
 data class AgentBrowser(
     @SerialName("enabled") val isEnabled: Boolean = false, val cdpEndpoint: String = "", @SerialName("attachTabs") val canAttachTabs: Boolean = false,
-    val allowPrivateAddresses: List<String> = emptyList(), val idleTimeout: String = "", val maxContexts: Int = 0,
+    val allowPrivateAddresses: List<String> = emptyList(),
 )
 
 @Serializable
@@ -382,7 +378,6 @@ data class AgentServerSettings(
     /** What people may turn on, by feature; one not said is on. */
     val features: Map<String, Boolean> = emptyMap(),
     val limits: AgentLimits = AgentLimits(),
-    val retention: AgentRetention = AgentRetention(),
     val currency: String = "",
     val search: AgentWebSearch = AgentWebSearch(),
     val tools: AgentToolPolicy = AgentToolPolicy(),
@@ -484,12 +479,12 @@ data class AgentProviderDraft(
     }
 }
 
-/** The limits, the retention and the currency as their form holds them, each limit as typed. */
-data class AgentLimitsDraft(val limitTexts: Map<String, String>, val retention: AgentRetention, val currency: String) {
+/** The limits and the currency as their form holds them, each limit as typed. */
+data class AgentLimitsDraft(val limitTexts: Map<String, String>, val currency: String) {
     val agentParameters: JsonObject
         get() {
             val limits = LIMIT_GROUPS.flatten().associateWith { limitName -> SettingsList.numberValue(SettingsList.number(limitTexts[limitName].orEmpty())) }
-            return objectOf("limits" to JsonObject(limits), "retention" to objectOf("runs" to retention.runs, "corrections" to retention.corrections), "currency" to currency)
+            return objectOf("limits" to JsonObject(limits), "currency" to currency)
         }
 
     companion object {
@@ -507,7 +502,7 @@ data class AgentLimitsDraft(val limitTexts: Map<String, String>, val retention: 
             )
             // Zero is said as 0, as the dashboard's form shows a stored limit.
             val texts = numbers.mapValues { entry -> if (entry.value == 0.0) "0" else SettingsList.text(entry.value) }
-            return AgentLimitsDraft(texts, settings.retention, settings.currency)
+            return AgentLimitsDraft(texts, settings.currency)
         }
     }
 }
@@ -548,19 +543,18 @@ data class AgentWebSearchDraft(val searchKind: String, val apiKey: String = "") 
 
 /** The headless browser as its form holds it. */
 data class AgentBrowserDraft(
-    val isEnabled: Boolean, val cdpEndpoint: String, val canAttachTabs: Boolean, val allowPrivateAddressesText: String, val idleTimeout: String, val maxContextsText: String,
+    val isEnabled: Boolean, val cdpEndpoint: String, val canAttachTabs: Boolean, val allowPrivateAddressesText: String,
 ) {
     val agentParameters: JsonObject
         get() = objectOf(
             "browser" to objectOf(
                 "enabled" to isEnabled, "cdpEndpoint" to cdpEndpoint, "attachTabs" to canAttachTabs, "allowPrivateAddresses" to SettingsList.lineItems(allowPrivateAddressesText),
-                "idleTimeout" to idleTimeout, "maxContexts" to SettingsList.numberValue(SettingsList.number(maxContextsText)),
             ),
         )
 
     companion object {
         fun of(browser: AgentBrowser) = AgentBrowserDraft(
-            browser.isEnabled, browser.cdpEndpoint, browser.canAttachTabs, SettingsList.text(browser.allowPrivateAddresses), browser.idleTimeout, browser.maxContexts.toString(),
+            browser.isEnabled, browser.cdpEndpoint, browser.canAttachTabs, SettingsList.text(browser.allowPrivateAddresses),
         )
     }
 }

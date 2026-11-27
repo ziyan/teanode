@@ -550,3 +550,51 @@ func TestACorrectionSaysWhatTheNarrativeKeeps(t *testing.T) {
 func operationsDay(count int) string {
 	return time.Now().UTC().AddDate(0, 0, count).Format(time.DateOnly)
 }
+
+// Taking back what the person put in the journal is an action of the tool;
+// the two that cannot be undone are destructive, so the person's card comes
+// first, and the others are plain writes.
+func TestTakingBackActionsAndTheirRisk(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"StopJournalTouchUp":      `{"day":"2026-10-22","words":{}}`,
+		"RemoveJournalCorrection": `{"headline":"x","corrections":[]}`,
+		"DeleteJournalNarrative":  `{"headline":""}`,
+		"RemoveJournalLink":       `true`,
+		"UpdateJournalSettings":   `{"isWeatherOn":false,"isEveningQuestionOn":true,"eveningQuestionTime":"21:00"}`,
+		"EraseJournal":            `{"dayCount":2,"periodCount":1,"linkCount":0}`,
+	}}
+	run := aTurnOfAda(operations)
+	actJSON(t, run, "stop_touch_up", `{"day":"2026-10-22"}`)
+	actJSON(t, run, "remove_correction", `{"day":"2026-10-22","correction_index":0}`)
+	if variables, _ := operations.called("RemoveJournalCorrection"); variables["correctionIndex"] != 0 {
+		t.Errorf("remove correction: %v", variables)
+	}
+	actJSON(t, run, "delete_narrative", `{"day":"2026-10-22"}`)
+	actJSON(t, run, "remove_pin", `{"link_id":"l1"}`)
+	if variables, _ := operations.called("RemoveJournalLink"); variables["linkId"] != "l1" {
+		t.Errorf("remove pin: %v", variables)
+	}
+	actJSON(t, run, "update_settings", `{"is_weather_on":false}`)
+	if variables, _ := operations.called("UpdateJournalSettings"); variables["isWeatherOn"] != false {
+		t.Errorf("update settings: %v", variables)
+	}
+	actJSON(t, run, "erase", `{}`)
+	for _, name := range []string{"StopJournalTouchUp", "DeleteJournalNarrative", "EraseJournal"} {
+		if _, isCalled := operations.called(name); !isCalled {
+			t.Errorf("%s was not sent", name)
+		}
+	}
+	if _, _, err := act(t, run, "remove_correction", `{"day":"2026-10-22"}`); err == nil {
+		t.Errorf("a correction was removed without saying which")
+	}
+
+	merged := tools.Build().Get("journal")
+	for action, want := range map[string]tools.Risk{
+		"stop_touch_up": tools.RiskWrite, "remove_correction": tools.RiskWrite, "remove_pin": tools.RiskWrite,
+		"update_settings": tools.RiskWrite, "delete_narrative": tools.RiskDestructive, "erase": tools.RiskDestructive,
+	} {
+		if got := merged.RiskFor(json.RawMessage(`{"action":"` + action + `"}`)); got != want {
+			t.Errorf("%s has risk %s, want %s", action, got, want)
+		}
+	}
+}

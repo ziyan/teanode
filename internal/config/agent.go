@@ -60,8 +60,7 @@ type Agent struct {
 	// Limits bound what a run may cost.
 	Limits AgentLimits `yaml:"limits"`
 
-	// Retention says how long run transcripts and corrections are kept.
-	Retention AgentRetention `yaml:"retention"`
+	deprecatedAgent `yaml:",inline"`
 
 	// Search is the web search provider behind the web_search tool; empty
 	// means the tool is not offered.
@@ -550,11 +549,29 @@ const (
 	WorkerConcurrency = 2
 )
 
-// AgentRetention says how long the agent's records are kept.
-type AgentRetention struct {
-	Runs        Duration `yaml:"runs"`
-	Corrections Duration `yaml:"corrections"`
-}
+// How long the agent's records are kept, and how the headless browser is
+// held. Nobody has a better value than these, and a setting that nobody sets
+// is a hidden bound to maintain.
+const (
+	// AgentRunRetention is how long run transcripts, finished jobs and
+	// finished replies are kept: a month, long enough to look back at what
+	// the agent did, short enough that the tables stay small.
+	AgentRunRetention = 30 * 24 * time.Hour
+
+	// AgentCorrectionRetention is how long recorded corrections are kept:
+	// three months, longer than runs because a correction is a lesson the
+	// agent keeps using.
+	AgentCorrectionRetention = 90 * 24 * time.Hour
+
+	// BrowserIdleTimeout is how long a run's browser context outlives its
+	// last use: long enough to read a page and think, short enough that an
+	// abandoned context does not hold a browser tab.
+	BrowserIdleTimeout = 5 * time.Minute
+
+	// BrowserMaxContexts is how many browser contexts may be open at once:
+	// what the browser container's memory is sized for.
+	BrowserMaxContexts = 4
+)
 
 // AgentSearchKindBrave is the one search provider kind so far.
 const AgentSearchKindBrave = "brave"
@@ -934,11 +951,7 @@ type AgentBrowser struct {
 	// for a firewall.
 	ProxyListen string `yaml:"proxyListen,omitempty"`
 
-	// IdleTimeout is how long a run's browser context outlives its last use.
-	IdleTimeout Duration `yaml:"idleTimeout"`
-
-	// MaxContexts is how many contexts may be open at once.
-	MaxContexts int `yaml:"maxContexts"`
+	deprecatedBrowser `yaml:",inline"`
 }
 
 // AgentMCP declares connected servers.
@@ -1107,16 +1120,9 @@ func defaultAgent() Agent {
 	return Agent{
 		Enabled:  false,
 		Currency: DefaultCurrency,
-		Limits: AgentLimits{
-			DailyTokensPerAgent: 200000,
-		},
-		Retention: AgentRetention{
-			Runs:        Duration(30 * 24 * time.Hour),
-			Corrections: Duration(90 * 24 * time.Hour),
-		},
-		Browser: AgentBrowser{
-			IdleTimeout: Duration(5 * time.Minute),
-			MaxContexts: 4,
+		Limits:   AgentLimits{
+			// No token cap: the money limits are the budget, and an
+			// operator sets them.
 		},
 	}
 }

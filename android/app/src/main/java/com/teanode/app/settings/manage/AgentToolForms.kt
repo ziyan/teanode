@@ -105,8 +105,6 @@ fun AgentBrowserScreen(onBack: () -> Unit) {
         SwitchRow(stringResource(R.string.manage_enabled), draft.isEnabled, { isOn -> onChange(draft.copy(isEnabled = isOn)) })
         FooterText(stringResource(R.string.manage_browser_footer))
         FormField(draft.cdpEndpoint, { typed -> onChange(draft.copy(cdpEndpoint = typed)) }, stringResource(R.string.manage_devtools_endpoint), placeholder = "chrome:9222")
-        FormField(draft.idleTimeout, { typed -> onChange(draft.copy(idleTimeout = typed)) }, stringResource(R.string.manage_idle_timeout))
-        FormField(draft.maxContextsText, { typed -> onChange(draft.copy(maxContextsText = SettingsList.digits(typed))) }, stringResource(R.string.manage_contexts_at_once), keyboardType = KeyboardType.Number)
         SwitchRow(stringResource(R.string.manage_attach_tabs), draft.canAttachTabs, { isOn -> onChange(draft.copy(canAttachTabs = isOn)) })
     }
 }

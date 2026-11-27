@@ -1838,8 +1838,6 @@ export const zh: Catalog = {
   'agentSettings.recordingAccurateWords': '录音文字更准确',
   'agentSettings.recordingAccurateWordsDescription':
     '用语音转写模型把每位说话人的发言再转写一遍，并提供来自用户自身数据的名称和术语，使拼写更准确。说话人和时间不变，用户的修改仍然优先。音频会再向用户的代理计费一次。',
-  'agentSettings.retentionRuns': '运行记录保留',
-  'agentSettings.retentionCorrections': '更正记录保留',
   'agent.runKind': '类型',
   'agent.runKinds.triage': '分拣',
   'agent.runKinds.alert': '提醒',
@@ -1927,8 +1925,6 @@ export const zh: Catalog = {
   'agentSettings.browserDescription':
     '运维者在服务器旁运行的无头 Chrome，通过 DevTools 协议连接。每次运行都以全新访客身份开始。',
   'agentSettings.browserEndpoint': 'DevTools 端点',
-  'agentSettings.browserIdleTimeout': '空闲超时',
-  'agentSettings.browserMaxContexts': '同时上下文数',
   'agentSettings.allowPrivate': '助手可以访问的本网络设备',
   'agentSettings.skipCertificates': '无法验证证书的设备',
   'agentSettings.skipCertificatesHint':
@@ -2098,7 +2094,7 @@ export const zh: Catalog = {
   'agentSettings.modelInherit': '与默认相同（分类、摘要和压缩用快速模型）',
   'agentSettings.fewerModels': '收起',
   'agentSettings.addChoice': '添加可供选择的模型…',
-  'agentSettings.limitsDescription': '一个人以及整台服务器每天、每月的用量上限（令牌或金额）；记录和纠正保留多久。',
+  'agentSettings.limitsDescription': '一个人以及整台服务器每天、每月的用量上限（令牌或金额）。',
   'agentSettings.searchDescription': 'web_search 使用的服务。没有它，助手仍可读取给定的网页。',
   'agentSettings.noServers': '没有已连接的服务器。添加一个，让每个助手都能使用它的工具。',
   'agentSettings.authIs': '认证 {auth}',

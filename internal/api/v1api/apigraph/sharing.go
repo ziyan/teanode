@@ -660,10 +660,7 @@ func (self *graph) DeclineShare(ctx context.Context, arguments DeclineShareArgum
 			return false, translateError(err)
 		}
 	case models.ShareKindFinance:
-		// The agent neither reads nor ends what others share of finance.
-		if err := requireFinanceNotAgent(ctx); err != nil {
-			return false, err
-		}
+		// Declining discloses nothing, so the agent may decline too.
 		if err := tx.DeclineFinanceShare(user.ID, shareId); err != nil {
 			return false, translateError(err)
 		}

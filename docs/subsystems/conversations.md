@@ -728,13 +728,13 @@ read back into another conversation.
 
 ## Retention
 
-Once an hour the worker sweeps, using the two retention settings:
+Once an hour the worker sweeps, using two fixed times
+(`config.AgentRunRetention` and `config.AgentCorrectionRetention`):
 
-- `agent.retention.runs`, thirty days by default, removes **run transcripts**
+- thirty days removes **run transcripts**
   and their messages, every **finished job** row, and the agent's **reply
   records**.
-- `agent.retention.corrections`, ninety days by default, removes recorded
-  corrections.
+- ninety days removes recorded corrections.
 - Separately, uploaded files nobody claimed within a day are removed with their
   bytes.
 

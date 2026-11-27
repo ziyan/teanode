@@ -1909,8 +1909,6 @@ export const en = {
   'agentSettings.recordingAccurateWords': 'Accurate words in recordings',
   'agentSettings.recordingAccurateWordsDescription':
     "Transcribe each speaker's turn a second time with the voice transcription model, which is given the names and terms from the person's own data and spells them better. Speakers and times do not change, and a person's corrections still win. The audio is charged a second time to the person's agent.",
-  'agentSettings.retentionRuns': 'Keep run transcripts for',
-  'agentSettings.retentionCorrections': 'Keep corrections for',
   'agent.runKind': 'Kind',
   'agent.runKinds.triage': 'Sorting',
   'agent.runKinds.alert': 'Alert',
@@ -1998,8 +1996,6 @@ export const en = {
   'agentSettings.browserDescription':
     'A headless Chrome the operator runs beside the server, reached over the DevTools protocol. Every run starts as a clean visitor.',
   'agentSettings.browserEndpoint': 'DevTools endpoint',
-  'agentSettings.browserIdleTimeout': 'Idle timeout',
-  'agentSettings.browserMaxContexts': 'Contexts at once',
   'agentSettings.allowPrivate': 'Equipment on this network the agent may reach',
   'agentSettings.skipCertificates': 'Equipment whose certificate cannot be checked',
   'agentSettings.skipCertificatesHint':
@@ -2175,7 +2171,7 @@ export const en = {
   'agentSettings.fewerModels': 'Fewer choices',
   'agentSettings.addChoice': 'Add a model people may pick…',
   'agentSettings.limitsDescription':
-    'What one person, and the whole server, may spend in a day and a month, in tokens or in money; how long transcripts and corrections are kept.',
+    'What one person, and the whole server, may spend in a day and a month, in tokens or in money.',
   'agentSettings.searchDescription':
     'The service web_search asks. Without one the agent can still fetch a page it is given.',
   'agentSettings.noServers': 'No connected servers. Add one to give every agent its tools.',

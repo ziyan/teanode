@@ -528,3 +528,17 @@ func TestAMarkedCommandLineRequestIsTheAgents(t *testing.T) {
 		t.Errorf("an unmarked request is audited as %q", kind)
 	}
 }
+
+// Ending a share of one account discloses nothing, so the owner's agent may.
+func TestTheOwnersAgentCanEndAnAccountShare(t *testing.T) {
+	world := newFinanceShareWorld(t)
+	share := world.shareAsTap(t, world.checkingID, world.ben.ID, nil, "transactions")
+	ownerAgent := &agentOperations{graph: world.graph, user: world.ada, permissions: &models.EffectivePermissions{Everywhere: []models.Permission{models.PermissionAgentUse}}}
+	var ended map[string]any
+	if err := ownerAgent.Execute(t.Context(), unshareFinanceQuery, map[string]any{"shareId": share["id"]}, &ended); err != nil {
+		t.Fatalf("the owner's agent could not end the share: %v", err)
+	}
+	if ended["UnshareFinanceAccount"] != true {
+		t.Errorf("the share was not ended: %v", ended)
+	}
+}

@@ -122,7 +122,6 @@ export type Agent = {
     monthlyCostPerServer: number
     monthlyTokensPerServer: number
   }
-  retention: { runs: string; corrections: string }
   currency: string
   search: { kind: string; hasApiKey: boolean }
   tools: { disabled: string[]; confirm: string[]; catalog: AgentTool[] }
@@ -141,8 +140,6 @@ export type Agent = {
     cdpEndpoint: string
     attachTabs: boolean
     allowPrivateAddresses: string[]
-    idleTimeout: string
-    maxContexts: number
   }
   mcpServers: AgentMCPServer[]
   finance: {
@@ -166,13 +163,12 @@ export const AGENT_SELECTION = `agent {
   models { default fast quick transcription embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer }
-  retention { runs corrections }
   currency
   search { kind hasApiKey }
   tools { disabled confirm catalog { name family risk description confirms core actions } }
   voice { enabled provider transcriptionModel silenceMS speechModel speechVoice askModel }
   recording { isLiveTranscriptionEnabled isAccurateWordsEnabled }
-  browser { enabled cdpEndpoint attachTabs allowPrivateAddresses idleTimeout maxContexts }
+  browser { enabled cdpEndpoint attachTabs allowPrivateAddresses }
   mcpServers { name transport effectiveTransport url command args envNames workingDir auth effectiveAuth hasAuthorization oauthClientId hasOauthClientSecret oauthScopes oauthAuthorizationUrl oauthTokenUrl oauthRedirect headless location readOnly disabled timeout enabled }
   finance { offeredProviders plaid { environment clientId hasSecret countryCodes products } }
   works families kinds
@@ -1155,14 +1151,12 @@ export function LimitsForm({ settings, onSaved }: Props) {
   const { t } = useTranslation()
   const { busy, problem, saved, save } = useSaver(onSaved)
   const [limits, setLimits] = useState(limitFields(settings))
-  const [retention, setRetention] = useState(settings.retention)
   const [currency, setCurrency] = useState(settings.currency || '')
   useEffect(() => {
     setLimits(limitFields(settings))
-    setRetention(settings.retention)
     setCurrency(settings.currency || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(settings.limits), JSON.stringify(settings.retention), settings.currency])
+  }, [JSON.stringify(settings.limits), settings.currency])
 
   const number = (value: string) => Number(value) || 0
   const numeric = (field: keyof typeof limits) => (
@@ -1189,7 +1183,6 @@ export function LimitsForm({ settings, onSaved }: Props) {
               dailyCostPerAgent: number(limits.dailyCostPerAgent),
               monthlyCostPerServer: number(limits.monthlyCostPerServer),
             },
-            retention,
             currency,
           },
         })
@@ -1207,22 +1200,6 @@ export function LimitsForm({ settings, onSaved }: Props) {
             maxLength={3}
             placeholder="USD"
             onChange={(event) => setCurrency(event.target.value.toUpperCase())}
-          />
-        </label>
-      </div>
-      <div className="row">
-        <label className="shrink">
-          <span>{t('agentSettings.retentionRuns')}</span>
-          <input
-            value={retention.runs}
-            onChange={(event) => setRetention({ ...retention, runs: event.target.value })}
-          />
-        </label>
-        <label className="shrink">
-          <span>{t('agentSettings.retentionCorrections')}</span>
-          <input
-            value={retention.corrections}
-            onChange={(event) => setRetention({ ...retention, corrections: event.target.value })}
           />
         </label>
       </div>
@@ -1656,7 +1633,6 @@ function browserFields(settings: Agent) {
   return {
     ...settings.browser,
     allowPrivateAddresses: list(settings.browser.allowPrivateAddresses),
-    maxContexts: String(settings.browser.maxContexts),
   }
 }
 
@@ -1681,8 +1657,6 @@ function BrowserForm({ settings, onSaved }: Props) {
               cdpEndpoint: browser.cdpEndpoint,
               attachTabs: browser.attachTabs,
               allowPrivateAddresses: split(browser.allowPrivateAddresses),
-              idleTimeout: browser.idleTimeout,
-              maxContexts: Number(browser.maxContexts) || 0,
             },
           },
         })
@@ -1705,21 +1679,6 @@ function BrowserForm({ settings, onSaved }: Props) {
             value={browser.cdpEndpoint}
             placeholder="chrome:9222"
             onChange={(event) => setBrowser({ ...browser, cdpEndpoint: event.target.value })}
-          />
-        </label>
-        <label className="shrink">
-          <span>{t('agentSettings.browserIdleTimeout')}</span>
-          <input
-            value={browser.idleTimeout}
-            onChange={(event) => setBrowser({ ...browser, idleTimeout: event.target.value })}
-          />
-        </label>
-        <label className="shrink">
-          <span>{t('agentSettings.browserMaxContexts')}</span>
-          <input
-            value={browser.maxContexts}
-            inputMode="numeric"
-            onChange={(event) => setBrowser({ ...browser, maxContexts: event.target.value })}
           />
         </label>
       </div>

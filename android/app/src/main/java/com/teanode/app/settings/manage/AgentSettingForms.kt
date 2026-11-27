@@ -286,7 +286,7 @@ private fun limitLabel(limitName: String): String = stringResource(
     },
 )
 
-/** The caps on what one person and the whole server may spend, in tokens and in money, and how long transcripts and corrections are kept. */
+/** The caps on what one person and the whole server may spend, in tokens and in money. */
 @Composable
 fun AgentLimitsScreen(onBack: () -> Unit) {
     AgentSettingsFormScreen(stringResource(R.string.manage_limits), onBack, { settings -> AgentLimitsDraft.of(settings) }, { draft -> draft.agentParameters }) { draft, onChange, _ ->
@@ -302,7 +302,5 @@ fun AgentLimitsScreen(onBack: () -> Unit) {
                 FormField(draft.currency, { typed -> onChange(draft.copy(currency = typed.uppercase().take(3))) }, stringResource(R.string.manage_currency), placeholder = "USD")
             }
         }
-        FormField(draft.retention.runs, { typed -> onChange(draft.copy(retention = draft.retention.copy(runs = typed))) }, stringResource(R.string.manage_keep_runs))
-        FormField(draft.retention.corrections, { typed -> onChange(draft.copy(retention = draft.retention.copy(corrections = typed))) }, stringResource(R.string.manage_keep_corrections))
     }
 }

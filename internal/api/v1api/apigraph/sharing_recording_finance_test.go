@@ -161,7 +161,7 @@ func TestTwoSharesOfOneKindAndLevelAreEachToldToWhoTheyReach(test *testing.T) {
 }
 
 // What others share of finance is not the agent's to read, so the person's
-// agent is shown neither side of it, and cannot decline it; recordings it can.
+// agent is shown neither side of it; declining discloses nothing, so it may.
 func TestListSharingLeavesFinanceOutForTheAgent(test *testing.T) {
 	world := newSharingWorld(test)
 	recordingId, financeAccountId := world.seedRecordingAndFinance(test)
@@ -188,12 +188,11 @@ func TestListSharingLeavesFinanceOutForTheAgent(test *testing.T) {
 	benAgent := &agentOperations{graph: world.graph, user: world.ben, permissions: &models.EffectivePermissions{Everywhere: []models.Permission{
 		models.PermissionAgentUse, models.PermissionCircleUse}}}
 	var declined map[string]any
-	err := benAgent.Execute(test.Context(), `mutation ($shareKind: String!, $shareId: String!) { DeclineShare(shareKind: $shareKind, shareId: $shareId) }`,
-		map[string]any{"shareKind": "finance", "shareId": shared["id"]}, &declined)
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "not found") {
-		test.Errorf("the agent declined a finance share: %v %v", declined, err)
+	if err := benAgent.Execute(test.Context(), `mutation ($shareKind: String!, $shareId: String!) { DeclineShare(shareKind: $shareKind, shareId: $shareId) }`,
+		map[string]any{"shareKind": "finance", "shareId": shared["id"]}, &declined); err != nil {
+		test.Fatalf("the agent could not decline a finance share: %v", err)
 	}
-	if _, received := world.sharing(test, world.ben); fmt.Sprint(kindsOf(received)) != "[recording finance]" {
+	if _, received := world.sharing(test, world.ben); fmt.Sprint(kindsOf(received)) != "[recording]" {
 		test.Errorf("ben receives %v", kindsOf(received))
 	}
 }
