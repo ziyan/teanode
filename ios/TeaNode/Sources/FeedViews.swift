@@ -1007,7 +1007,7 @@ struct FeedCard: View {
             Button {
                 onShowAnsweredCard?()
             } label: {
-                Text("Show the Card")
+                Text("Show the card")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
                     .frame(minHeight: 44)
