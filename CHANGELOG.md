@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.238.0] - 2026-11-27
+
+### Added
+
+- A list of the dismissed feed cards on the dashboard, both phone apps and the command line. The cards work as in the feed, and a swipe puts one back. (#792)
+
+### Changed
+
+- A feed card answered a day ago moves to the dismissed cards on its own, and a card the agent withdraws is removed rather than dismissed. (#792)
+
 ## [0.237.0] - 2026-11-27
 
 ### Added
