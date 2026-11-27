@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.239.0] - 2026-11-27
+
+### Changed
+
+- No hidden limit holds back the agent's work any more: no round caps, no shares of the day, and no stall after a goal's turns. The daily and monthly money limits are what bound it. (#798)
+
+### Removed
+
+- The Daily brief page and the look around settings. Both are ordinary goals in the Goals list now. (#798)
+- Quiet hours and the daily cap on alerts. The phone's Focus decides when it is quiet. (#798)
+
 ## [0.238.0] - 2026-11-27
 
 ### Added
