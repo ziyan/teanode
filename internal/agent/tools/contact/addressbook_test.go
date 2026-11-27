@@ -235,3 +235,26 @@ func TestAnActionOnAContactNamesTheBookItWasCheckedIn(test *testing.T) {
 		test.Errorf("get looks in the book named: %v", variables)
 	}
 }
+
+// A list reads a page of the book and says where to read on, with the whole
+// book's size.
+func TestAListPagesTheBook(test *testing.T) {
+	operations := &fakeBookOperations{answers: map[string]string{
+		"ListAddressBooks": grantedBook,
+		"ListContacts":     `[{"id":"contact-one","name":"One"},{"id":"contact-two","name":"Two"},{"id":"contact-three","name":"Three"}]`,
+	}}
+	result, err := callContactBook(test, operations, `{"action":"list","limit":2}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(result.Content, `"kept":3`) || !strings.Contains(result.Content, `"next_offset":2`) || strings.Contains(result.Content, "contact-three") {
+		test.Fatalf("the first page is wrong:\n%s", result.Content)
+	}
+	result, err = callContactBook(test, operations, `{"action":"list","limit":2,"offset":2}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if strings.Contains(result.Content, "next_offset") || !strings.Contains(result.Content, "contact-three") {
+		test.Fatalf("the last page is wrong:\n%s", result.Content)
+	}
+}
