@@ -195,9 +195,12 @@ The server holds a few of them itself, in `NormalizeFeedItem`:
   chart text, layout text, captions and stack title are rewritten: a spaced dash
   becomes a comma, an unspaced one a hyphen, a spaced dash at a line's start is a
   list bullet and one at the edge of the text goes.
-- **Cut, not refused.** A title, label or caption a little too long is cut with
-  an ellipsis, and the answer's `postNotes` lists the fields cut ("title was cut
-  to 200 characters"). A change does not list again what an earlier post cut.
+- **Whole titles.** A card's title and body, and a stack's title, are kept
+  whole: the screens wrap them. An alert's card takes the alert's first
+  sentence as its title and the rest as its body.
+- **Cut, not refused.** A label or caption a little too long is cut with an
+  ellipsis, and the answer's `postNotes` lists the fields cut ("factLabel was
+  cut to 80 characters"). A change does not list again what an earlier post cut.
 - **An update keeps what it leaves out.** `PostAgentFeedItem` with a `feedItemId`
   writes only the fields it was given: title, kind, body, choices, media, charts
   and layout stay as they were.
