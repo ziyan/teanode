@@ -13,7 +13,7 @@ import TeaNodeKit
 
 /// ServerWords is how these screens say times, amounts and the server's
 /// fixed words.
-private enum ServerWords {
+enum ServerWords {
     static func relative(_ timeText: String?) -> String {
         ServerTime.date(timeText)?.formatted(.relative(presentation: .named)) ?? ""
     }
