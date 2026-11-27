@@ -1022,7 +1022,7 @@ type AgentMCPServer struct {
 	// Disabled names tools never offered.
 	Disabled []string `yaml:"disabled,omitempty"`
 
-	// Timeout bounds one call.
+	// Timeout bounds one call; zero leaves a call unbounded.
 	Timeout Duration `yaml:"timeout,omitempty"`
 
 	// Enabled keeps the declaration while switching the server off. Unset

@@ -46,6 +46,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/recording"
 	_ "github.com/ziyan/teanode/internal/agent/tools/reminder"
 	_ "github.com/ziyan/teanode/internal/agent/tools/replyqueue"
+	_ "github.com/ziyan/teanode/internal/agent/tools/resultmore"
 	_ "github.com/ziyan/teanode/internal/agent/tools/rule"
 	_ "github.com/ziyan/teanode/internal/agent/tools/searcheverything"
 	_ "github.com/ziyan/teanode/internal/agent/tools/server"

@@ -353,7 +353,7 @@ func (self *openAI) Chat(ctx context.Context, request *ChatRequest) (*ChatRespon
 			result.Message.ToolCalls = textual
 		}
 	}
-	if len(result.Message.ToolCalls) > 0 {
+	if len(result.Message.ToolCalls) > 0 && result.FinishReason != "length" {
 		result.FinishReason = "tool_calls"
 	}
 	if response.Usage != nil {
@@ -528,7 +528,7 @@ func (self *openAI) ChatStream(ctx context.Context, request *ChatRequest) (<-cha
 				return
 			}
 		}
-		if len(response.Message.ToolCalls) > 0 {
+		if len(response.Message.ToolCalls) > 0 && response.FinishReason != "length" {
 			response.FinishReason = "tool_calls"
 		}
 		events <- StreamEvent{Kind: StreamDone, Response: response}

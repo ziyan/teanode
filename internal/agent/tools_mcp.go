@@ -46,9 +46,11 @@ const (
 	// use.
 	connectionSecretLabel = "teanode agent: connected server credentials"
 
-	// remoteResultCharacters bounds what a remote tool's answer reaches
-	// the model as.
-	remoteResultCharacters = 16000
+	// discoveryTimeout ends the handshake and the tool list of a server over
+	// HTTP that accepted the connection and never answered, which would
+	// otherwise hold the server's entry for every turn that wants its tools. It
+	// bounds no tool call.
+	discoveryTimeout = time.Minute
 )
 
 // connectedServer is one server as one person reaches it.
@@ -109,10 +111,9 @@ func (self *Agent) OAuthSettings(server *config.AgentMCPServer, redirectURL stri
 
 // transportFor opens the transport for a server as a person.
 func (self *Agent) transportFor(ctx context.Context, server *config.AgentMCPServer, agentId, computerName string) (mcp.Transport, error) {
+	// Zero is no bound on a call: a connected server's tool may work as long
+	// as it needs. Only a timeout the person set on the server applies.
 	timeout := server.Timeout.Duration()
-	if timeout <= 0 {
-		timeout = 60 * time.Second
-	}
 	if server.ResolvedTransport() == config.AgentMCPTransportStdio {
 		environment := map[string]string{}
 		for _, entry := range server.Env {
@@ -394,19 +395,25 @@ func (self *Agent) connectionThrough(ctx context.Context, server *config.AgentMC
 	if entry.failures >= discoveryFailures && time.Since(entry.discoveredAt) < discoveryInterval {
 		return nil, entry.err
 	}
+	handshakeContext := ctx
+	if server.ResolvedTransport() != config.AgentMCPTransportStdio {
+		var cancel context.CancelFunc
+		handshakeContext, cancel = context.WithTimeout(ctx, discoveryTimeout)
+		defer cancel()
+	}
 	if entry.client == nil {
 		transport, err := self.transportFor(ctx, server, agentId, computerName)
 		if err != nil {
 			return nil, self.discoveryFailed(entry, err)
 		}
 		client := mcp.NewClient(transport)
-		if _, err := client.Initialize(ctx, "TeaNode", version.Version()); err != nil {
+		if _, err := client.Initialize(handshakeContext, "TeaNode", version.Version()); err != nil {
 			_ = client.Close()
 			return nil, self.discoveryFailed(entry, err)
 		}
 		entry.client = client
 	}
-	tools, err := entry.client.ListTools(ctx)
+	tools, err := entry.client.ListTools(handshakeContext)
 	if err != nil {
 		_ = entry.client.Close()
 		entry.client = nil
@@ -585,9 +592,6 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string) []*Tool {
 			}
 			name := "mcp__" + server.Name + "__" + remoteTool.Name
 			description := strings.TrimSpace(remoteTool.Description)
-			if len(description) > 600 {
-				description = cutRunes(description, 600) + "…"
-			}
 			tools = append(tools, &Tool{
 				Name:       name,
 				Family:     FamilyServers,
@@ -613,9 +617,6 @@ func (self *Agent) remoteTools(ctx context.Context, agentId string) []*Tool {
 // the arguments.
 func remoteCall(serverName string, remoteTool mcp.Tool) func(json.RawMessage) string {
 	description := strings.TrimSpace(remoteTool.Description)
-	if len(description) > 400 {
-		description = cutRunes(description, 400) + "…"
-	}
 	return func(arguments json.RawMessage) string {
 		return fmt.Sprintf("the tool %s of the connected service %s, which describes itself as: %s\narguments: %s", remoteTool.Name, serverName, description, string(arguments))
 	}
@@ -674,12 +675,15 @@ func (self *Agent) remoteRunner(server *config.AgentMCPServer, toolName string, 
 		if err != nil {
 			return nil, fmt.Errorf("%s is not answering: %w", server.Name, err)
 		}
-		timeout := server.Timeout.Duration()
-		if timeout <= 0 {
-			timeout = 60 * time.Second
+		// No bound unless the person set a timeout on the server: the call
+		// ends when the server answers, when its connection goes (the
+		// transport notices a dead one), or when the person stops the turn.
+		callContext := ctx
+		if timeout := server.Timeout.Duration(); timeout > 0 {
+			var cancel context.CancelFunc
+			callContext, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
 		}
-		callContext, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
 		entry.mutex.Lock()
 		client := entry.client
 		entry.mutex.Unlock()
@@ -695,9 +699,6 @@ func (self *Agent) remoteRunner(server *config.AgentMCPServer, toolName string, 
 			return nil, err
 		}
 		text := strings.TrimSpace(result.Text())
-		if len(text) > remoteResultCharacters {
-			text = text[:remoteResultCharacters] + "\n[cut here: the answer goes on]"
-		}
 		if result.IsError {
 			return &Result{Content: "the server answered with an error: " + text, Untrusted: true, Note: server.Name + ": error"}, nil
 		}

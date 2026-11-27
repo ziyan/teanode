@@ -56,19 +56,13 @@ type besideProvider struct {
 }
 
 // besideRound is what one round of the turn asked for. A deepened turn is
-// given room to reason (see roundTokens), which is how a test sees the
-// effort a round was asked with: a chat completion does not carry it.
+// asked for: the model, the tools, and whether its prompt carried the research
+// procedure, which is how a test sees the depth a round was given.
 type besideRound struct {
 	model         string
-	maximumTokens int
 	toolNames     []string
 	isResearching bool
 }
-
-const (
-	besideDefaultTokens = 4000
-	besideDeepTokens    = 32000
-)
 
 func newBesideProvider(depth string) *besideProvider {
 	return &besideProvider{depth: depth, release: make(chan struct{}), firstRoundSeen: make(chan struct{}), judgeAsked: make(chan struct{}), judgeAnswered: make(chan struct{})}
@@ -98,11 +92,9 @@ func (self *besideProvider) handle(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	var body struct {
-		Model               string `json:"model"`
-		Stream              bool   `json:"stream"`
-		MaxTokens           int    `json:"max_tokens"`
-		MaxCompletionTokens int    `json:"max_completion_tokens"`
-		Messages            []struct {
+		Model    string `json:"model"`
+		Stream   bool   `json:"stream"`
+		Messages []struct {
 			Role    string `json:"role"`
 			Content any    `json:"content"`
 		} `json:"messages"`
@@ -136,7 +128,7 @@ func (self *besideProvider) handle(writer http.ResponseWriter, request *http.Req
 		_, _ = writer.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":` + string(content) + `},"finish_reason":"stop"}],"usage":{}}`))
 		return
 	}
-	round := besideRound{model: body.Model, maximumTokens: max(body.MaxTokens, body.MaxCompletionTokens)}
+	round := besideRound{model: body.Model}
 	for _, tool := range body.Tools {
 		round.toolNames = append(round.toolNames, tool.Function.Name)
 	}
@@ -312,11 +304,11 @@ func TestADigJudgedBesideTheFirstRoundMovesTheRestToTheAskModel(t *testing.T) {
 		t.Fatalf("rounds %+v, want quick then thinker", rounds)
 	}
 	quick, thinker := rounds[0], rounds[1]
-	if quick.maximumTokens != besideDefaultTokens || quick.isResearching {
+	if quick.isResearching {
 		t.Errorf("the first round was already deepened: %+v", quick)
 	}
-	if thinker.maximumTokens != besideDeepTokens || turn.settings.Effort != llm.EffortHigh {
-		t.Errorf("the ask model was not given the deep effort: %d tokens, effort %q", thinker.maximumTokens, turn.settings.Effort)
+	if turn.settings.Effort != llm.EffortHigh {
+		t.Errorf("the ask model was not given the deep effort: turn effort %q", turn.settings.Effort)
 	}
 	if !thinker.isResearching {
 		t.Errorf("the ask model was not given the research procedure")
@@ -356,7 +348,7 @@ func TestAnAnswerOrLookJudgedBesideTheFirstRoundLeavesTheQuickModel(t *testing.T
 			t.Fatalf("%s: rounds %+v", depth, rounds)
 		}
 		for _, round := range rounds {
-			if round.model != "quick" || round.maximumTokens != besideDefaultTokens || round.isResearching {
+			if round.model != "quick" || round.isResearching {
 				t.Errorf("%s: the turn left the quick model or was deepened: %+v", depth, round)
 			}
 		}
@@ -382,7 +374,7 @@ func TestATurnNotOnTheQuickModelIsJudgedFirst(t *testing.T) {
 	if answered < 0 || round < 0 || answered > round {
 		t.Fatalf("the judge did not answer before the first round: %v", events)
 	}
-	if first := provider.roundsSeen()[0]; first.model != "thinker" || first.maximumTokens != besideDeepTokens || !first.isResearching {
+	if first := provider.roundsSeen()[0]; first.model != "thinker" || !first.isResearching {
 		t.Errorf("the first round was not deepened by the judgement: %+v", first)
 	}
 }

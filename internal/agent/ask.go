@@ -633,13 +633,6 @@ const (
 	// the answer, and the estimate is rough.
 	askHistoryWindowShare = 2
 
-	// askReadThenAnswerTokens is the history at which a read-then-answer
-	// run is told to answer. Lower than the compaction line, because the
-	// history is not the whole request: the prompt and the tool
-	// definitions ride beside it, and a run that answered at thirty
-	// thousand sent thirty-three to a window of thirty-two.
-	askReadThenAnswerTokens = 24000
-
 	// policyRefusalRetryAfter is how long a round the model refused as
 	// against its policy waits before it is asked once more.
 	policyRefusalRetryAfter = 2 * time.Second
@@ -1510,7 +1503,13 @@ func (self *AskRun) turn() error {
 				continue
 			}
 			if settings.Allow != nil && !settings.Allow[tool.Name] && (!settings.Headless || !tool.Headless) {
-				continue
+				// Reading on in a long answer goes with any tool that can give
+				// one: a run held to named tools may read on whenever it has
+				// any, and a run with none has no answer to read on in. A member turn is
+				// held to its list, as it is everywhere.
+				if tool.Name != tools.ResultMoreName || len(settings.Allow) == 0 || settings.isMemberTurn() {
+					continue
+				}
 			}
 			kept = append(kept, tool)
 		}
@@ -1590,7 +1589,7 @@ func (self *AskRun) turn() error {
 		// Past the soft limit the conversation is compacted once it is quiet
 		// (compact_idle.go); only past the hard one does the person wait on
 		// it here.
-		if settings.ReadThenAnswer && historyTokens > askReadThenAnswerTokens {
+		if settings.ReadThenAnswer && historyTokens > readThenAnswerLimit(contextLengthFor(historyTokens)) && contextLengthFor(historyTokens) > 0 {
 			answerNow = true
 		} else if settings.ReadThenAnswer && historyTokens > historyLimitFor(historyTokens) {
 			answerNow = true
@@ -1668,7 +1667,7 @@ func (self *AskRun) turn() error {
 			toolChoice = "none"
 		}
 
-		response, err := self.chat(ctx, provider, &llm.ChatRequest{Model: model, Messages: messages, Tools: definitions, MaxTokens: roundTokens(settings.Effort), ToolChoice: toolChoice, ReasoningEffort: settings.Effort, CacheKey: settings.Conversation.ID})
+		response, err := self.chat(ctx, provider, &llm.ChatRequest{Model: model, Messages: messages, Tools: definitions, ToolChoice: toolChoice, ReasoningEffort: settings.Effort, CacheKey: settings.Conversation.ID})
 		answeredAt := time.Now()
 		if response != nil {
 			log.Infof("round %d of %q's turn: prompt %s, recall %s, overlays %s, first words %s, answer %s; %d tokens unread from the cache, %d read from it",
@@ -1721,6 +1720,16 @@ func (self *AskRun) turn() error {
 		}
 		answer := response.Message
 		answer.Role = llm.RoleAssistant
+		// A round the provider stopped at its output limit for one answer is
+		// unfinished, and so is its last tool call: arguments cut off in the
+		// middle are not run, and not kept as calls, because a call in the
+		// history needs an answer of its own to be sent again.
+		isCutAtLimit := response.FinishReason == "length"
+		cutCallCount := 0
+		if isCutAtLimit {
+			cutCallCount = len(answer.ToolCalls)
+			answer.ToolCalls = nil
+		}
 		history = append(history, answer)
 		answerUsage := &models.AgentUsageNote{Model: modelName, Kind: usageKind, PromptTokens: response.Usage.PromptTokens, CompletionTokens: response.Usage.CompletionTokens,
 			CacheReadTokens: response.Usage.CacheReadTokens, CacheWriteTokens: response.Usage.CacheWriteTokens,
@@ -1776,6 +1785,12 @@ func (self *AskRun) turn() error {
 		self.announceChatAnswer(posted)
 		if strings.TrimSpace(answer.Content) != "" {
 			self.emit(Event{Kind: EventMessage, Text: answer.Content})
+		}
+		if isCutAtLimit && (maximumRounds <= 0 || round < maximumRounds-1) {
+			log.Warningf("round %d of %q's turn on %q was cut at the provider's output limit for one answer, after %d characters and with %d tool calls dropped; asking the model to continue",
+				round+1, settings.Owner.Username, modelName, len(answer.Content), cutCallCount)
+			history = append(history, llm.ChatMessage{Role: llm.RoleUser, Content: cutAtLimitNotice(cutCallCount)})
+			continue
 		}
 		if len(answer.ToolCalls) == 0 && textualToolCall(answer.Content) && (maximumRounds <= 0 || round < maximumRounds-1) {
 			// A tool call written out as words is one the server could not
@@ -1900,6 +1915,16 @@ func (self *AskRun) turn() error {
 // compacted when the provider refuses it.
 func historyLimit(contextLength int) int {
 	return max(askHistoryTokens, contextLength/askHistoryWindowShare)
+}
+
+// readThenAnswerLimit is the history at which a read-then-answer run is told
+// to answer, for a model whose window is contextLength tokens: three quarters
+// of the window, as the history is not the whole request. The prompt and the
+// tool definitions ride beside it, and a run that answered at thirty thousand
+// tokens sent thirty-three to a window of thirty-two. Where the window is not
+// known there is no such line, and the run is told to answer at historyLimit.
+func readThenAnswerLimit(contextLength int) int {
+	return contextLength - contextLength/4
 }
 
 // isSpokenSurface says a turn was spoken, in the drawer's voice mode or on
@@ -2323,19 +2348,13 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 	if err != nil {
 		// A tool's failure often quotes something from outside -- what a
 		// service answered, what a command printed on its error stream --
-		// so it is bounded like a result and marked like one. Unbounded
-		// and unmarked, a hostile endpoint could answer with instructions
-		// and have them read as the tool's own words.
-		said := err.Error()
-		if len(said) > self.resultCharacters() {
-			said = said[:self.resultCharacters()] + "\n[cut here: it went on]"
-		}
+		// so it is marked like a result. Unmarked, a hostile endpoint could
+		// answer with instructions and have them read as the tool's own
+		// words. A long one is paged like a result, not cut.
+		said := tools.PageResult(ctx, self, err.Error(), true, true)
 		return toolOutcome{content: self.toolAnswer(toolCall, fenced(fmt.Sprintf(`{"error": %q}`, said)))}
 	}
-	content := result.Content
-	if len(content) > self.resultCharacters() {
-		content = content[:self.resultCharacters()] + "\n[cut here: the result goes on]"
-	}
+	content := tools.PageResult(ctx, self, result.Content, result.Untrusted, false)
 	if result.Untrusted {
 		content = fenced(content)
 	}
@@ -3223,17 +3242,14 @@ func calledIn(history []llm.ChatMessage) map[string]bool {
 	return called
 }
 
-// roundTokens is how much one round may write. Reasoning is written too,
-// and counted against the same bound, so a round that thinks hard is
-// given room to think and still answer.
-func roundTokens(effort string) int {
-	switch effort {
-	case llm.EffortLow:
-		return 8000
-	case llm.EffortMedium:
-		return 16000
-	case llm.EffortHigh:
-		return 32000
+// cutAtLimitNotice is what the model is told when the provider stopped its
+// answer at the most it writes in one answer: the answer so far is kept, and
+// it goes on from there. A tool call that was being written is dropped
+// without being run, since its arguments are cut off.
+func cutAtLimitNotice(cutCallCount int) string {
+	notice := "Your last answer was cut off at the provider's limit on how much a model writes in one answer, before you finished. Carry on from exactly where it stopped, without repeating what you already wrote."
+	if cutCallCount > 0 {
+		notice += fmt.Sprintf(" The %d tool call(s) in it were not run, because their arguments were cut off. Make them again, with less in each call or in smaller steps.", cutCallCount)
 	}
-	return 4000
+	return notice
 }

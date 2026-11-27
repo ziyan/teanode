@@ -266,3 +266,28 @@ func (self *Server) resultMore(ctx context.Context, arguments []byte) (string, b
 	}
 	return self.page(resultId, result, offset), result.isError
 }
+
+// Hold keeps a result for holder and returns the id it is read back by with
+// Find, or "" when it is larger than one holder may hold, there is no
+// database, or the database could not hold it. It is for a caller that pages
+// a long result itself, as the agent does for its own tools.
+func (self *ResultStore) Hold(ctx context.Context, holder, text string, isUntrusted, isError bool) string {
+	return self.keep(ctx, &heldResult{holder: holder, text: text, isUntrusted: isUntrusted, isError: isError})
+}
+
+// Find is the text held under id for holder, whether it came from outside,
+// and whether it was a failure. ok is false for an id that is not held, has
+// expired, or is another holder's. The error is only for a database that
+// could not be asked.
+func (self *ResultStore) Find(ctx context.Context, holder, id string) (text string, isUntrusted, isError, ok bool, err error) {
+	found, ok, err := self.find(ctx, holder, id)
+	if err != nil || !ok {
+		return "", false, false, false, err
+	}
+	return found.text, found.isUntrusted, found.isError, true, nil
+}
+
+// PageEnd is where a page of text that starts at offset ends: within budget
+// bytes, never inside a character, and after a line break when one falls in
+// the second half of the page.
+func PageEnd(text string, offset, budget int) int { return pageEnd(text, offset, budget) }
