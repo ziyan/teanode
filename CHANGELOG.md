@@ -6,6 +6,22 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.236.4] - 2026-11-27
+
+### Fixed
+
+- Phone notifications no longer show Markdown marks such as `#`, `-`, `|` or `_`. (#793)
+
+## [0.236.3] - 2026-11-27
+
+### Changed
+
+- A long conversation is now compacted while it is quiet. A reply no longer waits on the note, and each round sends far less than half the model's window. (#794)
+
+### Fixed
+
+- A turn on the ChatGPT plan no longer fails when one of its tools answers with nothing. (#797)
+
 ## [0.236.2] - 2026-11-25
 
 ### Fixed
