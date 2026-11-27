@@ -1,6 +1,9 @@
 package push
 
-import "testing"
+import (
+	"crypto/rand"
+	"testing"
+)
 
 // A language tag is reduced to a language a notification is written in, and
 // anything else is English.
@@ -40,5 +43,32 @@ func TestAContentIsWordedForOnePhoneOnACopy(t *testing.T) {
 	}
 	if english := content.ForLanguage(LanguageEnglish); english.Title != "Hello Ada" || english.Buttons[0].Label != "Reply" {
 		t.Errorf("in English: %+v", english)
+	}
+}
+
+// A notification reaches the sealed payload as plain words, after a Wording
+// has rewritten it too: a Wording that writes Markdown is converted as well.
+func TestSealedContentIsPlainText(t *testing.T) {
+	key := make([]byte, PhoneKeyBytes)
+	_, _ = rand.Read(key)
+	content := &Content{
+		NotificationKind: "test",
+		Title:            "## **Garden** plan\nsecond line",
+		Body:             "- water the *ferns*\n- see [the list](https://example.org/x)",
+		Buttons:          []Button{{Label: "**Yes**, `now`", ButtonAction: "answer:1"}},
+		Wording: func(worded *Content, language string) {
+			worded.Body += "\n> ~~late~~ soon"
+		},
+	}
+	delivery, err := EncryptContent(key, content.ForLanguage(LanguageEnglish))
+	if err != nil {
+		t.Fatalf("EncryptContent: %s", err)
+	}
+	opened, err := DecryptContent(key, delivery.Sealed)
+	if err != nil {
+		t.Fatalf("DecryptContent: %s", err)
+	}
+	if opened.Title != "Garden plan second line" || opened.Body != "water the ferns\nsee the list\nlate soon" || opened.Buttons[0].Label != "Yes, now" {
+		t.Errorf("the phone was sent %q, %q, %q", opened.Title, opened.Body, opened.Buttons[0].Label)
 	}
 }

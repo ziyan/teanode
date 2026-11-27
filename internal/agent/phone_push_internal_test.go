@@ -493,3 +493,26 @@ func TestTheOwnTurnAnswerOfAPrivateTurnIsNotPrinted(t *testing.T) {
 		t.Errorf("the phone was sent %q, want the private answer as the marker and the other whole", bodies)
 	}
 }
+
+// A card whose title and body are Markdown reaches the phone as plain words,
+// however it was composed.
+func TestACardWithMarkdownReachesThePhoneAsPlainWords(t *testing.T) {
+	fixture := newPhoneFixture(t)
+	err := fixture.worker.NotifyPhone(context.Background(), fixture.phone, &push.Content{
+		NotificationKind: "test",
+		Title:            "# **Garden** plan",
+		Body:             "| Plant | Water |\n|---|---|\n| ferns | daily |\n\n- *check* the [shed](https://example.org/s)",
+		Buttons:          []push.Button{{Label: "__Do it__", ButtonAction: "answer:1"}},
+	})
+	if err != nil {
+		t.Fatalf("NotifyPhone: %s", err)
+	}
+	sent := fixture.relay.to("sealed:a-registration")
+	if len(sent) != 1 {
+		t.Fatalf("the phone was sent %d notifications, not one", len(sent))
+	}
+	content := fixture.read(t, sent[0])
+	if content.Title != "Garden plan" || content.Body != "Plant · Water\nferns · daily\n\ncheck the shed" || content.Buttons[0].Label != "Do it" {
+		t.Errorf("the phone was told %q, %q, %q", content.Title, content.Body, content.Buttons[0].Label)
+	}
+}
