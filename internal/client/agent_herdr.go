@@ -70,6 +70,7 @@ type AgentHerdrRead struct {
 	HerdrSession *AgentHerdrSession `json:"herdrSession"`
 	Turns        []*AgentHerdrTurn  `json:"turns"`
 	IsTruncated  bool               `json:"isTruncated"`
+	NextOffset   int                `json:"nextOffset"`
 }
 
 // AgentHerdrSubagent is one agent a session started, or one an agent
@@ -96,6 +97,8 @@ type AgentHerdrSubagents struct {
 	RequestStartedAt *time.Time            `json:"requestStartedAt"`
 	Subagents        []*AgentHerdrSubagent `json:"subagents"`
 	IsTruncated      bool                  `json:"isTruncated"`
+	LeftCount        int                   `json:"leftCount"`
+	NextOffset       int                   `json:"nextOffset"`
 }
 
 // AgentHerdrScreen is a session's screen.
@@ -138,14 +141,14 @@ const (
 	DocumentListAgentHerdrSessions = `query ($computer: String) {
 		ListAgentHerdrSessions(computer: $computer) { computerNames failedComputerNames sessions { ` + HerdrSessionFields + ` } }
 	}`
-	DocumentReadAgentHerdrSession = `query ($computer: String, $paneId: String!, $turnCount: Int, $shouldIncludeToolDetail: Boolean) {
-		ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount, shouldIncludeToolDetail: $shouldIncludeToolDetail) {
-			herdrSession { ` + HerdrSessionFields + ` } turns { herdrTurnRole turnText turnAt toolInputText toolResultText } isTruncated
+	DocumentReadAgentHerdrSession = `query ($computer: String, $paneId: String!, $turnCount: Int, $offset: Int, $shouldIncludeToolDetail: Boolean) {
+		ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount, offset: $offset, shouldIncludeToolDetail: $shouldIncludeToolDetail) {
+			herdrSession { ` + HerdrSessionFields + ` } turns { herdrTurnRole turnText turnAt toolInputText toolResultText } isTruncated nextOffset
 		}
 	}`
-	DocumentReadAgentHerdrSubagents = `query ($computer: String, $paneId: String!) {
-		ReadAgentHerdrSubagents(computer: $computer, paneId: $paneId) {
-			herdrSession { ` + HerdrSessionFields + ` } sessionModelName requestStartedAt isTruncated
+	DocumentReadAgentHerdrSubagents = `query ($computer: String, $paneId: String!, $offset: Int) {
+		ReadAgentHerdrSubagents(computer: $computer, paneId: $paneId, offset: $offset) {
+			herdrSession { ` + HerdrSessionFields + ` } sessionModelName requestStartedAt isTruncated leftCount nextOffset
 			subagents { subagentId parentSubagentId subagentType subagentName taskText modelName subagentState spawnDepth startedAt endedAt toolNames toolCallCount }
 		}
 	}`
@@ -205,16 +208,20 @@ func ListAgentHerdrSessions(ctx context.Context, connection *Client, computer st
 	return result.ListAgentHerdrSessions, nil
 }
 
-// ReadAgentHerdrSession is a session's last turnCount turns; zero leaves
-// the count to the server. shouldIncludeToolDetail gives each tool turn its
-// whole input and what the tool answered.
-func ReadAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId string, turnCount int, shouldIncludeToolDetail bool) (*AgentHerdrRead, error) {
+// ReadAgentHerdrSession is a session's last turnCount turns, ending offset
+// turns before the newest; zero leaves the count to the server.
+// shouldIncludeToolDetail gives each tool turn its whole input and what the
+// tool answered.
+func ReadAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId string, turnCount, offset int, shouldIncludeToolDetail bool) (*AgentHerdrRead, error) {
 	var result struct {
 		ReadAgentHerdrSession *AgentHerdrRead `json:"ReadAgentHerdrSession"`
 	}
 	variables := herdrVariables(computer, map[string]any{"paneId": paneId})
 	if turnCount > 0 {
 		variables["turnCount"] = turnCount
+	}
+	if offset > 0 {
+		variables["offset"] = offset
 	}
 	if shouldIncludeToolDetail {
 		variables["shouldIncludeToolDetail"] = true
@@ -226,12 +233,17 @@ func ReadAgentHerdrSession(ctx context.Context, connection *Client, computer, pa
 }
 
 // ReadAgentHerdrSubagents is the agents a session started for its current
-// request, each with the agent that started it named.
-func ReadAgentHerdrSubagents(ctx context.Context, connection *Client, computer, paneId string) (*AgentHerdrSubagents, error) {
+// request, each with the agent that started it named; offset skips that
+// many of the newest.
+func ReadAgentHerdrSubagents(ctx context.Context, connection *Client, computer, paneId string, offset int) (*AgentHerdrSubagents, error) {
 	var result struct {
 		ReadAgentHerdrSubagents *AgentHerdrSubagents `json:"ReadAgentHerdrSubagents"`
 	}
-	if err := connection.Execute(ctx, DocumentReadAgentHerdrSubagents, herdrVariables(computer, map[string]any{"paneId": paneId}), &result); err != nil {
+	variables := herdrVariables(computer, map[string]any{"paneId": paneId})
+	if offset > 0 {
+		variables["offset"] = offset
+	}
+	if err := connection.Execute(ctx, DocumentReadAgentHerdrSubagents, variables, &result); err != nil {
 		return nil, err
 	}
 	return result.ReadAgentHerdrSubagents, nil

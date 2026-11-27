@@ -124,3 +124,21 @@ func TestTheAnswerIsReadBack(t *testing.T) {
 		t.Fatalf("a timeout says what to do next: %v %v", result, err)
 	}
 }
+
+// Work that goes on in the background is answered by its id, and says how to
+// read it, not as a failure.
+func TestBackgroundRunIsAnsweredByItsID(t *testing.T) {
+	shell, _ := json.Marshal(&computer.ShellResult{BackgroundID: "01EXAMPLE", Seconds: 1})
+	result, err := describe(shell, "claude_code", "Claude Code", "work-laptop")
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	for _, want := range []string{"01EXAMPLE", "background", "woken"} {
+		if !strings.Contains(result.Content, want) {
+			t.Errorf("the answer carries %q: %s", want, result.Content)
+		}
+	}
+	if strings.Contains(result.Content, "timed_out") || strings.Contains(result.Content, `"failed"`) {
+		t.Errorf("a run still going is neither timed out nor failed: %s", result.Content)
+	}
+}

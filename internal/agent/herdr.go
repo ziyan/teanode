@@ -207,12 +207,12 @@ type HerdrRead struct {
 }
 
 // ReadHerdrSession is the last turns of a session.
-func (self *Agent) ReadHerdrSession(ctx context.Context, agentId, computerName, paneId string, turnCount int, shouldIncludeToolDetail bool) (*HerdrRead, error) {
+func (self *Agent) ReadHerdrSession(ctx context.Context, agentId, computerName, paneId string, turnCount, offset int, shouldIncludeToolDetail bool) (*HerdrRead, error) {
 	attached, err := self.herdrComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
-	result, err := askHerdr[computer.HerdrReadResult](ctx, attached, "herdr_read", &computer.HerdrArguments{PaneID: paneId, TurnCount: turnCount, ShouldIncludeToolDetail: shouldIncludeToolDetail}, herdrActionWait)
+	result, err := askHerdr[computer.HerdrReadResult](ctx, attached, "herdr_read", &computer.HerdrArguments{PaneID: paneId, TurnCount: turnCount, Offset: offset, ShouldIncludeToolDetail: shouldIncludeToolDetail}, herdrActionWait)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ type HerdrSubagents struct {
 // ReadHerdrSubagents is the agents a session started, as the program on its
 // computer reads them from the files Claude Code keeps beside the session's
 // history.
-func (self *Agent) ReadHerdrSubagents(ctx context.Context, agentId, computerName, paneId string) (*HerdrSubagents, error) {
+func (self *Agent) ReadHerdrSubagents(ctx context.Context, agentId, computerName, paneId string, offset int) (*HerdrSubagents, error) {
 	attached, err := self.herdrComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
@@ -236,7 +236,7 @@ func (self *Agent) ReadHerdrSubagents(ctx context.Context, agentId, computerName
 	if !attached.HasFeature(computer.FeatureHerdrSubagents) {
 		return nil, fmt.Errorf("the program on %s is too old to show a session's agents; update teanode there and restart it", attached.name)
 	}
-	result, err := askHerdr[computer.HerdrSubagentsResult](ctx, attached, "herdr_subagents", &computer.HerdrArguments{PaneID: paneId}, herdrActionWait)
+	result, err := askHerdr[computer.HerdrSubagentsResult](ctx, attached, "herdr_subagents", &computer.HerdrArguments{PaneID: paneId, Offset: offset}, herdrActionWait)
 	if err != nil {
 		return nil, err
 	}

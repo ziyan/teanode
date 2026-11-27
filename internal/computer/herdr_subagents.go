@@ -40,8 +40,9 @@ const (
 
 // The bounds of reading the agents.
 const (
-	// subagentsMostReturned is how many agents a read gives, the newest.
-	subagentsMostReturned = 100
+	// subagentsPageCount is how many agents one read gives, the newest
+	// first to be counted; an offset reads on to the older ones.
+	subagentsPageCount = 100
 	// subagentsRunningWithin is how recently an agent's history was written
 	// for it to be taken as running when nothing else says.
 	subagentsRunningWithin = 120 * time.Second
@@ -110,8 +111,11 @@ type HerdrSubagentsResult struct {
 	// RequestStartedAt is when the person last spoke to the session.
 	RequestStartedAt *time.Time       `json:"requestStartedAt,omitempty"`
 	Subagents        []*HerdrSubagent `json:"subagents"`
-	// IsTruncated says there were more agents than subagentsMostReturned.
+	// IsTruncated says there are older agents than this page holds;
+	// LeftCount is how many, and NextOffset is the offset that reads them.
 	IsTruncated bool `json:"isTruncated"`
+	LeftCount   int  `json:"leftCount"`
+	NextOffset  int  `json:"nextOffset,omitempty"`
 }
 
 // subagentMeta is what Claude Code writes in agent-<agent>.meta.json; it
@@ -155,7 +159,9 @@ type subagentCandidate struct {
 // person's last turn, and those still running from before it. sessionState
 // is the session's own, which says an agent of the current request without
 // any other sign of having ended still works.
-func readSubagents(transcriptPath, sessionState string, now time.Time) (*HerdrSubagentsResult, error) {
+//
+// offset is how many of the newest to skip, to read the older ones.
+func readSubagents(transcriptPath, sessionState string, now time.Time, offset int) (*HerdrSubagentsResult, error) {
 	sessionModelName, requestStartedAt, err := readSessionRequest(transcriptPath)
 	if err != nil {
 		return nil, err
@@ -210,9 +216,13 @@ func readSubagents(transcriptPath, sessionState string, now time.Time) (*HerdrSu
 		}
 		return candidates[left].subagent.SubagentID < candidates[right].subagent.SubagentID
 	})
-	if len(candidates) > subagentsMostReturned {
-		candidates = candidates[len(candidates)-subagentsMostReturned:]
+	offset = min(max(offset, 0), len(candidates))
+	candidates = candidates[:len(candidates)-offset]
+	if len(candidates) > subagentsPageCount {
+		result.LeftCount = len(candidates) - subagentsPageCount
+		candidates = candidates[len(candidates)-subagentsPageCount:]
 		result.IsTruncated = true
+		result.NextOffset = offset + len(candidates)
 	}
 	// The tools are counted last, from whole files, and only for those kept.
 	for _, candidate := range candidates {

@@ -203,3 +203,32 @@ func TestHerdrSubagentsIsAReadAndIsRefusedByAProgramTooOldForIt(t *testing.T) {
 		t.Errorf("an old program was asked for the agents: %v, asked %q", err, old.asked)
 	}
 }
+
+// A read of a session that holds more turns than one answer does gives the
+// newest whole turns that fit and says where the older ones start.
+func TestAReadOfTurnsFitsWholeTurnsAndSaysWhereToReadOn(t *testing.T) {
+	turns := make([]map[string]any, 0, 20)
+	for index := 0; index < 20; index++ {
+		turns = append(turns, map[string]any{"herdrTurnRole": "agent", "turnText": fmt.Sprintf("turn %02d ", index) + strings.Repeat("x", 1000)})
+	}
+	data, _ := json.Marshal(map[string]any{"turns": turns, "isTruncated": false})
+	fitted := fitTurns(data, 5000, 10)
+	var answer struct {
+		Turns       []map[string]string `json:"turns"`
+		IsTruncated bool                `json:"isTruncated"`
+		NextOffset  int                 `json:"nextOffset"`
+		PageNote    string              `json:"pageNote"`
+	}
+	if err := json.Unmarshal(fitted, &answer); err != nil || len(fitted) > 5000 {
+		t.Fatalf("one answer's worth: %d bytes, %v", len(fitted), err)
+	}
+	if len(answer.Turns) == 0 || len(answer.Turns) >= 20 || !answer.IsTruncated || answer.NextOffset != 10+len(answer.Turns) || answer.PageNote == "" {
+		t.Fatalf("%d turns, truncated %v, next offset %d, note %q", len(answer.Turns), answer.IsTruncated, answer.NextOffset, answer.PageNote)
+	}
+	if last := answer.Turns[len(answer.Turns)-1]["turnText"]; !strings.HasPrefix(last, "turn 19 ") || !strings.HasSuffix(last, strings.Repeat("x", 1000)) {
+		t.Fatalf("the newest turn is there, whole: %.20q", last)
+	}
+	if string(fitTurns(data, 1<<20, 0)) != string(data) {
+		t.Fatalf("an answer that fits is left alone")
+	}
+}

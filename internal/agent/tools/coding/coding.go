@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	// defaultSeconds is how long a run is given when the call says
-	// nothing, and longestSeconds the most the attached computer will
-	// hold a command for. A longer piece of work is done by telling the
-	// coding agent to write its progress to a file and calling again.
+	// defaultSeconds is how long a run is waited for when the call says
+	// nothing, and longestSeconds the most one call waits. Work that takes
+	// longer goes on in the background, either because the call asked for
+	// that or because the wait ran out; it is not stopped.
 	defaultSeconds = 300
 	longestSeconds = 600
 
@@ -58,10 +58,11 @@ func define(name, label, description string) *tools.Tool {
 			"directory":     tools.StringProperty("where to work, on their computer; their home directory by default"),
 			"system_prompt": tools.StringProperty("standing instructions for how to work, added to its own"),
 			"model":         tools.StringProperty("a model to use, its own default otherwise"),
-			"timeout":       tools.IntegerProperty(fmt.Sprintf("seconds before it is stopped, %d by default, %d at most", defaultSeconds, longestSeconds)),
+			"timeout":       tools.IntegerProperty(fmt.Sprintf("seconds to wait for it, %d by default, %d at most; work still going then carries on in the background", defaultSeconds, longestSeconds)),
+			"isBackground":  tools.BooleanProperty("start it in the background and answer at once, for work that takes long; you are woken when it ends, and the shell tool's read with the id gives its output"),
 			"computer":      tools.StringProperty("which attached computer, when several are"),
 		}, "prompt"),
-		Guidance: label + ": it works on its own and answers once, so the brief is the whole of what it knows -- name the files or the directory, say what done looks like, and say what not to touch. It costs the person money at their own account with " + label + ", not through this server, so one considered call beats several tries. Read what it answers before telling them it is done.",
+		Guidance: label + ": it works on its own and answers once, so the brief is the whole of what it knows -- name the files or the directory, say what done looks like, and say what not to touch. It costs the person money at their own account with " + label + ", not through this server, so one considered call beats several tries. Read what it answers before telling them it is done. Long work -- a big refactor, a migration -- goes in the background with isBackground, so it is not cut off: end your turn, and you are woken with how it ended and the end of what it printed (its last line is its answer; the shell tool's read with the id and stream stdout reads all of it).",
 		Preview: func(arguments json.RawMessage) string {
 			var call request
 			if err := json.Unmarshal(arguments, &call); err != nil {
@@ -85,6 +86,7 @@ type request struct {
 	SystemPrompt string `json:"system_prompt"`
 	Model        string `json:"model"`
 	Timeout      int    `json:"timeout"`
+	IsBackground bool   `json:"isBackground"`
 	Computer     string `json:"computer"`
 }
 
@@ -108,11 +110,31 @@ func run(ctx context.Context, call *tools.Call, name, label string) (*tools.Resu
 		seconds = longestSeconds
 	}
 	command := commandFor(name, &arguments)
-	answer, err := attached.Ask(ctx, "shell", &device.ShellArguments{
+	shellArguments := &device.ShellArguments{
 		Command:   command,
 		Directory: arguments.Directory,
 		Timeout:   seconds,
-	}, time.Duration(seconds)*time.Second+waitOver)
+	}
+	wait := time.Duration(seconds)*time.Second + waitOver
+	holder, _ := attached.(tools.BackgroundHolder)
+	run := tools.MustRun(ctx)
+	if holder != nil && holder.HasBackground() && tools.CanLeaveRunning(run) {
+		// Past its wait it goes on rather than being stopped, and there is
+		// a conversation to wake when it ends.
+		origin, err := json.Marshal(tools.BackgroundOrigin{AgentID: run.Agent().ID, ConversationID: tools.ConversationIDOf(run)})
+		if err != nil {
+			return nil, err
+		}
+		shellArguments.Origin = origin
+		shellArguments.ShouldKeepOnTimeout = true
+		shellArguments.IsBackground = arguments.IsBackground
+		if arguments.IsBackground {
+			wait = 60 * time.Second
+		}
+	} else if arguments.IsBackground {
+		return nil, fmt.Errorf("%s cannot be left running here: the computer keeps no background commands, or this run has no conversation to wake when it ends; run it without isBackground", label)
+	}
+	answer, err := attached.Ask(ctx, "shell", shellArguments, wait)
 	if err != nil {
 		return nil, err
 	}
@@ -180,9 +202,19 @@ func describe(answer json.RawMessage, name, label, on string) (*tools.Result, er
 		return nil, fmt.Errorf("the computer answered something %s cannot read: %w", name, err)
 	}
 	described := map[string]any{"ran_on": on, "seconds": shell.Seconds}
+	if shell.BackgroundID != "" {
+		described["background_id"] = shell.BackgroundID
+		described["do_this_next"] = fmt.Sprintf("%s is still working, in the background on %s. End your turn: you are woken when it ends, with the end of what it printed. The shell tool's read with id %s shows its progress; stop ends it.", label, on, shell.BackgroundID)
+		result, err := tools.JSONResult(described)
+		if err != nil {
+			return nil, err
+		}
+		result.Note = fmt.Sprintf("started %s in the background on %s", label, on)
+		return result, nil
+	}
 	if shell.TimedOut {
 		described["timed_out"] = true
-		described["do_this_next"] = fmt.Sprintf("%s was stopped at the timeout. Tell it to write its progress to a file in the working directory, then call again asking it to read that file first.", label)
+		described["do_this_next"] = fmt.Sprintf("%s was stopped at the timeout. Call again with isBackground, telling it to write its progress to a file in the working directory and to read that file first.", label)
 	}
 	// 127 is the shell saying it could not find the program. The words
 	// alone are not enough: a coding agent forwards what its own children

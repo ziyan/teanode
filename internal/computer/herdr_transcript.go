@@ -31,12 +31,12 @@ import (
 // The bounds of a read.
 const (
 	transcriptFirstChunkBytes = 1 << 20
-	transcriptMostChunkBytes  = 16 << 20
-	transcriptTurnCharacters  = 4000
-	transcriptToolCharacters  = 200
-	// transcriptToolDetailCharacters is the most of a tool's input, and of
-	// its answer, a read gives.
-	transcriptToolDetailCharacters = 4000
+	// transcriptMostChunkBytes is how far back from its end a session's
+	// last request is looked for (see readSessionRequest).
+	transcriptMostChunkBytes = 16 << 20
+	// transcriptToolCharacters is how much of a tool's input the line that
+	// names the call shows; the whole input is its detail.
+	transcriptToolCharacters = 200
 	// transcriptLifecycleBytes is how much of a Codex file's end is read
 	// for whether a turn runs and whether a question waits, which is said
 	// near its end.
@@ -57,8 +57,7 @@ type HerdrTurn struct {
 	TurnText      string     `json:"turnText"`
 	TurnAt        *time.Time `json:"turnAt,omitempty"`
 	// ToolInputText and ToolResultText are a tool turn's whole input and
-	// what the tool answered, each cut at transcriptToolDetailCharacters;
-	// only when a read asks for them.
+	// what the tool answered; only when a read asks for them.
 	ToolInputText  string `json:"toolInputText,omitempty"`
 	ToolResultText string `json:"toolResultText,omitempty"`
 	// HasToolDetail says a tool turn has an input or a result to show,
@@ -78,7 +77,7 @@ type HerdrTurn struct {
 func toolTurn(line, inputText, callId string, at *time.Time) []*HerdrTurn {
 	turns := oneTurn(HerdrTurnRoleTool, line, at)
 	for _, turn := range turns {
-		turn.ToolInputText = cutDetail(inputText)
+		turn.ToolInputText = inputText
 		turn.toolCallID = callId
 	}
 	return turns
@@ -89,16 +88,7 @@ func toolResult(callId, text string) []*HerdrTurn {
 	if callId == "" {
 		return nil
 	}
-	return []*HerdrTurn{{toolCallID: callId, ToolResultText: cutDetail(strings.TrimSpace(text)), isToolResult: true}}
-}
-
-// cutDetail cuts a tool's input or answer to what a reader is shown, and
-// says when it did.
-func cutDetail(text string) string {
-	if len([]rune(text)) <= transcriptToolDetailCharacters {
-		return text
-	}
-	return string([]rune(text)[:transcriptToolDetailCharacters]) + "\n[cut]"
+	return []*HerdrTurn{{toolCallID: callId, ToolResultText: strings.TrimSpace(text), isToolResult: true}}
 }
 
 // prettyInput is a tool's input as a person reads it: its JSON indented.
@@ -182,9 +172,10 @@ func tailLines(file io.ReaderAt, size, byteCount int64) ([][]byte, bool, error) 
 	return bytes.Split(data, []byte("\n")), offset > 0, nil
 }
 
-// readTranscriptTail is the last turnCount turns of a history file, oldest
-// first, and whether there were more before them.
-func readTranscriptTail(path, codingAgentKind string, turnCount int) ([]*HerdrTurn, bool, error) {
+// readTranscriptTail is turnCount turns of a history file, oldest first,
+// ending offset turns before the last, and whether there were more before
+// them.
+func readTranscriptTail(path, codingAgentKind string, turnCount, offset int) ([]*HerdrTurn, bool, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, false, err
@@ -194,11 +185,11 @@ func readTranscriptTail(path, codingAgentKind string, turnCount int) ([]*HerdrTu
 	if err != nil {
 		return nil, false, err
 	}
-	return readTurnsFrom(file, info.Size(), codingAgentKind, turnCount)
+	return readTurnsFrom(file, info.Size(), codingAgentKind, turnCount, offset)
 }
 
-func readTurnsFrom(file io.ReaderAt, size int64, codingAgentKind string, turnCount int) ([]*HerdrTurn, bool, error) {
-	turnCount = max(turnCount, 1)
+func readTurnsFrom(file io.ReaderAt, size int64, codingAgentKind string, turnCount, offset int) ([]*HerdrTurn, bool, error) {
+	turnCount, offset = max(turnCount, 1), max(offset, 0)
 	for chunk := int64(transcriptFirstChunkBytes); ; chunk *= 2 {
 		lines, isCut, err := tailLines(file, size, chunk)
 		if err != nil {
@@ -209,7 +200,8 @@ func readTurnsFrom(file io.ReaderAt, size int64, codingAgentKind string, turnCou
 			turns = append(turns, turnsOfLine(codingAgentKind, line)...)
 		}
 		turns = attachToolResults(turns)
-		if len(turns) >= turnCount || !isCut || chunk >= transcriptMostChunkBytes {
+		if len(turns) >= turnCount+offset || !isCut {
+			turns = turns[:max(len(turns)-offset, 0)]
 			isTruncated := isCut || len(turns) > turnCount
 			if len(turns) > turnCount {
 				turns = turns[len(turns)-turnCount:]
@@ -405,14 +397,11 @@ func codexTurnsOfLine(line []byte) []*HerdrTurn {
 	return nil
 }
 
-// oneTurn is a turn of text, cut to size, or none when there is no text.
+// oneTurn is a turn of text, or none when there is no text.
 func oneTurn(role, text string, at *time.Time) []*HerdrTurn {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil
-	}
-	if len([]rune(text)) > transcriptTurnCharacters {
-		text = string([]rune(text)[:transcriptTurnCharacters]) + " [cut]"
 	}
 	return []*HerdrTurn{{HerdrTurnRole: role, TurnText: text, TurnAt: at}}
 }

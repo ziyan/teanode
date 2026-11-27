@@ -117,10 +117,9 @@ const (
 	// mostHerdrEventsKept bounds what waits for the server's
 	// acknowledgement.
 	mostHerdrEventsKept = 128
-	// How many turns read gives when none are asked for, and at most, and
-	// the most lines screen gives.
+	// How many turns read gives when none are asked for, and the most
+	// lines screen gives.
 	herdrDefaultTurnCount = 10
-	herdrMostTurnCount    = 100
 	herdrMostLineCount    = 2000
 )
 
@@ -167,6 +166,9 @@ type HerdrArguments struct {
 	PaneID    string `json:"paneId,omitempty"`
 	TurnCount int    `json:"turnCount,omitempty"`
 	LineCount int    `json:"lineCount,omitempty"`
+	// Offset is how many of the newest turns (read) or agents (subagents)
+	// to skip, so that the older ones can be read.
+	Offset int `json:"offset,omitempty"`
 	// ShouldIncludeToolDetail asks a read for each tool turn's whole input
 	// and what the tool answered.
 	ShouldIncludeToolDetail bool `json:"shouldIncludeToolDetail,omitempty"`
@@ -228,7 +230,10 @@ type HerdrEvent struct {
 type HerdrReadResult struct {
 	HerdrSession *HerdrSession `json:"herdrSession"`
 	Turns        []*HerdrTurn  `json:"turns"`
-	IsTruncated  bool          `json:"isTruncated"`
+	// IsTruncated says there are older turns than these; NextOffset is the
+	// offset that reads them.
+	IsTruncated bool `json:"isTruncated"`
+	NextOffset  int  `json:"nextOffset,omitempty"`
 }
 
 // HerdrScreenResult is a session's screen.
@@ -994,7 +999,8 @@ func (self *Herdr) read(ctx context.Context, arguments *HerdrArguments) (*HerdrR
 	if turnCount <= 0 {
 		turnCount = herdrDefaultTurnCount
 	}
-	turns, isTruncated, err := readTranscriptTail(session.TranscriptPath, session.CodingAgentKind, min(turnCount, herdrMostTurnCount))
+	offset := max(arguments.Offset, 0)
+	turns, isTruncated, err := readTranscriptTail(session.TranscriptPath, session.CodingAgentKind, turnCount, offset)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the history of %s: %w", session.named(), err)
 	}
@@ -1004,7 +1010,11 @@ func (self *Herdr) read(ctx context.Context, arguments *HerdrArguments) (*HerdrR
 			turn.ToolInputText, turn.ToolResultText = "", ""
 		}
 	}
-	return &HerdrReadResult{HerdrSession: session, Turns: turns, IsTruncated: isTruncated}, nil
+	result := &HerdrReadResult{HerdrSession: session, Turns: turns, IsTruncated: isTruncated}
+	if isTruncated {
+		result.NextOffset = offset + len(turns)
+	}
+	return result, nil
 }
 
 // subagents is the agents a Claude Code session started for its current
@@ -1019,7 +1029,7 @@ func (self *Herdr) subagents(ctx context.Context, arguments *HerdrArguments) (*H
 	if session.CodingAgentKind != CodingAgentKindClaude || session.TranscriptPath == "" {
 		return &HerdrSubagentsResult{HerdrSession: session, Subagents: []*HerdrSubagent{}}, nil
 	}
-	result, err := readSubagents(session.TranscriptPath, session.HerdrSessionState, time.Now())
+	result, err := readSubagents(session.TranscriptPath, session.HerdrSessionState, time.Now(), arguments.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the agents of %s: %w", session.named(), err)
 	}
