@@ -825,8 +825,7 @@ func (self *graph) readObservedConversation(ctx context.Context, arguments ReadA
 	if owner == nil {
 		return nil, true, api.ErrNotFound
 	}
-	log.Noticef("%s read a conversation of %s's agent", operatorName(ctx), owner.Username)
-	if _, err := tx.RecordConversationObserved(conversation, principal.User.ID, owner.ID, observeInterval, time.Now()); err != nil {
+	if err := recordObservedRead(ctx, tx, principal, conversation, owner); err != nil {
 		return nil, true, err
 	}
 	view, err := self.pageConversation(tx, conversation, arguments, owner, other)
@@ -836,6 +835,17 @@ func (self *graph) readObservedConversation(ctx context.Context, arguments ReadA
 	view.ActingAs = owner.Username
 	view.IsObserved = true
 	return view, true, nil
+}
+
+// recordObservedRead notes that an operator read a conversation of another
+// person's agent: the log line, and the audit row, folded to one per reader and
+// conversation per observeInterval. Every read of another person's conversation
+// goes through it, so none is left unaudited. Opening a conversation is audited;
+// the lists of conversations and failed turns are not.
+func recordObservedRead(ctx context.Context, tx db.Transaction, principal *api.Principal, conversation *models.AgentConversation, owner *models.User) error {
+	log.Noticef("%s read a conversation of %s's agent", operatorName(ctx), owner.Username)
+	_, err := tx.RecordConversationObserved(conversation, principal.User.ID, owner.ID, observeInterval, time.Now())
+	return err
 }
 
 // pageConversation is the newest page of a conversation that is not a chat,
@@ -878,22 +888,14 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 			return nil, err
 		}
 	}
-	conversation, other, owner, err := self.conversationFor(tx, principal, found, arguments.ConversationID, true)
+	// Another person's conversation was answered by readObservedConversation
+	// above, so what is left here is the caller's own.
+	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, true)
 	if err != nil {
 		return nil, err
 	}
-	// A chat is between its people: an operator with agent:act reads none of
-	// them but their own.
-	if conversation.IsChat() && other != nil {
-		return nil, api.ErrNotFound
-	}
 	if err := requireConversationUse(principal, found, conversation); err != nil {
 		return nil, err
-	}
-	actingAs := ""
-	if other != nil {
-		actingAs = owner.Username
-		log.Noticef("%s read a conversation of %s's agent", operatorName(ctx), owner.Username)
 	}
 	// The newest page by default: a drawer opens on the end of a
 	// conversation, not its beginning.
@@ -923,12 +925,8 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 		return nil, err
 	}
 	page := messages[start:end]
-	speaker, speakingAgent := principal.User, found
-	if other != nil {
-		speaker, speakingAgent = owner, other
-	}
-	describeOwnMessages(page, speaker, speakingAgent)
-	return &AgentConversationView{Conversation: conversation, Messages: page, Total: total, Todos: todos, ActingAs: actingAs}, nil
+	describeOwnMessages(page, principal.User, found)
+	return &AgentConversationView{Conversation: conversation, Messages: page, Total: total, Todos: todos}, nil
 }
 
 // describeOwnMessages gives the messages of a conversation with the agent the
@@ -1913,7 +1911,8 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 			}
 		}
 		var other *models.Agent
-		conversation, other, _, err = self.conversationFor(tx, principal, found, arguments.ConversationID, true)
+		var owner *models.User
+		conversation, other, owner, err = self.conversationFor(tx, principal, found, arguments.ConversationID, true)
 		if err != nil {
 			return err
 		}
@@ -1921,7 +1920,14 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 		if conversation.IsChat() && other != nil {
 			return api.ErrNotFound
 		}
-		return requireConversationUse(principal, found, conversation)
+		if err := requireConversationUse(principal, found, conversation); err != nil {
+			return err
+		}
+		// Following another person's conversation is reading it.
+		if other != nil {
+			return recordObservedRead(ctx, tx, principal, conversation, owner)
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}

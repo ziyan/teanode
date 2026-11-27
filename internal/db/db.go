@@ -339,6 +339,7 @@ type Transaction interface {
 // the limits that guard a password.
 type ThrottleOperation interface {
 	TakeThrottle(throttleKey string, interval time.Duration, now time.Time) (bool, error)
+	TakeThrottleWait(throttleKey string, interval time.Duration, now time.Time) (bool, error)
 	DeleteThrottlesTakenBefore(before time.Time) (int64, error)
 	TakeRateLimitToken(limiterKey string, ratePerSecond float64, capacity int64, now time.Time) (bool, error)
 	SpendRateLimitTokens(limiterKey string, ratePerSecond float64, capacity, tokenCount int64, now time.Time) error

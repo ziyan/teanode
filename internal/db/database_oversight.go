@@ -247,9 +247,10 @@ func (self *transaction) CountFailedAgentTurns(filter *FailedTurnFilter) (int64,
 // another person's conversation: who read it is the transaction's actor, and
 // whose it is and what kind it is go in the row. At most one row per reader and
 // conversation per interval, so paging a transcript does not flood the log;
-// it says whether this read was the one that was recorded.
+// it says whether this read was the one that was recorded. Two reads at the
+// same moment wait for each other rather than both skipping the row.
 func (self *transaction) RecordConversationObserved(conversation *models.AgentConversation, readerUserId, ownerUserId string, interval time.Duration, now time.Time) (bool, error) {
-	isTaken, err := self.TakeThrottle("observe:"+readerUserId+":"+conversation.ID, interval, now)
+	isTaken, err := self.TakeThrottleWait("observe:"+readerUserId+":"+conversation.ID, interval, now)
 	if err != nil || !isTaken {
 		return false, err
 	}

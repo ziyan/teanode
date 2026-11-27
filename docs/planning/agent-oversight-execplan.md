@@ -25,6 +25,14 @@ Chats between people stay excluded, as they are now.
 - Read-only and audited. Speaking as a person stays with `agent:act`.
 - Scope: runs and people's main and named conversations. Chats between people
   stay excluded.
+- Opening another person's conversation in the apps is always read-only:
+  `isObserved` is true even for a holder of `agent:act`, so nobody types as
+  someone else by accident from a screen. Speaking as the person stays possible
+  for `agent:act` through the API and the CLI, which say whose conversation it
+  is.
+- The lists (`ListAllAgentRuns`, `ListFailedAgentTurns`) are not audited;
+  opening a conversation is. Every way of opening one writes the row: reading
+  it, following its events, and asking for the previews of its links.
 
 ## Interfaces (fixed; every surface builds on these)
 
@@ -70,8 +78,9 @@ Chats between people stay excluded, as they are now.
   action `agent.conversation.observe`, with the reader as the actor and the
   owner and conversation as the subject.
   - Reads are folded: at most one row per reader and conversation per 10
-    minutes (use `TakeThrottle`), so paging a transcript does not flood the
-    log.
+    minutes (use `TakeThrottleWait`, which waits for a parallel read holding the
+    same turn instead of skipping, so two reads at once never lose the row), so
+    paging a transcript does not flood the log.
   - The server-log line stays.
 
 ### CLI

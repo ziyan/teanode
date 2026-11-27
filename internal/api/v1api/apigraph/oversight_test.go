@@ -1,11 +1,13 @@
 package apigraph
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
@@ -337,5 +339,78 @@ func TestFailedTurnsAreListedNewestFirstWithTheirOwner(t *testing.T) {
 	data = world.call(t, world.observer, `query { ListFailedAgentTurns(first: 1, offset: 1) `+fields+` }`)
 	if page := data["ListFailedAgentTurns"].(map[string]any); len(page["failedTurns"].([]any)) != 1 || page["totalCount"].(float64) != 2 {
 		t.Errorf("the second page is %v", page)
+	}
+}
+
+// observedRowCount is how many audit rows say the operator read the
+// conversation.
+func (self *oversightWorld) observedRowCount(t *testing.T, conversationID string) int {
+	t.Helper()
+	var count int
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		events, err := tx.ListAuditEvents(&db.AuditOptions{ResourceType: string(models.AuditResourceAgentConversation), ResourceID: conversationID, Limit: 50})
+		if err != nil {
+			t.Fatalf("ListAuditEvents: %s", err)
+		}
+		for _, event := range events {
+			if event.Action == models.AuditActionObserveConversation {
+				count++
+			}
+		}
+	})
+	return count
+}
+
+// giveAnAgent gives an operator an agent of their own, which following a
+// conversation or asking about its links needs besides the permission to
+// observe.
+func (self *oversightWorld) giveAnAgent(t *testing.T, user *models.User) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		if _, err := tx.CreateAgent(&models.Agent{UserID: user.ID, Enabled: true, Name: "Operator agent"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+	})
+}
+
+func TestObserveSubscribingToConversationEventsWritesAnAuditRow(t *testing.T) {
+	world := newOversightWorld(t)
+	world.giveAnAgent(t, world.actor)
+	subscribeAs := func(user *models.User, conversationID string) error {
+		principal := &api.Principal{User: user, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentAct}, {Permission: models.PermissionAgentUse}})}
+		ctx, cancel := context.WithCancel(api.ContextWithPrincipal(context.Background(), principal))
+		defer cancel()
+		_, err := world.graph.AgentConversationEvents(ctx, ReadAgentConversationEventsArguments{ConversationID: conversationID})
+		return err
+	}
+	for range 3 {
+		if err := subscribeAs(world.actor, world.mainID); err != nil {
+			t.Fatalf("AgentConversationEvents: %s", err)
+		}
+	}
+	if count := world.observedRowCount(t, world.mainID); count != 1 {
+		t.Errorf("three subscriptions wrote %d rows; want 1", count)
+	}
+	// The person following their own conversation writes none.
+	if err := subscribeAs(world.frank, world.namedID); err != nil {
+		t.Fatalf("AgentConversationEvents: %s", err)
+	}
+	if count := world.observedRowCount(t, world.namedID); count != 0 {
+		t.Errorf("the owner's own subscription wrote %d rows", count)
+	}
+}
+
+func TestObserveALinkPreviewInAPersonsConversationWritesAnAuditRow(t *testing.T) {
+	world := newOversightWorld(t)
+	world.giveAnAgent(t, world.actor)
+	for range 2 {
+		world.call(t, world.actor, fmt.Sprintf(`query { ReadLinkPreviews(conversationId: %q, urls: ["https://shop.example/chair"]) { url } }`, world.mainID))
+	}
+	if count := world.observedRowCount(t, world.mainID); count != 1 {
+		t.Errorf("two link previews wrote %d rows; want 1", count)
+	}
+	world.call(t, world.frank, fmt.Sprintf(`query { ReadLinkPreviews(conversationId: %q, urls: ["https://shop.example/chair"]) { url } }`, world.namedID))
+	if count := world.observedRowCount(t, world.namedID); count != 0 {
+		t.Errorf("the owner's own link preview wrote %d rows", count)
 	}
 }

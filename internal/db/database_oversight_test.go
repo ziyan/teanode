@@ -1,6 +1,8 @@
 package db_test
 
 import (
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -178,4 +180,116 @@ func TestFailedAgentTurnsAreListedFromTheirNotes(test *testing.T) {
 			test.Errorf("after them counted %d: %v", count, err)
 		}
 	})
+}
+
+// Two reads of the same conversation at the same moment write exactly one
+// audit row, and a read that waits behind one that rolls back writes it
+// instead of skipping it.
+func TestConcurrentObservedReadsWriteOneAuditRow(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+
+	var conversation *models.AgentConversation
+	var readerID, ownerID string
+	dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+		reader, err := tx.CreateUser(&models.User{Username: "oversight-reader", Name: "Oversight Reader"})
+		if err != nil {
+			test.Fatalf("CreateUser: %s", err)
+		}
+		owner, err := tx.CreateUser(&models.User{Username: "oversight-person", Name: "Oversight Person"})
+		if err != nil {
+			test.Fatalf("CreateUser: %s", err)
+		}
+		agent, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true})
+		if err != nil {
+			test.Fatalf("CreateAgent: %s", err)
+		}
+		conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: agent.ID, Kind: models.AgentConversationMain, Title: "Main"})
+		if err != nil {
+			test.Fatalf("CreateAgentConversation: %s", err)
+		}
+		readerID, ownerID = reader.ID, owner.ID
+	})
+	rowCount := func() int {
+		test.Helper()
+		var count int
+		dbtest.RunTransactionOn(test, database, func(tx db.Transaction) {
+			events, err := tx.ListAuditEvents(&db.AuditOptions{ResourceType: string(models.AuditResourceAgentConversation), ResourceID: conversation.ID, Limit: 50})
+			if err != nil {
+				test.Fatalf("ListAuditEvents: %s", err)
+			}
+			count = len(events)
+		})
+		return count
+	}
+
+	now := time.Now()
+	var waitGroup sync.WaitGroup
+	var mutex sync.Mutex
+	recordedCount := 0
+	for range 8 {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			if err := database.Transaction(func(tx db.Transaction) error {
+				isRecorded, err := tx.RecordConversationObserved(conversation, readerID, ownerID, 10*time.Minute, now)
+				if isRecorded {
+					mutex.Lock()
+					recordedCount++
+					mutex.Unlock()
+				}
+				return err
+			}); err != nil {
+				test.Errorf("RecordConversationObserved: %s", err)
+			}
+		}()
+	}
+	waitGroup.Wait()
+	if recordedCount != 1 || rowCount() != 1 {
+		test.Fatalf("eight reads at once recorded %d times and wrote %d rows; want 1 and 1", recordedCount, rowCount())
+	}
+
+	// The read that holds the turn rolls back while another waits for it: the
+	// waiting one is not told the turn was taken.
+	later := now.Add(time.Hour)
+	holding := make(chan struct{})
+	release := make(chan struct{})
+	errRolledBack := errors.New("rolled back")
+	waitGroup.Add(1)
+	go func() {
+		defer waitGroup.Done()
+		_ = database.Transaction(func(tx db.Transaction) error {
+			if isRecorded, err := tx.RecordConversationObserved(conversation, readerID, ownerID, 10*time.Minute, later); err != nil || !isRecorded {
+				test.Errorf("the first read was recorded: %v %v", isRecorded, err)
+			}
+			close(holding)
+			<-release
+			return errRolledBack
+		})
+	}()
+	<-holding
+	waited := make(chan bool)
+	go func() {
+		var isRecorded bool
+		if err := database.Transaction(func(tx db.Transaction) (err error) {
+			isRecorded, err = tx.RecordConversationObserved(conversation, readerID, ownerID, 10*time.Minute, later)
+			return err
+		}); err != nil {
+			test.Errorf("RecordConversationObserved: %s", err)
+		}
+		waited <- isRecorded
+	}()
+	select {
+	case <-waited:
+		test.Fatalf("the second read did not wait for the first")
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(release)
+	if isRecorded := <-waited; !isRecorded {
+		test.Errorf("a read behind one that rolled back was skipped")
+	}
+	waitGroup.Wait()
+	if count := rowCount(); count != 2 {
+		test.Errorf("%d rows after the rolled back read; want 2", count)
+	}
 }

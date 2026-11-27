@@ -135,10 +135,18 @@ A feature has to pass all three:
    here"). Chats between people are never listed or opened. Every read of
    another person's conversation writes an `audit_log` row, action
    `agent.conversation.observe`, folded to one per reader and conversation per
-   ten minutes (`TakeThrottle`); the server-log line stays. `agent:act`
-   implies observing, and adds a word with their agent as them: the same
-   tools, the same permissions, logged each time as the operator speaking as
-   that person. A send or a reaction with `agent:observe` alone is refused.
+   ten minutes (`TakeThrottleWait`, which waits for a parallel read of the
+   same conversation rather than skipping the row); the server-log line stays.
+   Reading it, following its events and asking for the previews of its links
+   each write the row; the lists (`ListAllAgentRuns`, `ListFailedAgentTurns`)
+   do not. `agent:act` implies observing, and adds a word with their agent as
+   them: the same tools, the same permissions, logged each time as the
+   operator speaking as that person. A send or a reaction with `agent:observe`
+   alone is refused. Opening another person's conversation in the apps is
+   always read-only, `isObserved` is true even for a holder of `agent:act`, so
+   nobody types as someone else by accident from a screen; speaking as the
+   person stays possible for `agent:act` through the API and CLI, which say
+   whose conversation it is.
    Both are on the Administrator role only (migration 0283 gives the
    Administrator `agent:observe`), for the operator of a private server
    debugging what an agent did. The `/manage/agent` page in the management
