@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.236.5] - 2026-11-27
+
+### Fixed
+
+- A background run no longer fails outright when the model flags a request as against its usage policy. It asks once more, which is what worked by hand. (#799)
+
 ## [0.236.4] - 2026-11-27
 
 ### Fixed
