@@ -9,8 +9,8 @@ Offer at most {{.Most}} ideas tonight, and only ideas that are:
 - new: not one of the ideas below, kept or dismissed.
 
 Write each in {{.Language}}, for them, with these fields:
-- headline: the offer in the first person, at most 80 characters: "I can chase the landlord's reply if none comes by Friday."
-- body: at most 300 characters: what you would do, step by step, and where you stop.
+- headline: the offer in the first person, one short line: "I can chase the landlord's reply if none comes by Friday."
+- body: what you would do, step by step, and where you stop.
 - opening_request: what they would say to start it, in their voice.
 - suggestion_reason: one line on why them, from what you saw.
 - idea_category and emoji: one area and one of its emoji:
