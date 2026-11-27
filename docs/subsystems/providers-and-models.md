@@ -117,8 +117,9 @@ when to compact and when to shorten the catalog.
 
 - **`agent.models.research` has no effect.** A research run is an Ask turn and
   uses the ask model.
-- **Two limits are configured, validated, and enforced nowhere**:
-  `maxRoundsPerReply` (a reply is a single call) and `maxToolCallsPerRun`.
+- **No limit counts rounds.** A turn goes on until the model answers, the
+  budget defers it, the loop guard stops it or the person does; only a call
+  built for one answer (a title, a summary) is given a single round.
 - **`concurrency` is read once**, when the worker is built, so it needs a
   restart even though nothing warns about it.
 - **Usage rows are never swept.** The sweeper exists and is not called; they

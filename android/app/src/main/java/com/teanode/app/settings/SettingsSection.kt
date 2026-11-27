@@ -24,7 +24,6 @@ import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.NightsStay
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Psychology
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import com.teanode.app.shell.icon
 import androidx.compose.material.icons.outlined.Dns
@@ -177,7 +176,6 @@ fun SettingsSection() {
             item { TeaNodeNavigationRow(stringResource(R.string.settings_sources_title), { navigator.navigate(SettingsRoutes.SOURCES) }, leadingIcon = Icons.Outlined.Inbox) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_memory_title), { navigator.navigate(SettingsRoutes.MEMORY) }, leadingIcon = Icons.Outlined.Psychology) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_dreams_title), { navigator.navigate(SettingsRoutes.DREAMS) }, leadingIcon = Icons.Outlined.NightsStay) }
-            item { TeaNodeNavigationRow(stringResource(R.string.settings_brief_page_title), { navigator.navigate(SettingsRoutes.BRIEF) }, leadingIcon = Icons.Outlined.Schedule) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_alerts_title), { navigator.navigate(SettingsRoutes.ALERTS) }, leadingIcon = Icons.Outlined.Notifications) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_connections_title), { navigator.navigate(SettingsRoutes.CONNECTIONS) }, leadingIcon = Icons.Outlined.Hub) }
             item { TeaNodeNavigationRow(stringResource(R.string.settings_activity_title), { navigator.navigate(SettingsRoutes.ACTIVITY) }, leadingIcon = Icons.AutoMirrored.Outlined.ListAlt) }

@@ -164,8 +164,6 @@ class SettingsScreenshotTest {
     @Test fun `dreams light`() = shoot("settings-dreams-light") { DreamsScreen(onBack = {}) }
     @Test fun `dreams dark`() = shoot("settings-dreams-dark", AppearanceChoice.Dark) { DreamsScreen(onBack = {}) }
     @Test fun `dreams largest text`() = shoot("settings-dreams-largest-text", fontScale = 2f) { DreamsScreen(onBack = {}) }
-    @Test fun `brief light`() = shoot("settings-brief-light") { DailyBriefScreen(onBack = {}) }
-    @Test fun `brief dark`() = shoot("settings-brief-dark", AppearanceChoice.Dark) { DailyBriefScreen(onBack = {}) }
     @Test fun `alerts light`() = shoot("settings-alerts-light") { MutedAlertsScreen(onBack = {}) }
     @Test fun `alerts dark`() = shoot("settings-alerts-dark", AppearanceChoice.Dark) { MutedAlertsScreen(onBack = {}) }
     @Test fun `connections light`() = shoot("settings-connections-light") { ConnectionsScreen(onBack = {}) }
@@ -202,7 +200,6 @@ class SettingsScreenshotTest {
 
     @Test fun `sources largest text`() = shoot("settings-sources-largest-text", fontScale = 2f) { KnowledgeSourcesScreen(onBack = {}) }
     @Test fun `memory largest text`() = shoot("settings-memory-largest-text", fontScale = 2f) { AgentMemorySettingsScreen(onBack = {}) }
-    @Test fun `brief largest text`() = shoot("settings-brief-largest-text", fontScale = 2f) { DailyBriefScreen(onBack = {}) }
     @Test fun `connections largest text`() = shoot("settings-connections-largest-text", fontScale = 2f) { ConnectionsScreen(onBack = {}) }
     @Test fun `activity largest text`() = shoot("settings-activity-largest-text", fontScale = 2f) { AgentActivityScreen(onBack = {}) }
     @Test fun `agents-admin largest text`() = shoot("settings-agents-admin-largest-text", fontScale = 2f) { AgentAdminScreen(onBack = {}) }

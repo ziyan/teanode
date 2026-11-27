@@ -5,8 +5,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
 import com.teanode.kit.goals.goals
-import com.teanode.kit.goals.runDailyBrief
-import com.teanode.kit.goals.setDailyBrief
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -100,58 +98,6 @@ internal fun dreamOutcomeText(outcome: AgentDream.Outcome): String = stringResou
     },
     outcome.outcomeCount,
 )
-
-/** A time of day typed as HH:MM, with the way it is wrong said when it is. */
-@Composable
-private fun ClockField(label: String, text: String, onChange: (String) -> Unit) {
-    FormField(text, onChange, label, placeholder = "HH:MM", isError = UpkeepClock.hourAndMinute(text) == null, keyboardType = KeyboardType.Number)
-}
-
-/**
- * The daily brief: the goal the server writes itself. Switch it on, choose the time and days, send one now, and open its
- * goal to see what it did and change what it asks for.
- */
-@Composable
-fun DailyBriefScreen(onBack: () -> Unit) {
-    val connection = LocalConnection.current
-    val navigator = com.teanode.app.shell.LocalAppNavigator.current
-    val actions = rememberActionRunner()
-    val loaded = rememberLoad { connection.goals() }
-    val onText = stringResource(R.string.settings_brief_on)
-    val offText = stringResource(R.string.settings_brief_off)
-    val sentText = stringResource(R.string.settings_brief_sent)
-    LoadedSettingsPage(stringResource(R.string.settings_brief_page_title), onBack, loaded) { goals ->
-        val brief = com.teanode.kit.goals.DailyBrief.goal(goals)
-        val cron = com.teanode.kit.goals.DailyBrief.cron(brief)
-        val isOn = brief != null && brief.isOpen
-        item(key = "brief-form") {
-            var time by remember(cron) { mutableStateOf(com.teanode.kit.goals.DailyBrief.time(cron)) }
-            var days by remember(cron) { mutableStateOf(com.teanode.kit.goals.DailyBrief.dayNumbers(cron)) }
-            Column {
-                SwitchRow(stringResource(R.string.settings_brief_start), isOn, { isChecked -> actions.run(if (isChecked) onText else offText, onSuccess = { loaded.refresh() }) { connection.setDailyBrief(isChecked, time, days) } })
-                ClockField(stringResource(R.string.settings_brief_time), time) { time = it }
-                TeaNodeRow(headline = stringResource(R.string.settings_brief_days))
-                com.teanode.app.goals.WeekdayChips(days) { days = it }
-                if (days.isEmpty()) FooterText(stringResource(R.string.settings_brief_choose_day))
-                if (UpkeepClock.hourAndMinute(time) != null && days.isNotEmpty() && (time != com.teanode.kit.goals.DailyBrief.time(cron) || days != com.teanode.kit.goals.DailyBrief.dayNumbers(cron))) {
-                    TeaNodeRow(headline = stringResource(R.string.settings_save), onClick = { actions.run(onText, onSuccess = { loaded.refresh() }) { connection.setDailyBrief(isOn || brief == null, time, days) } })
-                }
-            }
-        }
-        if (brief != null) {
-            ServerTime.instant(brief.goalNextAt)?.takeIf { isOn }?.let { instant ->
-                item(key = "brief-next") { TeaNodeRow(headline = stringResource(R.string.settings_brief_next, com.teanode.app.goals.GoalWords.nextTimeText(instant))) }
-            }
-            item(key = "brief-open") {
-                TeaNodeNavigationRow(stringResource(R.string.settings_brief_open_goal), { navigator.navigate(com.teanode.app.goals.GoalRoutes.detail(brief.conversationId)) }, leadingIcon = Icons.Outlined.ChatBubbleOutline)
-            }
-        }
-        item(key = "brief-send") {
-            TeaNodeRow(headline = stringResource(R.string.settings_brief_send_now), leadingIcon = Icons.Outlined.PlayArrow, onClick = { actions.run(sentText, onSuccess = { loaded.refresh() }) { connection.runDailyBrief() } })
-        }
-        item(key = "brief-footer") { FooterText(stringResource(if (brief == null) R.string.settings_brief_footer else R.string.settings_brief_footer_on)) }
-    }
-}
 
 /** Makes or changes a source: its type, name, where it reads, the type's settings, and its secrets, which are sealed on the server and never shown again. */
 @Composable

@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -137,9 +136,9 @@ func TestTheJobLoopsUntilNothingWaits(t *testing.T) {
 	}
 }
 
-// Asked for again and again, the job stops after five rounds and hands what is
-// left back to the queue, to start shortly, rather than lose it.
-func TestTheJobHandsBackWhatIsStillAskedForAfterFiveRounds(t *testing.T) {
+// Asked for again and again while it works, the job has no number of rounds
+// to stop at: it goes on until nothing it has not tried is waiting.
+func TestTheJobGoesOnWhileMoreIsAskedFor(t *testing.T) {
 	var fixture *journalFixture
 	fixture = newJournalFixture(t, func(prompt string) string {
 		for count := 1; count < 12; count++ {
@@ -154,16 +153,14 @@ func TestTheJobHandsBackWhatIsStillAskedForAfterFiveRounds(t *testing.T) {
 	}
 	fixture.requestNarrative(t, fixture.dayAgo(1))
 
-	err := fixture.worker.runJournal(t.Context(), fixture.run)
-	var deferral *Deferral
-	if !errors.As(err, &deferral) || time.Until(deferral.Until) > time.Minute+time.Second {
-		t.Fatalf("runJournal answered %v, not a short deferral", err)
+	if err := fixture.worker.runJournal(t.Context(), fixture.run); err != nil {
+		t.Fatalf("runJournal answered %v, not nil", err)
 	}
-	if len(fixture.dayPrompts()) != journalRoundsMost {
-		t.Errorf("%d days were written in %d rounds", len(fixture.dayPrompts()), journalRoundsMost)
+	if len(fixture.dayPrompts()) != 12 {
+		t.Errorf("%d days were written, want all twelve", len(fixture.dayPrompts()))
 	}
-	if _, narratives := fixture.waiting(t); len(narratives) != 1 {
-		t.Errorf("what is still asked for was lost: %v", narratives)
+	if _, narratives := fixture.waiting(t); len(narratives) != 0 {
+		t.Errorf("what was asked for is still waiting: %v", narratives)
 	}
 }
 

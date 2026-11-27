@@ -3,6 +3,7 @@ package goal
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // A goal the agent starts or rewords about signing in cannot use Passwords,
@@ -25,6 +26,30 @@ func TestAGoalAboutSigningInTellsTheModelWhatThePersonCanDo(t *testing.T) {
 		}
 		if isAboutSigningIn && !strings.Contains(notice, "save it themselves") {
 			t.Errorf("%q: the notice does not say what the person can do: %q", text, notice)
+		}
+	}
+}
+
+// A wait the goal asks for is the wait it gets: a minute is a minute and
+// two days are two days, with no floor and no ceiling. No number is the
+// default, and zero or less is the next tick.
+func TestAGoalsWaitIsUsedAsGiven(t *testing.T) {
+	t.Parallel()
+
+	minutes := func(count int) *int { return &count }
+	for name, test := range map[string]struct {
+		asked *int
+		want  time.Duration
+	}{
+		"none given":     {nil, DefaultInterval},
+		"one minute":     {minutes(1), time.Minute},
+		"ninety":         {minutes(90), 90 * time.Minute},
+		"two days":       {minutes(2880), 48 * time.Hour},
+		"zero":           {minutes(0), 0},
+		"a negative one": {minutes(-5), 0},
+	} {
+		if got := interval(test.asked); got != test.want {
+			t.Errorf("%s: %s, want %s", name, got, test.want)
 		}
 	}
 }

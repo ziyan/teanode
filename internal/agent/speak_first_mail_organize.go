@@ -45,9 +45,8 @@ const mailOrganizeLines = "Review the last 7 days of their mail, archived mail i
 // mailOrganizeReason offers to file a pile of routine mail.
 func (self *Agent) mailOrganizeReason() speakFirstReason {
 	return speakFirstReason{
-		name:           SpeakFirstMailOrganize,
-		isDailyLimited: true,
-		feedLines:      mailOrganizeLines,
+		name:      SpeakFirstMailOrganize,
+		feedLines: mailOrganizeLines,
 		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
 			// A card in the feed: for a person whose agent speaks in the main
 			// conversation it would only be another interruption.

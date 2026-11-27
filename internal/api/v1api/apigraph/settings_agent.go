@@ -195,6 +195,13 @@ type AgentFeaturesSettings struct {
 }
 
 // AgentLimitsSettings are the operator's limits.
+//
+// MaxRoundsPerAsk, MaxRoundsPerResearch, MaxRoundsPerReply,
+// MaxRoundsPerDream, MaxToolCallsPerRun, MaxRoundsPerSubagent, GoalShare,
+// GoalTurnsAlone, BackgroundWakesAlone, EmbeddingTokensPerDay and DreamShare
+// are no longer used: the daily and monthly limits bound the work. They
+// still answer, always zero, for one release so an older app's settings page
+// loads; clients should stop asking for them.
 type AgentLimitsSettings struct {
 	MaxRecordingMediaBytes   string  `json:"maxRecordingMediaBytes"`
 	MaxRecordingAccountBytes string  `json:"maxRecordingAccountBytes"`
@@ -210,19 +217,14 @@ type AgentLimitsSettings struct {
 	MaxToolCallsPerRun       int     `json:"maxToolCallsPerRun"`
 	RequestTimeout           string  `json:"requestTimeout"`
 
-	// The bounds on work nobody is watching, each zero for its default:
-	// rounds a subagent takes, the share of the day goals may spend, a
-	// goal's turns alone, and turns finished background work may wake.
+	// No longer used; see the type's comment.
 	MaxRoundsPerSubagent int     `json:"maxRoundsPerSubagent"`
 	GoalShare            float64 `json:"goalShare"`
 	GoalTurnsAlone       int     `json:"goalTurnsAlone"`
 	BackgroundWakesAlone int     `json:"backgroundWakesAlone"`
 	Concurrency          int     `json:"concurrency"`
 
-	// What the memory work may spend. Embedding is budgeted apart from
-	// everything else because the first pass over a person's own files is
-	// a hundred million tokens at a thousandth of the price of a
-	// conversation.
+	// EmbeddingTokensPerDay and DreamShare are no longer used.
 	EmbeddingTokensPerDay int64   `json:"embeddingTokensPerDay"`
 	DreamShare            float64 `json:"dreamShare"`
 	IngestChunksPerRun    int     `json:"ingestChunksPerRun"`
@@ -418,19 +420,8 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			MonthlyTokensPerServer:   agent.Limits.MonthlyTokensPerServer,
 			DailyCostPerAgent:        agent.Limits.DailyCostPerAgent,
 			MonthlyCostPerServer:     agent.Limits.MonthlyCostPerServer,
-			MaxRoundsPerAsk:          agent.Limits.MaxRoundsPerAsk,
-			MaxRoundsPerResearch:     agent.Limits.MaxRoundsPerResearch,
-			MaxRoundsPerReply:        agent.Limits.MaxRoundsPerReply,
-			MaxRoundsPerDream:        agent.Limits.MaxRoundsPerDream,
-			MaxToolCallsPerRun:       agent.Limits.MaxToolCallsPerRun,
 			RequestTimeout:           agent.Limits.RequestTimeout.String(),
-			MaxRoundsPerSubagent:     agent.Limits.MaxRoundsPerSubagent,
-			GoalShare:                agent.Limits.GoalShare,
-			GoalTurnsAlone:           agent.Limits.GoalTurnsAlone,
-			BackgroundWakesAlone:     agent.Limits.BackgroundWakesAlone,
 			Concurrency:              agent.Limits.Concurrency,
-			EmbeddingTokensPerDay:    agent.Limits.EmbeddingTokensPerDay,
-			DreamShare:               agent.Limits.DreamShare,
 			IngestChunksPerRun:       agent.Limits.IngestChunksPerRun,
 			ScanConcurrency:          agent.Limits.ScanConcurrency,
 			RewriteConcurrency:       agent.Limits.RewriteConcurrency,
@@ -681,7 +672,8 @@ type AgentFeaturesParameters struct {
 	Dreaming         *bool `json:"dreaming"`
 }
 
-// AgentLimitsParameters change the limits.
+// AgentLimitsParameters change the limits. The fields AgentLimitsSettings
+// lists as no longer used are accepted and ignored.
 type AgentLimitsParameters struct {
 	MaxRecordingMediaBytes   *string  `json:"maxRecordingMediaBytes"`
 	MaxRecordingAccountBytes *string  `json:"maxRecordingAccountBytes"`
@@ -979,15 +971,6 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		}
 		applyInt(&limits.MaxBodyCharacters, parameters.Limits.MaxBodyCharacters)
 		applyInt(&limits.IngestChunksPerRun, parameters.Limits.IngestChunksPerRun)
-		if parameters.Limits.EmbeddingTokensPerDay != nil {
-			limits.EmbeddingTokensPerDay = *parameters.Limits.EmbeddingTokensPerDay
-		}
-		if parameters.Limits.DreamShare != nil {
-			limits.DreamShare = *parameters.Limits.DreamShare
-		}
-		if parameters.Limits.GoalShare != nil {
-			limits.GoalShare = *parameters.Limits.GoalShare
-		}
 		if parameters.Limits.ScanConcurrency != nil {
 			limits.ScanConcurrency = *parameters.Limits.ScanConcurrency
 		}
@@ -1006,14 +989,6 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		if parameters.Limits.MonthlyCostPerServer != nil {
 			limits.MonthlyCostPerServer = *parameters.Limits.MonthlyCostPerServer
 		}
-		applyInt(&limits.MaxRoundsPerAsk, parameters.Limits.MaxRoundsPerAsk)
-		applyInt(&limits.MaxRoundsPerResearch, parameters.Limits.MaxRoundsPerResearch)
-		applyInt(&limits.MaxRoundsPerReply, parameters.Limits.MaxRoundsPerReply)
-		applyInt(&limits.MaxRoundsPerDream, parameters.Limits.MaxRoundsPerDream)
-		applyInt(&limits.MaxToolCallsPerRun, parameters.Limits.MaxToolCallsPerRun)
-		applyInt(&limits.MaxRoundsPerSubagent, parameters.Limits.MaxRoundsPerSubagent)
-		applyInt(&limits.GoalTurnsAlone, parameters.Limits.GoalTurnsAlone)
-		applyInt(&limits.BackgroundWakesAlone, parameters.Limits.BackgroundWakesAlone)
 		if err := applyDuration(&limits.RequestTimeout, parameters.Limits.RequestTimeout, "agent.limits.requestTimeout"); err != nil {
 			return err
 		}

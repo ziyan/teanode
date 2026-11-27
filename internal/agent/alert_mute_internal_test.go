@@ -11,10 +11,10 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// The night and the day's most are the person's: an agent that says
-// nothing keeps ten to seven and five, and one that says otherwise keeps
-// what it says, a night that starts when it ends being none.
-func TestAlertBoundsComeFromTheSettings(t *testing.T) {
+// There is no night and no count for a day: every alert the model decided on
+// is delivered whatever the hour, a sixth in a day included, and none is held
+// for the morning.
+func TestNoQuietHoursAndNoDailyMost(t *testing.T) {
 	location := time.UTC
 	labeled := func(count int) []*labeledCandidate {
 		entries := make([]*labeledCandidate, 0, count)
@@ -30,36 +30,22 @@ func TestAlertBoundsComeFromTheSettings(t *testing.T) {
 		}
 		return decided
 	}
-
-	defaults := alertBoundsOf(&models.Agent{}, nil)
-	if defaults.dailyMost != 5 || defaults.quietStartMinute != 22*60 || defaults.quietEndMinute != 7*60 {
-		t.Fatalf("the defaults are five a day and ten to seven: %+v", defaults)
-	}
-
-	evening := alertBoundsOf(&models.Agent{AlertQuietStart: "20:00", AlertQuietEnd: "06:30", AlertDailyMost: 2}, nil)
-	nine := time.Date(2026, 3, 4, 21, 0, 0, 0, location)
-	if plan := planAlerts(decision(1), labeled(1), nil, nine, location, evening); plan.heldCount != 1 || len(plan.sends) != 0 {
-		t.Fatalf("nine in the evening is their night: %+v", plan)
-	}
-	if plan := planAlerts(decision(1), labeled(1), nil, nine, location, defaults); len(plan.sends) != 1 {
-		t.Fatalf("and not the default one: %+v", plan)
-	}
-	if morning := nextAlertMorning(nine, location, evening); !morning.Equal(time.Date(2026, 3, 5, 6, 30, 0, 0, location)) {
-		t.Fatalf("what waited is said when their night ends: %s", morning)
-	}
+	sentToday := []*models.AgentAlert{}
 	noon := time.Date(2026, 3, 4, 12, 0, 0, 0, location)
-	plan := planAlerts(decision(3), labeled(3), nil, noon, location, evening)
-	if len(plan.sends) != 2 || len(plan.drops) != 1 || !strings.Contains(plan.drops[0].dropReason, "2 alerts") {
-		t.Fatalf("two a day, as they said: %+v", plan)
+	for index := 0; index < 5; index++ {
+		sentToday = append(sentToday, &models.AgentAlert{SubjectKey: fmt.Sprintf("earlier %d", index), SentAt: noon.Add(-time.Duration(index+1) * time.Hour)})
 	}
-
-	sleepless := alertBoundsOf(&models.Agent{AlertQuietStart: "00:00", AlertQuietEnd: "00:00"}, nil)
-	if isAlertQuietHour(time.Date(2026, 3, 4, 3, 0, 0, 0, location), sleepless) {
-		t.Fatal("a night that starts when it ends is none")
+	if plan := planAlerts(decision(1), labeled(1), sentToday, noon, location, nil); len(plan.sends) != 1 || len(plan.drops) != 0 {
+		t.Fatalf("a sixth alert in a day is delivered: %+v", plan)
 	}
-	daytime := alertBoundsOf(&models.Agent{AlertQuietStart: "09:00", AlertQuietEnd: "17:00"}, nil)
-	if !isAlertQuietHour(noon, daytime) || isAlertQuietHour(nine, daytime) {
-		t.Fatal("a quiet stretch inside one day")
+	if plan := planAlerts(decision(8), labeled(8), nil, noon, location, nil); len(plan.sends) != 8 || len(plan.drops) != 0 {
+		t.Fatalf("eight at once are delivered: %+v", plan)
+	}
+	for _, hour := range []int{0, 3, 6, 22, 23} {
+		night := time.Date(2026, 3, 4, hour, 15, 0, 0, location)
+		if plan := planAlerts(decision(2), labeled(2), nil, night, location, nil); len(plan.sends) != 2 || len(plan.drops) != 0 {
+			t.Fatalf("an alert at %02d:15 is delivered, not held for the morning: %+v", hour, plan)
+		}
 	}
 }
 
@@ -340,7 +326,7 @@ func TestMuteScopeIsReadFromTheTarget(t *testing.T) {
 // and it matches only the follow-up candidates of that kind (or all of
 // them, for follow_up).
 func TestFollowUpKindsAreKindsToMute(t *testing.T) {
-	for _, target := range []string{"follow_up", "bill", "parcel", "deadline", "event", "nearby"} {
+	for _, target := range []string{"follow_up", "bill", "parcel", "deadline", "event"} {
 		normalized, err := NormalizeAlertMute(models.AlertMuteKind, " "+strings.ToUpper(target))
 		if err != nil || normalized != target {
 			t.Fatalf("%s: %q %v", target, normalized, err)
@@ -385,8 +371,8 @@ func TestMuteOfAFollowUpAlertOffersItsKind(t *testing.T) {
 func TestAKindToMuteIsAKindThereIs(t *testing.T) {
 	agent := &models.Agent{Categories: []models.AgentCategory{{Name: "School"}}}
 	for kind, isKind := range map[string]bool{
-		"burst": true, "budget": true, "follow_up": true, "nearby": true, "bill": true, "notification": true, "school": true,
-		"notifications": false, "emails": false,
+		"burst": true, "budget": true, "follow_up": true, "bill": true, "notification": true, "school": true,
+		"notifications": false, "emails": false, "nearby": false,
 	} {
 		if got := isAlertKind(agent, kind); got != isKind {
 			t.Errorf("%s: %v, want %v", kind, got, isKind)

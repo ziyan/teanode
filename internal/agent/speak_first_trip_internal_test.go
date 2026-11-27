@@ -144,19 +144,17 @@ func TestOnlyOneRunSpeaksAboutATrip(t *testing.T) {
 func TestSpeakingFirstIsSpentOnceTheAgentHasSpoken(t *testing.T) {
 	now := time.Date(2030, 3, 6, 18, 0, 0, 0, time.UTC)
 	queuedAt := now.Add(-time.Minute)
-	sinceQueued, today, yesterday := now.Add(-time.Second), now.Add(-3*time.Hour), now.Add(-25*time.Hour)
+	sinceQueued, hoursBefore, yesterday := now.Add(-time.Second), now.Add(-3*time.Hour), now.Add(-25*time.Hour)
 	for name, test := range map[string]struct {
-		spokeFirstAt   *time.Time
-		isDailyLimited bool
-		want           bool
+		spokeFirstAt *time.Time
+		want         bool
 	}{
-		"never spoke":                      {nil, true, false},
-		"spoke since it was queued":        {&sinceQueued, false, true},
-		"spoke today, once a day":          {&today, true, true},
-		"spoke today, not limited":         {&today, false, false},
-		"spoke over a day ago, once a day": {&yesterday, true, false},
+		"never spoke":               {nil, false},
+		"spoke since it was queued": {&sinceQueued, true},
+		"spoke hours before":        {&hoursBefore, false},
+		"spoke over a day before":   {&yesterday, false},
 	} {
-		if got := isSpeakingFirstSpent(test.spokeFirstAt, queuedAt, test.isDailyLimited, now); got != test.want {
+		if got := isSpeakingFirstSpent(test.spokeFirstAt, queuedAt); got != test.want {
 			t.Errorf("%s: %v, want %v", name, got, test.want)
 		}
 	}

@@ -2078,24 +2078,13 @@ private enum AgentWords {
         case "monthlyCostPerServer": "Monthly cost, whole server"
         case "monthlyTokensPerServer": "Tokens per month, whole server (0 = no cap)"
         case "maxBodyCharacters": "Characters of a message given to a model"
-        case "maxRoundsPerSubagent": "Rounds per subagent (20)"
-        case "goalShare": "Share of the day goals at their own pace may spend (0.5 by default)"
-        case "goalTurnsAlone": "Goal turns without the person (24)"
-        case "backgroundWakesAlone": "Wakes by background work without the person (20)"
-        case "maxRoundsPerAsk": "Rounds per conversation turn"
-        case "maxRoundsPerResearch": "Rounds per research run"
-        case "maxRoundsPerReply": "Rounds per reply"
-        case "maxToolCallsPerRun": "Tool calls per run"
         case "maxRecordingMediaBytes": "Original recording file limit"
         case "maxRecordingAccountBytes": "Recording storage per account"
         case "requestTimeout": "Timeout per call"
         case "concurrency": "Runs at once"
-        case "maxRoundsPerDream": "Rounds per dream call"
         case "scanConcurrency": "Reading calls at once"
         case "rewriteConcurrency": "Page rewrites at once"
-        case "dreamShare": "Share of the day dreams may spend (0.3 by default)"
         case "ingestChunksPerRun": "Passages embedded per ingest run"
-        case "embeddingTokensPerDay": "Embedding tokens per day (0 for no cap)"
         default: LocalizedStringKey(limitName)
         }
     }
@@ -3728,7 +3717,7 @@ private struct AgentLimitsFormView: View {
         AgentSettingsForm(model: model, title: "Limits", makeDraft: { AgentLimitsDraft($0) }, parameters: { $0.agentParameters }) { draft, _ in
             Section {
             } footer: {
-                Text("Caps on what one person, and the whole server, may spend in a day and a month; how far one run may go; how long transcripts and corrections are kept.")
+                Text("Caps on what one person, and the whole server, may spend in a day and a month; how long transcripts and corrections are kept.")
             }
             ForEach(Array(AgentLimitsDraft.limitGroups.enumerated()), id: \.offset) { _, limitNames in
                 Section {
@@ -3756,9 +3745,6 @@ private struct AgentLimitsFormView: View {
                 } footer: {
                     if limitNames.contains("maxRecordingMediaBytes") {
                         Text("Sizes accept units such as GB. Zero uses 2 GB per original and 64 GB per account. Pending uploads and files awaiting deletion count toward storage.")
-                    }
-                    if limitNames.contains("maxRoundsPerSubagent") {
-                        Text("For work nobody is watching. Zero is the default shown in brackets.")
                     }
                 }
                 .id(limitNames.contains("maxRecordingMediaBytes") ? "recording-quotas" : (limitNames.first ?? ""))

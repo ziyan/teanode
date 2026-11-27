@@ -29,9 +29,7 @@ class AgentServerSettingsTest {
            "choices":["main:model-large"]},
          "features":{"triage":true,"autoReply":false,"browser":false},
          "limits":{"maxBodyCharacters":20000,"dailyTokensPerAgent":1000000,"monthlyTokensPerServer":0,"dailyCostPerAgent":2.5,"monthlyCostPerServer":0,
-           "maxRoundsPerAsk":20,"maxRoundsPerResearch":10,"maxRoundsPerReply":5,"maxRoundsPerDream":30,"maxToolCallsPerRun":50,"requestTimeout":"2m",
-           "concurrency":4,"scanConcurrency":2,"rewriteConcurrency":2,"dreamShare":0.3,"ingestChunksPerRun":500,"embeddingTokensPerDay":0,
-           "maxRoundsPerSubagent":0,"goalShare":0,"goalTurnsAlone":0,"backgroundWakesAlone":0},
+           "requestTimeout":"2m","concurrency":4,"scanConcurrency":2,"rewriteConcurrency":2,"ingestChunksPerRun":500},
          "retention":{"runs":"720h","corrections":"2160h"},"currency":"USD","search":{"kind":"brave","hasApiKey":true},
          "tools":{"disabled":["shell"],"confirm":["mail"],"catalog":[
            {"name":"mail_send","family":"mail","risk":"outward","description":"Sends mail.","confirms":true,"core":true,"actions":null},
@@ -170,7 +168,8 @@ class AgentServerSettingsTest {
     @Test
     fun theLimitsAreSentAsNumbersAndTheTimeoutAsADuration() {
         val limits = AgentLimitsDraft.of(settings)
-        assertEquals("0.3", limits.limitTexts["dreamShare"])
+        assertEquals("500", limits.limitTexts["ingestChunksPerRun"])
+        assertNull(limits.limitTexts["goalShare"])
         assertEquals("0", limits.limitTexts["monthlyTokensPerServer"])
         val section = limits.copy(limitTexts = limits.limitTexts + ("concurrency" to "8"), currency = "EUR").agentParameters
         assertEquals("8", section.text("limits", "concurrency"))

@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	goaltool "github.com/ziyan/teanode/internal/agent/tools/goal"
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -25,15 +23,12 @@ import (
 // somebody chose, or when mail it waits for arrives (goal_times.go), when
 // those decide its turns and the turn still says where it stands.
 
-// The bounds a goal keeps to. The cadence is the agent's within them, and
-// they are constants: no operator has yet wanted a different number, and a
-// setting nobody changes is a page to maintain for nothing.
+// What a goal waits for. How often it looks is its own: the wait it asks
+// for is the wait it gets, and what bounds the cost of a goal that looks
+// every minute is the person's daily cost limit and the server's monthly
+// one, checked before every turn.
 const (
-	// goalSoonest and goalLatest bound what the tool may ask for, and
-	// goalDefaultInterval is what a turn that names no time gets. The
-	// three belong to the tool, which is where they are enforced.
-	goalSoonest         = goaltool.Soonest
-	goalLatest          = goaltool.Latest
+	// goalDefaultInterval is what a goal that never gave a time waits.
 	goalDefaultInterval = goaltool.DefaultInterval
 
 	// goalAfterPerson is how long after the person's own turn a goal that
@@ -48,13 +43,6 @@ const (
 	// The same minute, for the same reason: the turn it waited for was
 	// most often the person's.
 	goalAfterOtherTurn = time.Minute
-
-	// How much of the day the goals at their own pace may spend, and how
-	// many turns a goal takes alone before it stops and asks the person,
-	// are the operator's limits (GoalShare and GoalTurnsAlone): the share
-	// bounds a day, and the other bounds the goal nobody can meet, which
-	// would otherwise cost the share every day until somebody noticed the
-	// bill.
 )
 
 // dueGoals queues a turn for every conversation whose goal is working and
@@ -92,8 +80,8 @@ func (self *Agent) dueGoals(ctx context.Context, now time.Time) error {
 }
 
 // runGoal is the handler for a goal job: one turn of the agent's own in
-// the person's conversation, bounded by the day's cap and their budget,
-// and followed by whatever the turn said about where the goal now stands.
+// the person's conversation, bounded by their budget, and followed by
+// whatever the turn said about where the goal now stands.
 func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	configuration := run.Configuration()
 	if !FeatureAllowed(configuration, "ask") {
@@ -110,8 +98,7 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	local := now.In(Location(run.Owner))
 	midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
 	// A goal on set times takes its turns when somebody chose, not when the
-	// agent asked, so neither bound below is its: a daily brief would
-	// otherwise stall on its twenty-fifth day.
+	// agent asked.
 	isOnSetTimes := conversation.IsGoalOnSetTimes()
 
 	// Today's turns of this goal, which its check-in counts.
@@ -127,90 +114,6 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		return err
 	}); err != nil {
 		return err
-	}
-
-	// The goals' share of the day. Work nobody is watching never eats the
-	// day the person talks to the agent in: the goals at their own pace
-	// spend at most a share of the daily budget between them, and one that
-	// finds it gone goes on tomorrow, or as soon as the person writes. A
-	// goal that reads every check-in as "look again in five minutes" is
-	// bounded by what it costs, however many goals there are.
-	if !isOnSetTimes {
-		var isShareSpent bool
-		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-			isShareSpent, err = goalShareSpent(tx, configuration, run.Agent, midnight)
-			return err
-		}); err != nil {
-			return err
-		}
-		if isShareSpent {
-			tomorrow := midnight.AddDate(0, 0, 1)
-			return self.moveGoalOn(ctx, conversation.ID, tomorrow, goalShareSpentNote)
-		}
-	}
-
-	// The run without the person, counted the same way from the later of
-	// the goal's setting and their last word. A goal the agent cannot
-	// meet -- a build that never goes green, a reply that never comes --
-	// answers "look again" for ever, and the goals' share only makes that
-	// cost no more than part of a day. At the bound it stops and
-	// waits for the person, who resumes it by writing, which is also what
-	// starts the count again.
-	var alone int64
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		since := time.Time{}
-		if conversation.GoalSetAt != nil {
-			since = *conversation.GoalSetAt
-		}
-		if spoke, err := tx.LastAgentPersonMessageAt(conversation.ID); err != nil {
-			return err
-		} else if spoke != nil && spoke.After(since) {
-			since = *spoke
-		}
-		var err error
-		alone, err = tx.CountAgentJobs(&db.AgentJobFilter{
-			AgentID:   run.Agent.ID,
-			Kinds:     []models.AgentJobKind{models.AgentJobGoal},
-			Statuses:  []models.AgentJobStatus{models.AgentJobDone},
-			SubjectID: conversation.ID,
-			Since:     since,
-		})
-		return err
-	}); err != nil {
-		return err
-	}
-	goalTurnsAlone := run.Configuration().Agent.Limits.EffectiveGoalTurnsAlone()
-	if !isOnSetTimes && alone >= int64(goalTurnsAlone) {
-		// Stalled, not failed: nothing moved and nobody was watching,
-		// which is all the agent knows. The goal stays on the
-		// conversation as waiting, with the person's three ways on in
-		// the note, and the stop is written into the transcript because
-		// no turn ran to say it there.
-		note := models.NoteText(models.NoteGoalStalled, strconv.Itoa(goalTurnsAlone))
-		var stalled *models.AgentConversation
-		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-			stalled, err = tx.UpdateAgentConversation(conversation.ID, func(conversation *models.AgentConversation) error {
-				if conversation.Goal == "" || conversation.GoalState != models.GoalWorking {
-					return nil
-				}
-				conversation.GoalState, conversation.GoalNextAt, conversation.GoalNote = models.GoalWaiting, nil, note
-				// Said in the main conversation by the next sweep: nobody
-				// is reading the goal's own.
-				conversation.GoalSurfacedAt = nil
-				return nil
-			})
-			if err != nil || stalled == nil || stalled.GoalState != models.GoalWaiting {
-				return err
-			}
-			if err := addGoalActivity(tx, stalled, models.GoalActivityStalled, "Stopped to ask you", note); err != nil {
-				return err
-			}
-			_, err = tx.AppendAgentMessage(models.NewAgentNote(conversation.ID, models.NoteGoalStalled, strconv.Itoa(goalTurnsAlone)))
-			return err
-		}); err != nil {
-			return err
-		}
-		return nil
 	}
 
 	// The budget, before a model is asked anything. A goal that has run
@@ -247,7 +150,7 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 		return err
 	}
 	failure, err := self.goalTurn(ctx, run, operations, conversation,
-		goalCheckIn(conversation, run.Agent, run.Owner, now, int(today)+1), nil, configuration.Agent.Limits.MaxRoundsPerAsk)
+		goalCheckIn(conversation, run.Agent, run.Owner, now, int(today)+1), nil, 0)
 	if errors.Is(err, errTurnRunning) {
 		return goalBehindTurn(now)
 	}
@@ -294,20 +197,16 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 	}
 
 	// A turn that did not call the tool said nothing about when to look
-	// again, so the next one is twice as far off: a goal waiting for a
-	// nightly build backs off to hours by itself, and one the model has
-	// lost interest in stops costing anything long before the day's cap.
+	// again, so the goal keeps the wait it had.
 	//
 	// A turn that failed is moved on the same way rather than failing the
 	// job. The queue retries a failed job five times and each retry is
-	// another whole model turn against whatever had just gone wrong --
-	// and a failed row counts towards neither the day's cap nor the
-	// turns-alone bound, so those five were spent where neither cap could
-	// see them. Backing off doubles the wait instead, and the note says
-	// what went wrong where the person reads it.
+	// another whole model turn against whatever had just gone wrong; the
+	// goal's own wait is tried again instead, and the note says what went
+	// wrong where the person reads it.
 	if after.GoalState == models.GoalWorking &&
 		(failure != "" || after.GoalNextAt == nil || !after.GoalNextAt.After(now)) {
-		next := goalDoubled(conversation)
+		next := goalKeptWait(conversation)
 		note := after.GoalNote
 		if failure != "" {
 			note = goalTurnFailedNote + failure
@@ -336,8 +235,8 @@ func (self *Agent) runGoal(ctx context.Context, run *Run) error {
 // goal: setting it makes it due at once, so the sweep queues this job
 // while their turn is still going on, and that turn may yet say to wait
 // or when to look. Waiting it out with a Deferral, rather than finishing
-// the job, keeps it off the day's cap and the turns-alone count, and the
-// job reads the state again when it comes back.
+// the job, keeps it from counting as a turn the goal took, and the job reads
+// the state again when it comes back.
 func (self *Agent) goalOwed(ctx context.Context, run *Run, now time.Time) (*models.AgentConversation, error) {
 	var owed *models.AgentConversation
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
@@ -371,15 +270,6 @@ func goalBehindTurn(now time.Time) error {
 // goalTurn runs one headless turn in the person's conversation and waits
 // for it, answering with what went wrong when something did.
 func (self *Agent) goalTurn(ctx context.Context, run *Run, operations Operations, conversation *models.AgentConversation, message string, allow map[string]bool, rounds int) (string, error) {
-	// The goal's own turn reads what its background work and commands left,
-	// as the person's word does in their conversation, and starts the count
-	// of turns those may wake again: in a goal's conversation the person
-	// seldom writes, and the count would otherwise only ever grow.
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		return tx.ResetAgentConversationBackgroundWakes(conversation.ID)
-	}); err != nil {
-		return "", err
-	}
 	// A goal the person wrote, on times they chose, is the person asking,
 	// as their own standing instruction is; one the agent wrote is not, and
 	// Passwords says how to make it theirs.
@@ -433,8 +323,8 @@ func goalCheckInAgain() string {
 	return models.GoalCheckInMarker + " You ended your turn without the goal tool. Call it now, once: note with where you are and the minutes until your next turn, wait when you need the person, or met when the goal is done."
 }
 
-// goalDoubled is how long to wait after a turn that said nothing: twice
-// what the turn before it chose.
+// goalKeptWait is how long to wait after a turn that said nothing: the
+// wait the goal had.
 //
 // That interval is not kept in a column of its own; it is read back out of
 // the two times the row already has. The turn before this one wrote its
@@ -442,19 +332,11 @@ func goalCheckInAgain() string {
 // the time it wrote is the interval it asked for. A goal just set, whose
 // two times are the same moment, has no last interval, and the default
 // stands in for it.
-func goalDoubled(conversation *models.AgentConversation) time.Duration {
-	last := goalDefaultInterval
+func goalKeptWait(conversation *models.AgentConversation) time.Duration {
 	if conversation.GoalNextAt != nil && conversation.GoalNextAt.After(conversation.ModifiedAt) {
-		last = conversation.GoalNextAt.Sub(conversation.ModifiedAt)
+		return conversation.GoalNextAt.Sub(conversation.ModifiedAt)
 	}
-	doubled := 2 * last
-	if doubled < goalSoonest {
-		return goalSoonest
-	}
-	if doubled > goalLatest {
-		return goalLatest
-	}
-	return doubled
+	return goalDefaultInterval
 }
 
 // moveGoalOn writes when the next turn is due and what the agent, or this
@@ -619,37 +501,14 @@ func (self *AskRun) isGoalWaiting() bool {
 	return conversation.IsGoal() && conversation.Goal != "" && conversation.GoalState == models.GoalWaiting
 }
 
-// goalShareSpent says whether the goals at their own pace have spent their
-// share of the agent's day: the tokens of every goal turn since the
-// person's midnight against agent.limits.goalShare of the daily budget. A
-// day with no budget has no share to spend.
-func goalShareSpent(tx db.Transaction, configuration *config.Configuration, agent *models.Agent, midnight time.Time) (bool, error) {
-	daily := agent.DailyTokens
-	if daily <= 0 {
-		daily = configuration.Agent.Limits.DailyTokensPerAgent
-	}
-	if daily <= 0 {
-		return false, nil
-	}
-	spent, err := SumSpendOfKind(tx, agent.ID, string(models.AgentJobGoal), midnight)
-	if err != nil {
-		return false, err
-	}
-	return float64(spent) >= float64(daily)*configuration.Agent.Limits.EffectiveGoalShare(), nil
-}
-
-// goalShareSpentNote is a goal's note while the goals have spent their
-// share of the day.
-const goalShareSpentNote = "the goals have spent their share of today; it goes on tomorrow, or when you write"
-
 // goalTurnFailedNote begins a goal's note after a turn that failed.
 const goalTurnFailedNote = "the last turn failed: "
 
 // isHeldBackGoalNote says whether a goal's note is one the server wrote to
-// hold it back, rather than one the goal or the person wrote: the share of
-// the day spent, the budget used up, a turn that failed.
+// hold it back, rather than one the goal or the person wrote: the budget
+// used up, a turn that failed.
 func isHeldBackGoalNote(note string) bool {
-	return note == goalShareSpentNote || strings.HasPrefix(note, goalTurnFailedNote) || strings.HasSuffix(note, budgetUsedUpWords)
+	return strings.HasPrefix(note, goalTurnFailedNote) || strings.HasSuffix(note, budgetUsedUpWords)
 }
 
 // clearHeldBackGoalNote empties a goal's note when it is still the one the

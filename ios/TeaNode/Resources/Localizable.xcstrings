@@ -3707,22 +3707,6 @@
         }
       }
     },
-    "A brief each morning": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "毎朝のブリーフ"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每天早晨的简报"
-          }
-        }
-      }
-    },
     "A browser that did not say what it is": {
       "localizations": {
         "ja": {
@@ -6437,22 +6421,6 @@
         }
       }
     },
-    "Each week your agent finds what is on near you for the weekend and the week after, and tells you on this day at this time.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "エージェントは毎週、週末とその次の週に近所で開かれることを調べ、この曜日のこの時刻にお伝えします。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "代理每周会查找你附近这个周末和下一周有什么活动，并在这一天的这个时间告诉你。"
-          }
-        }
-      }
-    },
     "Faces are not found here": {
       "localizations": {
         "ja": {
@@ -6673,22 +6641,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "实况照片"
-          }
-        }
-      }
-    },
-    "Look around town on": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "近所を調べる曜日"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "查看附近活动的日子"
           }
         }
       }
@@ -10979,22 +10931,6 @@
         }
       }
     },
-    "At most a day": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 日の上限"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每天最多"
-          }
-        }
-      }
-    },
     "At most per day": {
       "localizations": {
         "ja": {
@@ -12435,18 +12371,18 @@
         }
       }
     },
-    "Caps on what one person, and the whole server, may spend in a day and a month; how far one run may go; how long transcripts and corrections are kept.": {
+    "Caps on what one person, and the whole server, may spend in a day and a month; how long transcripts and corrections are kept.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "一人あたり、サーバー全体の一日・一か月の上限。一回の実行の長さ。記録と訂正の保存期間。"
+            "value": "一人あたり、サーバー全体の一日・一か月の上限。記録と訂正の保存期間。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "一个人以及整台服务器每天、每月的用量上限；一次运行能走多远；记录和纠正保留多久。"
+            "value": "一个人以及整台服务器每天、每月的用量上限；记录和纠正保留多久。"
           }
         }
       }
@@ -17373,22 +17309,6 @@
         }
       }
     },
-    "Embedding tokens per day (0 for no cap)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 日の埋め込みトークン数（0 で上限なし）"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每日嵌入令牌数（0 为不限）"
-          }
-        }
-      }
-    },
     "Empty Trash": {
       "localizations": {
         "ja": {
@@ -19831,22 +19751,6 @@
         }
       }
     },
-    "For work nobody is watching. Zero is the default shown in brackets.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "誰も見ていない処理の上限。0 はかっこ内の既定値です。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无人看着时的工作上限。0 即括号中的默认值。"
-          }
-        }
-      }
-    },
     "For you": {
       "localizations": {
         "ja": {
@@ -20579,22 +20483,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "目标停滞：自你上次发言后已过 %@ 轮，目标仍未达成。发消息以继续，或清除、更改目标。"
-          }
-        }
-      }
-    },
-    "Goal turns without the person (24)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本人の返事なしの目標ターン数 (24)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无本人回应的目标轮次 (24)"
           }
         }
       }
@@ -22157,22 +22045,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在使用"
-          }
-        }
-      }
-    },
-    "In your quiet hours only what cannot wait is said; the rest waits for the morning. The same time at both ends means no quiet hours.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "静かな時間帯には待てないことだけを伝え、それ以外は朝まで待ちます。開始と終了が同じなら静かな時間帯はありません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "安静时段只说等不了的事，其余的等到早上再说。开始和结束相同表示没有安静时段。"
           }
         }
       }
@@ -32879,38 +32751,6 @@
         }
       }
     },
-    "Quiet from": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "静かにする開始"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "安静开始"
-          }
-        }
-      }
-    },
-    "Quiet until": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "静かにする終了"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "安静结束"
-          }
-        }
-      }
-    },
     "Quoted text": {
       "localizations": {
         "ja": {
@@ -35801,86 +35641,6 @@
         }
       }
     },
-    "Rounds per conversation turn": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "会話 1 ターンあたりのラウンド"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每轮对话的回合数"
-          }
-        }
-      }
-    },
-    "Rounds per dream call": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "夢の 1 回の呼び出しあたりのラウンド数"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每次做梦调用的轮数"
-          }
-        }
-      }
-    },
-    "Rounds per reply": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "返信 1 回あたりのラウンド"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每次回复的回合数"
-          }
-        }
-      }
-    },
-    "Rounds per research run": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "調査 1 回あたりのラウンド"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每次调研的回合数"
-          }
-        }
-      }
-    },
-    "Rounds per subagent (20)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サブエージェントのラウンド数 (20)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每个子代理的轮数 (20)"
-          }
-        }
-      }
-    },
     "Route53": {
       "localizations": {
         "ja": {
@@ -36581,22 +36341,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存名称"
-          }
-        }
-      }
-    },
-    "Save the new time and days": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新しい時刻と曜日を保存"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存新的时间和星期"
           }
         }
       }
@@ -37465,38 +37209,6 @@
         }
       }
     },
-    "Send me a brief": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ブリーフを送る"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "给我发简报"
-          }
-        }
-      }
-    },
-    "Send one now": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今すぐ送る"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "立即发送一份"
-          }
-        }
-      }
-    },
     "Send only as": {
       "localizations": {
         "ja": {
@@ -37653,22 +37365,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "发件人或主题"
-          }
-        }
-      }
-    },
-    "Sending one now; it will arrive in a moment.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "送信しています。まもなく届きます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在发送，稍后送达。"
           }
         }
       }
@@ -38149,22 +37845,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "分享"
-          }
-        }
-      }
-    },
-    "Share of the day dreams may spend (0.3 by default)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "夢が使える 1 日の予算の割合（既定 0.3）"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "做梦可用的每日预算份额（默认 0.3）"
           }
         }
       }
@@ -42240,22 +41920,6 @@
         }
       }
     },
-    "The brief is on.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ブリーフを開始しました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "简报已开启。"
-          }
-        }
-      }
-    },
     "The browser": {
       "localizations": {
         "ja": {
@@ -45380,22 +45044,6 @@
         }
       }
     },
-    "Tool calls per run": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 実行あたりのツール呼び出し"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每次运行的工具调用数"
-          }
-        }
-      }
-    },
     "Tool policy": {
       "localizations": {
         "ja": {
@@ -47162,22 +46810,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "待读：%@"
-          }
-        }
-      }
-    },
-    "Wakes by background work without the person (20)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本人なしでバックグラウンド処理が起こす回数 (20)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无本人时后台工作唤醒次数 (20)"
           }
         }
       }
@@ -98053,22 +97685,6 @@
         }
       }
     },
-    "Daily brief": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "毎日のブリーフ"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每日简报"
-          }
-        }
-      }
-    },
     "It takes a turn now.": {
       "localizations": {
         "ja": {
@@ -98081,22 +97697,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "它现在就行动。"
-          }
-        }
-      }
-    },
-    "Next": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "次回"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下一次"
           }
         }
       }
@@ -98181,22 +97781,6 @@
         }
       }
     },
-    "Open the brief's goal": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ブリーフの目標を開く"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开简报的目标"
-          }
-        }
-      }
-    },
     "Own pace": {
       "localizations": {
         "ja": {
@@ -98261,22 +97845,6 @@
         }
       }
     },
-    "The brief is off. Its goal is paused.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ブリーフをオフにしました。目標は一時停止中です。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "简报已关闭，它的目标已暂停。"
-          }
-        }
-      }
-    },
     "The goal takes a turn for each new message that matches all of these. To take one for every new message, choose Any message.": {
       "localizations": {
         "ja": {
@@ -98305,38 +97873,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "时间按你所在的时区计算。"
-          }
-        }
-      }
-    },
-    "What the day holds and what is waiting for you, in your feed. It is the goal called “Daily brief”, where you can change what it asks for.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今日の予定とあなたを待っていることが、フィードに届きます。これは“Daily brief”という目標で、そこで依頼内容を変更できます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今天的安排和等你处理的事，会发到你的动态里。它就是名为“Daily brief”的目标，你可以在那里修改它的要求。"
-          }
-        }
-      }
-    },
-    "What the day holds and what is waiting for you, in your feed. Turning it on adds a goal called “Daily brief”, where you can change what it asks for.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今日の予定とあなたを待っていることが、フィードに届きます。オンにすると“Daily brief”という目標が追加され、そこで依頼内容を変更できます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今天的安排和等你处理的事，会发到你的动态里。开启后会添加一个名为“Daily brief”的目标，你可以在那里修改它的要求。"
           }
         }
       }
@@ -98887,22 +98423,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的助手会主动提出可以尝试的想法，以及对它所记内容的核对。"
-          }
-        }
-      }
-    },
-    "Share of the day goals at their own pace may spend (0.5 by default)": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自分のペースで進む目標が使える 1 日の予算の割合（既定 0.5）"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自主推进的目标可用的每日预算份额（默认 0.5）"
           }
         }
       }

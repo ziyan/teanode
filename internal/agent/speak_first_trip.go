@@ -127,8 +127,7 @@ func (self *Agent) lookForTrip(ctx context.Context, agent *models.Agent, now tim
 // tripReason speaks about a trip a few days before it.
 func (self *Agent) tripReason() speakFirstReason {
 	return speakFirstReason{
-		name:           SpeakFirstTrip,
-		isDailyLimited: true,
+		name: SpeakFirstTrip,
 		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
 			look := self.tripLooks[agent.ID]
 			return look != nil && look.isDue, nil

@@ -24,10 +24,6 @@ const (
 	// agent may speak: not in the middle of something.
 	speakFirstQuiet = 30 * time.Minute
 
-	// speakFirstApart is how long after speaking first it may again, for
-	// any reason but its introduction.
-	speakFirstApart = 24 * time.Hour
-
 	// speakFirstAwayIdle is how idle somebody who is away and has never
 	// written counts as: long enough for anything that waits for them to be
 	// done with what they are doing.
@@ -67,10 +63,6 @@ const (
 // the turn is told to do.
 type speakFirstReason struct {
 	name string
-
-	// isDailyLimited says it waits speakFirstApart after the last time the
-	// agent spoke first; only the introduction does not.
-	isDailyLimited bool
 
 	// canAsk says the turn may put question cards to the person and wait
 	// on them, as a conversation with somebody who is there.
@@ -200,7 +192,7 @@ func (self *Agent) dueSpeakFirstReason(ctx context.Context, tx db.Transaction, a
 	}
 	if isAway {
 		isReachable, err := canReachAway(tx, agent.ID)
-		if err != nil || !isReachable || isAlertQuietHour(now.In(Location(owner)), alertBoundsOf(agent, nil)) {
+		if err != nil || !isReachable {
 			return "", err
 		}
 		idle = speakFirstAwayIdle
@@ -208,11 +200,7 @@ func (self *Agent) dueSpeakFirstReason(ctx context.Context, tx db.Transaction, a
 			idle = now.Sub(*spoke)
 		}
 	}
-	isRecent := agent.SpokeFirstAt != nil && now.Sub(*agent.SpokeFirstAt) < speakFirstApart
 	for _, reason := range self.speakFirstReasons() {
-		if reason.isDailyLimited && isRecent {
-			continue
-		}
 		isDue, err := reason.isDue(ctx, tx, agent, owner, idle, now)
 		if err != nil {
 			return "", err
@@ -356,7 +344,7 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 		// of two runs that both found it due, only one speaks.
 		isSpent := false
 		if _, err := tx.UpdateAgent(run.Agent.ID, func(found *models.Agent) error {
-			isSpent = !isAsked && isSpeakingFirstSpent(found.SpokeFirstAt, run.Job.CreatedAt, reason.isDailyLimited, now)
+			isSpent = !isAsked && isSpeakingFirstSpent(found.SpokeFirstAt, run.Job.CreatedAt)
 			return nil
 		}); err != nil || isSpent {
 			return err
@@ -431,13 +419,9 @@ func (self *Agent) runSpeakFirst(ctx context.Context, run *Run) error {
 // isSpeakingFirstSpent says a job must not speak after all. The agent spoke
 // since the job was queued: a run put back in the queue after a crash, whose
 // turn already went out and may be carrying on by itself, would say it a second
-// time, and what it says next is often something else, the next idea. Or the
-// day's turn has gone to another reason since the sweep looked.
-func isSpeakingFirstSpent(spokeFirstAt *time.Time, queuedAt time.Time, isDailyLimited bool, now time.Time) bool {
-	if spokeFirstAt == nil {
-		return false
-	}
-	return !spokeFirstAt.Before(queuedAt) || (isDailyLimited && now.Sub(*spokeFirstAt) < speakFirstApart)
+// time, and what it says next is often something else, the next idea.
+func isSpeakingFirstSpent(spokeFirstAt *time.Time, queuedAt time.Time) bool {
+	return spokeFirstAt != nil && !spokeFirstAt.Before(queuedAt)
 }
 
 // speakFirstMessage is the start every spoken-first turn's message shares:

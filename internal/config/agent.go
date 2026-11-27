@@ -577,14 +577,6 @@ type AgentLimits struct {
 	// MonthlyTokensPerServer caps the whole server. Zero means no cap.
 	MonthlyTokensPerServer int64 `yaml:"monthlyTokensPerServer,omitempty"`
 
-	// EmbeddingTokensPerDay bounds embedding separately from everything
-	// else. Zero is no limit, which is the default and is deliberate: the
-	// first pass over a person's checkout and chat archive is a hundred
-	// million tokens at a thousandth of the price of a conversation, and
-	// counting it against the same daily budget would stop the load on its
-	// first night and every night after. The money caps still bind it.
-	EmbeddingTokensPerDay int64 `yaml:"embeddingTokensPerDay,omitempty"`
-
 	// ScanConcurrency is how many calls the nightly reading makes at
 	// once. One for a service that meters by the call; as many as it has
 	// slots for a model of the person's own, where the reading is bound
@@ -606,52 +598,9 @@ type AgentLimits struct {
 	// once, after the reading. One when unset.
 	RewriteConcurrency int `yaml:"rewriteConcurrency,omitempty"`
 
-	// DreamShare is how much of the daily budget the nightly run may
-	// spend, so that a night never eats the day. Zero resolves to 0.3.
-	DreamShare float64 `yaml:"dreamShare,omitempty"`
-
 	// IngestChunksPerRun is how many chunks one pass of an ingest job
 	// embeds before it hands the queue back. Zero resolves to 2000.
 	IngestChunksPerRun int `yaml:"ingestChunksPerRun,omitempty"`
-
-	// The round caps: how many times a run may go back to the model.
-	MaxRoundsPerAsk      int `yaml:"maxRoundsPerAsk"`
-	MaxRoundsPerResearch int `yaml:"maxRoundsPerResearch"`
-	MaxRoundsPerReply    int `yaml:"maxRoundsPerReply"`
-
-	// MaxRoundsPerTriage is how many turns a sorting run may take. It is
-	// the smallest of them on purpose: sorting happens to every message
-	// that arrives, and nearly every message can be sorted from what is in
-	// front of the model.
-	MaxRoundsPerTriage int `yaml:"maxRoundsPerTriage"`
-
-	// MaxRoundsPerDream is how many turns one call of a dream may take:
-	// a reading batch, a month written up, a page divided. A night has
-	// the person's own tools now, their computer among them, so a call
-	// may spend three rounds finding a file and running something over it
-	// before it has anything to answer with; the default is twelve rather
-	// than the four that was enough for looking a page up.
-	MaxRoundsPerDream  int `yaml:"maxRoundsPerDream"`
-	MaxToolCallsPerRun int `yaml:"maxToolCallsPerRun"`
-
-	// MaxRoundsPerSubagent is how many rounds one subagent may take.
-	// Zero resolves to 20.
-	MaxRoundsPerSubagent int `yaml:"maxRoundsPerSubagent,omitempty"`
-
-	// GoalShare is how much of the daily budget the goals at their own
-	// pace may spend between them, so that work nobody is watching never
-	// eats the day the person talks to the agent in. Zero resolves to 0.5.
-	GoalShare float64 `yaml:"goalShare,omitempty"`
-
-	// GoalTurnsAlone is how many turns of its own a goal takes without a
-	// word from the person before it stops and asks them. Zero resolves
-	// to 24.
-	GoalTurnsAlone int `yaml:"goalTurnsAlone,omitempty"`
-
-	// BackgroundWakesAlone is how many turns finished background commands
-	// and work may wake in one conversation before the person writes there
-	// again. Zero resolves to 20.
-	BackgroundWakesAlone int `yaml:"backgroundWakesAlone,omitempty"`
 
 	// RequestTimeout bounds one call to a provider.
 	RequestTimeout Duration `yaml:"requestTimeout"`
@@ -1289,12 +1238,6 @@ func defaultAgent() Agent {
 			// the agent nothing.
 			MaxScannedAttachmentBytes: 25 * 1024 * 1024,
 			DailyTokensPerAgent:       200000,
-			MaxRoundsPerAsk:           150,
-			MaxRoundsPerResearch:      8,
-			MaxRoundsPerReply:         6,
-			MaxRoundsPerTriage:        3,
-			MaxRoundsPerDream:         4,
-			MaxToolCallsPerRun:        60,
 			RequestTimeout:            Duration(60 * time.Second),
 			Concurrency:               2,
 		},
@@ -1570,33 +1513,6 @@ func (self *Configuration) validateAgent(validator *validator) {
 	if agent.Limits.Concurrency <= 0 {
 		validator.add("agent.limits.concurrency", "must be positive, for example 2")
 	}
-	for _, field := range []struct {
-		name  string
-		value int
-	}{
-		{"maxRoundsPerAsk", agent.Limits.MaxRoundsPerAsk},
-		{"maxRoundsPerResearch", agent.Limits.MaxRoundsPerResearch},
-		{"maxRoundsPerReply", agent.Limits.MaxRoundsPerReply},
-		{"maxRoundsPerTriage", agent.Limits.MaxRoundsPerTriage},
-		{"maxRoundsPerDream", agent.Limits.MaxRoundsPerDream},
-		{"maxToolCallsPerRun", agent.Limits.MaxToolCallsPerRun},
-	} {
-		if field.value <= 0 {
-			validator.add("agent.limits."+field.name, "must be positive")
-		}
-	}
-	for _, field := range []struct {
-		name  string
-		value int
-	}{
-		{"maxRoundsPerSubagent", agent.Limits.MaxRoundsPerSubagent},
-		{"goalTurnsAlone", agent.Limits.GoalTurnsAlone},
-		{"backgroundWakesAlone", agent.Limits.BackgroundWakesAlone},
-	} {
-		if field.value < 0 {
-			validator.add("agent.limits."+field.name, "must not be negative; zero is the default")
-		}
-	}
 	for index, provider := range agent.Providers {
 		for position, priced := range provider.ModelPricing {
 			path := fmt.Sprintf("agent.providers[%d].modelPricing[%d]", index, position)
@@ -1847,50 +1763,4 @@ func (self *Agent) PrivateAddressesAllowed() []string {
 		allowed = append(allowed, entry)
 	}
 	return allowed
-}
-
-// The defaults of the limits whose zero means the default.
-const (
-	MaxRoundsPerSubagentDefault = 20
-	GoalTurnsAloneDefault       = 24
-	BackgroundWakesAloneDefault = 20
-)
-
-// limitOr is a limit, or its default when it is not set.
-func limitOr(value, fallback int) int {
-	if value <= 0 {
-		return fallback
-	}
-	return value
-}
-
-// EffectiveMaxRoundsPerSubagent resolves the zero value.
-func (self *AgentLimits) EffectiveMaxRoundsPerSubagent() int {
-	return limitOr(self.MaxRoundsPerSubagent, MaxRoundsPerSubagentDefault)
-}
-
-// GoalShareDefault is the share of the daily budget the goals at their own
-// pace may spend when the operator has not chosen one.
-const GoalShareDefault = 0.5
-
-// EffectiveGoalShare resolves the zero value, and a share past the whole
-// day to the whole day.
-func (self *AgentLimits) EffectiveGoalShare() float64 {
-	switch {
-	case self.GoalShare <= 0:
-		return GoalShareDefault
-	case self.GoalShare > 1:
-		return 1
-	}
-	return self.GoalShare
-}
-
-// EffectiveGoalTurnsAlone resolves the zero value.
-func (self *AgentLimits) EffectiveGoalTurnsAlone() int {
-	return limitOr(self.GoalTurnsAlone, GoalTurnsAloneDefault)
-}
-
-// EffectiveBackgroundWakesAlone resolves the zero value.
-func (self *AgentLimits) EffectiveBackgroundWakesAlone() int {
-	return limitOr(self.BackgroundWakesAlone, BackgroundWakesAloneDefault)
 }

@@ -527,14 +527,16 @@ func TestTheAgentSpeaksToSomebodyWithAPhoneWhoIsAway(t *testing.T) {
 	}
 }
 
-// Their night is theirs, trip or no trip.
-func TestTheAgentWaitsOutThePersonsNight(t *testing.T) {
+// There are no quiet hours: a night an older version of the settings still
+// holds changes nothing, and a trip is spoken about at any hour, since a card
+// lands in the feed and the phone's own Focus decides whether it makes a sound.
+func TestTheAgentSpeaksAtAnyHourWhateverNightIsStored(t *testing.T) {
 	// A night that covers every moment but the one just before this.
 	now := time.Now().UTC()
 	world := awayWorld(t, true, now.Add(-time.Minute).Format("15:04"), now.Add(-2*time.Minute).Format("15:04"))
 	world.tick(t)
-	if jobs := world.speakFirstJobs(t); len(jobs) != 0 {
-		t.Fatalf("it should wait for the morning: %+v", jobs)
+	if jobs := world.speakFirstJobs(t); len(jobs) != 1 || jobs[0].SubjectID != agent.SpeakFirstTrip {
+		t.Fatalf("the stored night is not kept: %+v", jobs)
 	}
 }
 

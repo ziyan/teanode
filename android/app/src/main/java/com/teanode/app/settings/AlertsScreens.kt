@@ -107,16 +107,6 @@ private fun scopeLabel(muteScope: String, target: String, categoryNames: Map<Str
     }
 }
 
-private fun weekdayName(weekday: String): String =
-    runCatching { DayOfWeek.valueOf(weekday.uppercase()).getDisplayName(TextStyle.FULL, Locale.getDefault()) }.getOrDefault(weekday)
-
-private fun clockTime(text: String): LocalTime {
-    val parts = UpkeepClock.hourAndMinute(text) ?: return LocalTime.MIDNIGHT
-    return LocalTime.of(parts.first, parts.second)
-}
-
-private fun clockText(time: LocalTime): String = UpkeepClock.text(time.hour, time.minute)
-
 /** A second line for a follow-up: what kind it is, its day, then what the kind has (who is paid and how much, the carrier and number, the place). */
 @Composable
 private fun followUpLine(followUp: AgentFollowUp): String {
@@ -134,24 +124,9 @@ private fun followUpLine(followUp: AgentFollowUp): String {
     return parts.joinToString(" · ")
 }
 
-@Composable
-private fun StepperRow(headline: String, number: Int, range: IntRange, onChange: (Int) -> Unit) {
-    TeaNodeRow(
-        headline = headline,
-        trailing = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { onChange(number - 1) }, enabled = number > range.first) { Icon(Icons.Outlined.Remove, stringResource(R.string.settings_stepper_decrease)) }
-                Text(number.toString(), style = MaterialTheme.typography.bodyLarge)
-                IconButton(onClick = { onChange(number + 1) }, enabled = number < range.last) { Icon(Icons.Outlined.Add, stringResource(R.string.settings_stepper_increase)) }
-            }
-        },
-    )
-}
-
 /**
- * The Alerts page: whether the agent tells the person unasked what their mail says they should know now, the quiet
- * hours, the most a day, and the day and time it looks around their town; what it told them lately, each muted in a
- * scope they choose; what it is following for them, each stopped and a kind of them muted; and what they muted.
+ * The Alerts page: whether the agent tells the person unasked what their mail says they should know now; what it told
+ * them lately, each muted in a scope they choose; what it is following for them, each stopped and a kind of them muted; and what they muted.
  */
 @Composable
 fun MutedAlertsScreen(onBack: () -> Unit, focusesFollowing: Boolean = false) {
@@ -172,7 +147,6 @@ fun MutedAlertsScreen(onBack: () -> Unit, focusesFollowing: Boolean = false) {
     var muting by remember { mutableStateOf<AgentAlert?>(null) }
     var isMutingFollowUps by remember { mutableStateOf(false) }
     var isAddingFollowUp by remember { mutableStateOf(false) }
-    val savedText = stringResource(R.string.settings_saved)
     val enabledText = stringResource(R.string.settings_alerts_enabled_said)
     val disabledText = stringResource(R.string.settings_alerts_disabled_said)
     val noSubjectText = stringResource(R.string.settings_alerts_no_subject)
@@ -186,7 +160,7 @@ fun MutedAlertsScreen(onBack: () -> Unit, focusesFollowing: Boolean = false) {
             item { EmptyState(Icons.Outlined.Add, stringResource(R.string.settings_alerts_off_title), description = stringResource(R.string.settings_alerts_off_detail)) }
             return@LoadedSettingsPage
         }
-        settingsRows(preferences, actions, savedText, enabledText, disabledText, { loaded.refresh() }, connection)
+        settingsRows(preferences, actions, enabledText, disabledText, { loaded.refresh() }, connection)
         if (!preferences.isRunning) return@LoadedSettingsPage
         item { TeaNodeSectionHeader(stringResource(R.string.settings_alerts_recent_header)) }
         if (read.alerts.isEmpty()) item { TeaNodeRow(headline = stringResource(R.string.settings_alerts_recent_none)) }
@@ -264,11 +238,10 @@ fun MutedAlertsScreen(onBack: () -> Unit, focusesFollowing: Boolean = false) {
     }
 }
 
-/** The switch, the quiet hours, the most a day and when it looks around town. Each change is saved at once. */
+/** The switch. A change is saved at once. */
 private fun LazyListScope.settingsRows(
     preferences: AgentUpkeepPreferences,
     actions: ActionRunner,
-    savedText: String,
     enabledText: String,
     disabledText: String,
     refresh: () -> Unit,
@@ -280,22 +253,7 @@ private fun LazyListScope.settingsRows(
             { isOn -> actions.run(if (isOn) enabledText else disabledText, onSuccess = refresh) { connection.updateAgentUpkeep(isAlertsEnabled = isOn) } },
         )
     }
-    item {
-        val isOn = preferences.isAlertsEnabled
-        androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth()) {
-            TimeField(stringResource(R.string.settings_alerts_quiet_from_label), clockTime(preferences.shownAlertQuietStart), { time -> if (isOn) actions.run(savedText, onSuccess = refresh) { connection.updateAgentUpkeep(alertQuietStart = clockText(time)) } })
-            TimeField(stringResource(R.string.settings_alerts_quiet_until_label), clockTime(preferences.shownAlertQuietEnd), { time -> if (isOn) actions.run(savedText, onSuccess = refresh) { connection.updateAgentUpkeep(alertQuietEnd = clockText(time)) } })
-            StepperRow(stringResource(R.string.settings_alerts_at_most), preferences.shownAlertDailyMost, 1..50) { most -> if (isOn) actions.run(savedText, onSuccess = refresh) { connection.updateAgentUpkeep(alertDailyMost = most) } }
-            ChoiceRow(
-                stringResource(R.string.settings_alerts_look_around_on), AgentUpkeepPreferences.lookAroundWeekdays, preferences.shownLookAroundWeekday,
-                label = { weekday -> weekdayName(weekday) }, onSelect = { weekday -> actions.run(savedText, onSuccess = refresh) { connection.updateAgentUpkeep(lookAroundWeekday = weekday) } }, isEnabled = isOn,
-            )
-            TimeField(stringResource(R.string.settings_alerts_look_around_at), clockTime(preferences.shownLookAroundTime), { time -> if (isOn) actions.run(savedText, onSuccess = refresh) { connection.updateAgentUpkeep(lookAroundTime = clockText(time)) } })
-        }
-    }
     item { FooterText(stringResource(R.string.settings_alerts_footer_one)) }
-    item { FooterText(stringResource(R.string.settings_alerts_footer_two)) }
-    item { FooterText(stringResource(R.string.settings_alerts_footer_three)) }
 }
 
 /** Asks the agent to follow a bill, parcel, deadline or event. The day is set on purpose, since a picker that started on today would file a bill due today at one tap. */

@@ -59,8 +59,6 @@ type AgentMutation interface {
 	// it; called again, it changes the policy. Needs agent:use.
 	GrantAgentMailbox(ctx context.Context, arguments GrantAgentMailboxArguments) (*AgentView, error)
 	GrantAgentSource(ctx context.Context, arguments GrantAgentSourceArguments) (*AgentView, error)
-	SetAgentBrief(ctx context.Context, arguments SetAgentBriefArguments) (*AgentGoalView, error)
-	RunAgentBriefNow(ctx context.Context) (*AgentGoalView, error)
 
 	// Have the agent write a reply to a message, for the caller to read,
 	// change and send; the text comes back, nothing is saved or sent. The
@@ -234,10 +232,9 @@ type UpdateAgentArguments struct {
 	IsSuggestionsEnabled *bool `json:"isSuggestionsEnabled"`
 
 	// IsAlertsEnabled says whether the agent may tell the person, unasked,
-	// what their mail says they should know now. AlertQuietStart and
-	// AlertQuietEnd are their night for it, as "HH:MM" in their own zone,
-	// empty for the default; AlertDailyMost is the most a day, zero for
-	// the default.
+	// what their mail says they should know now. AlertQuietStart,
+	// AlertQuietEnd and AlertDailyMost are no longer used: they are
+	// accepted and ignored for one release, so an older app still saves.
 	IsAlertsEnabled *bool   `json:"isAlertsEnabled"`
 	AlertQuietStart *string `json:"alertQuietStart"`
 	AlertQuietEnd   *string `json:"alertQuietEnd"`
@@ -247,9 +244,9 @@ type UpdateAgentArguments struct {
 	// default, or main, the main conversation.
 	FeedDestination *string `json:"feedDestination"`
 
-	// LookAroundWeekday and LookAroundTime are when the agent looks around
-	// their town each week for what is on: a lower-case day name such as
-	// "thursday" and "HH:MM" in their own zone, empty for the default.
+	// LookAroundWeekday and LookAroundTime are no longer used: the look
+	// around is an ordinary goal. They are accepted and ignored for one
+	// release, so an older app still saves.
 	LookAroundWeekday *string `json:"lookAroundWeekday"`
 	LookAroundTime    *string `json:"lookAroundTime"`
 
@@ -694,37 +691,6 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 				destination = models.FeedDestinationFeed
 			}
 			agent.FeedDestination = destination
-		}
-		if arguments.AlertQuietStart != nil {
-			start, err := clockTime(*arguments.AlertQuietStart)
-			if err != nil {
-				return err
-			}
-			agent.AlertQuietStart = start
-		}
-		if arguments.AlertQuietEnd != nil {
-			end, err := clockTime(*arguments.AlertQuietEnd)
-			if err != nil {
-				return err
-			}
-			agent.AlertQuietEnd = end
-		}
-		if arguments.AlertDailyMost != nil {
-			agent.AlertDailyMost = *arguments.AlertDailyMost
-		}
-		if arguments.LookAroundWeekday != nil {
-			weekday := strings.ToLower(strings.TrimSpace(*arguments.LookAroundWeekday))
-			if weekday != "" && !models.IsLookAroundWeekday(weekday) {
-				return fmt.Errorf("%q is not a day; say one of sunday, monday, tuesday, wednesday, thursday, friday or saturday", *arguments.LookAroundWeekday)
-			}
-			agent.LookAroundWeekday = weekday
-		}
-		if arguments.LookAroundTime != nil {
-			clock, err := clockTime(*arguments.LookAroundTime)
-			if err != nil {
-				return err
-			}
-			agent.LookAroundTime = clock
 		}
 		return nil
 	})

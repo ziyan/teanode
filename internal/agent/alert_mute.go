@@ -22,37 +22,6 @@ import (
 // alertMutedReason is what a candidate a mute matched is dropped with.
 const alertMutedReason = "muted"
 
-// alertBounds are what the alert job keeps to for one person: their
-// night, as minutes after midnight in their zone, the day's most, and
-// what they asked not to be told.
-type alertBounds struct {
-	quietStartMinute int
-	quietEndMinute   int
-	dailyMost        int
-	mutes            []*models.AgentAlertMute
-}
-
-// alertBoundsOf reads the person's settings. A time that does not read
-// falls back to the default rather than to no night at all.
-func alertBoundsOf(agent *models.Agent, mutes []*models.AgentAlertMute) *alertBounds {
-	start, end := agent.AlertQuietHours()
-	return &alertBounds{
-		quietStartMinute: clockMinute(start, models.AlertQuietStartDefault),
-		quietEndMinute:   clockMinute(end, models.AlertQuietEndDefault),
-		dailyMost:        agent.EffectiveAlertDailyMost(),
-		mutes:            mutes,
-	}
-}
-
-// clockMinute is "22:00" as minutes after midnight, or the fallback's.
-func clockMinute(clock, fallback string) int {
-	parsed, err := time.Parse("15:04", clock)
-	if err != nil {
-		parsed, _ = time.Parse("15:04", fallback)
-	}
-	return parsed.Hour()*60 + parsed.Minute()
-}
-
 // alertFacts are what a mute is matched against: who a candidate is from,
 // what it is about, and what kind of thing it is. All of them come from
 // the mail and the count, never from how a model worded anything, so a
@@ -255,7 +224,7 @@ func normalizedSubjectKey(subjectKey string) string {
 // are made of, or a category the sorting can give, the agent's own included.
 func isAlertKind(agent *models.Agent, kind string) bool {
 	switch kind {
-	case models.AlertKindBurst, models.AlertKindBudget, models.AlertKindFollowUp, models.AlertKindNearby:
+	case models.AlertKindBurst, models.AlertKindBudget, models.AlertKindFollowUp:
 		return true
 	}
 	if models.AgentFollowUpKind(kind).IsValid() || slices.Contains(models.AgentCategories, kind) {
@@ -270,8 +239,7 @@ func isAlertKind(agent *models.Agent, kind string) bool {
 // matched in: an address or a domain in lower case, a subject key as the
 // alerts keep them, a kind as a word. The kinds are burst, budget,
 // follow_up (every alert about a follow-up), bill, parcel, deadline and event
-// (those follow-ups alone), nearby (the weekly look around the person's town,
-// and what it found), and the categories of the sorting such as
+// (those follow-ups alone), and the categories of the sorting such as
 // notification.
 func NormalizeAlertMute(muteScope models.AlertMuteScope, muteTarget string) (string, error) {
 	if !muteScope.IsValid() {
@@ -297,7 +265,7 @@ func NormalizeAlertMute(muteScope models.AlertMuteScope, muteTarget string) (str
 	case models.AlertMuteKind:
 		muteTarget = strings.ToLower(muteTarget)
 		if strings.ContainsAny(muteTarget, " @") {
-			return "", fmt.Errorf("%q is not a kind: burst, budget, follow_up, bill, parcel, deadline, event, nearby, or a category such as notification", muteTarget)
+			return "", fmt.Errorf("%q is not a kind: burst, budget, follow_up, bill, parcel, deadline, event, or a category such as notification", muteTarget)
 		}
 	case models.AlertMuteSpendingCategory:
 		// A spending category's id, as the budget alerts name it, in lower
@@ -597,7 +565,7 @@ func MuteAlert(tx db.Transaction, agent *models.Agent, alertId string, muteScope
 			return nil, err
 		}
 		if muteScope == models.AlertMuteKind && !isAlertKind(agent, normalized) {
-			return nil, fmt.Errorf("%q is not a kind of alert, so muting it would silence nothing: burst, budget, follow_up, bill, parcel, deadline, event, nearby, or a category of the sorting such as notification", normalized)
+			return nil, fmt.Errorf("%q is not a kind of alert, so muting it would silence nothing: burst, budget, follow_up, bill, parcel, deadline, event, or a category of the sorting such as notification", normalized)
 		}
 		mute, err := tx.CreateAgentAlertMute(&models.AgentAlertMute{AgentID: agent.ID, MuteScope: muteScope, MuteTarget: normalized, AlertID: alertId})
 		if err != nil {

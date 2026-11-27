@@ -615,7 +615,7 @@ func (self *Agent) describeCheckout(ctx context.Context, run *Run, source *model
 	// else. Describing a checkout is not the night, and was never given
 	// the night's reach.
 	thinking, err := self.think(ctx, run, "Described the checkout "+path, prompt, lookupTools,
-		roundsFor(run.Configuration(), models.AgentJobIngest), models.AgentJobIngest, config.AgentWorkScan)
+		0, models.AgentJobIngest, config.AgentWorkScan)
 	if err != nil {
 		log.Debugf("cannot ask what %q is: %s", path, err)
 		return existingOpening, fallback, nil

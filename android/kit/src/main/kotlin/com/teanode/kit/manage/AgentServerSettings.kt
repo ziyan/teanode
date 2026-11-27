@@ -213,15 +213,12 @@ data class AgentModelChoices(val forWork: List<String>, val forDeciding: List<St
     }
 }
 
-/** The caps on what people and the whole server may spend, how far one run may go, and what unattended work may take. */
+/** The caps on what people and the whole server may spend, and what unattended work may take. */
 @Serializable
 data class AgentLimits(
     val maxBodyCharacters: Double = 0.0, val dailyTokensPerAgent: Double = 0.0, val dailyCostPerAgent: Double = 0.0, val monthlyCostPerServer: Double = 0.0,
-    val monthlyTokensPerServer: Double = 0.0, val maxRoundsPerAsk: Double = 0.0, val maxRoundsPerResearch: Double = 0.0, val maxRoundsPerReply: Double = 0.0,
-    val maxToolCallsPerRun: Double = 0.0, val requestTimeout: String = "", val maxRecordingMediaBytes: String? = null, val maxRecordingAccountBytes: String? = null,
-    val concurrency: Double = 0.0, val maxRoundsPerDream: Double = 0.0, val scanConcurrency: Double = 0.0, val rewriteConcurrency: Double = 0.0, val dreamShare: Double = 0.0,
-    val ingestChunksPerRun: Double = 0.0, val embeddingTokensPerDay: Double = 0.0, val maxRoundsPerSubagent: Double = 0.0, val goalShare: Double = 0.0,
-    val goalTurnsAlone: Double = 0.0, val backgroundWakesAlone: Double = 0.0,
+    val monthlyTokensPerServer: Double = 0.0, val requestTimeout: String = "", val maxRecordingMediaBytes: String? = null, val maxRecordingAccountBytes: String? = null,
+    val concurrency: Double = 0.0, val scanConcurrency: Double = 0.0, val rewriteConcurrency: Double = 0.0, val ingestChunksPerRun: Double = 0.0,
 )
 
 /** How long run transcripts and corrections are kept. */
@@ -431,10 +428,7 @@ data class AgentLimitsDraft(val limitTexts: Map<String, String>, val retention: 
         val LIMIT_GROUPS: List<List<String>> = listOf(
             listOf("dailyTokensPerAgent", "monthlyTokensPerServer", "maxBodyCharacters"),
             listOf("dailyCostPerAgent", "monthlyCostPerServer"),
-            listOf("maxRoundsPerAsk", "maxRoundsPerResearch", "maxRoundsPerReply", "maxToolCallsPerRun"),
-            listOf("maxRoundsPerDream", "scanConcurrency", "rewriteConcurrency", "dreamShare"),
-            listOf("ingestChunksPerRun", "embeddingTokensPerDay"),
-            listOf("maxRoundsPerSubagent", "goalShare", "goalTurnsAlone", "backgroundWakesAlone"),
+            listOf("scanConcurrency", "rewriteConcurrency", "ingestChunksPerRun"),
             listOf("requestTimeout", "concurrency"),
             listOf("maxRecordingMediaBytes", "maxRecordingAccountBytes"),
         )
@@ -445,12 +439,9 @@ data class AgentLimitsDraft(val limitTexts: Map<String, String>, val retention: 
             val limits = settings.limits
             val numbers = mapOf(
                 "maxBodyCharacters" to limits.maxBodyCharacters, "dailyTokensPerAgent" to limits.dailyTokensPerAgent, "monthlyTokensPerServer" to limits.monthlyTokensPerServer,
-                "dailyCostPerAgent" to limits.dailyCostPerAgent, "monthlyCostPerServer" to limits.monthlyCostPerServer, "maxRoundsPerAsk" to limits.maxRoundsPerAsk,
-                "maxRoundsPerResearch" to limits.maxRoundsPerResearch, "maxRoundsPerReply" to limits.maxRoundsPerReply, "maxToolCallsPerRun" to limits.maxToolCallsPerRun,
-                "concurrency" to limits.concurrency, "maxRoundsPerDream" to limits.maxRoundsPerDream, "scanConcurrency" to limits.scanConcurrency,
-                "rewriteConcurrency" to limits.rewriteConcurrency, "dreamShare" to limits.dreamShare, "ingestChunksPerRun" to limits.ingestChunksPerRun,
-                "embeddingTokensPerDay" to limits.embeddingTokensPerDay, "maxRoundsPerSubagent" to limits.maxRoundsPerSubagent, "goalShare" to limits.goalShare,
-                "goalTurnsAlone" to limits.goalTurnsAlone, "backgroundWakesAlone" to limits.backgroundWakesAlone,
+                "dailyCostPerAgent" to limits.dailyCostPerAgent, "monthlyCostPerServer" to limits.monthlyCostPerServer,
+                "concurrency" to limits.concurrency, "scanConcurrency" to limits.scanConcurrency, "rewriteConcurrency" to limits.rewriteConcurrency,
+                "ingestChunksPerRun" to limits.ingestChunksPerRun,
             )
             // Zero is said as 0, as the dashboard's form shows a stored limit.
             val texts = numbers.mapValues { entry -> if (entry.value == 0.0) "0" else SettingsList.text(entry.value) } +

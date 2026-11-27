@@ -1610,19 +1610,6 @@ first stops the day. Zero means no limit of this kind.
 in a month, beside `monthlyTokensPerServer`, and warned about at 80 % the
 same way. Zero means no cap.
 
-**`embeddingTokensPerDay`** — Meant to bound embedding apart from
-everything else, because the first pass over a person's checkout and chat
-archive is a hundred million tokens at a thousandth of the price of a
-conversation, and counting it against the same daily budget would stop
-the load on its first night and every night after. Zero, the default, is
-no limit. Set, validated and read by nothing so far: embedding is counted
-in `dailyTokensPerAgent` and in the money caps like every other call, and
-this does not yet change that.
-
-**`dreamShare`** — How much of the daily budget one night's run may
-spend, as a fraction, so that a night never eats the day. Zero resolves
-to `0.3`.
-
 **`scanConcurrency`** — How many calls the nightly reading makes at once.
 One for a service metered by the call; as many as it has slots for a
 model of the person's own, where the reading is bound by nothing but the
@@ -1649,55 +1636,20 @@ few at once is what leaves the rest of the night its time.
 embeds before it hands the queue back, so that one enormous source does
 not hold the worker. Zero resolves to `2000`.
 
-**`maxRoundsPerAsk`** — How many times one conversation turn may go back to
-the model. 150 by default; it was 40, which a turn working through a long
-errand on the person's computer ran out of.
-
-**`maxRoundsPerSubagent`** — How many rounds one subagent may take. Zero
-resolves to `20`.
-
-**`goalShare`** — How much of the daily budget the goals at their own pace
-may spend between them, as a fraction, so that goals never eat the day. Goals
-on set times are bounded by their times. Zero resolves to `0.5`.
-
-**`goalTurnsAlone`** — How many turns a goal takes without a word
-from the person before it stops and asks them. Zero resolves to `24`.
-
-**`backgroundWakesAlone`** — How many turns finished background commands and
-work may wake in one conversation before the person writes there again; past
-it, endings are written into the conversation and wake nothing. Zero resolves
-to `20`.
-
-**`maxRoundsPerResearch`** — The same for a research run.
-
-**`maxRoundsPerDream`** — How many turns one call of a dream may take: a
-batch of documents read, a month written up, a page divided. Each is a run
-of the conversation loop, and the ones that decide where something goes have
-every tool the person has — including their attached computer — so a call may
-look a page up, find a file and run something over it before it answers.
-Twelve by default, the last of which is told it is the last and must answer.
-It was four while a night could only look a page up; four left nothing for
-the answer once the smallest useful errand on a machine took three rounds.
-Setting it puts the pacing back wherever an operator wants it, and it also
-bounds the call that describes an indexed checkout.
-
-**`maxRoundsPerReply`** — How many turns a drafting run may take. A reply is a
-run of the conversation loop now, with the thread, the mailbox, the address
-book and the diary to read before it writes: "are you free Thursday" cannot be
-answered from the message alone. Six by default.
-
-**`maxRoundsPerTriage`** — How many turns a sorting run may take, three by
-default. The smallest of the three on purpose: sorting happens to every
-message that arrives, and nearly every message can be sorted from what is in
-front of the model, so the prompt tells it to answer at once and this is the
-ceiling on the exceptions.
-
-**`maxToolCallsPerRun`** — Set, validated, and read by nothing. What actually
-bounds a run is `maxRoundsPerAsk`, together with the rule that stops a turn
-when the same call has failed three times. Kept so a stored configuration does
-not fail to load.
-
 **`requestTimeout`** — How long one call to a provider may take.
+
+There is no limit on how many rounds a turn takes, how many turns a goal
+takes, how many times finished background work wakes a conversation, how much
+of the day goals or a night may spend, or how many embeddings a day: the
+daily and monthly limits above bound what any of it costs, and a turn goes on
+until the model answers, the budget defers it, the loop guard stops it (the
+same call failing three times) or the person stops it. The keys
+`maxRoundsPerAsk`, `maxRoundsPerResearch`, `maxRoundsPerReply`,
+`maxRoundsPerTriage`, `maxRoundsPerDream`, `maxRoundsPerSubagent`,
+`maxToolCallsPerRun`, `goalShare`, `goalTurnsAlone`, `backgroundWakesAlone`,
+`dreamShare` and `embeddingTokensPerDay` are gone. A configuration that still
+has them loads, logs a warning for each, and loses them the next time it is
+saved.
 
 **`concurrency`** — How many runs a worker executes at once, per instance.
 Read when the worker is built, so a change needs a restart of that instance,

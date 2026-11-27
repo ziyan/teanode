@@ -150,18 +150,14 @@ type AskSettings struct {
 	ReadOnlyTools map[string]bool
 
 	// Allow, when set, is the only tools offered by name; Headless adds
-	// the remote tools marked for runs with nobody present. MaxRounds
-	// overrides the limit; UsageKind names the usage rows.
+	// the remote tools marked for runs with nobody present. MaxRounds is
+	// how many times a call that is built to take few may go back to the
+	// model (one for a single answer); zero, the rule, has no limit: the
+	// turn goes on until the model answers, the budget defers it, the loop
+	// guard stops it or the person does. UsageKind names the usage rows.
 	Allow     map[string]bool
 	Headless  bool
 	MaxRounds int
-
-	// CallLimits is how many times the turn may call each named tool. A
-	// call past the limit is answered with an error and does not run, so a
-	// run that is paid for by the search or the page has a bound the model
-	// cannot talk its way past. A tool not named has none. See
-	// withToolCallLimits.
-	CallLimits map[string]int
 
 	// IsFetchLimitedToSearched holds web_fetch to the addresses a
 	// web_search in this turn returned. For a turn nobody is present for
@@ -170,7 +166,7 @@ type AskSettings struct {
 	IsFetchLimitedToSearched bool
 
 	// IsPersonOmitted leaves the person's own page and the index of what
-	// the agent knows out of the prompt; see withPersonOmitted.
+	// the agent knows out of the prompt.
 	IsPersonOmitted bool
 
 	// PreApproved is the calls the person approved on a card whose turn
@@ -452,12 +448,6 @@ type AskRun struct {
 	// waiting on is closed with it. A turn ended any other way -- a
 	// deploy, a deadline -- leaves its cards open for later.
 	isStoppedByPerson atomic.Bool
-
-	// callCounts is how many times each tool in settings.CallLimits has
-	// been called, under callCountsMutex since the calls of a round run
-	// together.
-	callCounts      map[string]int
-	callCountsMutex sync.Mutex
 
 	// changingCallAnswers is what each call that changes something last
 	// answered in this turn, by repeatedCallKey, so the same change sent
@@ -1504,13 +1494,7 @@ func (self *AskRun) turn() error {
 		usageKind = "ask"
 	}
 
-	maximumRounds := configuration.Agent.Limits.MaxRoundsPerAsk
-	if maximumRounds <= 0 {
-		maximumRounds = 40
-	}
-	if settings.MaxRounds > 0 {
-		maximumRounds = settings.MaxRounds
-	}
+	maximumRounds := settings.MaxRounds
 	// A compaction that failed is not tried again this turn, and a request
 	// the provider refused for its size is compacted hard and sent once
 	// more.
@@ -1519,7 +1503,7 @@ func (self *AskRun) turn() error {
 	// the fourth: the turn stops rather than spending its rounds on it.
 	failures := map[string]int{}
 	recalledThisTurn := false
-	for round := 0; round < maximumRounds; round++ {
+	for round := 0; maximumRounds <= 0 || round < maximumRounds; round++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -1648,7 +1632,7 @@ func (self *AskRun) turn() error {
 		// writes the call out as words, which the server then mangles,
 		// and the answer is neither a call nor an answer.
 		toolChoice := ""
-		if (round == maximumRounds-1 || answerNow) && len(definitions) > 0 {
+		if ((maximumRounds > 0 && round == maximumRounds-1) || answerNow) && len(definitions) > 0 {
 			messages = append(messages, llm.ChatMessage{Role: llm.RoleUser, Content: lastRoundNotice})
 			toolChoice = "none"
 		}
@@ -1745,7 +1729,7 @@ func (self *AskRun) turn() error {
 		if strings.TrimSpace(answer.Content) != "" {
 			self.emit(Event{Kind: EventMessage, Text: answer.Content})
 		}
-		if len(answer.ToolCalls) == 0 && textualToolCall(answer.Content) && round < maximumRounds-1 {
+		if len(answer.ToolCalls) == 0 && textualToolCall(answer.Content) && (maximumRounds <= 0 || round < maximumRounds-1) {
 			// A tool call written out as words is one the server could not
 			// read: a local model's template asks for XML the server parses
 			// only when it is well formed, and two calls in one breath, or
@@ -2206,9 +2190,6 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 			}
 		}
 		return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "there is no tool named %s"}`, toolCall.Name))}
-	}
-	if !self.takeCallAllowance(tool.Name) {
-		return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "this run may call %s at most %d times and has used them all; answer with what you have"}`, tool.Name, self.settings.CallLimits[tool.Name]))}
 	}
 	// The intention is the apps' and not the tool's: a tool that reads
 	// its arguments strictly would refuse it, and the same call with other

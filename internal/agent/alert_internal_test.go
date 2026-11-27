@@ -260,50 +260,27 @@ func TestAlertJobTellsTheBurstInTheFeedInsteadOfTheMainConversation(t *testing.T
 	})
 }
 
-// At three in the morning an alert that can wait is held for seven, its
-// candidate left waiting and the job put back to then; one that cannot
-// wait is said.
-func TestAlertJobHoldsTheNightAndLetsTheUrgentThrough(t *testing.T) {
+// There are no quiet hours: at three in the morning an alert that can wait is
+// said at once, as one that cannot is, and the job is done rather than put
+// back to the morning.
+func TestAlertJobSaysEveryAlertAtAnyHour(t *testing.T) {
 	provider := &alertModel{answers: []string{
 		`{"alerts":[{"subject_key":"school trip form","is_urgent":false,"candidate_ids":["c1"],"alert_text":"The school trip form is due tomorrow."}],"dropped":[]}`,
-		// The one that may not wait is read first, as c1.
-		`{"alerts":[{"subject_key":"bank new device","is_urgent":true,"candidate_ids":["c1"],"alert_text":"A new device was just added to your bank account. If that wasn't you, call your bank now."},{"subject_key":"school trip form","is_urgent":false,"candidate_ids":["c2"],"alert_text":"The school trip form is due tomorrow."}],"dropped":[]}`,
 	}}
 	server := provider.serve(t)
-	zone := zoneAtHour(t, 3)
-	fixture := newAlertFixtureWith(t, server.URL, zone)
+	fixture := newAlertFixtureWith(t, server.URL, zoneAtHour(t, 3))
 	form := fixture.candidate(t, models.AlertCandidateMessage, models.AlertSignalSoon, "office@school.example.org", "Trip form due", "Please return the form by tomorrow.")
 	fixture.decide(t)
 
-	if alerts := fixture.alerts(t); len(alerts) != 0 {
-		t.Fatalf("nothing is said at three in the morning that can wait: %+v", alerts)
-	}
-	if waiting := fixture.candidateByID(t, form.ID); waiting.AlertID != "" || waiting.DroppedAt != nil {
-		t.Fatalf("the candidate waits for the morning: %+v", waiting)
-	}
-	jobs := fixture.alertJobs(t)
-	location, _ := time.LoadLocation(zone)
-	if len(jobs) != 1 || jobs[0].Status != models.AgentJobQueued || jobs[0].NotBefore == nil || jobs[0].NotBefore.In(location).Hour() != 7 || time.Until(*jobs[0].NotBefore) > 5*time.Hour {
-		t.Fatalf("the job is put back to seven: %+v", jobs)
-	}
-
-	// Something that cannot wait arrives, and brings the job forward.
-	fixture.candidate(t, models.AlertCandidateMessage, models.AlertSignalNow, "security@bank.example.com", "New device added", "A new device was added to your account.")
-	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
-		if err := queueAlert(tx, fixture.agent.ID, true, time.Now().Add(-alertGather)); err != nil {
-			t.Fatalf("queueAlert: %s", err)
-		}
-	})
-	if err := fixture.worker.Tick(t.Context()); err != nil {
-		t.Fatalf("Tick: %s", err)
-	}
-	fixture.worker.Wait()
 	alerts := fixture.alerts(t)
-	if len(alerts) != 1 || alerts[0].SubjectKey != "bank new device" || !alerts[0].IsUrgent {
-		t.Fatalf("the urgent one is said at night, alone: %+v", alerts)
+	if len(alerts) != 1 || alerts[0].SubjectKey != "school trip form" || alerts[0].IsUrgent {
+		t.Fatalf("an alert that can wait is said at three in the morning: %+v", alerts)
 	}
-	if waiting := fixture.candidateByID(t, form.ID); waiting.AlertID != "" || waiting.DroppedAt != nil {
-		t.Fatalf("the form still waits for the morning: %+v", waiting)
+	if told := fixture.candidateByID(t, form.ID); told.AlertID != alerts[0].ID {
+		t.Fatalf("its candidate is told: %+v", told)
+	}
+	if jobs := fixture.alertJobs(t); len(jobs) != 1 || jobs[0].Status != models.AgentJobDone {
+		t.Fatalf("the job is done, not put back to the morning: %+v", jobs)
 	}
 }
 
@@ -311,7 +288,6 @@ func TestAlertJobHoldsTheNightAndLetsTheUrgentThrough(t *testing.T) {
 func TestPlanAlertsKeepsTheBounds(t *testing.T) {
 	location := time.UTC
 	noon := time.Date(2026, 3, 4, 12, 0, 0, 0, location)
-	defaults := alertBoundsOf(&models.Agent{}, nil)
 	labeled := func(count int) []*labeledCandidate {
 		entries := make([]*labeledCandidate, 0, count)
 		for index := 1; index <= count; index++ {
@@ -323,61 +299,29 @@ func TestPlanAlertsKeepsTheBounds(t *testing.T) {
 		return AlertDecided{SubjectKey: subjectKey, CandidateIDs: []string{label}, AlertText: "Something to know about " + subjectKey + ".", IsUrgent: isUrgent}
 	}
 
-	// The day's five: the sixth is dropped, and the urgent one is kept
-	// ahead of those that were not.
-	sentToday := []*models.AgentAlert{}
-	for index := 0; index < 3; index++ {
-		sentToday = append(sentToday, &models.AgentAlert{SubjectKey: fmt.Sprintf("earlier %d", index), SentAt: noon.Add(-time.Duration(index+1) * time.Hour)})
-	}
-	plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false), alert("b", "c2", false), alert("c", "c3", true)}}, labeled(3), sentToday, noon, location, defaults)
-	if len(plan.sends) != 2 || plan.sends[0].subjectKey != "c" || plan.sends[1].subjectKey != "a" || len(plan.drops) != 1 || plan.drops[0].candidateId != "candidate-2" || !strings.Contains(plan.drops[0].dropReason, "5") {
-		t.Fatalf("two more make five, the urgent first: %+v", plan)
-	}
-	// Yesterday's do not count against today.
-	yesterday := []*models.AgentAlert{}
-	for index := 0; index < 5; index++ {
-		yesterday = append(yesterday, &models.AgentAlert{SubjectKey: fmt.Sprintf("yesterday %d", index), SentAt: noon.Add(-20 * time.Hour)})
-	}
-	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false)}}, labeled(1), yesterday, noon, location, defaults); len(plan.sends) != 1 {
-		t.Fatalf("a new day: %+v", plan)
-	}
-
 	// Said this week: dropped, unless it changed and the model says how.
 	told := []*models.AgentAlert{{SubjectKey: "photo app sign-in codes", SentAt: noon.Add(-48 * time.Hour)}}
-	plan = planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("Photo App  Sign-in Codes", "c1", false)}}, labeled(1), told, noon, location, defaults)
+	plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("Photo App  Sign-in Codes", "c1", false)}}, labeled(1), told, noon, location, nil)
 	if len(plan.sends) != 0 || len(plan.drops) != 1 || !strings.Contains(plan.drops[0].dropReason, "already told") {
 		t.Fatalf("the same thing is not said twice: %+v", plan)
 	}
 	changed := alert("photo app sign-in codes", "c1", false)
 	changed.HasChanged, changed.ChangeReason = true, "the codes went from six to fourteen"
-	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{changed}}, labeled(1), told, noon, location, defaults); len(plan.sends) != 1 {
+	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{changed}}, labeled(1), told, noon, location, nil); len(plan.sends) != 1 {
 		t.Fatalf("a change the model names is said: %+v", plan)
 	}
 	changed.ChangeReason = ""
-	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{changed}}, labeled(1), told, noon, location, defaults); len(plan.sends) != 0 {
+	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{changed}}, labeled(1), told, noon, location, nil); len(plan.sends) != 0 {
 		t.Fatalf("a change without a reason is not: %+v", plan)
 	}
 	// Two alerts of one run with the same key are one.
-	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false), alert("a", "c2", false)}}, labeled(2), nil, noon, location, defaults); len(plan.sends) != 1 || len(plan.drops) != 1 {
+	if plan := planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false), alert("a", "c2", false)}}, labeled(2), nil, noon, location, nil); len(plan.sends) != 1 || len(plan.drops) != 1 {
 		t.Fatalf("one key, said once: %+v", plan)
-	}
-
-	// The night: held unless urgent.
-	night := time.Date(2026, 3, 4, 23, 30, 0, 0, location)
-	plan = planAlerts(&AlertDecision{Alerts: []AlertDecided{alert("a", "c1", false), alert("b", "c2", true)}}, labeled(2), nil, night, location, defaults)
-	if len(plan.sends) != 1 || plan.sends[0].subjectKey != "b" || plan.heldCount != 1 || len(plan.drops) != 0 {
-		t.Fatalf("the night holds what can wait: %+v", plan)
-	}
-	if morning := nextAlertMorning(night, location, defaults); !morning.Equal(time.Date(2026, 3, 5, 7, 0, 0, 0, location)) {
-		t.Fatalf("held until seven: %s", morning)
-	}
-	if morning := nextAlertMorning(time.Date(2026, 3, 5, 3, 0, 0, 0, location), location, defaults); !morning.Equal(time.Date(2026, 3, 5, 7, 0, 0, 0, location)) {
-		t.Fatalf("after midnight, the same morning: %s", morning)
 	}
 
 	// A candidate the model did not mention, or named twice, is dropped
 	// once; an unknown label is ignored.
-	plan = planAlerts(&AlertDecision{Alerts: []AlertDecided{{SubjectKey: "a", CandidateIDs: []string{"c1", "c9"}, AlertText: "Something."}}, Dropped: []AlertDropped{{CandidateID: "c1"}}}, labeled(2), nil, noon, location, defaults)
+	plan = planAlerts(&AlertDecision{Alerts: []AlertDecided{{SubjectKey: "a", CandidateIDs: []string{"c1", "c9"}, AlertText: "Something."}}, Dropped: []AlertDropped{{CandidateID: "c1"}}}, labeled(2), nil, noon, location, nil)
 	if len(plan.sends) != 1 || len(plan.sends[0].candidates) != 1 || len(plan.drops) != 1 || plan.drops[0].candidateId != "candidate-2" {
 		t.Fatalf("every candidate goes somewhere once: %+v", plan)
 	}
@@ -503,18 +447,19 @@ func TestAlertJobWaitsForTheTurnInFlight(t *testing.T) {
 	}
 }
 
-// Thirty-one candidates held at three in the morning and one that cannot
-// wait, the last to arrive: the job reads the urgent one first and says
-// it, holds the rest, and waits for the morning rather than reading the
-// same held ones again every two minutes.
-func TestAlertJobReadsThePressingFirstAndSleepsOnTheHeld(t *testing.T) {
-	var heldLabels []string
+// Thirty-two candidates at three in the morning and one that cannot wait,
+// the last to arrive: the job reads the urgent one first with the first
+// twenty-nine of the rest, says both alerts at once, whatever the hour, and
+// the two candidates it did not read are decided again shortly, not in the
+// morning.
+func TestAlertJobReadsThePressingFirstAndComesBackForTheRest(t *testing.T) {
+	var readLabels []string
 	for index := 2; index <= alertCandidatesAtOnce; index++ {
-		heldLabels = append(heldLabels, fmt.Sprintf("%q", fmt.Sprintf("c%d", index)))
+		readLabels = append(readLabels, fmt.Sprintf("%q", fmt.Sprintf("c%d", index)))
 	}
 	provider := &alertModel{answers: []string{`{"alerts":[` +
 		`{"subject_key":"bank new device","is_urgent":true,"candidate_ids":["c1"],"alert_text":"A new device was just added to your bank account."},` +
-		`{"subject_key":"school notes","is_urgent":false,"candidate_ids":[` + strings.Join(heldLabels, ",") + `],"alert_text":"The school sent a pile of notes."}` +
+		`{"subject_key":"school notes","is_urgent":false,"candidate_ids":[` + strings.Join(readLabels, ",") + `],"alert_text":"The school sent a pile of notes."}` +
 		`],"dropped":[]}`}}
 	server := provider.serve(t)
 	zone := zoneAtHour(t, 3)
@@ -526,16 +471,24 @@ func TestAlertJobReadsThePressingFirstAndSleepsOnTheHeld(t *testing.T) {
 	fixture.decide(t)
 
 	alerts := fixture.alerts(t)
-	if len(alerts) != 1 || !alerts[0].IsUrgent || len(alerts[0].CandidateIDs) != 1 || alerts[0].CandidateIDs[0] != urgent.ID {
+	if len(alerts) != 2 {
+		t.Fatalf("both alerts are said at three in the morning: %+v", alerts)
+	}
+	isUrgentFirst := false
+	for _, alert := range alerts {
+		if alert.IsUrgent && len(alert.CandidateIDs) == 1 && alert.CandidateIDs[0] == urgent.ID {
+			isUrgentFirst = true
+		}
+	}
+	if !isUrgentFirst {
 		t.Fatalf("the urgent one is read and said: %+v", alerts)
 	}
-	if waiting := fixture.waiting(t); len(waiting) != alertCandidatesAtOnce+1 {
-		t.Fatalf("the rest wait for the morning: %d", len(waiting))
+	if waiting := fixture.waiting(t); len(waiting) != 2 {
+		t.Fatalf("the two it did not read wait: %d", len(waiting))
 	}
 	jobs := fixture.alertJobs(t)
-	location, _ := time.LoadLocation(zone)
-	if len(jobs) != 1 || jobs[0].Status != models.AgentJobQueued || jobs[0].NotBefore == nil || jobs[0].NotBefore.In(location).Hour() != 7 {
-		t.Fatalf("the job waits for seven, not two minutes: %+v", jobs)
+	if len(jobs) != 1 || jobs[0].Status != models.AgentJobQueued || jobs[0].NotBefore == nil || time.Until(*jobs[0].NotBefore) > 10*time.Minute {
+		t.Fatalf("the job is back within minutes, not at seven: %+v", jobs)
 	}
 }
 

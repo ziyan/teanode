@@ -25,6 +25,9 @@ const (
 	goalNoteRound = `{"id":"g1","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"goal","arguments":"{\"action\":\"note\",\"text\":\"two of five filed\",\"minutes\":45}"}}]},"finish_reason":"tool_calls"}]}
 {"id":"g1","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10}}`
 
+	goalOneMinuteRound = `{"id":"g6","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_6","function":{"name":"goal","arguments":"{\"action\":\"note\",\"text\":\"looking again soon\",\"minutes\":1}"}}]},"finish_reason":"tool_calls"}]}
+{"id":"g6","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10}}`
+
 	goalWaitRound = `{"id":"g2","model":"m","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_2","function":{"name":"goal","arguments":"{\"action\":\"wait\",\"text\":\"two drafts are ready; say send or edit\"}"}}]},"finish_reason":"tool_calls"}]}
 {"id":"g2","choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10}}`
 
@@ -276,9 +279,27 @@ func TestGoalThatWaitsResumesOnThePersonsTurn(t *testing.T) {
 	}
 }
 
+// A wait of a minute is a minute: there is no floor under what the goal
+// asks for.
+func TestGoalWaitOfOneMinuteIsKeptAsOneMinute(t *testing.T) {
+	world := startGoalWorld(t, []string{goalOneMinuteRound, answerRound}, "tell me when the build is green")
+	defer world.close()
+
+	before := time.Now()
+	world.runGoalTurn(t, 1)
+	after := world.read(t)
+	if after.GoalState != models.GoalWorking || after.GoalNextAt == nil {
+		t.Fatalf("a note leaves the goal working: %+v", after)
+	}
+	if wait := after.GoalNextAt.Sub(before); wait < 50*time.Second || wait > 2*time.Minute {
+		t.Fatalf("the next turn should be the one minute it asked for, got %s", wait)
+	}
+}
+
 // A turn that never calls the tool said nothing about when to look again,
-// so the next one is twice as far off as the last.
-func TestGoalTurnThatSaysNothingWaitsTwiceAsLong(t *testing.T) {
+// so the goal keeps the wait it had: a goal just set has none behind it and
+// takes the default, and one that was waiting a minute waits a minute.
+func TestGoalTurnThatSaysNothingKeepsItsWait(t *testing.T) {
 	world := startGoalWorld(t, []string{goalSilentRound}, "tell me when the build is green")
 	defer world.close()
 
@@ -288,10 +309,23 @@ func TestGoalTurnThatSaysNothingWaitsTwiceAsLong(t *testing.T) {
 	if after.GoalState != models.GoalWorking || after.GoalNextAt == nil {
 		t.Fatalf("a silent turn leaves the goal working: %+v", after)
 	}
-	// A goal just set has no interval behind it, so the default stands in
-	// for the last one: thirty minutes doubled.
-	if wait := after.GoalNextAt.Sub(before); wait < 55*time.Minute || wait > 65*time.Minute {
-		t.Fatalf("the next turn should be twice the default away, got %s", wait)
+	if wait := after.GoalNextAt.Sub(before); wait < 25*time.Minute || wait > 35*time.Minute {
+		t.Fatalf("the next turn should be the default thirty minutes away, got %s", wait)
+	}
+
+	// The same goal, now with a minute behind it: it was last set ten
+	// minutes ago to look nine minutes ago, and is due.
+	world = startGoalWorld(t, []string{goalSilentRound}, "tell me when the build is green")
+	defer world.close()
+	dbtest.Exec(t, world.database, `UPDATE "agent_conversation" SET "modified_at" = now() - interval '10 minutes', "goal_next_at" = now() - interval '9 minutes' WHERE "id" = '`+world.conversation.ID+`'`)
+	before = time.Now()
+	world.runGoalTurn(t, 1)
+	after = world.read(t)
+	if after.GoalNextAt == nil {
+		t.Fatalf("a silent turn leaves the goal a next turn: %+v", after)
+	}
+	if wait := after.GoalNextAt.Sub(before); wait < 50*time.Second || wait > 2*time.Minute {
+		t.Fatalf("the next turn should keep the minute it had, got %s", wait)
 	}
 }
 
@@ -303,7 +337,6 @@ func TestGoalTurnClearsTheNoteThatHeldItBack(t *testing.T) {
 		note      string
 		isCleared bool
 	}{
-		{"the goals have spent their share of today; it goes on tomorrow, or when you write", true},
 		{"the daily budget of 1000 tokens is used up", true},
 		{"the last turn failed: the provider fell over", true},
 		{"two of five filed", false},
@@ -330,11 +363,9 @@ func TestGoalTurnClearsTheNoteThatHeldItBack(t *testing.T) {
 //
 // It used to return the failure, so the queue retried the job up to five
 // times and each retry was another whole model turn against whatever had
-// just gone wrong -- a provider having a bad minute cost five turns, and
-// a failed row counts towards neither the day's cap nor the turns-alone
-// bound, so neither of them could see it. Now the goal backs off as a
-// silent turn does and the note says what happened, which is what the
-// person sees in the drawer.
+// just gone wrong -- a provider having a bad minute cost five turns. Now
+// the goal waits as a silent turn does, and the note says what happened,
+// which is what the person sees in the drawer.
 func TestGoalTurnThatFailedIsNotRetried(t *testing.T) {
 	world := startGoalWorld(t, []string{goalBrokenRound}, "watch the deploy")
 	defer world.close()
@@ -349,11 +380,11 @@ func TestGoalTurnThatFailedIsNotRetried(t *testing.T) {
 	if !strings.HasPrefix(after.GoalNote, "the last turn failed: ") {
 		t.Fatalf("the note should say what went wrong: %q", after.GoalNote)
 	}
-	if wait := after.GoalNextAt.Sub(before); wait < 55*time.Minute || wait > 65*time.Minute {
-		t.Fatalf("the next turn should be twice the default away, got %s", wait)
+	if wait := after.GoalNextAt.Sub(before); wait < 25*time.Minute || wait > 35*time.Minute {
+		t.Fatalf("the next turn should be the default thirty minutes away, got %s", wait)
 	}
 	// The job finished rather than being queued again, so the run counts
-	// against the caps the same as any other.
+	// against the budget the same as any other.
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
 		jobs, err := tx.ListAgentJobs(&db.AgentJobFilter{
 			AgentID: world.found.ID, Kinds: []models.AgentJobKind{models.AgentJobGoal},
@@ -373,19 +404,18 @@ func TestGoalTurnThatFailedIsNotRetried(t *testing.T) {
 	})
 }
 
-// The goals at their own pace spend at most their share of the person's
-// day. Once goal turns have spent it, the goal goes on tomorrow instead, and
-// says so.
-func TestGoalStopsAtTheGoalsShareOfTheDay(t *testing.T) {
+// There is no share of the day for goals to spend: a goal whose turns have
+// already used three quarters of the person's day takes its turn, and is not
+// put off till tomorrow.
+func TestGoalIsNotHeldBackByWhatGoalsSpentToday(t *testing.T) {
 	world := startGoalWorld(t, []string{goalNoteRound, answerRound}, "watch the deploy")
 	defer world.close()
 
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		// The default day is two hundred thousand tokens, and the goals'
-		// share of it half.
+		// The default day is two hundred thousand tokens.
 		if err := tx.PutAgentUsage(&db.AgentUsage{
 			AgentID: world.found.ID, Model: "fake:thinker", Kind: string(models.AgentJobGoal),
-			At: agent.DayStart(world.owner, time.Now()).Add(time.Minute), Values: []uint64{100000, 0, 0, 0, 1},
+			At: agent.DayStart(world.owner, time.Now()).Add(time.Minute), Values: []uint64{150000, 0, 0, 0, 1},
 		}); err != nil {
 			t.Fatalf("PutAgentUsage: %s", err)
 		}
@@ -393,24 +423,11 @@ func TestGoalStopsAtTheGoalsShareOfTheDay(t *testing.T) {
 	world.runGoalTurn(t, 1)
 
 	after := world.read(t)
-	if after.GoalState != models.GoalWorking {
-		t.Fatalf("the share postpones the goal, it does not end it: %+v", after)
+	if after.GoalState != models.GoalWorking || after.GoalNote != "two of five filed" {
+		t.Fatalf("the goal took its turn: %+v", after)
 	}
-	if !strings.Contains(after.GoalNote, "share of today") {
-		t.Fatalf("the note should say why it stopped: %q", after.GoalNote)
-	}
-	berlin, err := time.LoadLocation("Europe/Berlin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	local := time.Now().In(berlin)
-	midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, berlin).AddDate(0, 0, 1)
-	if after.GoalNextAt == nil || !after.GoalNextAt.Equal(midnight) {
-		t.Fatalf("it should go on at the person's own midnight (%s), got %v", midnight, after.GoalNextAt)
-	}
-	// And the model was never asked: the share comes before the turn.
-	if len(*world.requests) != 0 {
-		t.Fatalf("a goal past its share asks the model nothing: %d requests", len(*world.requests))
+	if len(*world.requests) == 0 {
+		t.Fatal("the model was never asked")
 	}
 }
 
@@ -488,16 +505,16 @@ func TestGoalThatIsMetEndsTheTurns(t *testing.T) {
 	}
 }
 
-// A goal nobody can meet answers "look again" for ever; after a run of
-// turns with no word from the person it stops and waits for them, and
-// they are told, so the worst case is a bounded number of turns rather
-// than the day's cap every day.
-func TestGoalStopsAfterTurnsAlone(t *testing.T) {
+// A goal does not stall: after a hundred turns of its own with no word from
+// the person it takes the next one, and the person is not asked to restart
+// it. What bounds a goal that is never met is the daily and monthly cost
+// limits, which wait it out.
+func TestGoalDoesNotStallAfterManyTurnsAlone(t *testing.T) {
 	world := startGoalWorld(t, []string{goalNoteRound, answerRound}, "watch the deploy")
 	defer world.close()
 
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		for turn := 0; turn < 24; turn++ {
+		for turn := 0; turn < 100; turn++ {
 			job, err := tx.EnqueueAgentJob(&models.AgentJob{AgentID: world.found.ID, Kind: models.AgentJobGoal, SubjectID: world.conversation.ID})
 			if err != nil {
 				t.Fatalf("EnqueueAgentJob: %s", err)
@@ -511,62 +528,29 @@ func TestGoalStopsAfterTurnsAlone(t *testing.T) {
 			}
 		}
 	})
-	world.runGoalTurn(t, 25)
+	world.runGoalTurn(t, 101)
 
 	after := world.read(t)
-	if after.GoalState != models.GoalWaiting || after.GoalNextAt != nil {
-		t.Fatalf("the bound stops the goal and waits for the person: %+v", after)
+	if after.GoalState != models.GoalWorking || after.GoalNextAt == nil {
+		t.Fatalf("the goal goes on working: %+v", after)
 	}
-	if !strings.HasPrefix(after.GoalNote, "Goal stalled: 24 turns since you last wrote") {
-		t.Fatalf("the note should say why it stopped: %q", after.GoalNote)
+	if after.GoalNote != "two of five filed" {
+		t.Fatalf("the turn ran and left its note, not a stall: %q", after.GoalNote)
 	}
-	// And the transcript says so where the person reads, since no turn
-	// ran to say it there.
+	if len(*world.requests) == 0 {
+		t.Fatal("a goal past twenty-four turns asks the model")
+	}
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
 		messages, err := tx.ListAgentMessages(world.conversation.ID, nil)
 		if err != nil {
 			t.Fatalf("ListAgentMessages: %s", err)
 		}
-		last := messages[len(messages)-1]
-		if last.Role != models.AgentMessageNote || models.NoteText(models.AgentNoteKind(last.Name), last.Content) != after.GoalNote {
-			t.Fatalf("the stall should be the transcript's last line: %+v", last)
+		for _, message := range messages {
+			if message.Role == models.AgentMessageNote && models.AgentNoteKind(message.Name) == models.NoteGoalStalled {
+				t.Fatalf("a stall was written into the transcript: %+v", message)
+			}
 		}
 	})
-	if len(*world.requests) != 0 {
-		t.Fatalf("a goal at the bound asks the model nothing: %d requests", len(*world.requests))
-	}
-	// Said in the main conversation by the next sweep, not mailed.
-	if after.GoalSurfacedAt != nil {
-		t.Fatalf("a stalled goal is to be said in the main conversation: %+v", after)
-	}
-	world.sender.mutex.Lock()
-	sent := len(world.sender.sent)
-	world.sender.mutex.Unlock()
-	if sent != 0 {
-		t.Fatalf("a stalled goal mails nothing: %d", sent)
-	}
-
-	// Their own turn starts the count again: with a word from them after
-	// the twenty-four, the next turn of the agent's own runs.
-	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: world.conversation.ID, Role: "user", Content: "keep going"}); err != nil {
-			t.Fatalf("AppendAgentMessage: %s", err)
-		}
-		due := time.Now().Add(-time.Minute)
-		if _, err := tx.UpdateAgentConversation(world.conversation.ID, func(conversation *models.AgentConversation) error {
-			conversation.GoalState, conversation.GoalNextAt = models.GoalWorking, &due
-			return nil
-		}); err != nil {
-			t.Fatalf("UpdateAgentConversation: %s", err)
-		}
-	})
-	world.runGoalTurn(t, 26)
-	if len(*world.requests) == 0 {
-		t.Fatalf("after the person wrote, the goal takes its turn again")
-	}
-	if after := world.read(t); after.GoalState != models.GoalWorking {
-		t.Fatalf("the turn after the person's word goes on working: %+v", after)
-	}
 }
 
 // Setting a goal makes it due at once, so the sweep queues its job while

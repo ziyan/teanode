@@ -46,7 +46,14 @@ export type AgentProvider = {
   pricingInput: number
   pricingCacheWrite: number
   pricingAudioInput: number
-  modelPricing: { model: string; input: number; output: number; cacheRead: number; cacheWrite: number; audioInput: number }[]
+  modelPricing: {
+    model: string
+    input: number
+    output: number
+    cacheRead: number
+    cacheWrite: number
+    audioInput: number
+  }[]
   pricingOutput: number
   pricingCacheRead: number
   // What a provider that runs on a plan last said of its allowance; null
@@ -124,22 +131,11 @@ export type Agent = {
     dailyCostPerAgent: number
     monthlyCostPerServer: number
     monthlyTokensPerServer: number
-    maxRoundsPerAsk: number
-    maxRoundsPerResearch: number
-    maxRoundsPerReply: number
-    maxToolCallsPerRun: number
     requestTimeout: string
     concurrency: number
-    maxRoundsPerDream: number
     scanConcurrency: number
     rewriteConcurrency: number
-    dreamShare: number
     ingestChunksPerRun: number
-    embeddingTokensPerDay: number
-    maxRoundsPerSubagent: number
-    goalShare: number
-    goalTurnsAlone: number
-    backgroundWakesAlone: number
   }
   retention: { runs: string; corrections: string }
   currency: string
@@ -184,7 +180,7 @@ export const AGENT_SELECTION = `agent {
   providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast quick transcription embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-  limits { maxRecordingMediaBytes maxRecordingAccountBytes maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalShare goalTurnsAlone backgroundWakesAlone }
+  limits { maxRecordingMediaBytes maxRecordingAccountBytes maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer requestTimeout concurrency scanConcurrency rewriteConcurrency ingestChunksPerRun }
   retention { runs corrections }
   currency
   search { kind hasApiKey }
@@ -452,7 +448,14 @@ type ProviderDraft = {
   pricingCacheRead: string
   pricingCacheWrite: string
   pricingAudioInput: string
-  modelPricing: { model: string; input: string; output: string; cacheRead: string; cacheWrite: string; audioInput: string }[]
+  modelPricing: {
+    model: string
+    input: string
+    output: string
+    cacheRead: string
+    cacheWrite: string
+    audioInput: string
+  }[]
 }
 
 function providerDraft(provider?: AgentProvider): ProviderDraft {
@@ -1306,26 +1309,15 @@ function limitFields(settings: Agent) {
     monthlyTokensPerServer: String(settings.limits.monthlyTokensPerServer),
     dailyCostPerAgent: String(settings.limits.dailyCostPerAgent),
     monthlyCostPerServer: String(settings.limits.monthlyCostPerServer),
-    maxRoundsPerAsk: String(settings.limits.maxRoundsPerAsk),
-    maxRoundsPerResearch: String(settings.limits.maxRoundsPerResearch),
-    maxRoundsPerReply: String(settings.limits.maxRoundsPerReply),
-    maxToolCallsPerRun: String(settings.limits.maxToolCallsPerRun),
     requestTimeout: settings.limits.requestTimeout,
     concurrency: String(settings.limits.concurrency),
-    maxRoundsPerDream: String(settings.limits.maxRoundsPerDream),
     scanConcurrency: String(settings.limits.scanConcurrency),
     rewriteConcurrency: String(settings.limits.rewriteConcurrency),
-    dreamShare: String(settings.limits.dreamShare),
     ingestChunksPerRun: String(settings.limits.ingestChunksPerRun),
-    embeddingTokensPerDay: String(settings.limits.embeddingTokensPerDay),
-    maxRoundsPerSubagent: String(settings.limits.maxRoundsPerSubagent),
-    goalShare: String(settings.limits.goalShare),
-    goalTurnsAlone: String(settings.limits.goalTurnsAlone),
-    backgroundWakesAlone: String(settings.limits.backgroundWakesAlone),
   }
 }
 
-function LimitsForm({ settings, onSaved }: Props) {
+export function LimitsForm({ settings, onSaved }: Props) {
   const { t } = useTranslation()
   const { busy, problem, saved, save } = useSaver(onSaved)
   const [limits, setLimits] = useState(limitFields(settings))
@@ -1369,22 +1361,11 @@ function LimitsForm({ settings, onSaved }: Props) {
               monthlyTokensPerServer: number(limits.monthlyTokensPerServer),
               dailyCostPerAgent: number(limits.dailyCostPerAgent),
               monthlyCostPerServer: number(limits.monthlyCostPerServer),
-              maxRoundsPerAsk: number(limits.maxRoundsPerAsk),
-              maxRoundsPerResearch: number(limits.maxRoundsPerResearch),
-              maxRoundsPerReply: number(limits.maxRoundsPerReply),
-              maxToolCallsPerRun: number(limits.maxToolCallsPerRun),
               requestTimeout: limits.requestTimeout,
               concurrency: number(limits.concurrency),
-              maxRoundsPerDream: number(limits.maxRoundsPerDream),
               scanConcurrency: number(limits.scanConcurrency),
               rewriteConcurrency: number(limits.rewriteConcurrency),
-              dreamShare: Number(limits.dreamShare) || 0,
               ingestChunksPerRun: number(limits.ingestChunksPerRun),
-              embeddingTokensPerDay: number(limits.embeddingTokensPerDay),
-              maxRoundsPerSubagent: number(limits.maxRoundsPerSubagent),
-              goalShare: Number(limits.goalShare) || 0,
-              goalTurnsAlone: number(limits.goalTurnsAlone),
-              backgroundWakesAlone: number(limits.backgroundWakesAlone),
             },
             retention,
             currency,
@@ -1411,20 +1392,10 @@ function LimitsForm({ settings, onSaved }: Props) {
           />
         </label>
       </div>
+      {/* How wide the night's reading and the ingest run. */}
       <div className="row">
-        {(['maxRoundsPerAsk', 'maxRoundsPerResearch', 'maxRoundsPerReply', 'maxToolCallsPerRun'] as const).map(numeric)}
+        {(['scanConcurrency', 'rewriteConcurrency', 'ingestChunksPerRun'] as const).map(numeric)}
       </div>
-      {/* The night and the ingest: what the reading may spend and how
-          wide it runs, beside the caps a conversation lives under. */}
-      <div className="row">
-        {(['maxRoundsPerDream', 'scanConcurrency', 'rewriteConcurrency', 'dreamShare'] as const).map(numeric)}
-      </div>
-      <div className="row">{(['ingestChunksPerRun', 'embeddingTokensPerDay'] as const).map(numeric)}</div>
-      {/* What work nobody is watching may take before it stops: zero is
-          each one's default. */}
-      <p className="muted">{t('agentSettings.limitsUnattended')}</p>
-      <div className="row">{(['maxRoundsPerSubagent', 'goalShare', 'goalTurnsAlone'] as const).map(numeric)}</div>
-      <div className="row">{(['backgroundWakesAlone'] as const).map(numeric)}</div>
       <div className="row">
         {(['requestTimeout', 'concurrency'] as const).map(numeric)}
         <label className="shrink">

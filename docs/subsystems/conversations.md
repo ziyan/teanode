@@ -320,7 +320,7 @@ Everybody who can chat has an `agent` row, made switched off
 (`EnsureAgent`) for a person who never turned theirs on, because their
 conversations and phones hang from it. Nothing treats that row as "this person
 uses the agent": the sweeps over every agent (the dream, speaking first,
-follow-ups, the weekly look around, evaluation) check `Enabled` or `Active`,
+follow-ups, evaluation) check `Enabled` or `Active`,
 which it is not, and the places that ask whether the person has an agent at all
 (their settings page, the operator's list of agents, granting a mailbox or a
 source, learning from a correction) see a **placeholder** as none

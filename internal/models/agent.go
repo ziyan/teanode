@@ -124,11 +124,12 @@ type Agent struct {
 
 	// IsAlertsEnabled is the person's switch for alerts: the agent telling
 	// them, unasked, what their mail says they should know now. On for a
-	// new agent. AlertQuietStart and AlertQuietEnd are their night, as
-	// "22:00" in their own zone, when only what cannot wait is said; empty
-	// means the default, and the two the same means no night at all.
-	// AlertDailyMost is how many alerts a day at most; zero means the
-	// default. See internal/agent/alert.go.
+	// new agent. See internal/agent/alert.go.
+	//
+	// AlertQuietStart, AlertQuietEnd and AlertDailyMost are no longer used:
+	// a card lands in the feed at any hour and every alert is delivered.
+	// They are still answered, read-only, so an older app's settings page
+	// loads; the columns go in a later migration.
 	IsAlertsEnabled bool   `json:"isAlertsEnabled"`
 	AlertQuietStart string `json:"alertQuietStart,omitempty" graphapi:"nullable"`
 	AlertQuietEnd   string `json:"alertQuietEnd,omitempty" graphapi:"nullable"`
@@ -139,10 +140,10 @@ type Agent struct {
 	// docs/subsystems/feed.md.
 	FeedDestination string `json:"feedDestination"`
 
-	// LookAroundWeekday and LookAroundTime are when the agent looks around
-	// the person's town each week for what is on: a lower-case English day
-	// name such as "thursday", and "17:00" in their own zone. Empty means
-	// the default. See internal/agent/nearby.go.
+	// LookAroundWeekday and LookAroundTime are no longer used: the look
+	// around is an ordinary goal (migration 0285 made one from each
+	// person's setting). They are still answered, read-only, so an older
+	// app's settings page loads; the columns go in a later migration.
 	LookAroundWeekday string `json:"lookAroundWeekday,omitempty" graphapi:"nullable"`
 	LookAroundTime    string `json:"lookAroundTime,omitempty" graphapi:"nullable"`
 
@@ -173,69 +174,6 @@ func IsTaxFilingStatus(text string) bool {
 		}
 	}
 	return false
-}
-
-// The bounds alerts keep when the person has not said: a night from ten
-// to seven in their own zone, and five a day.
-const (
-	AlertQuietStartDefault = "22:00"
-	AlertQuietEndDefault   = "07:00"
-	AlertDailyMostDefault  = 5
-)
-
-// AlertQuietHours is the person's night for alerts, filled in.
-func (self *Agent) AlertQuietHours() (string, string) {
-	start, end := self.AlertQuietStart, self.AlertQuietEnd
-	if start == "" {
-		start = AlertQuietStartDefault
-	}
-	if end == "" {
-		end = AlertQuietEndDefault
-	}
-	return start, end
-}
-
-// The day and time the look around runs when the person has not said:
-// Thursday afternoon, early enough to plan the weekend by.
-const (
-	LookAroundWeekdayDefault = "thursday"
-	LookAroundTimeDefault    = "17:00"
-)
-
-// LookAroundWeekdays are the days the look around may be set to, in the
-// order of time.Weekday, so a name's index is its day.
-var LookAroundWeekdays = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
-
-// IsLookAroundWeekday says text is one of LookAroundWeekdays.
-func IsLookAroundWeekday(text string) bool {
-	for _, weekday := range LookAroundWeekdays {
-		if text == weekday {
-			return true
-		}
-	}
-	return false
-}
-
-// LookAroundSchedule is the day and time the look around runs, filled in.
-func (self *Agent) LookAroundSchedule() (weekday, clock string) {
-	if self != nil {
-		weekday, clock = self.LookAroundWeekday, self.LookAroundTime
-	}
-	if weekday == "" {
-		weekday = LookAroundWeekdayDefault
-	}
-	if clock == "" {
-		clock = LookAroundTimeDefault
-	}
-	return weekday, clock
-}
-
-// EffectiveAlertDailyMost resolves the zero value.
-func (self *Agent) EffectiveAlertDailyMost() int {
-	if self == nil || self.AlertDailyMost <= 0 {
-		return AlertDailyMostDefault
-	}
-	return self.AlertDailyMost
 }
 
 // DreamWindow is the hours of this person's night, filled in.
@@ -346,29 +284,10 @@ func (self *Agent) Validate() error {
 	if self.DailyTokens < 0 {
 		errors.add("dailyTokens", "must not be negative")
 	}
-	for field, clock := range map[string]string{"alertQuietStart": self.AlertQuietStart, "alertQuietEnd": self.AlertQuietEnd} {
-		if clock == "" {
-			continue
-		}
-		if _, err := time.Parse("15:04", clock); err != nil {
-			errors.add(field, "%q is not a time of day like 22:00", clock)
-		}
-	}
-	if self.LookAroundWeekday != "" && !IsLookAroundWeekday(self.LookAroundWeekday) {
-		errors.add("lookAroundWeekday", "%q is not a day; say one of sunday, monday, tuesday, wednesday, thursday, friday or saturday", self.LookAroundWeekday)
-	}
-	if self.LookAroundTime != "" {
-		if _, err := time.Parse("15:04", self.LookAroundTime); err != nil {
-			errors.add("lookAroundTime", "%q is not a time of day like 17:00", self.LookAroundTime)
-		}
-	}
 	for _, unattendedRisk := range self.UnattendedAllowedRisks {
 		if !unattendedRisk.IsValid() {
 			errors.add("unattendedAllowedRisks", "%q is not one of outward, money, destructive, granting, listed", unattendedRisk)
 		}
-	}
-	if self.AlertDailyMost < 0 || self.AlertDailyMost > 50 {
-		errors.add("alertDailyMost", "must be between 0 and 50")
 	}
 	if self.ReportingCurrencyCode != "" && !IsCurrencyCode(self.ReportingCurrencyCode) {
 		errors.add("reportingCurrencyCode", "%q is not a currency code like USD", self.ReportingCurrencyCode)
@@ -792,12 +711,6 @@ const (
 	// the hour it belongs to, so a sweep is queued once; it makes no model
 	// call.
 	AgentJobFollowUpSweep AgentJobKind = "follow_up_sweep"
-
-	// AgentJobNearby is the weekly look around the person's town: a run
-	// with nobody present that searches the web for what is on in the week
-	// ahead, and writes what it finds as follow-ups. Its subject is the
-	// day and the hour it belongs to, so a week's run is queued once.
-	AgentJobNearby AgentJobKind = "nearby"
 )
 
 // AgentJobStatus is where a job is.

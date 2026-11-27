@@ -154,14 +154,15 @@ for. Its times (`goal_times`) are cron lines in the person's zone, five fields
 not move every time it is read. Its mail (`goal_mail_conditions`) is the tests
 a mailbox rule makes (from, to, subject, a header, or any message; contains,
 equals or matches), only those a message can be judged by as it arrives. A goal
-keeps at most twelve times. The daily brief and the asset estimates are goals
-their switches start, found by title.
+keeps at most twelve times. The daily brief (started by its idea in the
+catalog) and the asset estimates are goals, found by title; the look around is
+one too, made by migration 0285.
 
 | | at its own pace | on set times |
 | --- | --- | --- |
-| when the next turn is | the last turn says, within bounds | the soonest of its times, or now when its mail came |
+| when the next turn is | the last turn says, as given | the soonest of its times, or now when its mail came |
 | what decides it | the agent, through `note` | the worker, whatever the turn asked |
-| the day's caps | apply | do not: the person chose the cadence |
+| bounds | the daily and monthly cost limits | the same |
 | how it ends | the agent says `met`, or the person closes it | the same; times that are all moments end with `met` |
 
 The sweep, `dueGoals`, queues one job per goal conversation that is `working`
@@ -172,16 +173,12 @@ moves the time on, since only it knows what the turn decided. A goal that is
 time.
 
 `runGoal` then, in order: reads the conversation and stops if the goal is no
-longer working; for a goal at its own pace adds up the tokens of every goal turn since
-the person's own midnight and, once they reach `agent.limits.goalShare` of
-the daily budget (default half), puts the next turn at tomorrow's midnight
-with a note saying so, and counts this conversation's goal jobs since the later of the goal's setting and the person's last word
-and, at **twenty-four**, sets the goal `waiting` with the note "Goal stalled:
-…", writes that line into the transcript and lets the sweep call the person,
-so a goal nobody can meet stops rather than costing the goals' share every day;
-checks the budget and, when it is spent, puts the next turn at the reset with
-the budget's reason as the note; and otherwise runs one headless turn in the
-conversation with the check-in as its message.
+longer working; checks the budget and, when it is spent, puts the next turn at
+the reset with the budget's reason as the note; and otherwise runs one headless
+turn in the conversation with the check-in as its message, with no limit on its
+rounds. There is no share of the day for goals and no count of turns alone: a
+goal that is never met goes on until the person drops it or the daily and
+monthly cost limits wait it out.
 
 The check-in says what the goal is for: in the person's words when they wrote
 it, or pressed the switch that started it (`goal_written_by` is `person` or
@@ -203,8 +200,10 @@ own. A failed turn on set times is not tried again before its next time,
 since each try would post its cards again. A goal at its own pace reads the
 row again: a turn that called the `goal` tool has already written what happens
 next; one that did not is asked once more with the goal tool alone, and failing
-that the next turn is **twice as far off** as the last, bounded by five
-minutes and a day, so a goal waiting on a nightly build backs off by itself.
+that the next turn is as far off as the last (the default thirty minutes for a
+goal that never gave one), whether the turn said nothing or failed. A wait the
+goal gives is used as given, a minute as a minute, and zero or less is the next
+tick.
 
 What a goal tells the person goes to their feed with the feed tool. The cards
 of one turn of a goal on set times are one stack, keyed by that turn's job, so
@@ -226,10 +225,9 @@ dropped and the turn is told more may have come.
 
 ## Caveats
 
-- **The goals' share counts tokens, not turns.** Goals at their own pace spend
-  at most `agent.limits.goalShare` of the day's budget between them; a goal
-  that finds it spent waits for tomorrow. A goal on set times is outside the
-  share, and is bounded only by its times and the budget.
+- **A goal is bounded by cost, not by count.** Nothing stops a goal that asks
+  to look every minute but the person's daily cost limit and the server's
+  monthly one, which the budget check before each turn waits out.
 - **A goal turn cannot confirm anything**, being headless, so a goal that needs
   something sent or deleted can only prepare it and call `goal` with `wait`.
 - **Day and weekday are ANDed**, not ORed as in classic cron: a line naming both

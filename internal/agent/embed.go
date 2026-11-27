@@ -153,6 +153,11 @@ func (self *Agent) meaningSearch(ctx context.Context, agent *models.Agent, mailb
 	if len(candidates) == 0 {
 		return nil, nil
 	}
+	// Past the person's daily limit or the server's monthly one the search
+	// is by words alone, as it is where there is no embedding model.
+	if agent != nil && !self.isBudgetLeftToEmbed(ctx, agent.ID) {
+		return nil, nil
+	}
 	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
 	defer cancel()
 	vectors, usage, err := selection.Embedder.Embed(callContext, llm.EmbedRequest{

@@ -77,7 +77,7 @@ func TestPagesAreRewrittenSideBySide(t *testing.T) {
 		t.Fatalf("only %d pages are due", due)
 	}
 	record := &models.AgentDream{}
-	worker.dreamConsolidate(t.Context(), run, record, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamConsolidate(t.Context(), run, record, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	if record.Rewritten != due {
 		t.Errorf("%d pages were counted rewritten, not %d", record.Rewritten, due)
 	}

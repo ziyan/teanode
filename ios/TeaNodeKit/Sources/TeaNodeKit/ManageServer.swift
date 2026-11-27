@@ -1449,31 +1449,20 @@ public struct AgentModelChoices: Hashable, Sendable {
 }
 
 /// AgentLimits are the caps on what people and the whole server may spend,
-/// how far one run may go, and what unattended work may take.
+/// and the technical bounds of a call.
 public struct AgentLimits: Codable, Hashable, Sendable {
     public let maxBodyCharacters: Int
     public let dailyTokensPerAgent: Int
     public let dailyCostPerAgent: Double
     public let monthlyCostPerServer: Double
     public let monthlyTokensPerServer: Int
-    public let maxRoundsPerAsk: Int
-    public let maxRoundsPerResearch: Int
-    public let maxRoundsPerReply: Int
-    public let maxToolCallsPerRun: Int
     public let requestTimeout: String
     public var maxRecordingMediaBytes: String? = nil
     public var maxRecordingAccountBytes: String? = nil
     public let concurrency: Int
-    public let maxRoundsPerDream: Int
     public let scanConcurrency: Int
     public let rewriteConcurrency: Int
-    public let dreamShare: Double
     public let ingestChunksPerRun: Int
-    public let embeddingTokensPerDay: Int
-    public let maxRoundsPerSubagent: Int
-    public let goalShare: Double
-    public let goalTurnsAlone: Int
-    public let backgroundWakesAlone: Int
 }
 
 /// AgentRetention is how long run transcripts and corrections are kept.
@@ -1822,10 +1811,8 @@ public struct AgentLimitsDraft: Hashable, Sendable {
     public static let limitGroups: [[String]] = [
         ["dailyTokensPerAgent", "monthlyTokensPerServer", "maxBodyCharacters"],
         ["dailyCostPerAgent", "monthlyCostPerServer"],
-        ["maxRoundsPerAsk", "maxRoundsPerResearch", "maxRoundsPerReply", "maxToolCallsPerRun"],
-        ["maxRoundsPerDream", "scanConcurrency", "rewriteConcurrency", "dreamShare"],
-        ["ingestChunksPerRun", "embeddingTokensPerDay"],
-        ["maxRoundsPerSubagent", "goalShare", "goalTurnsAlone", "backgroundWakesAlone"],
+        ["scanConcurrency", "rewriteConcurrency"],
+        ["ingestChunksPerRun"],
         ["requestTimeout", "concurrency"],
         ["maxRecordingMediaBytes", "maxRecordingAccountBytes"],
     ]
@@ -1839,15 +1826,9 @@ public struct AgentLimitsDraft: Hashable, Sendable {
         let numbers: [String: Double] = [
             "maxBodyCharacters": Double(limits.maxBodyCharacters), "dailyTokensPerAgent": Double(limits.dailyTokensPerAgent),
             "monthlyTokensPerServer": Double(limits.monthlyTokensPerServer), "dailyCostPerAgent": limits.dailyCostPerAgent,
-            "monthlyCostPerServer": limits.monthlyCostPerServer, "maxRoundsPerAsk": Double(limits.maxRoundsPerAsk),
-            "maxRoundsPerResearch": Double(limits.maxRoundsPerResearch), "maxRoundsPerReply": Double(limits.maxRoundsPerReply),
-            "maxToolCallsPerRun": Double(limits.maxToolCallsPerRun), "concurrency": Double(limits.concurrency),
-            "maxRoundsPerDream": Double(limits.maxRoundsPerDream), "scanConcurrency": Double(limits.scanConcurrency),
-            "rewriteConcurrency": Double(limits.rewriteConcurrency), "dreamShare": limits.dreamShare,
-            "ingestChunksPerRun": Double(limits.ingestChunksPerRun), "embeddingTokensPerDay": Double(limits.embeddingTokensPerDay),
-            "maxRoundsPerSubagent": Double(limits.maxRoundsPerSubagent), "goalShare": limits.goalShare,
-            "goalTurnsAlone": Double(limits.goalTurnsAlone),
-            "backgroundWakesAlone": Double(limits.backgroundWakesAlone),
+            "monthlyCostPerServer": limits.monthlyCostPerServer, "concurrency": Double(limits.concurrency),
+            "scanConcurrency": Double(limits.scanConcurrency), "rewriteConcurrency": Double(limits.rewriteConcurrency),
+            "ingestChunksPerRun": Double(limits.ingestChunksPerRun),
         ]
         // Zero is said as 0, as the dashboard's form shows a stored limit.
         var limitTexts = numbers.mapValues { number in number == 0 ? "0" : SettingsList.text(number) }
@@ -2634,7 +2615,7 @@ extension Documents {
           providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
           models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize transcription embeddingDimensions choices }
           features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-          limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalShare goalTurnsAlone backgroundWakesAlone maxRecordingMediaBytes maxRecordingAccountBytes }
+          limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer requestTimeout concurrency scanConcurrency rewriteConcurrency ingestChunksPerRun maxRecordingMediaBytes maxRecordingAccountBytes }
           retention { runs corrections }
           currency
           search { kind hasApiKey }

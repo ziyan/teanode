@@ -157,7 +157,7 @@ func TestTheIdeaStepLooksOnceADayWhateverTheReadingSpent(t *testing.T) {
 
 	// A provider that will not bill the account stops even this call.
 	refused := &dreamBudget{refused: true}
-	if refused.reserveBeyondShare() {
+	if refused.reserveBeyondAllowance() {
 		t.Fatal("a refused provider refuses the look for ideas too")
 	}
 }

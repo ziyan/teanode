@@ -39,27 +39,6 @@ class GoalTimesTest {
         assertEquals("0 9 * * 6,0", GoalTiming(9, 0, listOf(6, 7)).cron)
     }
 
-    private fun briefGoal(goalTimes: List<String>, title: String = DailyBrief.GOAL_TITLE, writtenBy: String = DailyBrief.WRITTEN_BY, id: String = "b") = AgentGoal(
-        conversationId = id, goalTitle = title, goalDescription = "", goalState = "working", goalStatus = "", goalTimes = goalTimes, goalWrittenBy = writtenBy,
-    )
-
-    @Test
-    fun theDailyBriefReadsItsTimeAndDaysFromItsFirstWeeklyTime() {
-        assertEquals("07:30", DailyBrief.time(DailyBrief.cron(null)))
-        assertEquals("08:05", DailyBrief.time("5 8 * * 1"))
-        assertEquals(listOf(1, 2, 3, 4, 5), DailyBrief.dayNumbers(DailyBrief.cron(null)))
-        assertEquals(listOf(6, 7), DailyBrief.dayNumbers("0 9 * * 6,0"))
-        assertEquals(listOf(1, 2, 3, 4, 5), DailyBrief.dayNumbers("garbage"))
-        assertEquals("0 9 * * 6,0", DailyBrief.cron(briefGoal(listOf("@at 2030-01-02 09:00", "0 9 * * 6,0"))))
-    }
-
-    @Test
-    fun theDailyBriefIsTheBuiltInGoalOfThatTitle() {
-        val goals = listOf(briefGoal(emptyList(), title = "Other", writtenBy = "person", id = "a"), briefGoal(emptyList(), writtenBy = "person", id = "c"), briefGoal(emptyList()))
-        assertEquals("b", DailyBrief.goal(goals)!!.id)
-        assertNull(DailyBrief.goal(goals.take(2)))
-    }
-
     @Test
     fun aTimeLineIsAWeeklyTimeAMomentOrAnythingElseKeptAsWritten() {
         assertEquals(GoalTimeLine.Weekly(GoalTiming(7, 30, listOf(1, 2, 3, 4, 5))), GoalTimeLine.of("30 7 * * 1-5"))

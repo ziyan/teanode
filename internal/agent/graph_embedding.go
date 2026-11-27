@@ -2,8 +2,11 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"time"
 
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -55,10 +58,41 @@ func (self *Agent) meaningOf(ctx context.Context, agentId, kind, text string) *m
 	return &meaning{ModelName: modelName, Vector: vectors[0]}
 }
 
-// embed is one call to the embedding model, at the configured width.
+// isBudgetLeftToEmbed says the person's daily limit and the server's
+// monthly one have room for another call. An agent that is not in the
+// database has nothing to bill and is let through. A read that fails says no:
+// every caller reads a refused embedding as "compare by name alone".
+func (self *Agent) isBudgetLeftToEmbed(ctx context.Context, agentId string) bool {
+	isLeft := true
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		agent, err := tx.GetAgent(agentId)
+		if err != nil || agent == nil {
+			return err
+		}
+		owner, err := tx.GetUser(agent.UserID)
+		if err != nil || owner == nil {
+			return err
+		}
+		var deferral *Deferral
+		if err := RequireBudget(tx, self.settings.Configuration(), agent, owner, time.Now()); errors.As(err, &deferral) {
+			isLeft = false
+			return nil
+		} else {
+			return err
+		}
+	}); err != nil {
+		log.Warningf("cannot read the budget before embedding for agent %q: %s", agentId, err)
+		return false
+	}
+	return isLeft
+}
+
+// embed is one call to the embedding model, at the configured width, made
+// only while the person's daily limit and the server's monthly one have
+// room, like every other call that costs.
 func (self *Agent) embed(ctx context.Context, agentId, kind string, texts []string) ([][]float32, string, bool) {
 	embedder, model, modelName, dimensions, ok := self.embedderFor()
-	if !ok || len(texts) == 0 {
+	if !ok || len(texts) == 0 || !self.isBudgetLeftToEmbed(ctx, agentId) {
 		return nil, "", false
 	}
 	configuration := self.settings.Configuration()

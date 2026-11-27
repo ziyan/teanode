@@ -188,12 +188,6 @@
     <string name="settings_audit_title">审计日志</string>
     <string name="settings_audit_unset">未设置</string>
     <string name="settings_audit_via_agent">通过助手</string>
-    <string name="settings_brief_footer">今天有什么安排、有什么在等你，显示在你的动态中。开启后会开始一个名为“Daily brief”的目标，可以在那里看到它做了什么。</string>
-    <string name="settings_brief_off">简报已关闭，目标已暂停。</string>
-    <string name="settings_brief_on">简报已开启。</string>
-    <string name="settings_brief_send_now">立即发送一份</string>
-    <string name="settings_brief_sent">正在发送，稍后送达。</string>
-    <string name="settings_brief_title">每天早晨的简报</string>
     <string name="settings_circles_accept">接受</string>
     <string name="settings_circles_account_made">%1$s 已有账号，并已加入圈子</string>
     <string name="settings_circles_admin">管理员</string>
@@ -812,6 +806,4 @@
     </plurals>
     <string name="settings_unsent_mail">你写的一封邮件尚未发送。</string>
     <string name="settings_unsent_deleted">退出登录会将它们从这部手机上删除。</string>
-    <string name="settings_stepper_decrease">减少</string>
-    <string name="settings_stepper_increase">增加</string>
 </resources>

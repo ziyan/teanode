@@ -23,10 +23,9 @@ const (
 // it remembers about the person.
 func (self *Agent) memoryCheckReason() speakFirstReason {
 	return speakFirstReason{
-		name:           SpeakFirstMemoryCheck,
-		isDailyLimited: true,
-		canAsk:         true,
-		feedLines:      "This check is not a conversation: nobody is here to answer question after question. Call memory_check with draft, record the first question with memory_check ask as above, and post it as ONE card with the feed tool instead of ask_user: feed_item_kind decision, title the question as a plain sentence about what you remember, body the fact, choices yes (\"Yes, that's right\", action), changed (\"It has changed\", discuss) and skip (\"Skip this one\", dismiss), in their language, coalesce_key memory-check, pictureSymbol brain.head.profile. Post nothing else and write nothing else in this turn. When they press Yes, their message in the main conversation says so and you record it with memory_check record confirmed; when they discuss it, you ask what is right and record it corrected.",
+		name:      SpeakFirstMemoryCheck,
+		canAsk:    true,
+		feedLines: "This check is not a conversation: nobody is here to answer question after question. Call memory_check with draft, record the first question with memory_check ask as above, and post it as ONE card with the feed tool instead of ask_user: feed_item_kind decision, title the question as a plain sentence about what you remember, body the fact, choices yes (\"Yes, that's right\", action), changed (\"It has changed\", discuss) and skip (\"Skip this one\", dismiss), in their language, coalesce_key memory-check, pictureSymbol brain.head.profile. Post nothing else and write nothing else in this turn. When they press Yes, their message in the main conversation says so and you record it with memory_check record confirmed; when they discuss it, you ask what is right and record it corrected.",
 		// A check that put no question did nothing.
 		didNothing: func(ctx context.Context, run *Run, started time.Time) (bool, error) {
 			var questions []*models.AgentEvaluationQuestion

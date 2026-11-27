@@ -95,11 +95,7 @@ func (self *Agent) runResearch(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
-	maximumRounds := configuration.Agent.Limits.MaxRoundsPerResearch
-	if maximumRounds <= 0 {
-		maximumRounds = 8
-	}
-	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: prompt, Surface: "research", ReadOnly: true, Allow: researchTools, IsFetchLimitedToSearched: true, Headless: true, MaxRounds: maximumRounds, UsageKind: string(models.AgentJobResearch)})
+	turn, err := self.Ask(&AskSettings{Agent: run.Agent, Owner: run.Owner, Operations: operations, Conversation: conversation, Message: prompt, Surface: "research", ReadOnly: true, Allow: researchTools, IsFetchLimitedToSearched: true, Headless: true, UsageKind: string(models.AgentJobResearch)})
 	if err != nil {
 		return err
 	}

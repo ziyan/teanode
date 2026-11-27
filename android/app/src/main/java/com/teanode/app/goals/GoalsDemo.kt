@@ -81,6 +81,4 @@ val goalsDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("RunAgentGoal", goalEntries.getValue("goal-working")),
     graphQLField("TellAgentGoal", goalEntries.getValue("goal-working")),
     graphQLField("SetAgentGoalState", goalEntries.getValue("goal-working")),
-    graphQLField("SetAgentBrief", goalEntries.getValue("goal-brief")),
-    graphQLField("RunAgentBriefNow", goalEntries.getValue("goal-brief")),
 )
