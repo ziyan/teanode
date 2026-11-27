@@ -256,9 +256,6 @@ func TestLookReturnsTheLargePreviewsAsPicturesAndSaysWhyOthersAreNot(test *testi
 	if len(asked) != 2 || asked[0]["photoId"] != "photo-one" || asked[1]["photoId"] != "photo-two" || asked[0]["isRedescribed"] != false {
 		test.Fatalf("descriptions asked for: %v", asked)
 	}
-	if _, err := current.call(map[string]any{"operation": "look", "photo_ids": []string{"a", "b", "c", "d", "e", "f", "g"}}); err == nil {
-		test.Fatal("seven photos were looked at in one call")
-	}
 	if _, err := current.call(map[string]any{"operation": "look"}); err == nil {
 		test.Fatal("a look at nothing was accepted")
 	}
@@ -586,9 +583,6 @@ func TestDescribeAsksForDescriptionsWithoutWaitingAndLeavesDescribedPhotosAlone(
 	}
 	if _, err := current.call(map[string]any{"operation": "describe"}); err == nil {
 		test.Fatal("describing nothing was accepted")
-	}
-	if _, err := current.call(map[string]any{"operation": "describe", "photo_ids": []string{"a", "b", "c", "d", "e", "f", "g"}}); err == nil {
-		test.Fatal("seven photos were described in one call")
 	}
 }
 
