@@ -99,7 +99,36 @@ const (
 	FeedChangeSettled   FeedChange = "settled"
 	FeedChangeDismissed FeedChange = "dismissed"
 	FeedChangeRestored  FeedChange = "restored"
+
+	// FeedChangeResolved and FeedChangeUnresolved say a card was marked
+	// resolved, or the mark was taken off. Neither moves the card.
+	FeedChangeResolved   FeedChange = "resolved"
+	FeedChangeUnresolved FeedChange = "unresolved"
 )
+
+// FeedResolverKind is who marked a card resolved: a goal in its own turn, the
+// person, or the agent outside a goal's turn.
+type FeedResolverKind string
+
+// The kinds of resolver.
+const (
+	FeedResolverGoal   FeedResolverKind = "goal"
+	FeedResolverPerson FeedResolverKind = "person"
+	FeedResolverAgent  FeedResolverKind = "agent"
+)
+
+// IsFeedResolverKind says whether a word is one of the kinds of resolver.
+func IsFeedResolverKind(value FeedResolverKind) bool {
+	return value == FeedResolverGoal || value == FeedResolverPerson || value == FeedResolverAgent
+}
+
+// FeedResolution is what marks a card resolved: who, and the one line saying
+// what cleared.
+type FeedResolution struct {
+	ResolutionNote string
+	ResolvedByKind FeedResolverKind
+	ResolvedByID   string
+}
 
 // FeedCardLayout is how a card is drawn: text, the default, or a layout with
 // structured content that every app draws natively.
@@ -182,6 +211,11 @@ const (
 	// fetches and keeps so that the person's device never asks the page's
 	// site for it.
 	FeedMediaPicture FeedMediaKind = "picture"
+
+	// FeedMediaCameraStill is a still from one of the person's cameras, kept
+	// by the server as a page's picture is, or one of the person's photos of
+	// that moment, with why this camera was chosen.
+	FeedMediaCameraStill FeedMediaKind = "camera_still"
 )
 
 const (
@@ -219,13 +253,32 @@ type FeedMedia struct {
 	// ListRowIndex makes the entry the thumbnail of that row of a list card;
 	// nil for a picture of the whole card.
 	ListRowIndex *int `json:"listRowIndex,omitempty"`
+
+	// CameraName is the camera a still is from, and CapturedAt when, in RFC
+	// 3339 on the camera's own clock with its offset, never converted to
+	// UTC. StillReason says why this camera. PlaybackURL opens the
+	// recording and LiveURL the live view, each https or the app's own
+	// scheme. All for a camera still.
+	CameraName  string `json:"cameraName,omitempty"`
+	CapturedAt  string `json:"capturedAt,omitempty"`
+	StillReason string `json:"stillReason,omitempty"`
+	PlaybackURL string `json:"playbackUrl,omitempty"`
+	LiveURL     string `json:"liveUrl,omitempty"`
+
+	// AttachmentID is the file of the posting run that a camera still is
+	// made from. It is read as the card is posted and never stored.
+	AttachmentID string `json:"-"`
 }
 
-// IsShown says the entry has something to show: a photo or video, or a page's
-// picture that was fetched.
+// IsShown says the entry has something to show: a photo or video, a page's
+// picture that was fetched, or a camera still that was kept or is one of the
+// person's photos.
 func (self *FeedMedia) IsShown() bool {
-	if self.FeedMediaKind == FeedMediaPicture {
+	switch self.FeedMediaKind {
+	case FeedMediaPicture:
 		return self.ImageFileID != ""
+	case FeedMediaCameraStill:
+		return self.ImageFileID != "" || self.PhotoID != ""
 	}
 	return self.PhotoID != ""
 }
@@ -233,6 +286,81 @@ func (self *FeedMedia) IsShown() bool {
 // IsPictureWaiting says the entry is a page's picture not fetched yet.
 func (self *FeedMedia) IsPictureWaiting() bool {
 	return self.FeedMediaKind == FeedMediaPicture && self.ImageFileID == "" && !self.IsPictureMissing
+}
+
+// FeedChartKind is how a chart is drawn: a series over time, or bars.
+type FeedChartKind string
+
+// The kinds of chart.
+const (
+	FeedChartKindSeries FeedChartKind = "series"
+	FeedChartKindBars   FeedChartKind = "bars"
+)
+
+// FeedSeriesRole is what a line of a series chart is: measured, the default,
+// a reference to compare with (last month, the average), or a projection of
+// what is expected ahead.
+type FeedSeriesRole string
+
+// The roles of a line.
+const (
+	FeedSeriesMeasured   FeedSeriesRole = "measured"
+	FeedSeriesReference  FeedSeriesRole = "reference"
+	FeedSeriesProjection FeedSeriesRole = "projection"
+)
+
+// The limits on a chart.
+const (
+	// FeedChartsMost is how many charts a card carries.
+	FeedChartsMost = 2
+
+	FeedChartLabelsLeast   = 2
+	FeedChartLabelsMost    = 60
+	FeedChartSeriesMost    = 3
+	FeedChartMarkersMost   = 3
+	FeedChartBarsMost      = 8
+	FeedProvenanceMost     = 120
+	FeedStillReasonMost    = 120
+	FeedResolutionNoteMost = 160
+)
+
+// FeedChartSeries is one line of a series chart: a number for each label of
+// the axis, or nil where there is none.
+type FeedChartSeries struct {
+	SeriesName string         `json:"seriesName"`
+	SeriesRole FeedSeriesRole `json:"seriesRole"`
+	Values     []*float64     `json:"values"`
+}
+
+// FeedChartMarker is a labeled vertical rule at one of the axis labels.
+type FeedChartMarker struct {
+	MarkerAt    string `json:"markerAt"`
+	MarkerLabel string `json:"markerLabel"`
+}
+
+// FeedChartBar is one bar of a bar chart, never negative.
+type FeedChartBar struct {
+	BarLabel string  `json:"barLabel"`
+	BarValue float64 `json:"barValue"`
+}
+
+// FeedChartBlock is a chart on a card. Provenance says where and when the
+// numbers were read.
+type FeedChartBlock struct {
+	ChartKind  FeedChartKind `json:"chartKind"`
+	ChartTitle string        `json:"chartTitle"`
+
+	// Unit is what the numbers count, such as "USD" or "steps".
+	Unit       string `json:"unit"`
+	Provenance string `json:"provenance"`
+
+	// XLabels, Series and Markers are for a series chart.
+	XLabels []string          `json:"xLabels"`
+	Series  []FeedChartSeries `json:"series"`
+	Markers []FeedChartMarker `json:"markers"`
+
+	// Bars are for a bar chart, largest first.
+	Bars []FeedChartBar `json:"bars"`
 }
 
 // FeedSourceLink is a page a card is built from, listed on its info sheet.
@@ -280,6 +408,9 @@ type AgentFeedItem struct {
 	// list card's rows.
 	FeedMedia []FeedMedia `json:"feedMedia"`
 
+	// ChartBlocks are the card's charts, at most FeedChartsMost.
+	ChartBlocks []FeedChartBlock `json:"chartBlocks"`
+
 	// CoalesceKey makes a later post with the same key from the same agent
 	// replace this card. Empty for a card that is never replaced.
 	CoalesceKey string `json:"coalesceKey"`
@@ -321,12 +452,28 @@ type AgentFeedItem struct {
 	FeedStackTitle string `json:"feedStackTitle"`
 	IsLiked        bool   `json:"isLiked"`
 
+	// ResolvedAt is when the card was marked resolved, nil while it is not:
+	// its problem cleared. ResolutionNote is the one line saying what
+	// cleared, ResolvedByKind who marked it, and ResolvedByID the goal's
+	// conversation or the person's user.
+	ResolvedAt     *time.Time       `json:"resolvedAt"`
+	ResolutionNote string           `json:"resolutionNote"`
+	ResolvedByKind FeedResolverKind `json:"resolvedByKind"`
+	ResolvedByID   string           `json:"resolvedById"`
+
+	// PostNotes say what a post changed for the poster, such as a title that
+	// was cut. They are answered with the post and never stored.
+	PostNotes []string `json:"-"`
+
 	ReadAt      *time.Time `json:"readAt"`
 	DismissedAt *time.Time `json:"dismissedAt"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	UpdatedAt   time.Time  `json:"updatedAt"`
 	ExpiresAt   *time.Time `json:"expiresAt"`
 }
+
+// IsResolved says whether the card is marked resolved.
+func (self *AgentFeedItem) IsResolved() bool { return self.ResolvedAt != nil }
 
 // IsChosen says whether a choice was made on the card.
 func (self *AgentFeedItem) IsChosen() bool { return self.ChosenChoiceKey != "" }

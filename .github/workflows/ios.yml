@@ -537,6 +537,23 @@ jobs:
           shoot feed-dismissed-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-dismissed
           shoot feed-dismissed-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-dismissed
           shoot feed-dismissed-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-dismissed
+          # The feed card rules (docs/planning/feed-cards-execplan.md): a resolved card, an answered card folded to a line,
+          # a series chart with a reference line and a marker, a bars chart and a camera still.
+          shoot feed-resolved-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-resolved
+          shoot feed-resolved-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-resolved
+          shoot feed-resolved-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-resolved
+          shoot feed-answered-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-answered
+          shoot feed-answered-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-answered
+          shoot feed-answered-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-answered
+          shoot feed-series-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-series
+          shoot feed-series-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-series
+          shoot feed-series-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-series
+          shoot feed-bars-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-bars
+          shoot feed-bars-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-bars
+          shoot feed-bars-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-bars
+          shoot feed-camera-light light large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-camera
+          shoot feed-camera-dark dark large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-camera
+          shoot feed-camera-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab feed -TeaNodeScreen feed-camera
           # Photos, from invented photos drawn by the demo server: the library as a grid, the viewer on its
           # first photo, the Trash, and a library with nothing in it.
           shoot photos-library-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library

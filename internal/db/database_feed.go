@@ -78,6 +78,16 @@ type FeedOperation interface {
 	// once.
 	SettleAgentFeedItem(feedItemId string, settlement *models.FeedSettlement, now time.Time) (bool, error)
 
+	// ResolveAgentFeedItem marks a card resolved and says whether this call
+	// was the one that did: a card is resolved once, so the first resolution
+	// and its note stand. The card does not move, become unread or expire
+	// later.
+	ResolveAgentFeedItem(feedItemId string, resolution *models.FeedResolution, now time.Time) (bool, error)
+
+	// UnresolveAgentFeedItem takes the mark off and says whether the card was
+	// resolved.
+	UnresolveAgentFeedItem(feedItemId string, now time.Time) (bool, error)
+
 	// SetAgentFeedItemOutcome writes the line a chosen card ends with and
 	// says the turn behind it is over.
 	SetAgentFeedItemOutcome(feedItemId, outcomeText string, now time.Time) error
@@ -147,6 +157,7 @@ type agentFeedItemModel struct {
 	SourceLinks      []byte `gorm:"column:source_links;type:jsonb"`
 	RecordReferences []byte `gorm:"column:record_references;type:jsonb"`
 	FeedMedia        []byte `gorm:"column:feed_media;type:jsonb"`
+	ChartBlocks      []byte `gorm:"column:chart_blocks;type:jsonb"`
 
 	CoalesceKey *string `gorm:"column:coalesce_key"`
 	Choices     []byte  `gorm:"column:choices;type:jsonb"`
@@ -165,6 +176,11 @@ type agentFeedItemModel struct {
 	StackPosition  *int   `gorm:"column:stack_position"`
 	FeedStackTitle string `gorm:"column:feed_stack_title"`
 	IsLiked        bool   `gorm:"column:is_liked"`
+
+	ResolvedAt     *time.Time `gorm:"column:resolved_at"`
+	ResolutionNote string     `gorm:"column:resolution_note"`
+	ResolvedByKind string     `gorm:"column:resolved_by_kind"`
+	ResolvedByID   string     `gorm:"column:resolved_by_id"`
 
 	ReadAt      *time.Time `gorm:"column:read_at"`
 	DismissedAt *time.Time `gorm:"column:dismissed_at"`
@@ -198,6 +214,7 @@ func feedItemToModel(item *models.AgentFeedItem) (*agentFeedItemModel, error) {
 		ChosenChoiceKey: optionalID(item.ChosenChoiceKey), ChosenAt: item.ChosenAt, ChosenConversationID: item.ChosenConversationID,
 		OutcomeText: item.OutcomeText, IsOutcomePending: item.IsOutcomePending,
 		FeedUrgency: string(item.FeedUrgency), FeedStackKey: item.FeedStackKey, FeedCardLayout: string(item.FeedCardLayout), StackPosition: item.StackPosition, FeedStackTitle: item.FeedStackTitle, IsLiked: item.IsLiked,
+		ResolvedAt: item.ResolvedAt, ResolutionNote: item.ResolutionNote, ResolvedByKind: string(item.ResolvedByKind), ResolvedByID: item.ResolvedByID,
 		ReadAt: item.ReadAt, DismissedAt: item.DismissedAt, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt, ExpiresAt: item.ExpiresAt,
 	}
 	if item.LayoutContent != "" {
@@ -222,6 +239,9 @@ func feedItemToModel(item *models.AgentFeedItem) (*agentFeedItemModel, error) {
 	if model.FeedMedia, err = jsonArray(item.FeedMedia); err != nil {
 		return nil, err
 	}
+	if model.ChartBlocks, err = jsonArray(item.ChartBlocks); err != nil {
+		return nil, err
+	}
 	return model, nil
 }
 
@@ -231,10 +251,11 @@ func (self *agentFeedItemModel) toModel() (*models.AgentFeedItem, error) {
 		FeedItemKind: models.FeedItemKind(self.FeedItemKind), FeedSourceKind: models.FeedSourceKind(self.FeedSourceKind), FeedSourceID: self.FeedSourceID,
 		RunConversationID: self.RunConversationID,
 		Title:             self.Title, Body: self.Body, PictureSymbol: self.PictureSymbol,
-		FactRows: []models.FeedFactRow{}, SourceLinks: []models.FeedSourceLink{}, RecordReferences: []models.AgentReference{}, Choices: []models.FeedChoice{}, FeedMedia: []models.FeedMedia{},
+		FactRows: []models.FeedFactRow{}, SourceLinks: []models.FeedSourceLink{}, RecordReferences: []models.AgentReference{}, Choices: []models.FeedChoice{}, FeedMedia: []models.FeedMedia{}, ChartBlocks: []models.FeedChartBlock{},
 		ChosenAt: localTime(self.ChosenAt), ChosenConversationID: self.ChosenConversationID,
 		OutcomeText: self.OutcomeText, IsOutcomePending: self.IsOutcomePending,
 		FeedUrgency: models.FeedUrgency(self.FeedUrgency), FeedStackKey: self.FeedStackKey, FeedCardLayout: models.FeedCardLayout(self.FeedCardLayout), LayoutContent: string(self.LayoutContent), StackPosition: self.StackPosition, FeedStackTitle: self.FeedStackTitle, IsLiked: self.IsLiked,
+		ResolvedAt: localTime(self.ResolvedAt), ResolutionNote: self.ResolutionNote, ResolvedByKind: models.FeedResolverKind(self.ResolvedByKind), ResolvedByID: self.ResolvedByID,
 		ReadAt: localTime(self.ReadAt), DismissedAt: localTime(self.DismissedAt),
 		CreatedAt: self.CreatedAt.In(time.Local), UpdatedAt: self.UpdatedAt.In(time.Local), ExpiresAt: localTime(self.ExpiresAt),
 	}
@@ -242,7 +263,7 @@ func (self *agentFeedItemModel) toModel() (*models.AgentFeedItem, error) {
 	for _, column := range []struct {
 		data   []byte
 		target any
-	}{{self.FactRows, &item.FactRows}, {self.SourceLinks, &item.SourceLinks}, {self.RecordReferences, &item.RecordReferences}, {self.Choices, &item.Choices}, {self.FeedMedia, &item.FeedMedia}} {
+	}{{self.FactRows, &item.FactRows}, {self.SourceLinks, &item.SourceLinks}, {self.RecordReferences, &item.RecordReferences}, {self.Choices, &item.Choices}, {self.FeedMedia, &item.FeedMedia}, {self.ChartBlocks, &item.ChartBlocks}} {
 		if err := decodeJSON(column.data, column.target); err != nil {
 			return nil, err
 		}
@@ -271,6 +292,7 @@ func (self *transaction) UpsertAgentFeedItem(item *models.AgentFeedItem, now tim
 	posted.CreatedAt, posted.UpdatedAt = now, now
 	posted.ExpiresAt = feedExpiry(&posted, now)
 	posted.ReadAt, posted.DismissedAt = nil, nil
+	posted.ResolvedAt, posted.ResolutionNote, posted.ResolvedByKind, posted.ResolvedByID = nil, "", "", ""
 	posted.ChosenChoiceKey, posted.ChosenAt, posted.ChosenConversationID, posted.OutcomeText, posted.IsOutcomePending = "", nil, "", "", false
 
 	if posted.CoalesceKey != "" {
@@ -292,7 +314,9 @@ func (self *transaction) UpsertAgentFeedItem(item *models.AgentFeedItem, now tim
 				"chosen_choice_key": nil, "chosen_at": nil, "chosen_conversation_id": "", "outcome_text": "", "is_outcome_pending": false,
 				"feed_item_kind": model.FeedItemKind, "feed_source_kind": model.FeedSourceKind, "feed_source_id": model.FeedSourceID,
 				"run_conversation_id": model.RunConversationID, "title": model.Title, "body": model.Body, "picture_symbol": model.PictureSymbol,
-				"fact_rows": model.FactRows, "source_links": model.SourceLinks, "record_references": model.RecordReferences, "feed_media": model.FeedMedia,
+				"fact_rows": model.FactRows, "source_links": model.SourceLinks, "record_references": model.RecordReferences, "feed_media": model.FeedMedia, "chart_blocks": model.ChartBlocks,
+				// A new post on a subject is a new state of it: the earlier resolution does not carry over.
+				"resolved_at": nil, "resolution_note": "", "resolved_by_kind": "", "resolved_by_id": "",
 				"choices": model.Choices, "interaction_id": model.InteractionID, "feed_urgency": model.FeedUrgency, "feed_stack_key": model.FeedStackKey, "feed_card_layout": model.FeedCardLayout, "layout_content": model.LayoutContent, "stack_position": model.StackPosition, "feed_stack_title": model.FeedStackTitle,
 			}
 			if err := self.tx.Model(&agentFeedItemModel{}).Where(`"id" = ?`, existing.ID).Updates(updates).Error; err != nil {
@@ -522,7 +546,7 @@ func (self *transaction) UpdateAgentFeedItem(feedItemId string, modify func(*mod
 	updates := map[string]any{
 		"updated_at": now, "coalesce_key": model.CoalesceKey, "feed_item_kind": model.FeedItemKind, "title": model.Title, "body": model.Body,
 		"picture_symbol": model.PictureSymbol, "fact_rows": model.FactRows, "source_links": model.SourceLinks,
-		"record_references": model.RecordReferences, "feed_media": model.FeedMedia, "choices": model.Choices, "interaction_id": model.InteractionID, "feed_urgency": model.FeedUrgency,
+		"record_references": model.RecordReferences, "feed_media": model.FeedMedia, "chart_blocks": model.ChartBlocks, "choices": model.Choices, "interaction_id": model.InteractionID, "feed_urgency": model.FeedUrgency,
 		"feed_stack_key": model.FeedStackKey, "stack_position": model.StackPosition, "feed_stack_title": model.FeedStackTitle,
 		"feed_card_layout": model.FeedCardLayout, "layout_content": model.LayoutContent,
 	}
@@ -540,6 +564,21 @@ func (self *transaction) SettleAgentFeedItem(feedItemId string, settlement *mode
 			"outcome_text": settlement.OutcomeText, "is_outcome_pending": settlement.IsOutcomePending,
 			"read_at": gorm.Expr(`COALESCE("read_at", ?::timestamptz)`, now), "updated_at": now, "expires_at": expiresAt,
 		})
+	return result.RowsAffected == 1, result.Error
+}
+
+func (self *transaction) ResolveAgentFeedItem(feedItemId string, resolution *models.FeedResolution, now time.Time) (bool, error) {
+	result := self.tx.Model(&agentFeedItemModel{}).Where(`"id" = ? AND "resolved_at" IS NULL`, feedItemId).
+		Updates(map[string]any{
+			"resolved_at": now, "resolution_note": resolution.ResolutionNote,
+			"resolved_by_kind": string(resolution.ResolvedByKind), "resolved_by_id": resolution.ResolvedByID, "updated_at": now,
+		})
+	return result.RowsAffected == 1, result.Error
+}
+
+func (self *transaction) UnresolveAgentFeedItem(feedItemId string, now time.Time) (bool, error) {
+	result := self.tx.Model(&agentFeedItemModel{}).Where(`"id" = ? AND "resolved_at" IS NOT NULL`, feedItemId).
+		Updates(map[string]any{"resolved_at": nil, "resolution_note": "", "resolved_by_kind": "", "resolved_by_id": "", "updated_at": now})
 	return result.RowsAffected == 1, result.Error
 }
 

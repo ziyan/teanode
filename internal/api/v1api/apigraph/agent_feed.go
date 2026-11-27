@@ -78,6 +78,20 @@ type AgentFeedMutation interface {
 	// announced to open feeds as dismissed. Needs agent:use.
 	WithdrawAgentFeedItem(ctx context.Context, arguments AgentFeedItemArguments) (bool, error)
 
+	// Mark a card resolved: its problem cleared, which says so on the card
+	// instead of a new card that says all is clear. The card does not move,
+	// become unread or notify anyone. The first resolution and its note
+	// stand: a card already resolved is refused. A goal's own turn (named by
+	// runConversationId) may resolve only a card it posted. Announced to
+	// open feeds as resolved. Needs agent:use.
+	ResolveAgentFeedItem(ctx context.Context, arguments ResolveAgentFeedItemArguments) (*AgentFeedItemView, error)
+
+	// Take the resolved mark off a card, which also clears its note. A goal's
+	// own turn may do it only to a card it posted, and never to one the
+	// person resolved. Announced to open feeds as unresolved. Needs
+	// agent:use.
+	UnresolveAgentFeedItem(ctx context.Context, arguments UnresolveAgentFeedItemArguments) (*AgentFeedItemView, error)
+
 	// Mark cards read, and say how many were newly read. Needs agent:use.
 	MarkAgentFeedRead(ctx context.Context, arguments MarkAgentFeedReadArguments) (int, error)
 
@@ -166,6 +180,28 @@ type RestoreAgentFeedItemsArguments struct {
 	FeedItemIDs []string `json:"feedItemIds"`
 }
 
+// ResolveAgentFeedItemArguments name a card and say what cleared.
+type ResolveAgentFeedItemArguments struct {
+	FeedItemID string `json:"feedItemId"`
+
+	// ResolutionNote is one line of at most 160 characters saying what
+	// cleared; longer is cut and the answer says so.
+	ResolutionNote *string `json:"resolutionNote" graphapi:"nullable"`
+
+	// RunConversationID is the goal's conversation when the goal's own turn
+	// resolves, which limits it to the cards it posted; the feed tool sends
+	// it, and a screen leaves it out.
+	RunConversationID *string `json:"runConversationId" graphapi:"nullable"`
+}
+
+// UnresolveAgentFeedItemArguments name a card.
+type UnresolveAgentFeedItemArguments struct {
+	FeedItemID string `json:"feedItemId"`
+
+	// RunConversationID is as for ResolveAgentFeedItem.
+	RunConversationID *string `json:"runConversationId" graphapi:"nullable"`
+}
+
 // MarkAgentFeedReadArguments name the cards read.
 type MarkAgentFeedReadArguments struct {
 	FeedItemIDs []string `json:"feedItemIds"`
@@ -229,6 +265,11 @@ type PostAgentFeedItemArguments struct {
 	// Choices are at most four buttons.
 	Choices []models.FeedChoice `json:"choices" graphapi:"nullable"`
 
+	// ChartBlocks are at most two charts, each with the line saying where and
+	// when its numbers were read. Left out of a change, the card keeps the
+	// ones it has.
+	ChartBlocks []models.FeedChartBlock `json:"chartBlocks" graphapi:"nullable"`
+
 	// Media are the card's pictures and videos, at most six of its own and
 	// one for each row of a list. Left out of a post, a text card shows the
 	// picture of its first source link and a list card's linked rows theirs;
@@ -248,13 +289,41 @@ type AgentFeedMedia struct {
 	// ListRowIndex makes it the thumbnail of that row of a list card,
 	// counted from 0.
 	ListRowIndex *int `json:"listRowIndex" graphapi:"nullable"`
+
+	// CameraStill makes the entry a still from one of the person's cameras
+	// instead of a photo or a page; it takes no photoId or pageUrl of its own.
+	CameraStill *AgentFeedCameraStill `json:"cameraStill" graphapi:"nullable"`
+}
+
+// AgentFeedCameraStill is a still from one of the person's cameras. Its
+// picture is one a camera tool fetched in the posting run, named by the
+// attachmentId of the tool's answer, or one of the person's photos of that
+// moment by photoId; give one of the two. A still whose picture cannot be
+// read is left off, and the answer says so. An update keeps a still only when
+// the camera and moment are the same: a new moment needs a new picture.
+type AgentFeedCameraStill struct {
+	AttachmentID string `json:"attachmentId" graphapi:"nullable"`
+	PhotoID      string `json:"photoId" graphapi:"nullable"`
+	CameraName   string `json:"cameraName"`
+
+	// CapturedAt is when, in RFC 3339 on the camera's own clock with its
+	// offset, never converted to UTC.
+	CapturedAt string `json:"capturedAt"`
+
+	// StillReason is why this camera, of at most 120 characters.
+	StillReason string `json:"stillReason"`
+
+	// PlaybackURL and LiveURL are https addresses or the app's own scheme.
+	PlaybackURL string `json:"playbackUrl" graphapi:"nullable"`
+	LiveURL     string `json:"liveUrl" graphapi:"nullable"`
 }
 
 // AgentFeedMediaView is a picture or video on a card, ready to draw.
 type AgentFeedMediaView struct {
 	MediaKey string `json:"mediaKey"`
 
-	// FeedMediaKind is photo, video or picture, a web page's picture.
+	// FeedMediaKind is photo, video, picture (a web page's picture) or
+	// camera_still.
 	FeedMediaKind string `json:"feedMediaKind"`
 
 	// ImageURL is the picture, or a video's poster, and VideoURL the video
@@ -272,6 +341,15 @@ type AgentFeedMediaView struct {
 	// ListRowIndex is the row of a list card this is the thumbnail of, null
 	// for a picture of the whole card.
 	ListRowIndex *int `json:"listRowIndex" graphapi:"nullable"`
+
+	// For a camera still: the camera, when the still was taken (RFC 3339 on
+	// the camera's clock, with its offset), why this camera, and the
+	// addresses a tap on the still and Watch live open.
+	CameraName  string `json:"cameraName" graphapi:"nullable"`
+	CapturedAt  string `json:"capturedAt" graphapi:"nullable"`
+	StillReason string `json:"stillReason" graphapi:"nullable"`
+	PlaybackURL string `json:"playbackUrl" graphapi:"nullable"`
+	LiveURL     string `json:"liveUrl" graphapi:"nullable"`
 }
 
 // AgentFeedPageView is a page of the feed.
@@ -289,7 +367,8 @@ type AgentFeedPageView struct {
 type AgentFeedChangeView struct {
 	FeedItemID string `json:"feedItemId"`
 
-	// FeedChange is posted, replaced, settled, dismissed or restored.
+	// FeedChange is posted, replaced, settled, dismissed, restored, resolved
+	// or unresolved.
 	FeedChange  string `json:"feedChange"`
 	UnreadCount int    `json:"unreadCount"`
 }
@@ -322,7 +401,24 @@ type AgentFeedItemView struct {
 	// thumbnails; a page's picture appears once the server has fetched it.
 	FeedMedia []*AgentFeedMediaView `json:"feedMedia"`
 
+	// ChartBlocks are the card's charts.
+	ChartBlocks []models.FeedChartBlock `json:"chartBlocks"`
+
 	Choices []models.FeedChoice `json:"choices"`
+
+	// IsResolved says the card's problem cleared. ResolvedAt is when, null
+	// while it is not, ResolutionNote the one line saying what cleared, and
+	// ResolvedByKind who marked it: goal, person or agent, empty while not
+	// resolved.
+	IsResolved     bool       `json:"isResolved"`
+	ResolvedAt     *time.Time `json:"resolvedAt" graphapi:"nullable"`
+	ResolutionNote string     `json:"resolutionNote"`
+	ResolvedByKind string     `json:"resolvedByKind"`
+
+	// PostNotes are what the post or change did that its poster did not ask
+	// for, such as a title that was cut or a camera still left off; only an
+	// answer to a post, a change or a resolution has any.
+	PostNotes []string `json:"postNotes"`
 
 	ChosenChoiceKey string     `json:"chosenChoiceKey" graphapi:"nullable"`
 	ChosenAt        *time.Time `json:"chosenAt" graphapi:"nullable"`
@@ -393,7 +489,8 @@ func feedItemView(tx db.Transaction, item *models.AgentFeedItem) (*AgentFeedItem
 		FeedItemID: item.ID, FeedItemKind: string(item.FeedItemKind), FeedSourceKind: string(item.FeedSourceKind), FeedSourceID: item.FeedSourceID,
 		FeedSourceTitle: sourceTitle, RunConversationID: item.RunConversationID,
 		Title: item.Title, Body: item.Body, PictureSymbol: item.PictureSymbol,
-		FactRows: item.FactRows, SourceLinks: item.SourceLinks, RecordReferences: item.RecordReferences, FeedMedia: feedMediaViews(item), Choices: item.Choices,
+		FactRows: item.FactRows, SourceLinks: item.SourceLinks, RecordReferences: item.RecordReferences, FeedMedia: feedMediaViews(item), ChartBlocks: feedChartBlocks(item), Choices: item.Choices,
+		IsResolved: item.IsResolved(), ResolvedAt: item.ResolvedAt, ResolutionNote: item.ResolutionNote, ResolvedByKind: string(item.ResolvedByKind), PostNotes: feedPostNotes(item),
 		ChosenChoiceKey: chosenChoiceKey, ChosenAt: item.ChosenAt,
 		OutcomeText: item.OutcomeText, IsOutcomePending: agent.IsFeedOutcomePending(item, time.Now()),
 		FeedUrgency: string(item.FeedUrgency), IsLiked: item.IsLiked, IsRead: item.ReadAt != nil, IsDismissed: item.DismissedAt != nil, DismissedAt: item.DismissedAt,
@@ -401,6 +498,23 @@ func feedItemView(tx db.Transaction, item *models.AgentFeedItem) (*AgentFeedItem
 		FeedStackTitle: item.FeedStackTitle, StackPosition: item.StackPosition, FeedCardLayout: layoutName(item), LayoutContent: item.LayoutContent,
 		PostedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
 	}, nil
+}
+
+// feedChartBlocks are the card's charts, an empty list for none.
+func feedChartBlocks(item *models.AgentFeedItem) []models.FeedChartBlock {
+	if item.ChartBlocks == nil {
+		return []models.FeedChartBlock{}
+	}
+	return item.ChartBlocks
+}
+
+// feedPostNotes are what the post did that was not asked for, an empty list
+// for none.
+func feedPostNotes(item *models.AgentFeedItem) []string {
+	if item.PostNotes == nil {
+		return []string{}
+	}
+	return item.PostNotes
 }
 
 // feedMediaViews are the card's pictures and videos that have something to
@@ -420,6 +534,12 @@ func feedMediaViews(item *models.AgentFeedItem) []*AgentFeedMediaView {
 			view.WidthPixels, view.HeightPixels = &widthPixels, &heightPixels
 		}
 		switch entry.FeedMediaKind {
+		case models.FeedMediaCameraStill:
+			view.CameraName, view.CapturedAt, view.StillReason, view.PlaybackURL, view.LiveURL = entry.CameraName, entry.CapturedAt, entry.StillReason, entry.PlaybackURL, entry.LiveURL
+			view.ImageURL = api.FeedMediaPath(item.ID, entry.MediaKey)
+			if entry.PhotoID != "" {
+				view.ImageURL = api.PhotoPreviewPath(entry.PhotoID, string(models.PhotoPreviewLarge))
+			}
 		case models.FeedMediaPicture:
 			view.ImageURL, view.LinkURL = api.FeedMediaPath(item.ID, entry.MediaKey), entry.PageURL
 		case models.FeedMediaVideo:
@@ -776,6 +896,77 @@ func (self *graph) announceFeedChange(tx db.Transaction, item *models.AgentFeedI
 	return nil
 }
 
+// feedResolver is who the call is: the goal whose own turn it is when the call
+// names that goal's conversation, the agent when its tool made the call, and
+// the person otherwise.
+func (self *graph) feedResolver(ctx context.Context, tx db.Transaction, principal *api.Principal, found *models.Agent, runConversationId *string) (*agent.FeedResolver, error) {
+	if runConversationId != nil && strings.TrimSpace(*runConversationId) != "" {
+		conversation, err := self.ownConversation(tx, found, *runConversationId, true)
+		if err != nil {
+			return nil, err
+		}
+		if conversation.IsGoal() {
+			return &agent.FeedResolver{Kind: models.FeedResolverGoal, ID: conversation.ID}, nil
+		}
+	}
+	if db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent {
+		return &agent.FeedResolver{Kind: models.FeedResolverAgent}, nil
+	}
+	return &agent.FeedResolver{Kind: models.FeedResolverPerson, ID: principal.User.ID}, nil
+}
+
+func (self *graph) ResolveAgentFeedItem(ctx context.Context, arguments ResolveAgentFeedItemArguments) (*AgentFeedItemView, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	item, err := self.ownFeedItem(tx, found, arguments.FeedItemID)
+	if err != nil {
+		return nil, err
+	}
+	resolver, err := self.feedResolver(ctx, tx, principal, found, arguments.RunConversationID)
+	if err != nil {
+		return nil, err
+	}
+	resolutionNote := ""
+	if arguments.ResolutionNote != nil {
+		resolutionNote = *arguments.ResolutionNote
+	}
+	resolved, err := agent.ResolveFeedItem(tx, resolver, item, resolutionNote, time.Now())
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if err := self.announceFeedChange(tx, resolved, models.FeedChangeResolved); err != nil {
+		return nil, err
+	}
+	return feedItemView(tx, resolved)
+}
+
+func (self *graph) UnresolveAgentFeedItem(ctx context.Context, arguments UnresolveAgentFeedItemArguments) (*AgentFeedItemView, error) {
+	principal, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	item, err := self.ownFeedItem(tx, found, arguments.FeedItemID)
+	if err != nil {
+		return nil, err
+	}
+	resolver, err := self.feedResolver(ctx, tx, principal, found, arguments.RunConversationID)
+	if err != nil {
+		return nil, err
+	}
+	unresolved, err := agent.UnresolveFeedItem(tx, resolver, item, time.Now())
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if err := self.announceFeedChange(tx, unresolved, models.FeedChangeUnresolved); err != nil {
+		return nil, err
+	}
+	return feedItemView(tx, unresolved)
+}
+
 func (self *graph) MarkAgentFeedRead(ctx context.Context, arguments MarkAgentFeedReadArguments) (int, error) {
 	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
@@ -893,15 +1084,21 @@ func applyFeedPost(item *models.AgentFeedItem, arguments *PostAgentFeedItemArgum
 	if arguments.LayoutContent != "" {
 		item.LayoutContent = arguments.LayoutContent
 	}
+	if arguments.ChartBlocks != nil {
+		item.ChartBlocks = arguments.ChartBlocks
+	}
 	if arguments.Media != nil {
 		item.FeedMedia = make([]models.FeedMedia, 0, len(arguments.Media))
 		for _, entry := range arguments.Media {
 			if entry == nil {
 				continue
 			}
-			item.FeedMedia = append(item.FeedMedia, models.FeedMedia{
-				PhotoID: entry.PhotoID, PageURL: entry.PageURL, MediaCaption: entry.MediaCaption, ListRowIndex: entry.ListRowIndex,
-			})
+			media := models.FeedMedia{PhotoID: entry.PhotoID, PageURL: entry.PageURL, MediaCaption: entry.MediaCaption, ListRowIndex: entry.ListRowIndex}
+			if still := entry.CameraStill; still != nil {
+				media.FeedMediaKind, media.PhotoID, media.AttachmentID = models.FeedMediaCameraStill, still.PhotoID, still.AttachmentID
+				media.CameraName, media.CapturedAt, media.StillReason, media.PlaybackURL, media.LiveURL = still.CameraName, still.CapturedAt, still.StillReason, still.PlaybackURL, still.LiveURL
+			}
+			item.FeedMedia = append(item.FeedMedia, media)
 		}
 	}
 }

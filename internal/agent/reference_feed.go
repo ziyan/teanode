@@ -70,6 +70,13 @@ func feedItemContext(item *models.AgentFeedItem) string {
 	for _, link := range item.SourceLinks {
 		provided = append(provided, fmt.Sprintf("source: %s %s", link.SourceTitle, link.SourceURL))
 	}
+	if item.IsResolved() {
+		resolved := "resolved: its problem cleared"
+		if item.ResolutionNote != "" {
+			resolved += ", " + item.ResolutionNote
+		}
+		provided = append(provided, resolved)
+	}
 	if item.OutcomeText != "" {
 		provided = append(provided, "outcome: "+item.OutcomeText)
 	}

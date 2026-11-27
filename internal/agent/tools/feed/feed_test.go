@@ -24,7 +24,7 @@ func (self *recordedOperations) Permissions() *models.EffectivePermissions {
 func (self *recordedOperations) Execute(_ context.Context, document string, variables map[string]any, response any) error {
 	self.documents = append(self.documents, document)
 	self.variables = append(self.variables, variables)
-	return json.Unmarshal([]byte(`{"PostAgentFeedItem":{"feedItemId":"card-1"},"DismissAgentFeedItems":["card-1"],"RestoreAgentFeedItems":["card-1"],"WithdrawAgentFeedItem":true,"ListAgentFeed":{"feedItems":[],"unreadCount":0}}`), response)
+	return json.Unmarshal([]byte(`{"PostAgentFeedItem":{"feedItemId":"card-1"},"DismissAgentFeedItems":["card-1"],"RestoreAgentFeedItems":["card-1"],"WithdrawAgentFeedItem":true,"ResolveAgentFeedItem":{"feedItemId":"card-1","isResolved":true},"UnresolveAgentFeedItem":{"feedItemId":"card-1"},"ListAgentFeed":{"feedItems":[],"unreadCount":0}}`), response)
 }
 
 type feedRun struct {
@@ -166,5 +166,94 @@ func TestTheFeedToolListsTheDismissedAndAGoalTurnCannotRestore(t *testing.T) {
 	personInGoal := tools.WithRun(context.Background(), &feedRun{operations: operations, conversation: goal})
 	if _, err := feedTool(t).Run(personInGoal, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"restore","feed_item_ids":["card-1"]}`)}); err != nil {
 		t.Fatalf("the person in a goal's conversation could not restore: %v", err)
+	}
+}
+
+// A card is resolved or unresolved through the operations the apps call; a
+// goal's own turn names its conversation, which holds it to the cards it
+// posted, and the person's conversation names none.
+func TestTheFeedToolResolvesAndUnresolves(t *testing.T) {
+	operations := &recordedOperations{}
+	ctx := tools.WithRun(context.Background(), &feedRun{operations: operations})
+	for _, arguments := range []string{
+		`{"action":"resolve","feed_item_id":"card-1","resolution_note":"The parcel arrived"}`,
+		`{"action":"resolve","feed_item_id":"card-2"}`,
+		`{"action":"unresolve","feed_item_id":"card-1"}`,
+	} {
+		if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(arguments)}); err != nil {
+			t.Fatalf("%s: %s", arguments, err)
+		}
+	}
+	if !strings.Contains(operations.documents[0], "ResolveAgentFeedItem") || !strings.Contains(operations.documents[2], "UnresolveAgentFeedItem") {
+		t.Fatalf("documents: %+v", operations.documents)
+	}
+	if operations.variables[0]["feedItemId"] != "card-1" || operations.variables[0]["resolutionNote"] != "The parcel arrived" || operations.variables[0]["runConversationId"] != nil {
+		t.Fatalf("a resolve: %+v", operations.variables[0])
+	}
+	if _, isNoteSent := operations.variables[1]["resolutionNote"]; isNoteSent {
+		t.Fatalf("a resolve with no note sent one: %+v", operations.variables[1])
+	}
+	goal := &models.AgentConversation{ID: "goal-conversation-1", Kind: models.AgentConversationGoal, Goal: "Watch the parcels"}
+	goalTurn := tools.WithRun(context.Background(), &feedRun{operations: operations, conversation: goal, isHeadless: true})
+	for _, arguments := range []string{`{"action":"resolve","feed_item_id":"card-1"}`, `{"action":"unresolve","feed_item_id":"card-1"}`} {
+		if _, err := feedTool(t).Run(goalTurn, &tools.Call{ID: "c1", Arguments: []byte(arguments)}); err != nil {
+			t.Fatalf("%s: %s", arguments, err)
+		}
+	}
+	if operations.variables[3]["runConversationId"] != "goal-conversation-1" || operations.variables[4]["runConversationId"] != "goal-conversation-1" {
+		t.Fatalf("a goal's own turn did not name its conversation: %+v %+v", operations.variables[3], operations.variables[4])
+	}
+	personInGoal := tools.WithRun(context.Background(), &feedRun{operations: operations, conversation: goal})
+	if _, err := feedTool(t).Run(personInGoal, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"resolve","feed_item_id":"card-1"}`)}); err != nil || operations.variables[5]["runConversationId"] != nil {
+		t.Fatalf("the person in a goal's conversation: %v %+v", err, operations.variables[5])
+	}
+	if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"resolve"}`)}); err == nil {
+		t.Fatal("a resolve without a card was accepted")
+	}
+}
+
+// Charts go through as the model wrote them, and a camera still is the media
+// entry's camera_still, taken by the attachment the camera tool's answer gave.
+func TestTheFeedToolPostsChartsAndCameraStills(t *testing.T) {
+	operations := &recordedOperations{}
+	ctx := tools.WithRun(context.Background(), &feedRun{operations: operations})
+	arguments := `{"action":"post","title":"A parcel was left","chart_blocks":[{"chartKind":"series","chartTitle":"Balance","provenance":"Read from the bank at 09:40 EST","xLabels":["Mon","Tue"],"series":[{"seriesName":"This week","values":[1,null]}]}],` +
+		`"media":[{"media_caption":"By the door","camera_still":{"attachment_id":"attachment-1","camera_name":"Front door","captured_at":"2026-11-19T14:02:11-05:00","still_reason":"Where the parcel was left","live_url":"https://nvr.example.com/live"}}]}`
+	if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(arguments)}); err != nil {
+		t.Fatal(err)
+	}
+	variables := operations.variables[0]
+	charts, _ := variables["chartBlocks"].([]any)
+	if len(charts) != 1 || charts[0].(map[string]any)["provenance"] != "Read from the bank at 09:40 EST" {
+		t.Fatalf("charts: %+v", variables["chartBlocks"])
+	}
+	media, _ := variables["media"].([]map[string]any)
+	if len(media) != 1 || media[0]["mediaCaption"] != "By the door" {
+		t.Fatalf("media: %+v", variables["media"])
+	}
+	still, _ := media[0]["cameraStill"].(map[string]any)
+	if still["attachmentId"] != "attachment-1" || still["cameraName"] != "Front door" || still["capturedAt"] != "2026-11-19T14:02:11-05:00" || still["stillReason"] != "Where the parcel was left" || still["liveUrl"] != "https://nvr.example.com/live" {
+		t.Fatalf("the still: %+v", still)
+	}
+	if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"post","title":"A chart","chart_blocks":{"chartKind":"bars"}}`)}); err == nil || !strings.Contains(err.Error(), "chart_blocks is a list of charts") {
+		t.Fatalf("one chart that is not in a list: %v", err)
+	}
+}
+
+// The rules of a good card are in the tool's description.
+func TestTheFeedToolDescriptionSaysTheRulesOfACard(t *testing.T) {
+	description := feedTool(t).Description
+	for _, expected := range []string{
+		"what happened, why it matters and one or two next steps", "Numbers come only from this turn's tool results", "provenance", "One card per subject", "`list` first",
+		"never rewrite a card into a different subject", "no ids or tool names", "title that says what the body says", "Silence is the default",
+		"`resolve` that card", "instead of posting a card that says all is clear", "materially worse", "not finished (today, this hour) is never drawn as measured",
+		"keeps every field you leave out", "postNotes",
+	} {
+		if !strings.Contains(description, expected) {
+			t.Errorf("the description does not say %q", expected)
+		}
+	}
+	if strings.ContainsAny(description, "\u2014\u2013") {
+		t.Error("the description has a dash")
 	}
 }

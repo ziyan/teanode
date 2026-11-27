@@ -519,4 +519,105 @@ class AgentFeedTest {
             assertTrue(AgentFeedDocuments.CHOOSE_AGENT_FEED_ITEM.contains(name), name)
         }
     }
+
+    private val chartCardJson = """{"feedItemId":"c","title":"Balance","isResolved":true,"resolvedAt":"2026-11-18T06:41:00Z","resolutionNote":"Paid in full.","resolvedByKind":"person",
+        "chartBlocks":[{"chartKind":"series","chartTitle":"Balance","unit":"USD","provenance":"Read from the bank at 09:40 EST","xLabels":["Mon","Tue","Wed"],
+            "series":[{"seriesName":"This week","seriesRole":"measured","values":[10.5,null,12]},{"seriesName":"Last week","seriesRole":"reference","values":[9,9.5,10]},{"seriesName":"Next","seriesRole":"future","values":[]}],
+            "markers":[{"markerAt":"Tue","markerLabel":"Paid"},{"markerAt":"Sun","markerLabel":"Off the axis"}]},
+            {"chartKind":"bars","chartTitle":"Spend","unit":"USD","provenance":"Read at 09:40","bars":[{"barLabel":"Rent","barValue":900},{"barLabel":"Food","barValue":2400.5}]}],
+        "feedMedia":[{"mediaKey":"k","feedMediaKind":"camera_still","imageUrl":"/api/v1/files/1","cameraName":"Front door","capturedAt":"2026-11-18T14:02:11+09:00","stillReason":"Where the parcel was left",
+            "playbackUrl":"https://example.com/play","liveUrl":"javascript:alert(1)"}]}"""
+
+    @Test
+    fun resolvedChartsAndCameraStillsAreRead() {
+        val view = TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), chartCardJson)
+        assertTrue(view.isResolved)
+        assertEquals("Paid in full.", view.resolutionNote)
+        assertEquals("person", view.resolvedByKind)
+        assertEquals("06:41", view.resolvedTimeText(java.time.ZoneId.of("UTC")))
+        assertEquals("07:41", view.resolvedTimeText(java.time.ZoneId.of("Europe/Paris")))
+        assertEquals(2, view.drawableCharts.size)
+        val series = view.chartBlocks.first()
+        assertEquals(listOf(10.5, null, 12.0), series.series.first().values)
+        assertEquals(AgentFeedSeriesRole.Reference, series.series[1].role)
+        assertEquals(AgentFeedSeriesRole.Measured, series.series[2].role)
+        assertEquals(listOf("Tue"), series.placedMarkers.map { (_, marker) -> marker.markerAt })
+        assertEquals(listOf("Food", "Rent"), view.chartBlocks[1].orderedBars.map { bar -> bar.barLabel })
+        val still = view.cameraStills.single()
+        assertEquals(AgentFeedMediaKind.CameraStill, still.kind)
+        assertEquals("https://example.com/play", still.playbackAddress)
+        assertNull(still.liveAddress)
+        assertTrue(view.plainCardMedia.isEmpty())
+    }
+
+    @Test
+    fun aCardWithoutNewFieldsIsNotResolvedAndHasNoCharts() {
+        val view = item("a")
+        assertFalse(view.isResolved)
+        assertEquals("", view.resolvedTimeText())
+        assertTrue(view.chartBlocks.isEmpty())
+        assertTrue(view.cameraStills.isEmpty())
+    }
+
+    @Test
+    fun aChartOfAnUnknownKindOrWithTooFewLabelsIsNotDrawn() {
+        assertFalse(AgentFeedChartBlock(chartKind = "pie", xLabels = listOf("a", "b"), series = listOf(AgentFeedChartSeries("s"))).isDrawable)
+        assertFalse(AgentFeedChartBlock(chartKind = "series", xLabels = listOf("a"), series = listOf(AgentFeedChartSeries("s"))).isDrawable)
+        assertFalse(AgentFeedChartBlock(chartKind = "bars").isDrawable)
+    }
+
+    @Test
+    fun theChartDescriptionNamesTheNumbersAndWhereTheyWereRead() {
+        val view = TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), chartCardJson)
+        val seriesText = view.chartBlocks[0].description()
+        assertTrue(seriesText.contains("This week: Mon 10.5 USD to Wed 12 USD"), seriesText)
+        assertTrue(seriesText.contains("Paid at Tue"), seriesText)
+        assertTrue(seriesText.endsWith("Read from the bank at 09:40 EST"), seriesText)
+        assertTrue(view.chartBlocks[1].description().contains("Food 2,400.5 USD, Rent 900 USD"))
+    }
+
+    @Test
+    fun theCameraTimeIsItsOwnClockAndNamesTheZoneOnlyWhenItIsNotTheDevices() {
+        val tokyo = java.time.ZoneId.of("Asia/Tokyo")
+        assertEquals("14:02:11", AgentFeedClock.cameraTime("2026-11-18T14:02:11+09:00", tokyo))
+        assertEquals("14:02:11 UTC+09:00", AgentFeedClock.cameraTime("2026-11-18T14:02:11+09:00", java.time.ZoneId.of("UTC")))
+        assertEquals("08:00:00 UTC-05:00", AgentFeedClock.cameraTime("2026-11-18T08:00:00-05:00", java.time.ZoneId.of("UTC")))
+        assertEquals("09:00:00 UTC", AgentFeedClock.cameraTime("2026-11-18T09:00:00Z", tokyo))
+        assertEquals("", AgentFeedClock.cameraTime("not a time", tokyo))
+    }
+
+    @Test
+    fun anAnsweredCardFoldsToTheChoiceAndWhatCameOfIt() {
+        val settled = TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card("a", choices = twoChoices, chosen = "secure", outcome = "Signed out the other session."))
+        assertTrue(settled.isAnswerFoldable)
+        assertEquals("Secure my account · Signed out the other session.", settled.foldedAnswerText)
+        val pending = TeaNodeJson.decodeFromString(AgentFeedItemView.serializer(), card("a", choices = twoChoices, chosen = "secure", isPending = true))
+        assertFalse(pending.isAnswerFoldable)
+    }
+
+    @Test
+    fun resolvingSendsTheNoteOnlyWhenThereIsOne() = runBlocking {
+        val (connection, fake) = fakeConnection { """{"data":{"ResolveAgentFeedItem":$chartCardJson}}""" }
+        assertTrue(connection.resolveAgentFeedItem("c", "  Paid in full.  ").isResolved)
+        assertEquals(JsonPrimitive("c"), sentVariables(fake)["feedItemId"])
+        assertEquals(JsonPrimitive("Paid in full."), sentVariables(fake)["resolutionNote"])
+        val (second, secondFake) = fakeConnection { """{"data":{"ResolveAgentFeedItem":$chartCardJson}}""" }
+        second.resolveAgentFeedItem("c", "  ")
+        assertNull(sentVariables(secondFake)["resolutionNote"])
+    }
+
+    @Test
+    fun unresolvingSendsTheCard() = runBlocking {
+        val (connection, fake) = fakeConnection { """{"data":{"UnresolveAgentFeedItem":${card("c")}}}""" }
+        assertFalse(connection.unresolveAgentFeedItem("c").isResolved)
+        assertEquals(JsonPrimitive("c"), sentVariables(fake)["feedItemId"])
+    }
+
+    @Test
+    fun theFeedQueryAsksForTheNewFields() {
+        for (field in listOf("isResolved", "resolvedAt", "resolutionNote", "resolvedByKind", "chartBlocks", "seriesRole", "markerAt", "barValue", "cameraName", "capturedAt", "stillReason", "playbackUrl", "liveUrl")) {
+            assertTrue(AgentFeedDocuments.LIST_AGENT_FEED.contains(field), field)
+        }
+        assertTrue(AgentFeedDocuments.RESOLVE_AGENT_FEED_ITEM.contains("ResolveAgentFeedItem(feedItemId: \$feedItemId, resolutionNote: \$resolutionNote)"))
+    }
 }

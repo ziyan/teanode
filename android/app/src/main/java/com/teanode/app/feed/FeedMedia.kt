@@ -132,6 +132,7 @@ fun FeedMediaTile(
             AgentFeedMediaKind.Photo -> R.string.feed_media_photo
             AgentFeedMediaKind.Video -> R.string.feed_media_video
             AgentFeedMediaKind.Picture -> R.string.feed_media_picture
+            AgentFeedMediaKind.CameraStill -> R.string.feed_media_camera_still
         },
     )
     val description = media.caption.ifEmpty { kindWords }

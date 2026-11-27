@@ -102,6 +102,8 @@ public enum AgentFeedMediaKind: String, Sendable {
     case video
     /// The picture of a web page, kept by the server.
     case picture
+    /// A still from one of the person's cameras.
+    case cameraStill = "camera_still"
 }
 
 /// AgentFeedMedia is one picture or video of a card, or, when `listRowIndex`
@@ -122,12 +124,24 @@ public struct AgentFeedMedia: Codable, Hashable, Sendable, Identifiable {
     public let heightPixels: Int
     /// nil is the card's own media; a number is the thumbnail of that row of a list.
     public let listRowIndex: Int?
+    /// The camera a still is from; for a camera still only.
+    public let cameraName: String
+    /// When the still was taken (RFC 3339), on the camera's own clock with its
+    /// offset; for a camera still only.
+    public let capturedAt: String
+    /// Why this camera was chosen; for a camera still only.
+    public let stillReason: String
+    /// Where the camera's recording of that moment plays; optional.
+    public let playbackUrl: String
+    /// Where the camera's live view plays; optional.
+    public let liveUrl: String
 
     public var id: String { mediaKey }
 
     public init(
         mediaKey: String, feedMediaKind: String = "picture", imageUrl: String = "", videoUrl: String = "", linkUrl: String = "",
-        siteName: String = "", mediaCaption: String = "", widthPixels: Int = 0, heightPixels: Int = 0, listRowIndex: Int? = nil
+        siteName: String = "", mediaCaption: String = "", widthPixels: Int = 0, heightPixels: Int = 0, listRowIndex: Int? = nil,
+        cameraName: String = "", capturedAt: String = "", stillReason: String = "", playbackUrl: String = "", liveUrl: String = ""
     ) {
         self.mediaKey = mediaKey
         self.feedMediaKind = feedMediaKind
@@ -139,6 +153,11 @@ public struct AgentFeedMedia: Codable, Hashable, Sendable, Identifiable {
         self.widthPixels = widthPixels
         self.heightPixels = heightPixels
         self.listRowIndex = listRowIndex
+        self.cameraName = cameraName
+        self.capturedAt = capturedAt
+        self.stillReason = stillReason
+        self.playbackUrl = playbackUrl
+        self.liveUrl = liveUrl
     }
 
     /// Every field but the key may be missing or null.
@@ -154,10 +173,16 @@ public struct AgentFeedMedia: Codable, Hashable, Sendable, Identifiable {
         widthPixels = (try? container.decodeIfPresent(Int.self, forKey: .widthPixels)) ?? 0
         heightPixels = (try? container.decodeIfPresent(Int.self, forKey: .heightPixels)) ?? 0
         listRowIndex = (try? container.decodeIfPresent(Int.self, forKey: .listRowIndex)) ?? nil
+        cameraName = (try? container.decodeIfPresent(String.self, forKey: .cameraName)) ?? ""
+        capturedAt = (try? container.decodeIfPresent(String.self, forKey: .capturedAt)) ?? ""
+        stillReason = (try? container.decodeIfPresent(String.self, forKey: .stillReason)) ?? ""
+        playbackUrl = (try? container.decodeIfPresent(String.self, forKey: .playbackUrl)) ?? ""
+        liveUrl = (try? container.decodeIfPresent(String.self, forKey: .liveUrl)) ?? ""
     }
 
     private enum CodingKeys: String, CodingKey {
         case mediaKey, feedMediaKind, imageUrl, videoUrl, linkUrl, siteName, mediaCaption, widthPixels, heightPixels, listRowIndex
+        case cameraName, capturedAt, stillReason, playbackUrl, liveUrl
     }
 
     /// A kind this app does not know is drawn as a picture.
@@ -177,6 +202,34 @@ public struct AgentFeedMedia: Codable, Hashable, Sendable, Identifiable {
         }
         return url
     }
+
+    /// The address of a camera's recording or live view: https, or the app's
+    /// own scheme; anything else is not followed.
+    private static func cameraAddress(_ text: String) -> URL? {
+        guard !text.isEmpty, let url = URL(string: text), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "teanode" else {
+            return nil
+        }
+        return url
+    }
+
+    /// Where a tap on a camera still goes.
+    public var playbackAddress: URL? { Self.cameraAddress(playbackUrl) }
+
+    /// Where the Watch Live button goes.
+    public var liveAddress: URL? { Self.cameraAddress(liveUrl) }
+
+    /// The camera's own time of day ("14:02:11"), read from the text as the
+    /// camera wrote it, never converted; empty when it cannot be read.
+    public var capturedClockText: String {
+        guard let timeStart = capturedAt.firstIndex(where: { $0 == "T" || $0 == "t" }) else { return "" }
+        let clock = capturedAt[capturedAt.index(after: timeStart)...].prefix(8)
+        let parts = clock.split(separator: ":")
+        guard clock.count == 8, parts.count == 3, parts.allSatisfy({ $0.count == 2 && $0.allSatisfy(\.isNumber) }) else { return "" }
+        return String(clock)
+    }
+
+    /// The camera's zone, when it is not the phone's ("UTC+9"); empty otherwise.
+    public var capturedZoneText: String { AgentFeedZone.foreignName(of: capturedAt) ?? "" }
 
     /// The photo a video is, from its path (`/api/v1/photos/<id>/previews/video`),
     /// which the app asks a playable address for.
@@ -243,6 +296,16 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
     /// The card's pictures and videos, and the thumbnails of a list's rows;
     /// see `cardMedia` and `rowThumbnails`.
     public let feedMedia: [AgentFeedMedia]
+    /// Whether the problem the card told of has cleared.
+    public let isResolved: Bool
+    /// When the card was resolved (RFC 3339); nil for a card that is not.
+    public let resolvedAt: String?
+    /// One line on how it was resolved; empty when none was given.
+    public let resolutionNote: String
+    /// goal, person or agent; empty for a card that is not resolved.
+    public let resolvedByKind: String
+    /// The card's charts, at most two.
+    public let chartBlocks: [AgentFeedChart]
 
     public var id: String { feedItemId }
 
@@ -254,7 +317,9 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
         feedUrgency: String = "whenever", isLiked: Bool = false, isRead: Bool = false, isDismissed: Bool = false, dismissedAt: String? = nil,
         postedAt: String = "", updatedAt: String = "", feedStackKey: String = "", stackItemCount: Int = 1, stackUnreadCount: Int = 0,
         feedStackTitle: String = "", stackPosition: Int? = nil,
-        feedCardLayout: String = "text", layoutContent: String = "", feedMedia: [AgentFeedMedia] = []
+        feedCardLayout: String = "text", layoutContent: String = "", feedMedia: [AgentFeedMedia] = [],
+        isResolved: Bool = false, resolvedAt: String? = nil, resolutionNote: String = "", resolvedByKind: String = "",
+        chartBlocks: [AgentFeedChart] = []
     ) {
         self.feedItemId = feedItemId
         self.feedItemKind = feedItemKind
@@ -287,6 +352,11 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
         self.feedCardLayout = feedCardLayout
         self.layoutContent = layoutContent
         self.feedMedia = feedMedia
+        self.isResolved = isResolved
+        self.resolvedAt = resolvedAt
+        self.resolutionNote = resolutionNote
+        self.resolvedByKind = resolvedByKind
+        self.chartBlocks = chartBlocks
     }
 
     /// Every field but the id and the title may be missing or null, so a
@@ -324,14 +394,23 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
         feedCardLayout = try container.decodeIfPresent(String.self, forKey: .feedCardLayout) ?? "text"
         layoutContent = try container.decodeIfPresent(String.self, forKey: .layoutContent) ?? ""
         feedMedia = (try? container.decodeIfPresent([AgentFeedMedia?].self, forKey: .feedMedia))?.compactMap { $0 } ?? []
+        // A server that does not know resolving leaves these out: the card is not resolved.
+        isResolved = (try? container.decodeIfPresent(Bool.self, forKey: .isResolved)) ?? false
+        resolvedAt = (try? container.decodeIfPresent(String.self, forKey: .resolvedAt)) ?? nil
+        resolutionNote = (try? container.decodeIfPresent(String.self, forKey: .resolutionNote)) ?? ""
+        resolvedByKind = (try? container.decodeIfPresent(String.self, forKey: .resolvedByKind)) ?? ""
+        chartBlocks = (try? container.decodeIfPresent([AgentFeedChart?].self, forKey: .chartBlocks))?.compactMap { $0 } ?? []
     }
 
     private enum CodingKeys: String, CodingKey {
         case feedItemId, feedItemKind, feedSourceKind, feedSourceId, feedSourceTitle, runConversationId, title, body, pictureSymbol
         case factRows, sourceLinks, choices, chosenChoiceKey, chosenAt, outcomeText, isOutcomePending, feedUrgency
         case isLiked, isRead, isDismissed, dismissedAt, postedAt, updatedAt, feedStackKey, stackItemCount, stackUnreadCount, feedStackTitle, stackPosition, feedCardLayout, layoutContent
-        case feedMedia
+        case feedMedia, isResolved, resolvedAt, resolutionNote, resolvedByKind, chartBlocks
     }
+
+    /// When the card was resolved, for a card that is.
+    public var resolvedDate: Date? { resolvedAt.flatMap { ServerTime.date($0) } }
 
     /// When the card was dismissed, for a card that is.
     public var dismissedDate: Date? { dismissedAt.flatMap { ServerTime.date($0) } }
@@ -347,7 +426,8 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
             outcomeText: outcomeText, isOutcomePending: isOutcomePending, feedUrgency: feedUrgency, isLiked: isLiked, isRead: isRead,
             isDismissed: isDismissed, dismissedAt: dismissedAt, postedAt: postedAt, updatedAt: updatedAt, feedStackKey: feedStackKey,
             stackItemCount: stackItemCount, stackUnreadCount: stackUnreadCount, feedStackTitle: feedStackTitle, stackPosition: stackPosition,
-            feedCardLayout: feedCardLayout, layoutContent: layoutContent, feedMedia: feedMedia)
+            feedCardLayout: feedCardLayout, layoutContent: layoutContent, feedMedia: feedMedia,
+            isResolved: isResolved, resolvedAt: resolvedAt, resolutionNote: resolutionNote, resolvedByKind: resolvedByKind, chartBlocks: chartBlocks)
     }
 
     /// Whether the card tops a stack of more cards from its source.
@@ -390,6 +470,15 @@ public struct AgentFeedItem: Codable, Hashable, Sendable, Identifiable {
     /// The card's own pictures and videos, in order; what has no picture to
     /// draw is left out.
     public var cardMedia: [AgentFeedMedia] { feedMedia.filter { $0.listRowIndex == nil && !$0.imageUrl.isEmpty } }
+
+    /// The card's camera stills, which are drawn apart from its other pictures.
+    public var cameraStills: [AgentFeedMedia] { cardMedia.filter { $0.mediaKind == .cameraStill } }
+
+    /// The card's pictures and videos but its camera stills.
+    public var pictureMedia: [AgentFeedMedia] { cardMedia.filter { $0.mediaKind != .cameraStill } }
+
+    /// The charts there is something to draw for.
+    public var drawableCharts: [AgentFeedChart] { chartBlocks.filter(\.isDrawable) }
 
     /// The thumbnails of a list card's rows, by the row's index; the first
     /// one given for a row wins.
@@ -484,7 +573,7 @@ public struct AgentFeedPage: Decodable, Sendable {
 /// AgentFeedEvent is the server telling a viewer that the feed changed.
 public struct AgentFeedEvent: Codable, Hashable, Sendable {
     public let feedItemId: String
-    /// posted, replaced, settled or dismissed.
+    /// posted, replaced, settled, dismissed, resolved or unresolved.
     public let feedChange: String
     public let unreadCount: Int
 }
@@ -495,7 +584,17 @@ extension Documents {
         factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl } choices { choiceKey choiceLabel choiceRole }
         chosenChoiceKey chosenAt outcomeText isOutcomePending feedUrgency isLiked isRead isDismissed postedAt updatedAt
         feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent dismissedAt
-        feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }
+        feedMedia {
+          mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex
+          cameraName capturedAt stillReason playbackUrl liveUrl
+        }
+        isResolved resolvedAt resolutionNote resolvedByKind
+        chartBlocks {
+          chartKind chartTitle unit provenance xLabels
+          series { seriesName seriesRole values }
+          markers { markerAt markerLabel }
+          bars { barLabel barValue }
+        }
         """
     public static let agentFeedStack = """
         query ($feedStackKey: String!, $first: Int, $after: String) {
@@ -550,6 +649,16 @@ extension Documents {
           DiscussAgentFeedItem(feedItemId: $feedItemId)
         }
         """
+    public static let resolveAgentFeedItem = """
+        mutation ($feedItemId: String!, $resolutionNote: String) {
+          ResolveAgentFeedItem(feedItemId: $feedItemId, resolutionNote: $resolutionNote) { \(agentFeedItemFields) }
+        }
+        """
+    public static let unresolveAgentFeedItem = """
+        mutation ($feedItemId: String!) {
+          UnresolveAgentFeedItem(feedItemId: $feedItemId) { \(agentFeedItemFields) }
+        }
+        """
     public static let agentFeedEvents = """
         subscription { AgentFeedChanged { feedItemId feedChange unreadCount } }
         """
@@ -561,6 +670,7 @@ extension Documents {
         "showLessLikeAgentFeedItem": showLessLikeAgentFeedItem, "dismissAgentFeedItems": dismissAgentFeedItems,
         "restoreAgentFeedItems": restoreAgentFeedItems,
         "markAgentFeedRead": markAgentFeedRead, "discussAgentFeedItem": discussAgentFeedItem, "agentFeedEvents": agentFeedEvents,
+        "resolveAgentFeedItem": resolveAgentFeedItem, "unresolveAgentFeedItem": unresolveAgentFeedItem,
     ]
 }
 
@@ -602,6 +712,24 @@ extension Connection {
         return try await execute(
             Documents.likeAgentFeedItem, variables: ["feedItemId": .string(feedItemId), "isLiked": .bool(isLiked)], as: Answer.self
         ).LikeAgentFeedItem
+    }
+
+    /// Marks a card resolved, with an optional line on how; the card comes
+    /// back as it is then. A card already resolved is refused by the server,
+    /// so the first resolution stands.
+    public func resolveAgentFeedItem(_ feedItemId: String, resolutionNote: String = "") async throws -> AgentFeedItem {
+        struct Answer: Decodable, Sendable { let ResolveAgentFeedItem: AgentFeedItem }
+        var variables: [String: JSONValue] = ["feedItemId": .string(feedItemId)]
+        let trimmedNote = resolutionNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedNote.isEmpty { variables["resolutionNote"] = .string(trimmedNote) }
+        return try await execute(Documents.resolveAgentFeedItem, variables: variables, as: Answer.self).ResolveAgentFeedItem
+    }
+
+    /// Takes the resolution off a card.
+    public func unresolveAgentFeedItem(_ feedItemId: String) async throws -> AgentFeedItem {
+        struct Answer: Decodable, Sendable { let UnresolveAgentFeedItem: AgentFeedItem }
+        return try await execute(Documents.unresolveAgentFeedItem, variables: ["feedItemId": .string(feedItemId)], as: Answer.self)
+            .UnresolveAgentFeedItem
     }
 
     /// Records that the person wants fewer cards like this one, and closes it.

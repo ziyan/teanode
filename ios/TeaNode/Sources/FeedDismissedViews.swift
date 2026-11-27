@@ -133,6 +133,8 @@ struct FeedDismissedList: View {
                 informedItem = nil
                 switch action {
                 case .restore: Task { await model.restoreDismissed(item) }
+                case .resolve(let resolutionNote): Task { await model.resolve(item, resolutionNote: resolutionNote) }
+                case .unresolve: Task { await model.unresolve(item) }
                 case .openGoals: app.openedSection = .goals
                 case .showLess, .dismiss: break
                 }

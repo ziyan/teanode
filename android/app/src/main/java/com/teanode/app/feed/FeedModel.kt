@@ -15,8 +15,10 @@ import com.teanode.kit.feed.dismissAgentFeedItems
 import com.teanode.kit.feed.foldDismissedFeedItems
 import com.teanode.kit.feed.likeAgentFeedItem
 import com.teanode.kit.feed.markAgentFeedRead
+import com.teanode.kit.feed.resolveAgentFeedItem
 import com.teanode.kit.feed.restoreAgentFeedItems
 import com.teanode.kit.feed.showLessLikeAgentFeedItem
+import com.teanode.kit.feed.unresolveAgentFeedItem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -234,6 +236,29 @@ class FeedModel(
         scope.launch {
             try {
                 replace(connection.chooseAgentFeedItem(item.feedItemId, choice.choiceKey))
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Throwable) {
+                onProblem(failure)
+            } finally {
+                busyFeedItemIds.remove(item.feedItemId)
+            }
+        }
+    }
+
+    /** Marks a card resolved, with an optional one line note; the card stays where it is and comes back muted. [doneText] is told when it is done. */
+    fun resolve(item: AgentFeedItemView, note: String, doneText: String) = changeResolution(item, doneText) { connection.resolveAgentFeedItem(item.feedItemId, note) }
+
+    /** Takes the resolution off a card. */
+    fun unresolve(item: AgentFeedItemView, doneText: String) = changeResolution(item, doneText) { connection.unresolveAgentFeedItem(item.feedItemId) }
+
+    private fun changeResolution(item: AgentFeedItemView, doneText: String, call: suspend () -> AgentFeedItemView) {
+        if (busyFeedItemIds.containsKey(item.feedItemId)) return
+        busyFeedItemIds[item.feedItemId] = true
+        scope.launch {
+            try {
+                replace(call())
+                onDone(doneText)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Throwable) {

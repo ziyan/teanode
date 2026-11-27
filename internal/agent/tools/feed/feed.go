@@ -28,21 +28,46 @@ func init() {
 					"To ask them something, add choices: each a choice_key, a choice_label (what the button says) and a choice_role of action (you carry it out when they press it), dismiss (it closes the card and nothing more) or discuss. Nothing waits on the card: carry on, and the answer reaches you as their message in the main conversation. " +
 					"A card is drawn in one of four layouts, always with a plain body as well: text (the default); list for news stories, chat mentions, review requests and issues, or mail worth reading, with layout_content {listRows: [{rowTitle, rowDetail, rowMeta (the source, or the channel and time), rowSymbol, rowUrl (http or https), rowRecordReference}]}, at most 10 rows; weather for weather, with {placeName, currentTemperature, temperatureUnit (C or F), conditionText, conditionSymbol, highTemperature, lowTemperature, hourlyForecast: [{forecastHour (ISO time), forecastTemperature, forecastSymbol, precipitationChancePercent}]}, at most 12 hours; agenda for a day plan in time order, with {agendaEntries: [{startsAt, endsAt (ISO times), agendaTitle, agendaEntryKind (meeting, focus, task or break), agendaDetail, agendaRecordReference}]}. " +
 					"A brief is one run that posts several cards that belong together: give them stack_title once (\"Morning brief, Wed Nov 19\") and stack_position (the summary at 0, then 1, 2, in reading order); a goal's cards of one run stack by themselves. " +
-					"`update` changes a card you posted, by feed_item_id, where it stands. `withdraw` takes one back for good when it no longer holds: it is deleted, not put among the dismissed cards. `dismiss` and `restore` are for when the person asks (\"clear my feed\", \"bring that back\"), never on your own and never in a goal's own turn: dismiss closes the cards in feed_item_ids, or every card of a stack_key, or every_read cards the person has read (a decision still waiting for an answer is kept); restore brings feed_item_ids back. `list` shows what is in the feed, to find an id or to see what you already said; with dismissed_only it lists the dismissed cards, the most recently dismissed first.",
+					"A card can carry at most two charts in chart_blocks, drawn natively: chartKind series (xLabels, 2 to 60 in order; series, 1 to 3 lines of {seriesName, seriesRole, values}, one number per label or null; seriesRole is measured, the default, reference for a line to compare with such as last month or the average, or projection for what is expected ahead; markers, up to 3 of {markerAt (one of the xLabels), markerLabel}) or bars (1 to 8 of {barLabel, barValue}, never negative, largest first), each with a chartTitle, a unit such as USD or steps, and a provenance, required: one line saying where and when the numbers were read, such as \"Read from the bank at 09:40 EST\". Numbers come only from this turn's tool results. A bucket that is not finished (today, this hour) is never drawn as measured: end the series at the last finished one, or draw it as a projection. Three or more fact_rows that are each a time or date and a number are refused: send them as a series. " +
+					"A still from one of their cameras goes in media as {camera_still: {attachment_id (the attachment_id in the camera tool's answer, in this turn), camera_name, captured_at (the camera's own time with its offset, such as 2026-11-19T14:02:11-05:00), still_reason (why this camera, such as the camera at the front door, where the parcel was left), playback_url, live_url (https, optional)}}; a still whose picture cannot be read is left off with a note and the card still posts, and a new moment needs a new still, since an update keeps a still only when its camera and moment are unchanged. " +
+					"A card is held to these rules. It says what happened, why it matters and one or two next steps. Numbers come only from this turn's tool results. One card per subject: `list` first so that nothing is said twice, and never rewrite a card into a different subject. Plain words, with no ids or tool names, and a title that says what the body says. Silence is the default. Em and en dashes are rewritten, and a title, label or caption a little too long is cut, with the cut fields listed in the answer's postNotes. " +
+					"When the problem a card is about clears, `resolve` that card (feed_item_id, and a resolution_note of one line saying what cleared) instead of posting a card that says all is clear: it stays in place, marked resolved. Post a new card only for a new problem, or one that got materially worse. A card is resolved once, and a goal's own turn may resolve only a card it posted and never one the person resolved; `unresolve` takes the mark off, for when it was wrong. Posting the same subject again with its coalesce_key clears the mark. " +
+					"`update` changes a card you posted, by feed_item_id, where it stands, and keeps every field you leave out (title, kind, body, choices, media, charts). `withdraw` takes one back for good when it no longer holds: it is deleted, not put among the dismissed cards. `dismiss` and `restore` are for when the person asks (\"clear my feed\", \"bring that back\"), never on your own and never in a goal's own turn: dismiss closes the cards in feed_item_ids, or every card of a stack_key, or every_read cards the person has read (a decision still waiting for an answer is kept); restore brings feed_item_ids back. `list` shows what is in the feed, to find an id or to see what you already said; with dismissed_only it lists the dismissed cards, the most recently dismissed first.",
 				Parameters: tools.Object(map[string]any{
-					"action":         tools.EnumProperty("what to do", "post", "update", "withdraw", "dismiss", "restore", "list"),
-					"feed_item_id":   tools.StringProperty("for update and withdraw: the card, by the id list or post gave"),
-					"title":          tools.StringProperty("for post: the headline, a line"),
-					"body":           tools.StringProperty("for post and update: a few lines, Markdown, links allowed"),
-					"picture_symbol": tools.StringProperty("an SF Symbol name for the card's small picture, such as cloud.sun, lock.shield, chart.line.uptrend.xyaxis or newspaper"),
-					"feed_item_kind": tools.EnumProperty("what the card is; a decision when it has choices, an update otherwise", "update", "decision", "alert", "report", "idea", "news"),
-					"feed_urgency":   tools.EnumProperty("now notifies their phone and is for what cannot wait; today is the default; whenever can sit", "now", "today", "whenever"),
-					"stack_position": tools.IntegerProperty("where the card sits in its stack, the lowest first: a brief's summary is 0, then its sections 1, 2, 3 in reading order; leave out for cards ordered by when they were posted"),
-					"stack_title":    tools.StringProperty("names the stack, once, on any of its cards: \"Morning brief, Wed Nov 19\""),
-					"card_layout":    tools.EnumProperty("how the card is drawn; the body is still filled in", "text", "list", "weather", "agenda"),
-					"layout_content": map[string]any{"type": "object", "description": "the layout's content: for list {listRows}, for weather {placeName, currentTemperature, temperatureUnit, conditionText, ...}, for agenda {agendaEntries}; see the tool's description"},
-					"stack_key":      tools.StringProperty("for dismiss: the stack to close. For post: cards of one source pile into a stack shown as one entry; a goal's cards stack by their source on their own, so name one only to stack cards of your own posting; a card with choices that act never stacks"),
-					"coalesce_key":   tools.StringProperty("a later post with the same key replaces this card; use one for a subject that changes, and never for two different things"),
+					"action":          tools.EnumProperty("what to do", "post", "update", "resolve", "unresolve", "withdraw", "dismiss", "restore", "list"),
+					"feed_item_id":    tools.StringProperty("for update, resolve, unresolve and withdraw: the card, by the id list or post gave"),
+					"resolution_note": tools.StringProperty("for resolve: one line, at most 160 characters, saying what cleared"),
+					"title":           tools.StringProperty("for post: the headline, a line"),
+					"body":            tools.StringProperty("for post and update: a few lines, Markdown, links allowed"),
+					"picture_symbol":  tools.StringProperty("an SF Symbol name for the card's small picture, such as cloud.sun, lock.shield, chart.line.uptrend.xyaxis or newspaper"),
+					"feed_item_kind":  tools.EnumProperty("what the card is; a decision when it has choices, an update otherwise", "update", "decision", "alert", "report", "idea", "news"),
+					"feed_urgency":    tools.EnumProperty("now notifies their phone and is for what cannot wait; today is the default; whenever can sit", "now", "today", "whenever"),
+					"stack_position":  tools.IntegerProperty("where the card sits in its stack, the lowest first: a brief's summary is 0, then its sections 1, 2, 3 in reading order; leave out for cards ordered by when they were posted"),
+					"stack_title":     tools.StringProperty("names the stack, once, on any of its cards: \"Morning brief, Wed Nov 19\""),
+					"card_layout":     tools.EnumProperty("how the card is drawn; the body is still filled in", "text", "list", "weather", "agenda"),
+					"layout_content":  map[string]any{"type": "object", "description": "the layout's content: for list {listRows}, for weather {placeName, currentTemperature, temperatureUnit, conditionText, ...}, for agenda {agendaEntries}; see the tool's description"},
+					"stack_key":       tools.StringProperty("for dismiss: the stack to close. For post: cards of one source pile into a stack shown as one entry; a goal's cards stack by their source on their own, so name one only to stack cards of your own posting; a card with choices that act never stacks"),
+					"chart_blocks": tools.ArrayProperty("for post and update: at most two charts, each with a provenance", tools.Object(map[string]any{
+						"chartKind":  tools.EnumProperty("a series over time, or bars", "series", "bars"),
+						"chartTitle": tools.StringProperty("what the chart shows"),
+						"unit":       tools.StringProperty("what the numbers count, such as USD or steps"),
+						"provenance": tools.StringProperty("required: one line, at most 120 characters, saying where and when the numbers were read"),
+						"xLabels":    tools.ArrayProperty("for series: 2 to 60 labels in order", tools.StringProperty("a label of the axis")),
+						"series": tools.ArrayProperty("for series: 1 to 3 lines", tools.Object(map[string]any{
+							"seriesName": tools.StringProperty("what the line is"),
+							"seriesRole": tools.EnumProperty("measured, the default; reference to compare with; projection for what is expected ahead", "measured", "reference", "projection"),
+							"values":     map[string]any{"type": "array", "description": "one number per label, or null for none", "items": map[string]any{"type": "number"}},
+						}, "seriesName", "values")),
+						"markers": tools.ArrayProperty("for series: up to 3 labeled vertical rules", tools.Object(map[string]any{
+							"markerAt":    tools.StringProperty("one of the xLabels"),
+							"markerLabel": tools.StringProperty("what happened there"),
+						}, "markerAt", "markerLabel")),
+						"bars": tools.ArrayProperty("for bars: 1 to 8, never negative, largest first", tools.Object(map[string]any{
+							"barLabel": tools.StringProperty("what the bar is"),
+							"barValue": tools.NumberProperty("its number"),
+						}, "barLabel", "barValue")),
+					}, "chartKind", "provenance")),
+					"coalesce_key": tools.StringProperty("a later post with the same key replaces this card; use one for a subject that changes, and never for two different things"),
 					"fact_rows": tools.ArrayProperty("a short table of at most eight rows", tools.Object(map[string]any{
 						"fact_label": tools.StringProperty("the row's name"),
 						"fact_value": tools.StringProperty("what it is"),
@@ -56,6 +81,15 @@ func init() {
 						"page_url":       tools.StringProperty("a page, or a picture's own address, as a tool answered it"),
 						"media_caption":  tools.StringProperty("a short line under it"),
 						"list_row_index": tools.IntegerProperty("for a list card: the row, from 0, this is the thumbnail of; leave out for a picture of the whole card"),
+						"camera_still": tools.Object(map[string]any{
+							"attachment_id": tools.StringProperty("the picture a camera tool fetched in this turn, by the attachment_id in its answer"),
+							"photo_id":      tools.StringProperty("or one of their photos of that moment, instead of an attachment_id"),
+							"camera_name":   tools.StringProperty("the camera"),
+							"captured_at":   tools.StringProperty("when, on the camera's own clock with its offset, RFC 3339, never converted to UTC"),
+							"still_reason":  tools.StringProperty("why this camera, at most 120 characters"),
+							"playback_url":  tools.StringProperty("https address that opens the recording, optional"),
+							"live_url":      tools.StringProperty("https address that opens the live view, optional"),
+						}, "camera_name", "captured_at", "still_reason"),
 					})),
 					"record_references": tools.ArrayProperty("records of theirs the card is about: a mail by item_id or thread_id", tools.Object(map[string]any{
 						"item_id":   tools.StringProperty("a mail's item id"),
@@ -72,7 +106,7 @@ func init() {
 					"include_dismissed": tools.BooleanProperty("for list: the dismissed cards too"),
 					"dismissed_only":    tools.BooleanProperty("for list: only the dismissed cards, the most recently dismissed first"),
 				}, "action"),
-				Guidance: "feed: post to the feed what the person did not ask for (news, a report, an idea, something they should decide) and keep the main conversation for answering them. One card per subject; `list` first when you may have posted it already. Write the card for them to read: plain words, no ids or tool names, links in the body. A choice is something you can carry out when pressed, not a way to end the card.",
+				Guidance: "feed: post to the feed what the person did not ask for (news, a report, an idea, something they should decide) and keep the main conversation for answering them. One card per subject; `list` first when you may have posted it already; `resolve` a card when its problem clears instead of posting an all clear. Write the card for them to read: plain words, no ids or tool names, links in the body. A choice is something you can carry out when pressed, not a way to end the card.",
 				Run:      run,
 			},
 		}
@@ -100,6 +134,18 @@ type media struct {
 	PageURL      string `json:"page_url"`
 	MediaCaption string `json:"media_caption"`
 	ListRowIndex *int   `json:"list_row_index"`
+
+	CameraStill *cameraStill `json:"camera_still"`
+}
+
+type cameraStill struct {
+	AttachmentID string `json:"attachment_id"`
+	PhotoID      string `json:"photo_id"`
+	CameraName   string `json:"camera_name"`
+	CapturedAt   string `json:"captured_at"`
+	StillReason  string `json:"still_reason"`
+	PlaybackURL  string `json:"playback_url"`
+	LiveURL      string `json:"live_url"`
 }
 
 type choice struct {
@@ -111,6 +157,8 @@ type choice struct {
 type arguments struct {
 	Action           string            `json:"action"`
 	FeedItemID       string            `json:"feed_item_id"`
+	ResolutionNote   string            `json:"resolution_note"`
+	ChartBlocks      json.RawMessage   `json:"chart_blocks"`
 	Title            string            `json:"title"`
 	Body             string            `json:"body"`
 	PictureSymbol    string            `json:"picture_symbol"`
@@ -156,6 +204,23 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return nil, fmt.Errorf("which card? give feed_item_id, from list")
 		}
 		return operate(ctx, client.DocumentWithdrawAgentFeedItem, map[string]any{"feedItemId": feedItemId}, "WithdrawAgentFeedItem", "withdrawn")
+	case "resolve", "unresolve":
+		if feedItemId == "" {
+			return nil, fmt.Errorf("which card? give feed_item_id, from list")
+		}
+		variables := map[string]any{"feedItemId": feedItemId}
+		// A goal's own turn is held to the cards it posted, which the
+		// operation knows from the conversation it is told.
+		if here := current.Conversation(); here != nil && here.IsGoal() && current.Headless() {
+			variables["runConversationId"] = here.ID
+		}
+		if action == "unresolve" {
+			return operate(ctx, client.DocumentUnresolveAgentFeedItem, variables, "UnresolveAgentFeedItem", "the mark is taken off")
+		}
+		if note := strings.TrimSpace(asked.ResolutionNote); note != "" {
+			variables["resolutionNote"] = note
+		}
+		return operate(ctx, client.DocumentResolveAgentFeedItem, variables, "ResolveAgentFeedItem", "resolved")
 	case "dismiss":
 		variables := map[string]any{}
 		if len(asked.FeedItemIDs) > 0 {
@@ -182,7 +247,10 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		return operate(ctx, client.DocumentRestoreAgentFeedItems, map[string]any{"feedItemIds": asked.FeedItemIDs}, "RestoreAgentFeedItems", "brought back")
 	case "post", "update":
-		variables := postVariables(&asked)
+		variables, err := postVariables(&asked)
+		if err != nil {
+			return nil, err
+		}
 		if action == "update" {
 			if feedItemId == "" {
 				return nil, fmt.Errorf("which card? give feed_item_id, from list")
@@ -210,11 +278,11 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		return operate(ctx, client.DocumentPostAgentFeedItem, variables, "PostAgentFeedItem", note)
 	}
-	return nil, fmt.Errorf("%q is not post, update, withdraw, dismiss, restore or list", asked.Action)
+	return nil, fmt.Errorf("%q is not post, update, resolve, unresolve, withdraw, dismiss, restore or list", asked.Action)
 }
 
 // postVariables is what the operation takes, from what the model gave.
-func postVariables(asked *arguments) map[string]any {
+func postVariables(asked *arguments) (map[string]any, error) {
 	variables := map[string]any{}
 	for name, value := range map[string]string{
 		"title": asked.Title, "body": asked.Body, "pictureSymbol": asked.PictureSymbol, "feedItemKind": asked.FeedItemKind,
@@ -244,10 +312,26 @@ func postVariables(asked *arguments) map[string]any {
 		}
 		variables["sourceLinks"] = links
 	}
+	if charts := strings.TrimSpace(string(asked.ChartBlocks)); charts != "" && charts != "null" {
+		// The chart's own words are the operation's, so they go through as
+		// the model wrote them and are checked there, with the field named.
+		var chartBlocks []any
+		if err := json.Unmarshal(asked.ChartBlocks, &chartBlocks); err != nil {
+			return nil, fmt.Errorf("chart_blocks is a list of charts, at most two: %w", err)
+		}
+		variables["chartBlocks"] = chartBlocks
+	}
 	if len(asked.Media) > 0 {
 		entries := make([]map[string]any, 0, len(asked.Media))
 		for _, entry := range asked.Media {
 			fields := map[string]any{"photoId": entry.PhotoID, "pageUrl": entry.PageURL, "mediaCaption": entry.MediaCaption}
+			if still := entry.CameraStill; still != nil {
+				fields["photoId"], fields["pageUrl"] = "", ""
+				fields["cameraStill"] = map[string]any{
+					"attachmentId": still.AttachmentID, "photoId": still.PhotoID, "cameraName": still.CameraName, "capturedAt": still.CapturedAt,
+					"stillReason": still.StillReason, "playbackUrl": still.PlaybackURL, "liveUrl": still.LiveURL,
+				}
+			}
 			if entry.ListRowIndex != nil {
 				fields["listRowIndex"] = *entry.ListRowIndex
 			}
@@ -262,7 +346,7 @@ func postVariables(asked *arguments) map[string]any {
 		}
 		variables["choices"] = choices
 	}
-	return variables
+	return variables, nil
 }
 
 // operate runs one of the feed operations as the person and answers with what

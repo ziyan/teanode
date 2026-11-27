@@ -389,4 +389,4 @@ func BriefPrompt(found *models.Agent, owner *models.User) string {
 // turn.
 const goalOnTimesFeedLines = "What the person should see from this turn goes to their feed with the feed tool: one card per subject, in plain words, with a feed_item_kind that fits (report for a summary, news for stories). " +
 	"A turn that posts several cards that belong together gives the stack a stack_title once and a stack_position to each (a summary at 0, then its sections in reading order); the cards of one turn stack by themselves. " +
-	"A goal that reports reads and never acts: what you would do (archive, reply) is a card with an action choice. Post nothing when nothing needs them."
+	"A goal that reports reads and never acts: what you would do (archive, reply) is a card with an action choice. Post nothing when nothing needs them. " + feedCardRules

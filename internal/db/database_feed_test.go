@@ -506,3 +506,72 @@ func TestRestoringRespectsAnswersAndSubjectsAndAnsweredCardsAreSwept(t *testing.
 		}
 	})
 }
+
+// A card is resolved once: the first resolution and its note stand, resolving
+// moves nothing and makes nothing unread, taking the mark off clears it all,
+// and a post with the card's coalesce key is a new state of the subject that
+// starts unresolved, while the charts are kept with the card.
+func TestAResolvedCardIsResolvedOnceAndAReplacementStartsUnresolved(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId, agentId := feedTestAgent(t, tx, "feed-resolve")
+		start := time.Now()
+		card := newTestCard(userId, agentId, "The freezer is warm")
+		card.CoalesceKey = "freezer"
+		value := 9.5
+		card.ChartBlocks = []models.FeedChartBlock{{
+			ChartKind: models.FeedChartKindSeries, ChartTitle: "Freezer", Unit: "degrees", Provenance: "Read from the sensor at 08:00",
+			XLabels: []string{"07:00", "08:00"}, Series: []models.FeedChartSeries{{SeriesName: "Reading", SeriesRole: models.FeedSeriesMeasured, Values: []*float64{nil, &value}}},
+			Markers: []models.FeedChartMarker{}, Bars: []models.FeedChartBar{},
+		}}
+		posted, _, err := tx.UpsertAgentFeedItem(card, start)
+		if err != nil || len(posted.ChartBlocks) != 1 || posted.ChartBlocks[0].Series[0].Values[0] != nil || *posted.ChartBlocks[0].Series[0].Values[1] != 9.5 {
+			t.Fatalf("the chart did not come back: %+v %v", posted.ChartBlocks, err)
+		}
+		resolvedAt := start.Add(time.Hour)
+		isResolved, err := tx.ResolveAgentFeedItem(posted.ID, &models.FeedResolution{ResolutionNote: "Back to normal", ResolvedByKind: models.FeedResolverGoal, ResolvedByID: "goal-1"}, resolvedAt)
+		if err != nil || !isResolved {
+			t.Fatalf("resolve: %v %v", isResolved, err)
+		}
+		if isResolved, err = tx.ResolveAgentFeedItem(posted.ID, &models.FeedResolution{ResolutionNote: "Second", ResolvedByKind: models.FeedResolverPerson}, resolvedAt.Add(time.Minute)); err != nil || isResolved {
+			t.Fatalf("a second resolve was applied: %v %v", isResolved, err)
+		}
+		stored, err := tx.GetAgentFeedItem(posted.ID)
+		if err != nil || !stored.IsResolved() || stored.ResolutionNote != "Back to normal" || stored.ResolvedByKind != models.FeedResolverGoal || stored.ResolvedByID != "goal-1" || !stored.ResolvedAt.Equal(resolvedAt.Truncate(time.Microsecond)) {
+			t.Fatalf("stored: %+v %v", stored, err)
+		}
+		if stored.ReadAt != nil || !stored.CreatedAt.Equal(posted.CreatedAt.Truncate(time.Microsecond)) {
+			t.Fatalf("resolving moved the card or marked it read: %+v", stored)
+		}
+		if unreadCount, err := tx.CountUnreadAgentFeedItems(userId, resolvedAt); err != nil || unreadCount != 1 {
+			t.Fatalf("a resolved card is still unread: %d %v", unreadCount, err)
+		}
+
+		// A change of its text keeps the mark.
+		changed, err := tx.UpdateAgentFeedItem(posted.ID, func(item *models.AgentFeedItem) error { item.Body = "Cooled down."; return nil }, resolvedAt.Add(time.Minute))
+		if err != nil || !changed.IsResolved() || changed.ResolutionNote != "Back to normal" || len(changed.ChartBlocks) != 1 {
+			t.Fatalf("an update lost the resolution or the chart: %+v %v", changed, err)
+		}
+		wasResolved, err := tx.UnresolveAgentFeedItem(posted.ID, resolvedAt.Add(2*time.Minute))
+		if err != nil || !wasResolved {
+			t.Fatalf("unresolve: %v %v", wasResolved, err)
+		}
+		if wasResolved, err = tx.UnresolveAgentFeedItem(posted.ID, resolvedAt.Add(3*time.Minute)); err != nil || wasResolved {
+			t.Fatalf("a card not resolved was unresolved: %v %v", wasResolved, err)
+		}
+		if stored, _ = tx.GetAgentFeedItem(posted.ID); stored.IsResolved() || stored.ResolutionNote != "" || stored.ResolvedByKind != "" || stored.ResolvedByID != "" {
+			t.Fatalf("the mark was not cleared: %+v", stored)
+		}
+
+		if _, err := tx.ResolveAgentFeedItem(posted.ID, &models.FeedResolution{ResolutionNote: "Again", ResolvedByKind: models.FeedResolverAgent}, resolvedAt.Add(4*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		again := newTestCard(userId, agentId, "The freezer is warm again")
+		again.CoalesceKey = "freezer"
+		replaced, change, err := tx.UpsertAgentFeedItem(again, resolvedAt.Add(5*time.Minute))
+		if err != nil || change != models.FeedChangeReplaced || replaced.ID != posted.ID || replaced.IsResolved() || replaced.ResolutionNote != "" || replaced.ResolvedByKind != "" || len(replaced.ChartBlocks) != 0 {
+			t.Fatalf("a replacement kept the resolution or the old chart: %+v %v %v", replaced, change, err)
+		}
+	})
+}

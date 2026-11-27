@@ -42,7 +42,7 @@ func (self *graph) feedMediaView(response http.ResponseWriter, request *http.Req
 			return nil
 		}
 		for index := range item.FeedMedia {
-			if item.FeedMedia[index].MediaKey == variables["mediaKey"] && item.FeedMedia[index].FeedMediaKind == models.FeedMediaPicture {
+			if item.FeedMedia[index].MediaKey == variables["mediaKey"] && (item.FeedMedia[index].FeedMediaKind == models.FeedMediaPicture || item.FeedMedia[index].FeedMediaKind == models.FeedMediaCameraStill) {
 				entry = &item.FeedMedia[index]
 			}
 		}

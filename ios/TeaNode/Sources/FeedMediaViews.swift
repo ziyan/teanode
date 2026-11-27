@@ -69,7 +69,7 @@ struct FeedMediaTile: View {
         switch media.mediaKind {
         case .video: media.videoPhotoId != nil
         case .picture: media.linkAddress != nil
-        case .photo: false
+        case .photo, .cameraStill: false
         }
     }
 
@@ -115,6 +115,7 @@ struct FeedMediaTile: View {
         case .video: return String(localized: "Video")
         case .photo: return String(localized: "Photo")
         case .picture: return String(localized: "Picture from the page")
+        case .cameraStill: return String(localized: "Camera still")
         }
     }
 
@@ -239,5 +240,100 @@ struct FeedMediaGroup: View {
                 }
             }
         }
+    }
+}
+
+// MARK: A camera still
+
+/// FeedCameraStill is a still from one of the person's cameras at the top of a
+/// card: the picture, its caption, "<camera> · 14:02:11" on the camera's own
+/// clock (with its zone named when it is not the phone's), and why this camera
+/// was chosen. A tap on the picture opens the recording of that moment, and a
+/// Watch Live button opens the camera's live view; each only when the card
+/// gives an address.
+struct FeedCameraStill: View {
+    let media: AgentFeedMedia
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            picture
+            VStack(alignment: .leading, spacing: 4) {
+                if !media.mediaCaption.isEmpty {
+                    Text(media.mediaCaption)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !cameraLine.isEmpty {
+                    Text(verbatim: cameraLine)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !media.stillReason.isEmpty {
+                    Text(media.stillReason)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                liveButton
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+        }
+    }
+
+    @ViewBuilder
+    private var picture: some View {
+        if let playbackAddress = media.playbackAddress {
+            Button {
+                openURL(playbackAddress)
+            } label: {
+                still
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(Text("Opens the recording of this moment"))
+        } else {
+            still
+        }
+    }
+
+    private var still: some View {
+        FeedMediaImage(path: media.imageUrl)
+            .aspectRatio(CGFloat(media.singleAspectRatio), contentMode: .fit)
+            .contentShape(.rect)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(stillLabel))
+            .accessibilityAddTraits(media.playbackAddress == nil ? AccessibilityTraits.isImage : AccessibilityTraits.isButton)
+    }
+
+    @ViewBuilder
+    private var liveButton: some View {
+        if let liveAddress = media.liveAddress {
+            Button {
+                openURL(liveAddress)
+            } label: {
+                Label("Watch Live", systemImage: "video")
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.regular)
+            .padding(.top, 4)
+        }
+    }
+
+    /// "Front door · 14:02:11", with the camera's zone after the time when it
+    /// is not the phone's.
+    private var cameraLine: String {
+        let clock = media.capturedClockText
+        let zone = media.capturedZoneText
+        let clockText = zone.isEmpty ? clock : "\(clock) \(zone)"
+        return [media.cameraName, clockText].filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
+    }
+
+    /// What VoiceOver says for the picture: the camera, the time and the caption.
+    private var stillLabel: String {
+        let words = [media.mediaCaption, cameraLine].filter { !$0.isEmpty }.joined(separator: ", ")
+        return words.isEmpty ? String(localized: "Camera still") : words
     }
 }

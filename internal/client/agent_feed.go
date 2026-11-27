@@ -42,6 +42,38 @@ type AgentFeedReference struct {
 	PhotoTitle           string `json:"photoTitle,omitempty"`
 }
 
+// AgentFeedChartSeries is one line of a series chart; a nil value is none.
+type AgentFeedChartSeries struct {
+	SeriesName string     `json:"seriesName"`
+	SeriesRole string     `json:"seriesRole"`
+	Values     []*float64 `json:"values"`
+}
+
+// AgentFeedChartMarker is a labeled vertical rule at one of the axis labels.
+type AgentFeedChartMarker struct {
+	MarkerAt    string `json:"markerAt"`
+	MarkerLabel string `json:"markerLabel"`
+}
+
+// AgentFeedChartBar is one bar of a bar chart.
+type AgentFeedChartBar struct {
+	BarLabel string  `json:"barLabel"`
+	BarValue float64 `json:"barValue"`
+}
+
+// AgentFeedChartBlock is a chart on a card, a series over time or bars,
+// with the line saying where and when its numbers were read.
+type AgentFeedChartBlock struct {
+	ChartKind  string                 `json:"chartKind"`
+	ChartTitle string                 `json:"chartTitle"`
+	Unit       string                 `json:"unit"`
+	Provenance string                 `json:"provenance"`
+	XLabels    []string               `json:"xLabels"`
+	Series     []AgentFeedChartSeries `json:"series"`
+	Markers    []AgentFeedChartMarker `json:"markers"`
+	Bars       []AgentFeedChartBar    `json:"bars"`
+}
+
 // AgentFeedItem is one card.
 type AgentFeedItem struct {
 	FeedItemID        string                `json:"feedItemId"`
@@ -56,7 +88,13 @@ type AgentFeedItem struct {
 	FactRows          []AgentFeedFactRow    `json:"factRows"`
 	SourceLinks       []AgentFeedSourceLink `json:"sourceLinks"`
 	RecordReferences  []AgentFeedReference  `json:"recordReferences"`
+	ChartBlocks       []AgentFeedChartBlock `json:"chartBlocks"`
 	Choices           []AgentFeedChoice     `json:"choices"`
+	IsResolved        bool                  `json:"isResolved"`
+	ResolvedAt        *time.Time            `json:"resolvedAt"`
+	ResolutionNote    string                `json:"resolutionNote"`
+	ResolvedByKind    string                `json:"resolvedByKind"`
+	PostNotes         []string              `json:"postNotes"`
 	ChosenChoiceKey   string                `json:"chosenChoiceKey"`
 	ChosenAt          *time.Time            `json:"chosenAt"`
 	OutcomeText       string                `json:"outcomeText"`
@@ -90,6 +128,11 @@ type AgentFeedMedia struct {
 	WidthPixels   *int   `json:"widthPixels"`
 	HeightPixels  *int   `json:"heightPixels"`
 	ListRowIndex  *int   `json:"listRowIndex"`
+	CameraName    string `json:"cameraName"`
+	CapturedAt    string `json:"capturedAt"`
+	StillReason   string `json:"stillReason"`
+	PlaybackURL   string `json:"playbackUrl"`
+	LiveURL       string `json:"liveUrl"`
 }
 
 // AgentFeedPage is a page of the feed.
@@ -103,17 +146,18 @@ const (
 	feedItemFields = `feedItemId feedItemKind feedSourceKind feedSourceId feedSourceTitle runConversationId title body pictureSymbol
 		factRows { factLabel factValue } sourceLinks { sourceTitle sourceUrl }
 		recordReferences { itemId threadId subject from path name financeTransactionId recordingId recordingTitle photoId photoTitle }
-		choices { choiceKey choiceLabel choiceRole } chosenChoiceKey chosenAt outcomeText isOutcomePending
+		chartBlocks { chartKind chartTitle unit provenance xLabels series { seriesName seriesRole values } markers { markerAt markerLabel } bars { barLabel barValue } }
+		choices { choiceKey choiceLabel choiceRole } isResolved resolvedAt resolutionNote resolvedByKind postNotes chosenChoiceKey chosenAt outcomeText isOutcomePending
 		feedUrgency isLiked isRead isDismissed dismissedAt feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent postedAt updatedAt
-		feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }`
+		feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex cameraName capturedAt stillReason playbackUrl liveUrl }`
 
 	// DocumentPostAgentFeedItem is also what the feed tool sends.
 	postFields = `$feedItemId: String, $feedItemKind: String, $feedSourceKind: String, $feedSourceId: String, $runConversationId: String,
 		$title: String, $body: String, $pictureSymbol: String, $factRows: [FeedFactRowInput!], $sourceLinks: [FeedSourceLinkInput!],
-		$coalesceKey: String, $feedUrgency: String, $stackKey: String, $stackPosition: Int, $stackTitle: String, $cardLayout: String, $layoutContent: String, $choices: [FeedChoiceInput!], $media: [AgentFeedMediaInput!]`
+		$coalesceKey: String, $feedUrgency: String, $stackKey: String, $stackPosition: Int, $stackTitle: String, $cardLayout: String, $layoutContent: String, $choices: [FeedChoiceInput!], $chartBlocks: [FeedChartBlockInput!], $media: [AgentFeedMediaInput!]`
 	postArguments = `feedItemId: $feedItemId, feedItemKind: $feedItemKind, feedSourceKind: $feedSourceKind, feedSourceId: $feedSourceId,
 			runConversationId: $runConversationId, title: $title, body: $body, pictureSymbol: $pictureSymbol, factRows: $factRows,
-			sourceLinks: $sourceLinks, coalesceKey: $coalesceKey, feedUrgency: $feedUrgency, stackKey: $stackKey, stackPosition: $stackPosition, stackTitle: $stackTitle, cardLayout: $cardLayout, layoutContent: $layoutContent, choices: $choices, media: $media`
+			sourceLinks: $sourceLinks, coalesceKey: $coalesceKey, feedUrgency: $feedUrgency, stackKey: $stackKey, stackPosition: $stackPosition, stackTitle: $stackTitle, cardLayout: $cardLayout, layoutContent: $layoutContent, choices: $choices, chartBlocks: $chartBlocks, media: $media`
 )
 
 // The documents the command line and the feed tool send, exported so a test
@@ -149,6 +193,12 @@ const (
 	}`
 	DocumentWithdrawAgentFeedItem = `mutation ($feedItemId: String!) {
 		WithdrawAgentFeedItem(feedItemId: $feedItemId)
+	}`
+	DocumentResolveAgentFeedItem = `mutation ($feedItemId: String!, $resolutionNote: String, $runConversationId: String) {
+		ResolveAgentFeedItem(feedItemId: $feedItemId, resolutionNote: $resolutionNote, runConversationId: $runConversationId) { ` + feedItemFields + ` }
+	}`
+	DocumentUnresolveAgentFeedItem = `mutation ($feedItemId: String!, $runConversationId: String) {
+		UnresolveAgentFeedItem(feedItemId: $feedItemId, runConversationId: $runConversationId) { ` + feedItemFields + ` }
 	}`
 	DocumentMarkAgentFeedRead = `mutation ($feedItemIds: [String!]!) {
 		MarkAgentFeedRead(feedItemIds: $feedItemIds)
@@ -277,6 +327,33 @@ func RestoreAgentFeedItems(ctx context.Context, connection *Client, feedItemIds 
 		return nil, err
 	}
 	return result.RestoreAgentFeedItems, nil
+}
+
+// ResolveAgentFeedItem marks a card resolved, with an optional one line
+// saying what cleared.
+func ResolveAgentFeedItem(ctx context.Context, connection *Client, feedItemId, resolutionNote string) (*AgentFeedItem, error) {
+	var result struct {
+		ResolveAgentFeedItem *AgentFeedItem `json:"ResolveAgentFeedItem"`
+	}
+	variables := map[string]any{"feedItemId": feedItemId}
+	if resolutionNote != "" {
+		variables["resolutionNote"] = resolutionNote
+	}
+	if err := connection.Execute(ctx, DocumentResolveAgentFeedItem, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.ResolveAgentFeedItem, nil
+}
+
+// UnresolveAgentFeedItem takes the resolved mark off a card.
+func UnresolveAgentFeedItem(ctx context.Context, connection *Client, feedItemId string) (*AgentFeedItem, error) {
+	var result struct {
+		UnresolveAgentFeedItem *AgentFeedItem `json:"UnresolveAgentFeedItem"`
+	}
+	if err := connection.Execute(ctx, DocumentUnresolveAgentFeedItem, map[string]any{"feedItemId": feedItemId}, &result); err != nil {
+		return nil, err
+	}
+	return result.UnresolveAgentFeedItem, nil
 }
 
 // MarkAgentFeedRead marks cards read and says how many were newly read.

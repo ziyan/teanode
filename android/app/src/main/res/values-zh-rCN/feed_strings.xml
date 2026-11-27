@@ -67,4 +67,21 @@
     <plurals name="feed_dismissed_count">
         <item quantity="other">已忽略 %1$d 张卡片</item>
     </plurals>
+    <string name="feed_resolved_chip">已解决 %1$s</string>
+    <string name="feed_resolved">已解决</string>
+    <string name="feed_resolve">标记为已解决</string>
+    <string name="feed_unresolve">取消已解决</string>
+    <string name="feed_resolve_title">解决这张卡片</string>
+    <string name="feed_resolve_message">标记问题已消除。卡片会留在原处。</string>
+    <string name="feed_resolve_note_label">备注(可选)</string>
+    <string name="feed_resolve_note_hint">一句话说明如何解决</string>
+    <string name="feed_resolve_cancel">取消</string>
+    <string name="feed_resolve_done">卡片已标记为已解决</string>
+    <string name="feed_unresolve_done">卡片已标记为未解决</string>
+    <string name="feed_show_card">显示卡片</string>
+    <string name="feed_media_camera_still">摄像头截图</string>
+    <string name="feed_still_opens_recording">打开录像</string>
+    <string name="feed_watch_live">观看直播</string>
+    <string name="feed_camera_line">%1$s · %2$s</string>
+    <string name="feed_chart_unit_value">%1$s %2$s</string>
 </resources>

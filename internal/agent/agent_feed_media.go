@@ -53,10 +53,17 @@ func normalizeFeedMedia(item *models.AgentFeedItem) error {
 	seenKeys := map[string]bool{}
 	seenRows := map[int]bool{}
 	media := make([]models.FeedMedia, 0, len(item.FeedMedia))
-	for _, entry := range item.FeedMedia {
+	for index, entry := range item.FeedMedia {
 		entry.PhotoID, entry.PageURL = strings.TrimSpace(entry.PhotoID), strings.TrimSpace(entry.PageURL)
-		entry.MediaCaption = cutMarked(strings.TrimSpace(entry.MediaCaption), feedCaptionCharacters)
+		entry.MediaCaption = feedLine(item, fmt.Sprintf("media[%d].mediaCaption", index), entry.MediaCaption, feedCaptionCharacters)
 		switch {
+		case entry.FeedMediaKind == models.FeedMediaCameraStill:
+			if entry.PageURL != "" || entry.ListRowIndex != nil {
+				return feedRefusal("media[%d]: a camera still is a picture of the whole card; it takes no page_url and no list_row_index", index)
+			}
+			if err := normalizeFeedStill(item, &entry, fmt.Sprintf("media[%d].cameraStill", index)); err != nil {
+				return err
+			}
 		case entry.PhotoID != "" && entry.PageURL != "":
 			return feedRefusal("a picture is either one of their photos (photo_id) or a page's picture (page_url), not both")
 		case entry.PhotoID != "":
@@ -70,7 +77,7 @@ func normalizeFeedMedia(item *models.AgentFeedItem) error {
 			}
 			entry.FeedMediaKind = models.FeedMediaPicture
 		default:
-			return feedRefusal("a picture needs photo_id, one of their photos, or page_url, a page whose picture to show")
+			return feedRefusal("a picture needs photo_id, one of their photos, or page_url, a page whose picture to show, or is a camera_still")
 		}
 		if entry.ListRowIndex != nil {
 			if item.FeedCardLayout != models.FeedLayoutList {
@@ -172,9 +179,15 @@ func resolveFeedPhotos(tx db.Transaction, userId string, item *models.AgentFeedI
 		if photo == nil {
 			return feedRefusal("there is no photo %s of theirs; use an id the photo tool gave you", entry.PhotoID)
 		}
-		entry.FeedMediaKind = models.FeedMediaPhoto
-		if photo.PhotoKind == models.PhotoKindVideo {
-			entry.FeedMediaKind = models.FeedMediaVideo
+		if entry.FeedMediaKind == models.FeedMediaCameraStill {
+			if photo.PhotoKind == models.PhotoKindVideo {
+				return feedRefusal("a camera still is a picture, and %s is a video of theirs", entry.PhotoID)
+			}
+		} else {
+			entry.FeedMediaKind = models.FeedMediaPhoto
+			if photo.PhotoKind == models.PhotoKindVideo {
+				entry.FeedMediaKind = models.FeedMediaVideo
+			}
 		}
 		entry.WidthPixels, entry.HeightPixels = photo.WidthPixels, photo.HeightPixels
 	}
@@ -200,7 +213,7 @@ func carryFeedPictures(previous []models.FeedMedia, item *models.AgentFeedItem) 
 			entry.ImageFileID, entry.IsPictureMissing, entry.SiteName = earlier.ImageFileID, earlier.IsPictureMissing, earlier.SiteName
 			entry.WidthPixels, entry.HeightPixels = earlier.WidthPixels, earlier.HeightPixels
 		}
-		if entry.FeedMediaKind == models.FeedMediaPicture && entry.ImageFileID != "" {
+		if entry.ImageFileID != "" {
 			isUsed[entry.ImageFileID] = true
 		}
 	}
