@@ -25,18 +25,14 @@ const feedResolutionNoteCharacters = models.FeedResolutionNoteMost
 
 // ResolveFeedItem marks the card resolved, with the one line saying what
 // cleared. The first resolution stands: a card already resolved is refused, so
-// a goal never replaces what the person resolved. A goal's own turn may
-// resolve only a card it posted. The answer carries what was cut from the
-// note in its post notes.
+// a later note never replaces the first (unresolve it first). The answer
+// carries what was cut from the note in its post notes.
 func ResolveFeedItem(tx db.Transaction, resolver *FeedResolver, item *models.AgentFeedItem, resolutionNote string, now time.Time) (*models.AgentFeedItem, error) {
 	if item.IsResolved() {
 		if item.ResolvedByKind == models.FeedResolverPerson {
 			return nil, feedRefusal("this card is already resolved, by the person, and stays as they left it")
 		}
 		return nil, feedRefusal("this card is already resolved")
-	}
-	if err := checkFeedResolver(resolver, item); err != nil {
-		return nil, err
 	}
 	notes := &models.AgentFeedItem{}
 	note := feedLine(notes, "resolutionNote", resolutionNote, feedResolutionNoteCharacters)
@@ -55,17 +51,10 @@ func ResolveFeedItem(tx db.Transaction, resolver *FeedResolver, item *models.Age
 	return resolved, nil
 }
 
-// UnresolveFeedItem takes the mark off a card. A goal's own turn may do it
-// only to a card it posted, and never to one the person resolved.
+// UnresolveFeedItem takes the mark off a card, whoever resolved it.
 func UnresolveFeedItem(tx db.Transaction, resolver *FeedResolver, item *models.AgentFeedItem, now time.Time) (*models.AgentFeedItem, error) {
 	if !item.IsResolved() {
 		return nil, feedRefusal("this card is not resolved")
-	}
-	if resolver.Kind != models.FeedResolverPerson && item.ResolvedByKind == models.FeedResolverPerson {
-		return nil, feedRefusal("the person resolved this card, and only they take that off")
-	}
-	if err := checkFeedResolver(resolver, item); err != nil {
-		return nil, err
 	}
 	if _, err := tx.UnresolveAgentFeedItem(item.ID, now); err != nil {
 		return nil, err
@@ -73,21 +62,10 @@ func UnresolveFeedItem(tx db.Transaction, resolver *FeedResolver, item *models.A
 	return tx.GetAgentFeedItem(item.ID)
 }
 
-// checkFeedResolver refuses a goal's own turn on a card it did not post.
-func checkFeedResolver(resolver *FeedResolver, item *models.AgentFeedItem) error {
-	if resolver.Kind == models.FeedResolverGoal && (item.FeedSourceKind != models.FeedSourceGoal || item.FeedSourceID != resolver.ID) {
-		return feedRefusal("a goal's own turn may resolve only a card it posted")
-	}
-	return nil
-}
-
-// CheckFeedWithdrawal refuses a withdrawal that is not the caller's to make.
-// A card the person answered or resolved is theirs now, and is dismissed
-// instead; a goal's own turn may withdraw only a card it posted.
-func CheckFeedWithdrawal(resolver *FeedResolver, item *models.AgentFeedItem) error {
-	if resolver.Kind == models.FeedResolverGoal && (item.FeedSourceKind != models.FeedSourceGoal || item.FeedSourceID != resolver.ID) {
-		return feedRefusal("a goal's own turn may withdraw only a card it posted")
-	}
+// CheckFeedWithdrawal refuses deleting a card the person answered or
+// resolved: it holds their answer, and the person's own way to put a card away
+// is dismissing it, which the agent can do too.
+func CheckFeedWithdrawal(item *models.AgentFeedItem) error {
 	if item.IsChosen() || (item.IsResolved() && item.ResolvedByKind == models.FeedResolverPerson) {
 		return feedRefusal("the person answered or resolved this card, so it is theirs now; dismiss it instead of withdrawing it")
 	}

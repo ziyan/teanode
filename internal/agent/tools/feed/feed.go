@@ -31,9 +31,9 @@ func init() {
 					"A card can carry at most two charts in chart_blocks, drawn natively: chartKind series (xLabels, 2 to 60 in order; series, 1 to 3 lines of {seriesName, seriesRole, values}, one number per label or null; seriesRole is measured, the default, reference for a line to compare with such as last month or the average, or projection for what is expected ahead; markers, up to 3 of {markerAt (one of the xLabels), markerLabel}) or bars (1 to 8 of {barLabel, barValue}, never negative, largest first), each with a chartTitle, a unit such as USD or steps, and a provenance, required: one line saying where and when the numbers were read, such as \"Read from the bank at 09:40 EST\". Numbers come only from this turn's tool results. A bucket that is not finished (today, this hour) is never drawn as measured: end the series at the last finished one, or draw it as a projection. Three or more fact_rows that are each a time or date and a number are refused: send them as a series. " +
 					"A still from one of their cameras goes in media as {camera_still: {attachment_id (the attachment_id in the camera tool's answer, in this turn), camera_name, captured_at (the camera's own time with its offset, such as 2026-11-19T14:02:11-05:00), still_reason (why this camera, such as the camera at the front door, where the parcel was left), playback_url, live_url (https, optional)}}; a still whose picture cannot be read is left off with a note and the card still posts, and a new moment needs a new still, since an update keeps a still only when its camera and moment are unchanged. " +
 					"A card is held to these rules. It says what happened, why it matters and one or two next steps. Numbers come only from this turn's tool results. One card per subject: `list` first so that nothing is said twice, and never rewrite a card into a different subject. Plain words, with no ids or tool names, and a title that says what the body says. Silence is the default. Em and en dashes are rewritten, and a title, label or caption a little too long is cut, with the cut fields listed in the answer's postNotes. " +
-					"When the problem a card is about clears, `resolve` that card (feed_item_id, and a resolution_note of one line saying what cleared) instead of posting a card that says all is clear: it stays in place, marked resolved. Post a new card only for a new problem, or one that got materially worse. A card is resolved once, and a goal's own turn may resolve only a card it posted and never one the person resolved; `unresolve` takes the mark off, for when it was wrong. Posting the same subject again with its coalesce_key clears the mark. " +
-					"`update` changes a card you posted, by feed_item_id, where it stands, and keeps every field you leave out (title, kind, body, choices, media, charts). `withdraw` takes one back for good when it no longer holds: it is deleted, not put among the dismissed cards, and never a card the person answered or resolved (dismiss that), and in a goal's own turn only a card that goal posted. `dismiss` and `restore` are for when the person asks (\"clear my feed\", \"bring that back\"), never on your own and never in a goal's own turn: dismiss closes the cards in feed_item_ids, or every card of a stack_key, or every_read cards the person has read (a decision still waiting for an answer is kept); restore brings feed_item_ids back. `list` shows what is in the feed, to find an id or to see what you already said; with dismissed_only it lists the dismissed cards, the most recently dismissed first, and a page whose nextCursor is not empty goes on with after. `show` reads one card whole, and `stack` the cards of one stack_key. " +
-					"The person's own buttons are yours too when they ask in words (\"like the rail card\", \"yes, unsubscribe me\", \"mark them all read\", \"less of these\"), never on your own and never in a goal's own turn: `choose` answers a card with its choice_key, and for an action you then carry it out yourself in this turn, since no turn of its own starts; `like` and `unlike` say whether they want more like it; `less` is show less like this, which also dismisses it; `read` marks the feed_item_ids read.",
+					"When the problem a card is about clears, `resolve` that card (feed_item_id, and a resolution_note of one line saying what cleared) instead of posting a card that says all is clear: it stays in place, marked resolved. Post a new card only for a new problem, or one that got materially worse. A card is resolved once; `unresolve` takes the mark off, for when it was wrong. Posting the same subject again with its coalesce_key clears the mark. " +
+					"`update` changes a card you posted, by feed_item_id, where it stands, and keeps every field you leave out (title, kind, body, choices, media, charts). `withdraw` takes one back for good when it no longer holds: it is deleted, not put among the dismissed cards, and never a card the person answered or resolved (dismiss that). `dismiss` and `restore` are for when the person asks (\"clear my feed\", \"bring that back\"), in chat or in a goal's instructions: dismiss closes the cards in feed_item_ids, or every card of a stack_key, or every_read cards the person has read (a decision still waiting for an answer is kept); restore brings feed_item_ids back. `list` shows what is in the feed, to find an id or to see what you already said; with dismissed_only it lists the dismissed cards, the most recently dismissed first, and a page whose nextCursor is not empty goes on with after. `show` reads one card whole, and `stack` the cards of one stack_key. " +
+					"The person's own buttons are yours too when they ask in words (\"like the rail card\", \"yes, unsubscribe me\", \"mark them all read\", \"less of these\"), in chat or in a goal's instructions: `choose` answers a card with its choice_key, and for an action you then carry it out yourself in this turn, since no turn of its own starts; `like` and `unlike` say whether they want more like it; `less` is show less like this, which also dismisses it; `read` marks the feed_item_ids read.",
 				Parameters: tools.Object(map[string]any{
 					"action":          tools.EnumProperty("what to do", "post", "update", "resolve", "unresolve", "withdraw", "dismiss", "restore", "list", "show", "stack", "choose", "like", "unlike", "less", "read"),
 					"feed_item_id":    tools.StringProperty("for update, resolve, unresolve, withdraw, show, choose, like, unlike and less: the card, by the id list or post gave"),
@@ -223,41 +223,19 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		return operate(ctx, client.DocumentGetAgentFeedItem, map[string]any{"feedItemId": feedItemId}, "GetAgentFeedItem", "")
 	case "choose", "like", "unlike", "less", "read":
-		// These are the person's own answers, done for them when they ask in
-		// words; a goal working on its own does not answer for them.
-		if here := current.Conversation(); here != nil && here.IsGoal() && current.Headless() {
-			return nil, fmt.Errorf("a goal's own turn cannot %s a card for the person; only they, or you when they ask, do that", action)
-		}
 		return answer(ctx, current, action, feedItemId, &asked)
 	case "withdraw":
 		if feedItemId == "" {
 			return nil, fmt.Errorf("which card? give feed_item_id, from list")
 		}
-		variables := map[string]any{"feedItemId": feedItemId}
-		// A goal's own turn takes back only a card of its own, which the
-		// operation checks again from the conversation it is told.
-		if here := current.Conversation(); here != nil && here.IsGoal() && current.Headless() {
-			variables["runConversationId"] = here.ID
-			result, err := operator.Execute(ctx, client.DocumentGetAgentFeedItem, map[string]any{"feedItemId": feedItemId})
-			if err != nil {
-				return nil, err
-			}
-			card, isCard := result["GetAgentFeedItem"].(map[string]any)
-			if !isCard {
-				return nil, fmt.Errorf("cannot read card %s to check it is this goal's", feedItemId)
-			}
-			if card["feedSourceKind"] != string(models.FeedSourceGoal) || card["feedSourceId"] != here.ID {
-				return nil, fmt.Errorf("a goal's own turn may withdraw only a card it posted")
-			}
-		}
-		return operate(ctx, client.DocumentWithdrawAgentFeedItem, variables, "WithdrawAgentFeedItem", "withdrawn")
+		return operate(ctx, client.DocumentWithdrawAgentFeedItem, map[string]any{"feedItemId": feedItemId}, "WithdrawAgentFeedItem", "withdrawn")
 	case "resolve", "unresolve":
 		if feedItemId == "" {
 			return nil, fmt.Errorf("which card? give feed_item_id, from list")
 		}
 		variables := map[string]any{"feedItemId": feedItemId}
-		// A goal's own turn is held to the cards it posted, which the
-		// operation knows from the conversation it is told.
+		// A goal's own turn names its conversation, so the card says which
+		// goal resolved it.
 		if here := current.Conversation(); here != nil && here.IsGoal() && current.Headless() {
 			variables["runConversationId"] = here.ID
 		}
@@ -286,11 +264,6 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	case "restore":
 		if len(asked.FeedItemIDs) == 0 {
 			return nil, fmt.Errorf("which cards? give feed_item_ids")
-		}
-		// What the person dismissed stays dismissed until they bring it back:
-		// a goal that disagrees posts again, or asks.
-		if here := current.Conversation(); here != nil && here.IsGoal() && current.Headless() {
-			return nil, fmt.Errorf("a goal's own turn cannot restore what the person dismissed; post a new card if it matters again")
 		}
 		return operate(ctx, client.DocumentRestoreAgentFeedItems, map[string]any{"feedItemIds": asked.FeedItemIDs}, "RestoreAgentFeedItems", "brought back")
 	case "post", "update":

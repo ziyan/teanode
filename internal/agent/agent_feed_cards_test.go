@@ -87,41 +87,38 @@ func TestAResolvedCardKeepsItsPlaceAndTheFirstResolutionStands(t *testing.T) {
 	}
 }
 
-// A goal's own turn resolves only a card it posted, and never replaces or
-// takes off what the person resolved.
-func TestAGoalResolvesOnlyItsOwnCardAndNeverThePersonsResolution(t *testing.T) {
+// A goal resolves any card, the card saying which goal did, and the first
+// resolution stands until somebody takes it off, a goal included.
+func TestAGoalResolvesAnyCardAndTheFirstResolutionStands(t *testing.T) {
 	world := newSpeakFirstWorld(t)
 	goalCard := world.post(t, &models.AgentFeedItem{Title: "A parcel is due", FeedSourceKind: models.FeedSourceGoal, FeedSourceID: "goal-parcels"})
 	otherCard := world.post(t, &models.AgentFeedItem{Title: "A different goal's card", FeedSourceKind: models.FeedSourceGoal, FeedSourceID: "goal-weather"})
-	ownCard := world.post(t, &models.AgentFeedItem{Title: "The agent's own card"})
 	goal := &agent.FeedResolver{Kind: models.FeedResolverGoal, ID: "goal-parcels"}
 
-	for _, feedItemId := range []string{otherCard.ID, ownCard.ID} {
-		if _, err := world.resolveFeed(t, goal, feedItemId, "Done"); err == nil || !strings.Contains(err.Error(), "only a card it posted") {
-			t.Fatalf("a goal resolved a card it did not post: %v", err)
+	for _, feedItemId := range []string{goalCard.ID, otherCard.ID} {
+		resolved, err := world.resolveFeed(t, goal, feedItemId, "The parcel arrived")
+		if err != nil || resolved.ResolvedByKind != models.FeedResolverGoal || resolved.ResolvedByID != "goal-parcels" {
+			t.Fatalf("a goal resolving a card: %+v %v", resolved, err)
 		}
 	}
-	resolved, err := world.resolveFeed(t, goal, goalCard.ID, "The parcel arrived")
-	if err != nil || resolved.ResolvedByKind != models.FeedResolverGoal || resolved.ResolvedByID != "goal-parcels" {
-		t.Fatalf("a goal resolving its own card: %+v %v", resolved, err)
-	}
 
-	// The person's resolution wins: the goal cannot replace it or take it off.
+	// The person's resolution stands until it is taken off, which a goal may do.
 	person := &agent.FeedResolver{Kind: models.FeedResolverPerson, ID: world.owner.ID}
 	if _, err := world.unresolveFeed(t, person, goalCard.ID); err != nil {
 		t.Fatal(err)
 	}
-	if resolved, err = world.resolveFeed(t, person, goalCard.ID, "Handled it myself"); err != nil || resolved.ResolvedByKind != models.FeedResolverPerson || resolved.ResolvedByID != world.owner.ID {
+	resolved, err := world.resolveFeed(t, person, goalCard.ID, "Handled it myself")
+	if err != nil || resolved.ResolvedByKind != models.FeedResolverPerson || resolved.ResolvedByID != world.owner.ID {
 		t.Fatalf("the person resolving: %+v %v", resolved, err)
 	}
 	if _, err := world.resolveFeed(t, goal, goalCard.ID, "The parcel arrived"); err == nil || !strings.Contains(err.Error(), "already resolved") {
 		t.Fatalf("a goal resolved over the person: %v", err)
 	}
-	if _, err := world.unresolveFeed(t, goal, goalCard.ID); err == nil || !strings.Contains(err.Error(), "only they take that off") {
-		t.Fatalf("a goal took off the person's resolution: %v", err)
-	}
 	if stored := readFeedItem(t, world, goalCard.ID); stored.ResolutionNote != "Handled it myself" {
 		t.Fatalf("the person's resolution did not stand: %+v", stored)
+	}
+	if _, err := world.unresolveFeed(t, goal, goalCard.ID); err != nil {
+		t.Fatalf("a goal taking off the person's resolution: %v", err)
 	}
 }
 
