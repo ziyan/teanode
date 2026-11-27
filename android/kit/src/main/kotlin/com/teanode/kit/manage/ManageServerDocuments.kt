@@ -22,10 +22,14 @@ geoip { enabled databaseFile }
 places { providerKind providerUrl mapStyleUrl }
 """.trimEnd()
 
+    val MANAGE_MODEL_ENTRY_FIELDS = """
+model name contextWindow reportedContextWindow isEnabled usedFor pricing { input output cacheRead cacheWrite audioInput }
+""".trimEnd()
+
     val MANAGE_AGENT_SETTINGS_FIELDS = """
 agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
-  providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
+  providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled models { ${MANAGE_MODEL_ENTRY_FIELDS} } pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize transcription embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer }
@@ -177,6 +181,14 @@ mutation (
 mutation (${'$'}agent: AgentParametersInput) {
   UpdateSettings(agent: ${'$'}agent) { ${MANAGE_AGENT_SETTINGS_FIELDS} }
 }
+""".trimEnd()
+
+    val MANAGE_SAVE_AGENT_MODEL_ENTRY = """
+mutation (${'$'}providerName: String!, ${'$'}entry: AgentModelEntryInput!) { SaveAgentModelEntry(providerName: ${'$'}providerName, entry: ${'$'}entry) { ${MANAGE_MODEL_ENTRY_FIELDS} } }
+""".trimEnd()
+
+    val MANAGE_DELETE_AGENT_MODEL_ENTRY = """
+mutation (${'$'}providerName: String!, ${'$'}model: String!) { DeleteAgentModelEntry(providerName: ${'$'}providerName, model: ${'$'}model) }
 """.trimEnd()
 
     val MANAGE_AGENT_MODELS = """

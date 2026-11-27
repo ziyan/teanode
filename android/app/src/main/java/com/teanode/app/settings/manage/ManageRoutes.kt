@@ -10,6 +10,8 @@ object ManageRoutes {
     val AGENT_RUNS = Routes.child(AppSection.Settings, "manage/agents/runs")
     val AGENT_PROVIDERS = Routes.child(AppSection.Settings, "manage/agents/providers")
     val AGENT_PROVIDER = Routes.child(AppSection.Settings, "manage/agents/providers/{providerIndex}")
+    val AGENT_PROVIDER_ADD_MODEL = Routes.child(AppSection.Settings, "manage/agents/providers/{providerIndex}/add-model")
+    val AGENT_PROVIDER_MODEL = Routes.child(AppSection.Settings, "manage/agents/providers/{providerIndex}/models/{model}")
     val AGENT_MODELS = Routes.child(AppSection.Settings, "manage/agents/models")
     val AGENT_VOICE = Routes.child(AppSection.Settings, "manage/agents/voice")
     val AGENT_RECORDING = Routes.child(AppSection.Settings, "manage/agents/recording")
@@ -31,6 +33,10 @@ object ManageRoutes {
     const val NEW_ITEM = "new"
 
     fun provider(providerIndex: Int?): String = Routes.child(AppSection.Settings, "manage/agents/providers/${providerIndex ?: NEW_ITEM}")
+
+    fun addModel(providerIndex: Int): String = Routes.child(AppSection.Settings, "manage/agents/providers/$providerIndex/add-model")
+
+    fun providerModel(providerIndex: Int, model: String): String = Routes.child(AppSection.Settings, "manage/agents/providers/$providerIndex/models/${android.net.Uri.encode(model)}")
 
     fun server(serverIndex: Int?): String = Routes.child(AppSection.Settings, "manage/agents/servers/${serverIndex ?: NEW_ITEM}")
 

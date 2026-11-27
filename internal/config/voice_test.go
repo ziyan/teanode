@@ -10,7 +10,7 @@ import (
 func TestTheCallModelIsChecked(t *testing.T) {
 	configuration := Default()
 	configuration.Agent.Enabled = true
-	configuration.Agent.Providers = []AgentProvider{{Name: "spoken", Kind: AgentProviderKindOpenAI, APIKey: "test-key"}}
+	configuration.Agent.Providers = []AgentProvider{{Name: "spoken", Kind: AgentProviderKindOpenAI, APIKey: "test-key", ModelEntries: []AgentModelEntry{{Model: "large"}, {Model: "small"}}}}
 	configuration.Agent.Models.Default = "spoken:large"
 	configuration.Agent.Voice = AgentVoice{Enabled: true}
 	if err := configuration.Validate(); err != nil && strings.Contains(err.Error(), "agent.voice.askModel") {
@@ -31,7 +31,7 @@ func TestTheCallModelIsChecked(t *testing.T) {
 func TestTheQuickModelIsChecked(t *testing.T) {
 	configuration := Default()
 	configuration.Agent.Enabled = true
-	configuration.Agent.Providers = []AgentProvider{{Name: "local", Kind: AgentProviderKindOpenAI, APIKey: "test-key"}}
+	configuration.Agent.Providers = []AgentProvider{{Name: "local", Kind: AgentProviderKindOpenAI, APIKey: "test-key", ModelEntries: []AgentModelEntry{{Model: "large"}, {Model: "small"}}}}
 	configuration.Agent.Models.Default = "local:large"
 	if err := configuration.Validate(); err != nil && strings.Contains(err.Error(), "agent.models.quick") {
 		t.Fatalf("left out: %s", err)

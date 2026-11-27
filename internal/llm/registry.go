@@ -26,11 +26,50 @@ type Registry struct {
 
 	cacheMutex sync.Mutex
 	cache      map[string]cachedModels
+
+	// entriesMutex guards each provider's ModelEntries, which
+	// RefreshModelEntries replaces when the settings change. The slice is
+	// replaced whole and never changed in place, so a reader that has
+	// taken it under the read lock may keep using it after letting go.
+	entriesMutex sync.RWMutex
 }
 
 type providerEntry struct {
 	configuration config.AgentProvider
 	service       Service
+}
+
+// offered is the provider's configuration with the model entries as they
+// are now.
+func (self *Registry) offered(entry *providerEntry) *config.AgentProvider {
+	self.entriesMutex.RLock()
+	defer self.entriesMutex.RUnlock()
+	provider := entry.configuration
+	return &provider
+}
+
+// RefreshModelEntries has each provider offer the model entries the given
+// configuration lists now, so that a model added in the settings resolves
+// without a restart. Providers, keys and roles are not touched: those still
+// take effect when the server starts.
+func (self *Registry) RefreshModelEntries(configuration *config.Agent) {
+	if self == nil || configuration == nil {
+		return
+	}
+	copied := *configuration
+	copied.Providers = make([]config.AgentProvider, len(configuration.Providers))
+	for index, declared := range configuration.Providers {
+		declared.ModelEntries = append([]config.AgentModelEntry(nil), declared.ModelEntries...)
+		copied.Providers[index] = declared
+	}
+	copied.OfferRoleModels()
+	self.entriesMutex.Lock()
+	defer self.entriesMutex.Unlock()
+	for index := range copied.Providers {
+		if entry := self.providers[copied.Providers[index].Name]; entry != nil {
+			entry.configuration.ModelEntries = copied.Providers[index].ModelEntries
+		}
+	}
 }
 
 type cachedModels struct {
@@ -58,7 +97,15 @@ func Open(configuration *config.Agent) (*Registry, error) {
 		providers:     map[string]*providerEntry{},
 		cache:         map[string]cachedModels{},
 	}
-	for _, declared := range configuration.Providers {
+	// The registry works on its own copy of the providers: offering the
+	// models the roles name must not write into the caller's configuration.
+	registry.configuration.Providers = make([]config.AgentProvider, len(configuration.Providers))
+	for index, declared := range configuration.Providers {
+		declared.ModelEntries = append([]config.AgentModelEntry(nil), declared.ModelEntries...)
+		registry.configuration.Providers[index] = declared
+	}
+	registry.configuration.OfferRoleModels()
+	for _, declared := range registry.configuration.Providers {
 		if !declared.IsEnabled() {
 			continue
 		}
@@ -163,8 +210,8 @@ func (self *Registry) resolve(name string) (*providerEntry, string, error) {
 	if entry == nil {
 		return nil, "", fmt.Errorf("llm: provider %q is not declared or not enabled", providerName)
 	}
-	if !entry.configuration.Models.Admits(model) {
-		return nil, "", fmt.Errorf("llm: provider %q does not admit model %q", providerName, model)
+	if !self.offered(entry).Offers(model) {
+		return nil, "", fmt.Errorf("llm: provider %q has no enabled model %q", providerName, model)
 	}
 	return entry, model, nil
 }
@@ -282,31 +329,63 @@ func (self *Registry) Pricing(provider string) config.AgentPricing {
 	return config.AgentPricing{}
 }
 
-// ListModels is every enabled provider's models through its filter,
-// cached. A provider that cannot be reached contributes nothing and the
-// error is logged; the settings page has Test for the specific answer.
+// ListModels is the models of every enabled provider: its entries that are
+// switched on, named provider:model, each with the window the entry gives it
+// or else the provider's own figure. A provider that cannot be reached still
+// lists its entries, without the figure it would have reported; the settings
+// page has Test for the specific answer.
 func (self *Registry) ListModels(ctx context.Context) []ProviderModel {
 	var models []ProviderModel
 	for name, entry := range self.providers {
-		listed, err := self.listProvider(ctx, name, entry, false)
-		if err != nil {
+		var reported []ProviderModel
+		if listed, err := self.listProvider(ctx, name, entry, false); err != nil {
 			log.Warningf("cannot list the models of provider %q: %s", name, err)
-			continue
+		} else {
+			reported = listed
 		}
-		models = append(models, listed...)
+		provider := self.offered(entry)
+		for index := range provider.ModelEntries {
+			modelEntry := &provider.ModelEntries[index]
+			if !modelEntry.IsEnabled() {
+				continue
+			}
+			models = append(models, ProviderModel{
+				Provider:      name,
+				Model:         modelEntry.Model,
+				Name:          name + ":" + modelEntry.Model,
+				ContextLength: contextLengthOf(modelEntry, reported),
+			})
+		}
 	}
 	sort.Slice(models, func(left, right int) bool { return models[left].Name < models[right].Name })
 	return models
 }
 
-// ContextLength is the window of a "provider:model", from the provider's
-// cached model list, or zero when the provider does not say or cannot be
-// reached.
+// contextLengthOf is the window of an entry: its own figure when it has one,
+// else what the provider reported, else zero.
+func contextLengthOf(entry *config.AgentModelEntry, reported []ProviderModel) int {
+	if entry.ContextWindow > 0 {
+		return entry.ContextWindow
+	}
+	for _, candidate := range reported {
+		if candidate.Model == entry.Model {
+			return candidate.ContextLength
+		}
+	}
+	return 0
+}
+
+// ContextLength is the window of a "provider:model": the one its entry
+// names, else the provider's figure from its cached model list, or zero when
+// the provider does not say or cannot be reached.
 func (self *Registry) ContextLength(ctx context.Context, name string) int {
 	providerName, model := config.SplitModelName(name)
 	entry := self.providers[providerName]
 	if entry == nil {
 		return 0
+	}
+	if modelEntry := self.offered(entry).ModelEntryFor(model); modelEntry != nil && modelEntry.ContextWindow > 0 {
+		return modelEntry.ContextWindow
 	}
 	listed, err := self.listProvider(ctx, providerName, entry, false)
 	if err != nil {
@@ -318,6 +397,24 @@ func (self *Registry) ContextLength(ctx context.Context, name string) int {
 		}
 	}
 	return 0
+}
+
+// ReportedContextLengths is the window each model of a provider is listed
+// with, by id, from the last model list kept whether or not it has expired.
+// It never asks the provider: it is for a page that must not wait on one. A
+// provider that has not been asked since the server started has none, and a
+// model the provider gave no window has 0.
+func (self *Registry) ReportedContextLengths(providerName string) map[string]int {
+	lengths := map[string]int{}
+	if self == nil {
+		return lengths
+	}
+	self.cacheMutex.Lock()
+	defer self.cacheMutex.Unlock()
+	for _, model := range self.cache[providerName].models {
+		lengths[model.ID] = model.ContextLength
+	}
+	return lengths
 }
 
 // TestProvider asks one provider for its models now, ignoring the cache,
@@ -347,17 +444,15 @@ func (self *Registry) listProvider(ctx context.Context, name string, entry *prov
 		self.cache[name] = cachedModels{models: listed, expiresAt: time.Now().Add(modelsCacheLifetime)}
 		self.cacheMutex.Unlock()
 	}
-	return FilterModels(name, &entry.configuration.Models, listed), nil
+	return NameModels(name, listed), nil
 }
 
-// FilterModels applies a provider's allow and deny filter and names each
-// model the way the configuration does.
-func FilterModels(provider string, filter *config.AgentProviderModels, listed []ModelInformation) []ProviderModel {
+// NameModels names each model a provider lists the way the configuration
+// does. It is the provider's whole list: which of them are offered is the
+// provider's entries, not this.
+func NameModels(provider string, listed []ModelInformation) []ProviderModel {
 	models := make([]ProviderModel, 0, len(listed))
 	for _, model := range listed {
-		if !filter.Admits(model.ID) {
-			continue
-		}
 		models = append(models, ProviderModel{
 			Provider:      provider,
 			Model:         model.ID,

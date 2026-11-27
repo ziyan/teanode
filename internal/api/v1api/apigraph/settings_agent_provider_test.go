@@ -75,23 +75,61 @@ func TestAFinishedSignInIsSavedToItsProvider(t *testing.T) {
 	}
 }
 
-// The audio input price is saved on a provider and on each of its models'
-// prices, and read back the same way.
+// The audio input price is saved on a provider and on each of its models,
+// and read back the same way. The old model pricing list is ignored on a
+// write and answers empty on a read.
 func TestTheAudioInputPriceIsSavedAndReadBack(t *testing.T) {
 	configuration := &config.Configuration{}
 	providers := []*AgentProviderParameters{{
 		Name: "priced", Kind: config.AgentProviderKindOpenAI, Enabled: true, PricingInput: 2.5, PricingAudioInput: 6,
-		ModelPricing: []*AgentModelPricingSettings{{Model: "transcriber", Input: 2.5, Output: 10, AudioInput: 7}},
+		Models:       []*AgentModelEntry{{Model: "transcriber", Pricing: &AgentPricing{Input: 2.5, Output: 10, AudioInput: 7}}},
+		ModelPricing: []*AgentModelPricingSettings{{Model: "ignored", Input: 99}},
+		Allow:        []string{"ignored"},
 	}}
 	if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
 		t.Fatal(err)
 	}
 	read := describeAgentSettings(configuration).Providers[0]
-	if read.PricingAudioInput != 6 || len(read.ModelPricing) != 1 || read.ModelPricing[0].AudioInput != 7 {
+	if read.PricingAudioInput != 6 || len(read.Models) != 1 || read.Models[0].Pricing.AudioInput != 7 || !*read.Models[0].IsEnabled {
 		t.Errorf("read back %+v", read)
 	}
-	if configuration.Agent.Providers[0].Pricing.AudioInput != 6 || configuration.Agent.Providers[0].ModelPricing[0].AudioInput != 7 {
-		t.Errorf("stored %+v", configuration.Agent.Providers[0])
+	if len(read.ModelPricing) != 0 || len(read.Allow) != 0 || len(read.Deny) != 0 {
+		t.Errorf("the deprecated fields answer empty: %+v", read)
+	}
+	stored := configuration.Agent.Providers[0]
+	if stored.Pricing.AudioInput != 6 || stored.ModelEntries[0].Pricing.AudioInput != 7 || len(stored.ModelEntries) != 1 {
+		t.Errorf("stored %+v", stored)
+	}
+}
+
+// A save of the providers that carries no models keeps the ones each
+// provider has, through a rename too; one that carries them replaces them.
+func TestSavingProvidersKeepsTheirModelEntries(t *testing.T) {
+	configuration := &config.Configuration{}
+	configuration.Agent.Providers = []config.AgentProvider{{
+		Name: "alpha", Kind: config.AgentProviderKindOpenAI, APIKey: "a-key",
+		ModelEntries: []config.AgentModelEntry{{Model: "alpha-large", Name: "Large", ContextWindow: 150000}, {Model: "alpha-small"}},
+	}}
+	providers := []*AgentProviderParameters{{Name: "alpha", Kind: config.AgentProviderKindOpenAI, Enabled: true, PricingInput: 3}}
+	if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
+		t.Fatal(err)
+	}
+	if entries := configuration.Agent.Providers[0].ModelEntries; len(entries) != 2 || entries[0].Name != "Large" || entries[0].ContextWindow != 150000 {
+		t.Fatalf("a save with no models lost them: %+v", entries)
+	}
+	providers = []*AgentProviderParameters{{Name: "beta", PreviousName: "alpha", Kind: config.AgentProviderKindOpenAI, Enabled: true}}
+	if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
+		t.Fatal(err)
+	}
+	if entries := configuration.Agent.Providers[0].ModelEntries; len(entries) != 2 {
+		t.Fatalf("a rename lost the models: %+v", entries)
+	}
+	providers = []*AgentProviderParameters{{Name: "beta", Kind: config.AgentProviderKindOpenAI, Enabled: true, Models: []*AgentModelEntry{{Model: "beta-only"}}}}
+	if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
+		t.Fatal(err)
+	}
+	if entries := configuration.Agent.Providers[0].ModelEntries; len(entries) != 1 || entries[0].Model != "beta-only" || !entries[0].IsEnabled() {
+		t.Fatalf("given models replace the stored ones, on unless said off: %+v", entries)
 	}
 }
 

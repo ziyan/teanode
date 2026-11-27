@@ -106,6 +106,10 @@ func decodeRows(rows *db.ConfigurationRows) (*Configuration, error) {
 			return nil, fmt.Errorf("config: cannot read the %q settings: %w", key, err)
 		}
 	}
+	// Settings an older release stored are converted here too, because the
+	// database is where a server's settings live and a file is only ever
+	// imported.
+	configuration.Agent.migrateProviderModels()
 	return configuration, nil
 }
 

@@ -95,8 +95,8 @@ func TestCategorizeTakesADeciderOrAWriter(t *testing.T) {
 	t.Parallel()
 
 	providers := []AgentProvider{
-		{Name: "chat", Kind: AgentProviderKindOpenAI},
-		{Name: "judge", Kind: AgentProviderKindTypeSafe},
+		{Name: "chat", Kind: AgentProviderKindOpenAI, ModelEntries: []AgentModelEntry{{Model: "small"}}},
+		{Name: "judge", Kind: AgentProviderKindTypeSafe, ModelEntries: []AgentModelEntry{{Model: "jev-latest"}}},
 	}
 	for _, model := range []string{"judge:jev-latest", "chat:small"} {
 		problems := problemsUnder(Agent{Providers: providers, Models: AgentModels{Categorize: model}}, "agent.models")

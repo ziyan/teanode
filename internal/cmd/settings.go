@@ -51,6 +51,7 @@ func NewSettingsCommand() *cli.Command {
 				Flags:  []cli.Flag{JSONFlag()},
 				Action: runSettingsSet,
 			},
+			newSettingsAgentCommand(),
 			{
 				Name:      "describe",
 				Usage:     "list keys and types in a section or nested subsection",

@@ -292,11 +292,17 @@ final class ManageServerTests: XCTestCase {
     static let agentSettingsAnswer = #"""
         {"enabled":true,"instructions":"Be brief.","allowPrivateAddresses":["192.168.1.10"],"skipCertificateCheck":[],
          "providers":[
-           {"name":"main","kind":"openai","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,"allow":[],"deny":[],
+           {"name":"main","kind":"openai","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,
             "pricingInput":1.25,"pricingOutput":10,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":6,
-            "modelPricing":[{"model":"model-large*","input":2,"output":8,"cacheRead":0.5,"cacheWrite":0,"audioInput":4.5}],"planUsage":null},
-           {"name":"decider","kind":"typesafe","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,"allow":[],"deny":[],
-            "pricingInput":0,"pricingOutput":0,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":0,"modelPricing":[],
+            "models":[
+              {"model":"model-large","name":"Large","contextWindow":0,"reportedContextWindow":128000,
+               "pricing":{"input":2,"output":8,"cacheRead":0.5,"cacheWrite":0,"audioInput":4.5},"isEnabled":true,"usedFor":["default"]},
+              {"model":"model-small","name":"","contextWindow":64000,"reportedContextWindow":0,
+               "pricing":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"audioInput":0},"isEnabled":false,"usedFor":["fast","quick","triage"]}],
+            "planUsage":null},
+           {"name":"decider","kind":"typesafe","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,
+            "pricingInput":0,"pricingOutput":0,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":0,
+            "models":[{"model":"judge","name":"","contextWindow":0,"reportedContextWindow":0,"pricing":null,"isEnabled":true,"usedFor":["decide"]}],
             "planUsage":{"planName":"plus","observedAt":"2030-01-02T03:04:05Z","windows":[{"usedPercent":140,"windowMinutes":300,"resetsAt":"2030-01-02T05:00:00Z"}]}}
          ],
          "models":{"default":"main:model-large","fast":"main:model-small","quick":"main:model-small","embedding":"","triage":"main:model-small","research":"","summarize":"",
@@ -368,9 +374,7 @@ final class ManageServerTests: XCTestCase {
         let settings = try agentSettings()
         var draft = AgentProviderDraft(settings.providers[0])
         XCTAssertEqual(draft.pricingInputText, "1.25")
-        XCTAssertEqual(draft.modelPrices.first?.cacheReadText, "0.5")
         XCTAssertEqual(draft.pricingAudioInputText, "6")
-        XCTAssertEqual(draft.modelPrices.first?.audioInputText, "4.5")
         draft.name = "primary"
         draft.apiKey = ""
         let section = draft.agentParameters(replacingProviderAt: 0, in: settings)
@@ -382,8 +386,10 @@ final class ManageServerTests: XCTestCase {
         XCTAssertEqual(providers[0]["billingApiKey"], .string(""), "a blank billing key keeps the stored one")
         XCTAssertFalse(draft.hasBillingApiKey, "the server sent no billing key flag")
         XCTAssertEqual(providers[0]["pricingAudioInput"], .number(6), "the audio input price is sent back")
-        guard case .array(let sentPrices) = providers[0]["modelPricing"] else { return XCTFail("no model prices") }
-        XCTAssertEqual(sentPrices[0]["audioInput"], .number(4.5))
+        XCTAssertNil(providers[0]["allow"], "the allow list is no longer asked for")
+        XCTAssertNil(providers[0]["deny"], "the deny list is no longer asked for")
+        XCTAssertNil(providers[0]["modelPricing"], "the price patterns are no longer asked for")
+        XCTAssertNil(providers[0]["models"], "models are saved one at a time")
         XCTAssertEqual(providers[1]["name"], .string("decider"))
         XCTAssertNil(providers[1]["previousName"])
         XCTAssertEqual(section["models"]?["default"], .string("primary:model-large"))
@@ -397,6 +403,84 @@ final class ManageServerTests: XCTestCase {
         let removed = AgentProviderDraft.agentParameters(removingProviderAt: 0, in: settings)
         guard case .array(let kept) = removed["providers"] else { return XCTFail("no providers") }
         XCTAssertEqual(kept.map { $0["name"] }, [.string("decider")])
+    }
+
+    func testAProviderListsItsModelEntries() throws {
+        let settings = try agentSettings()
+        let entries = settings.providers[0].models
+        XCTAssertEqual(entries.map(\.model), ["model-large", "model-small"])
+        XCTAssertEqual(entries[0].displayName, "Large")
+        XCTAssertEqual(entries[0].reportedContextWindow, 128000)
+        XCTAssertEqual(entries[0].pricing?.audioInput, 4.5)
+        XCTAssertEqual(entries[0].usedFor, ["default"])
+        XCTAssertEqual(entries[1].displayName, "model-small", "an entry with no name reads as its id")
+        XCTAssertEqual(entries[1].contextWindow, 64000)
+        XCTAssertFalse(entries[1].isEnabled)
+        XCTAssertEqual(settings.providers[1].models.map(\.model), ["judge"])
+        XCTAssertNil(settings.providers[1].models[0].pricing, "a null price is the provider's")
+    }
+
+    func testAModelEntryDraftIsSentAsTheServerTakesIt() throws {
+        let settings = try agentSettings()
+        var draft = AgentModelEntryDraft(settings.providers[0].models[0])
+        XCTAssertEqual(draft.contextWindowText, "", "a window of zero shows blank, so the provider's figure applies")
+        XCTAssertEqual(draft.cacheReadText, "0.5")
+        draft.name = " Large two "
+        draft.contextWindowText = "200,000"
+        draft.isEnabled = false
+        let entry = draft.entryValue
+        XCTAssertEqual(entry["model"], .string("model-large"))
+        XCTAssertEqual(entry["name"], .string("Large two"))
+        XCTAssertEqual(entry["contextWindow"], .number(200000))
+        XCTAssertEqual(entry["isEnabled"], .bool(false))
+        XCTAssertEqual(entry["pricing"]?["audioInput"], .number(4.5))
+        XCTAssertEqual(entry["pricing"]?["input"], .number(2))
+    }
+
+    func testAModelEntryNeedsAnIDAndAUsableWindow() {
+        var draft = AgentModelEntryDraft()
+        XCTAssertFalse(draft.canSave, "no id")
+        draft.model = "model-new"
+        XCTAssertTrue(draft.canSave)
+        draft.contextWindowText = "500"
+        XCTAssertFalse(draft.canSave, "the server refuses a window under a thousand tokens")
+        draft.contextWindowText = "1000"
+        XCTAssertTrue(draft.canSave)
+    }
+
+    func testRolePickersGroupModelsByProvider() throws {
+        let settings = try agentSettings()
+        // The values are the enabled entries of the enabled providers, not a
+        // live list: a model the provider lists but has no entry for is not
+        // offered, and one the chosen value names is kept.
+        let groups = AgentModelChoices.grouped(chosen: "", providers: settings.providers)
+        XCTAssertEqual(groups.map(\.providerName), ["main", "decider"])
+        XCTAssertEqual(groups[0].rows.map(\.label), ["main · Large"], "a switched off entry is left out")
+        XCTAssertEqual(groups[0].rows.map(\.value), ["main:model-large"], "the value stays provider:model")
+        XCTAssertEqual(groups[1].rows.map(\.label), ["decider · judge"])
+        let keptChosen = AgentModelChoices.grouped(chosen: "main:model-small", providers: settings.providers)
+        XCTAssertEqual(keptChosen[0].rows.map(\.value), ["main:model-small", "main:model-large"])
+        XCTAssertEqual(keptChosen[0].rows.map(\.label), ["main · model-small", "main · Large"])
+        let unknown = AgentModelChoices.grouped(chosen: "other:model-x", providers: settings.providers)
+        XCTAssertEqual(unknown.last?.providerName, "", "a chosen value naming no provider is kept in the last section")
+        XCTAssertEqual(unknown.last?.rows.map(\.value), ["other:model-x"])
+        let narrowed = AgentModelChoices.grouped(chosen: "", providers: settings.providers, onlyModels: ["main:model-large", "main:not-an-entry"])
+        XCTAssertEqual(narrowed.flatMap { $0.rows.map(\.value) }, ["main:model-large"], "a capability narrows the entries and adds none")
+    }
+
+    func testAPriceOfZeroIsSentAndAnEmptyOneIsNull() throws {
+        var draft = AgentModelEntryDraft(AgentModelEntry(model: "model-free", pricing: AgentModelPricing()))
+        XCTAssertEqual(draft.inputText, "0", "a set price of zero shows as zero")
+        XCTAssertEqual(draft.entryValue["pricing"]?["input"], .number(0))
+        draft = AgentModelEntryDraft(AgentModelEntry(model: "model-unset"))
+        XCTAssertTrue(draft.isPricingEmpty)
+        XCTAssertEqual(draft.entryValue["pricing"], .null)
+    }
+
+    func testALiveModelNameSplitsIntoProviderAndID() {
+        let model = AgentLiveModel(name: "main:vendor/model:tag")
+        XCTAssertEqual(model.providerName, "main")
+        XCTAssertEqual(model.modelID, "vendor/model:tag")
     }
 
     func testAProviderOnAPlanIsSavedOnlyOnceSignedIn() {
@@ -426,7 +510,7 @@ final class ManageServerTests: XCTestCase {
 
     func testADecidingProvidersModelsAreOfferedOnlyForDeciding() throws {
         let settings = try agentSettings()
-        let choices = AgentModelChoices(knownModels: ["main:model-large", "decider:judge"], providers: settings.providers)
+        let choices = AgentModelChoices(providers: settings.providers)
         XCTAssertEqual(choices.forWork, ["main:model-large"])
         XCTAssertEqual(choices.forDeciding, ["decider:judge"])
         XCTAssertEqual(AgentModelChoices.listed(["a:one"], chosen: "b:two"), ["b:two", "a:one"])

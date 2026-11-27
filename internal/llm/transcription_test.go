@@ -53,7 +53,7 @@ func TestTranscriptionUsesRegistryAndPreservesAudioSegmentsAndUsage(test *testin
 	defer server.Close()
 	configuration := config.Default().Agent
 	configuration.Enabled = true
-	configuration.Providers = []config.AgentProvider{{Name: "transcripts", Kind: "openai", BaseURL: server.URL + "/v1", APIKey: "test-key"}}
+	configuration.Providers = []config.AgentProvider{{Name: "transcripts", Kind: "openai", BaseURL: server.URL + "/v1", APIKey: "test-key", ModelEntries: []config.AgentModelEntry{{Model: "gpt-4o-transcribe-diarize"}, {Model: "whisper-1"}, {Model: "gpt-4o-transcribe"}, {Model: "gpt-transcribe"}}}}
 	registry, err := Open(&configuration)
 	if err != nil {
 		test.Fatal(err)
@@ -104,7 +104,7 @@ func TestTranscriptionNeverDowngradesRequiredCapabilities(test *testing.T) {
 	}
 	configuration := config.Default().Agent
 	configuration.Enabled = true
-	configuration.Providers = []config.AgentProvider{{Name: "transcripts", Kind: "openai", BaseURL: server.URL, Models: config.AgentProviderModels{Deny: []string{"gpt-4o-transcribe-diarize"}}}}
+	configuration.Providers = []config.AgentProvider{{Name: "transcripts", Kind: "openai", BaseURL: server.URL, ModelEntries: []config.AgentModelEntry{{Model: "gpt-transcribe"}}}}
 	registry, err := Open(&configuration)
 	if err != nil {
 		test.Fatal(err)
@@ -253,7 +253,7 @@ func TestASegmentJustPastTheAudioIsCutToItsEnd(test *testing.T) {
 	defer server.Close()
 	configuration := config.Default().Agent
 	configuration.Enabled = true
-	configuration.Providers = []config.AgentProvider{{Name: "transcripts", Kind: "openai", BaseURL: server.URL + "/v1", APIKey: "test-key"}}
+	configuration.Providers = []config.AgentProvider{{Name: "transcripts", Kind: "openai", BaseURL: server.URL + "/v1", APIKey: "test-key", ModelEntries: []config.AgentModelEntry{{Model: "gpt-4o-transcribe-diarize"}, {Model: "whisper-1"}, {Model: "gpt-4o-transcribe"}, {Model: "gpt-transcribe"}}}}
 	registry, err := Open(&configuration)
 	if err != nil {
 		test.Fatal(err)
@@ -301,7 +301,7 @@ func TestTranscriptionSendsTheVocabularyPromptOnlyToModelsThatAcceptIt(test *tes
 			defer server.Close()
 			configuration := config.Default().Agent
 			configuration.Enabled = true
-			configuration.Providers = []config.AgentProvider{{Name: "transcripts", Kind: "openai", BaseURL: server.URL + "/v1", APIKey: "test-key"}}
+			configuration.Providers = []config.AgentProvider{{Name: "transcripts", Kind: "openai", BaseURL: server.URL + "/v1", APIKey: "test-key", ModelEntries: []config.AgentModelEntry{{Model: "gpt-4o-transcribe-diarize"}, {Model: "whisper-1"}, {Model: "gpt-4o-transcribe"}, {Model: "gpt-transcribe"}}}}
 			registry, err := Open(&configuration)
 			if err != nil {
 				test.Fatal(err)

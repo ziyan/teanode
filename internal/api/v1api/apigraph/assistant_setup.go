@@ -133,7 +133,7 @@ func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantA
 			if configuration.Agent.Providers[index].Name == name {
 				// Prices are kept from the provider already saved. Whatever
 				// could stop the chosen model from being used is not: the
-				// provider switched off, a filter that hides the model, or
+				// provider switched off, a model switched off, or
 				// a sign-in or billing key that belonged to another kind.
 				saved := &configuration.Agent.Providers[index]
 				if saved.Kind != provider.Kind {
@@ -141,9 +141,6 @@ func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantA
 				}
 				saved.Kind, saved.BaseURL, saved.APIKey = provider.Kind, provider.BaseURL, provider.APIKey
 				saved.Enabled = nil
-				if !saved.Models.Admits(defaultModel) {
-					saved.Models = config.AgentProviderModels{}
-				}
 				replaced = true
 			}
 		}
@@ -162,6 +159,19 @@ func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantA
 		if chosenModels.fastModel != "" && chosenModels.fastModel != defaultModel && configuration.Agent.Models.Fast == "" {
 			result.FastModel = name + ":" + chosenModels.fastModel
 			configuration.Agent.Models.Fast = result.FastModel
+		}
+		// What was chosen is offered: a role may only name a model the
+		// provider has an entry for, and an entry already there stays as it
+		// is, with its name, window and prices. One that was switched off is
+		// switched on again, as the provider itself is above.
+		configured := configuration.Agent.Provider(name)
+		for _, chosen := range []string{defaultModel, strings.TrimPrefix(result.EmbeddingModel, name+":"), strings.TrimPrefix(result.FastModel, name+":")} {
+			if configured.EnsureModelEntry(chosen) {
+				continue
+			}
+			if entry := configured.ModelEntryFor(chosen); entry != nil {
+				entry.Enabled = nil
+			}
 		}
 		configuration.Agent.Enabled = true
 		// A mail server's setup goes on to its domain; the assistant's is done.

@@ -1,6 +1,7 @@
 package com.teanode.app.settings.manage
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -31,6 +32,8 @@ import com.teanode.kit.manage.AgentGeneralDraft
 import com.teanode.kit.manage.AgentLimitsDraft
 import com.teanode.kit.manage.AgentModelAssignments
 import com.teanode.kit.manage.AgentModelChoices
+import com.teanode.kit.manage.AgentModelOption
+import com.teanode.kit.manage.AgentProviderSettings
 import com.teanode.kit.manage.AgentServerRecordingDraft
 import com.teanode.kit.manage.AgentServerSettings
 import com.teanode.kit.manage.AgentServerVoiceDraft
@@ -111,17 +114,20 @@ private fun rememberModelCapabilities(): List<RecordingModelCapability> {
 @Composable
 fun AgentModelsScreen(onBack: () -> Unit) {
     val capabilities = rememberModelCapabilities()
-    val knownModels = capabilities.map { capability -> capability.name }
     AgentSettingsFormScreen(stringResource(R.string.manage_models), onBack, { settings -> settings.models }, { draft -> draft.agentParameters }) { draft, onChange, settings ->
-        val choices = AgentModelChoices.of(knownModels, settings.providers)
-        AgentModelAssignments.BASE_FIELD_NAMES.forEach { fieldName -> ModelRow(fieldName, choices.forWork, draft, onChange) }
+        val choices = AgentModelChoices.of(AgentModelChoices.offered(settings.providers), settings.providers)
+        AgentModelAssignments.BASE_FIELD_NAMES.forEach { fieldName -> ModelRow(fieldName, choices.forWork, draft, onChange, settings.providers) }
         FooterText(stringResource(R.string.manage_models_footer))
         TeaNodeSectionHeader(stringResource(R.string.manage_per_kind_of_work))
-        AgentModelAssignments.WORK_FIELD_NAMES.filter { fieldName -> fieldName != "transcription" }.forEach { fieldName -> ModelRow(fieldName, choices.forWork, draft, onChange) }
-        ModelRow("decide", choices.forDeciding, draft, onChange)
-        ModelRow("categorize", choices.forDeciding + choices.forWork, draft, onChange)
+        AgentModelAssignments.WORK_FIELD_NAMES.filter { fieldName -> fieldName != "transcription" }.forEach { fieldName -> ModelRow(fieldName, choices.forWork, draft, onChange, settings.providers) }
+        ModelRow("decide", choices.forDeciding, draft, onChange, settings.providers)
+        ModelRow("categorize", choices.forDeciding + choices.forWork, draft, onChange, settings.providers)
         TeaNodeSectionHeader(stringResource(R.string.manage_recording_transcription))
-        ModelRow("transcription", capabilities.filter { capability -> capability.canAttributeRecordingSpeakers }.map { capability -> capability.name }, draft, onChange)
+        ModelRow(
+            "transcription",
+            AgentModelChoices.offeredWithCapability(capabilities.filter { capability -> capability.canAttributeRecordingSpeakers }.map { capability -> capability.name }, settings.providers),
+            draft, onChange, settings.providers,
+        )
         val capability = capabilities.firstOrNull { candidate -> candidate.name == draft.transcription }
         if (capability != null && capability.canAttributeRecordingSpeakers) {
             TeaNodeRow(
@@ -139,7 +145,7 @@ fun AgentModelsScreen(onBack: () -> Unit) {
         TeaNodeSectionHeader(stringResource(R.string.manage_models_a_person_may_pick))
         draft.choices.forEach { choice ->
             TeaNodeRow(
-                headline = choice,
+                headline = AgentModelChoices.optionFor(choice, settings.providers).label,
                 trailing = {
                     androidx.compose.material3.TextButton(onClick = { onChange(draft.copy(choices = draft.choices - choice)) }) { Text(stringResource(R.string.settings_remove)) }
                 },
@@ -150,7 +156,7 @@ fun AgentModelsScreen(onBack: () -> Unit) {
         if (isAdding) {
             ModelChoiceDialog(
                 title = stringResource(R.string.manage_add_a_model_people_may_pick), emptyTitle = null,
-                knownModels = choices.forWork.filter { model -> !draft.choices.contains(model) }, chosen = "",
+                options = choices.forWork.filter { option -> !draft.choices.contains(option.value) }, chosen = "", providers = settings.providers,
                 onChoose = { added -> isAdding = false; if (added.isNotEmpty() && !draft.choices.contains(added)) onChange(draft.copy(choices = draft.choices + added)) },
                 onDismiss = { isAdding = false },
             )
@@ -160,30 +166,34 @@ fun AgentModelsScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun ModelRow(fieldName: String, known: List<String>, draft: AgentModelAssignments, onChange: (AgentModelAssignments) -> Unit) {
+private fun ModelRow(fieldName: String, known: List<AgentModelOption>, draft: AgentModelAssignments, onChange: (AgentModelAssignments) -> Unit, providers: List<AgentProviderSettings>) {
     var isChoosing by remember { mutableStateOf(false) }
     val chosen = draft.assignment(fieldName)
     val placeholder = modelPlaceholder(fieldName)
-    TeaNodeRow(headline = modelLabel(fieldName), supporting = chosen.ifEmpty { placeholder }, supportingMaxLines = 3, onClick = { isChoosing = true })
+    TeaNodeRow(
+        headline = modelLabel(fieldName), supporting = if (chosen.isEmpty()) placeholder else AgentModelChoices.optionFor(chosen, providers).label, supportingMaxLines = 3,
+        onClick = { isChoosing = true },
+    )
     if (isChoosing) {
         ModelChoiceDialog(
-            title = modelLabel(fieldName), emptyTitle = placeholder, knownModels = known, chosen = chosen,
+            title = modelLabel(fieldName), emptyTitle = placeholder, options = known, chosen = chosen, providers = providers,
             onChoose = { picked -> isChoosing = false; onChange(draft.assigning(fieldName, picked)) }, onDismiss = { isChoosing = false },
         )
     }
 }
 
-/** Picks one model: what the providers offer, or a name the list does not know yet, written provider:model. */
+/** Picks one model of those the providers offer, grouped by provider and read Provider · Model. What it stores is provider:model. */
 @Composable
-fun ModelChoiceDialog(title: String, emptyTitle: String?, knownModels: List<String>, chosen: String, onChoose: (String) -> Unit, onDismiss: () -> Unit) {
-    var typedName by remember { mutableStateOf("") }
-    com.teanode.app.settings.FormDialog(
-        title = title, confirmLabel = stringResource(R.string.manage_use_this_name), isConfirmEnabled = typedName.trim().isNotEmpty(), onConfirm = { onChoose(typedName.trim()) }, onDismiss = onDismiss,
-    ) {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            FormField(typedName, { typed -> typedName = typed }, "provider:model", supporting = stringResource(R.string.manage_model_unlisted_hint))
+fun ModelChoiceDialog(
+    title: String, emptyTitle: String?, options: List<AgentModelOption>, chosen: String, providers: List<AgentProviderSettings>, onChoose: (String) -> Unit, onDismiss: () -> Unit,
+) {
+    com.teanode.app.settings.FormDialog(title = title, confirmLabel = "", isConfirmEnabled = false, onConfirm = {}, onDismiss = onDismiss, isConfirmShown = false) {
+        Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
             if (emptyTitle != null) ModelChoiceRow(emptyTitle, chosen.isEmpty()) { onChoose("") }
-            AgentModelChoices.listed(knownModels, chosen).forEach { modelName -> ModelChoiceRow(modelName, chosen == modelName) { onChoose(modelName) } }
+            AgentModelChoices.listed(options, chosen, providers).groupBy { option -> option.providerName }.forEach { (providerName, group) ->
+                TeaNodeSectionHeader(providerName)
+                group.forEach { option -> ModelChoiceRow(option.label, chosen == option.value) { onChoose(option.value) } }
+            }
         }
     }
 }

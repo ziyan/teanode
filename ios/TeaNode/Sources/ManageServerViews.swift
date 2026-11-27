@@ -1857,8 +1857,6 @@ final class AgentAdminModel {
     let connection: Connection
     private(set) var access: OperatorAccess?
     private(set) var settings: AgentServerSettings?
-    /// The models the enabled providers offer, for the model pickers.
-    private(set) var knownModels: [String] = []
     private(set) var recordingModelCapabilities: [RecordingModelCapability] = []
     private(set) var isLoading = false
     var doneText: String?
@@ -1882,7 +1880,6 @@ final class AgentAdminModel {
             // its row says why.
             if let capabilities = try? await connection.recordingModelCapabilities() {
                 recordingModelCapabilities = capabilities
-                knownModels = capabilities.map(\.name)
             }
         } catch {
             problemText = error.localizedDescription
@@ -1898,7 +1895,6 @@ final class AgentAdminModel {
             doneText = said
             if agentParameters["providers"] != nil, let capabilities = try? await connection.recordingModelCapabilities() {
                 recordingModelCapabilities = capabilities
-                knownModels = capabilities.map(\.name)
             }
             return true
         } catch {
@@ -1907,9 +1903,13 @@ final class AgentAdminModel {
         }
     }
 
-    /// Adds what one provider said it offers to the pickers' list.
-    func addKnownModels(_ names: [String]) {
-        knownModels = Array(Set(knownModels + names)).sorted()
+    /// Reads the settings again, after a model was saved or removed on the
+    /// server, and the models the pickers list.
+    func reloadSettings() async throws {
+        settings = try await connection.agentServerSettings()
+        if let capabilities = try? await connection.recordingModelCapabilities() {
+            recordingModelCapabilities = capabilities
+        }
     }
 }
 
@@ -2626,7 +2626,8 @@ private struct PlanUsageRows: View {
                 let leftText = (100 - usedPercent).formatted()
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
-                        Text("\(windowText): \(leftText)% left")
+                        // The row is a button, whose tint would make this green.
+                        Text("\(windowText): \(leftText)% left").foregroundStyle(Color(.label))
                         Spacer()
                         if let resetsAt = window.resetsAt, let resetDate = ServerTime.date(resetsAt) {
                             let atText = resetDate.formatted(.dateTime.weekday(.abbreviated).hour().minute())
@@ -2654,66 +2655,58 @@ private struct ProviderEditing: Identifiable {
     let providerIndex: Int?
 }
 
-/// AgentProvidersView is the model services, a row each, edited one at a
-/// time and saved as the editor closes. The list is sent whole whenever a
-/// row changes.
+/// PickedProviderModel is a model chosen in Add model that the provider
+/// does not list yet, with the window its own list reported.
+private struct PickedProviderModel: Hashable {
+    let modelID: String
+    let reportedContextWindow: Int
+}
+
+/// AgentProvidersView is the model services, a section each: the key or
+/// sign-in first, then the models the provider offers, then Add model. The
+/// credential is edited in a sheet and a model on a page of its own.
 private struct AgentProvidersView: View {
     let model: AgentAdminModel
     @State private var editing: ProviderEditing?
     @State private var removingIndex: Int?
     @State private var testingName: String?
+    /// The provider Add model was pressed under, which pushes the list of
+    /// what it offers.
+    @State private var addingProviderName: String?
 
     var body: some View {
         List {
             if let settings = model.settings {
-                Section {
-                    if settings.providers.isEmpty {
+                if settings.providers.isEmpty {
+                    Section {
                         Text("No providers yet. Add one, and the agents on this server have a model to think with.")
                             .foregroundStyle(Color(.secondaryLabel))
                     }
-                    ForEach(Array(settings.providers.enumerated()), id: \.offset) { index, provider in
+                }
+                ForEach(Array(settings.providers.enumerated()), id: \.offset) { index, provider in
+                    Section {
+                        credentialRow(index: index, provider: provider)
+                        ForEach(provider.models) { entry in
+                            // A link with its page, not a value: the settings stack's path is
+                            // typed, and a value of another type is dropped without a word.
+                            NavigationLink {
+                                AgentModelPage(model: model, providerName: provider.name, modelID: entry.model, newModel: nil, onFinished: nil)
+                            } label: {
+                                modelRow(entry)
+                            }
+                        }
                         Button {
-                            editing = ProviderEditing(providerIndex: index)
+                            addingProviderName = provider.name
                         } label: {
-                            row(provider)
+                            Label("Add model", systemImage: "plus")
+                                .actionColor()
                         }
-                        .confirmationDialog(
-                            "Remove the provider?", isPresented: Binding(get: { removingIndex == index }, set: { if !$0 { removingIndex = nil } }),
-                            titleVisibility: .visible, presenting: removingIndex
-                        ) { index in
-                            Button("Remove", role: .destructive) {
-                                guard let settings = model.settings else { return }
-                                Task {
-                                    _ = await model.save(
-                                        AgentProviderDraft.agentParameters(removingProviderAt: index, in: settings), saying: String(localized: "Removed"))
-                                }
-                            }
-                        } message: { index in
-                            let nameText = model.settings?.providers[safe: index]?.name ?? ""
-                            Text("Remove \(nameText)? Work assigned to its models stops until another provider offers them.")
-                        }
-                        .swipeActions {
-                            Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
-                                .tint(.red)
-                            if provider.canBeTested {
-                                Button("Test", systemImage: "checkmark.circle") {
-                                    Task { await test(provider.name) }
-                                }
-                                .tint(.indigo)
-                            }
-                        }
-                        .contextMenu {
-                            Button("Edit", systemImage: "pencil") { editing = ProviderEditing(providerIndex: index) }
-                            if provider.canBeTested {
-                                Button("Test", systemImage: "checkmark.circle") {
-                                    Task { await test(provider.name) }
-                                }
-                            }
-                            Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
-                                .tint(.red)
-                        }
-                        .disabled(testingName != nil)
+                    } header: {
+                        Text(verbatim: provider.name)
                     }
+                }
+                Section {
+                    EmptyView()
                 } footer: {
                     Text("A provider is a model service, named however you like; a model is always written provider:model. The openai kind covers every server that speaks the same API, including a local one.")
                 }
@@ -2733,61 +2726,114 @@ private struct AgentProvidersView: View {
         .sheet(item: $editing) { providerEditing in
             AgentProviderForm(model: model, providerIndex: providerEditing.providerIndex)
         }
+        .navigationDestination(item: $addingProviderName) { providerName in
+            AgentModelAddView(model: model, providerName: providerName, onFinished: { addingProviderName = nil })
+        }
         .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
     }
 
-    private func row(_ provider: AgentProviderSettings) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Text(verbatim: provider.name).foregroundStyle(Color(.label))
-                UpkeepTag(text: provider.providerKind)
-                if let planName = provider.planUsage?.planName, !planName.isEmpty {
-                    let capitalizedName = planName.prefix(1).uppercased() + planName.dropFirst()
-                    UpkeepTag(text: String(localized: "\(capitalizedName) plan"))
+    /// The key or the sign-in, with a plan's usage under it. A tap opens
+    /// the provider's editor.
+    private func credentialRow(index: Int, provider: AgentProviderSettings) -> some View {
+        Button {
+            editing = ProviderEditing(providerIndex: index)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(verbatim: credentialTitle(provider)).foregroundStyle(Color(.label))
+                    UpkeepTag(text: provider.providerKind)
+                    if !provider.isEnabled {
+                        UpkeepTag(text: String(localized: "off"))
+                    }
+                    if testingName == provider.name {
+                        ProgressView()
+                    }
                 }
-                if !provider.isEnabled {
-                    UpkeepTag(text: String(localized: "off"))
+                Text(verbatim: details(provider)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                if let planUsage = provider.planUsage, !planUsage.windows.isEmpty {
+                    PlanUsageRows(usage: planUsage)
                 }
-                if testingName == provider.name {
-                    ProgressView()
-                }
-            }
-            Text(verbatim: details(provider)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
-            if let planUsage = provider.planUsage, !planUsage.windows.isEmpty {
-                PlanUsageRows(usage: planUsage)
             }
         }
+        .confirmationDialog(
+            "Remove the provider?", isPresented: Binding(get: { removingIndex == index }, set: { if !$0 { removingIndex = nil } }),
+            titleVisibility: .visible, presenting: removingIndex
+        ) { index in
+            Button("Remove", role: .destructive) {
+                guard let settings = model.settings else { return }
+                Task {
+                    _ = await model.save(
+                        AgentProviderDraft.agentParameters(removingProviderAt: index, in: settings), saying: String(localized: "Removed"))
+                }
+            }
+        } message: { index in
+            let nameText = model.settings?.providers[safe: index]?.name ?? ""
+            Text("Remove \(nameText)? Work assigned to its models stops until another provider offers them.")
+        }
+        .swipeActions {
+            Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
+                .tint(.red)
+            if provider.canBeTested {
+                Button("Test", systemImage: "checkmark.circle") {
+                    Task { await test(provider.name) }
+                }
+                .tint(.indigo)
+            }
+        }
+        .contextMenu {
+            Button("Edit", systemImage: "pencil") { editing = ProviderEditing(providerIndex: index) }
+            if provider.canBeTested {
+                Button("Test", systemImage: "checkmark.circle") {
+                    Task { await test(provider.name) }
+                }
+            }
+            Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
+                .tint(.red)
+        }
+        .disabled(testingName != nil)
+    }
+
+    /// One model: its name over its id.
+    private func modelRow(_ entry: AgentModelEntry) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Text(verbatim: entry.displayName).foregroundStyle(Color(.label))
+                if !entry.isEnabled {
+                    UpkeepTag(text: String(localized: "off"))
+                }
+            }
+            // The id under the name, once: a model with no name is called by its id.
+            if entry.displayName != entry.model {
+                Text(verbatim: entry.model).font(.footnote).foregroundStyle(Color(.secondaryLabel))
+            }
+        }
+    }
+
+    /// What the credential is: a plan the provider is signed in to, or a key.
+    private func credentialTitle(_ provider: AgentProviderSettings) -> String {
+        if provider.isSignedInKind {
+            if let planName = provider.planUsage?.planName, !planName.isEmpty {
+                let capitalizedName = planName.prefix(1).uppercased() + planName.dropFirst()
+                return String(localized: "\(capitalizedName) plan")
+            }
+            return String(localized: "ChatGPT plan")
+        }
+        return String(localized: "API key")
     }
 
     private func details(_ provider: AgentProviderSettings) -> String {
         var parts: [String]
         if provider.isSignedInKind {
-            parts = [provider.hasRefreshToken ? String(localized: "signed in") : String(localized: "not signed in")]
+            if provider.hasRefreshToken, !provider.account.isEmpty {
+                parts = [String(localized: "Signed in as \(provider.account)")]
+            } else {
+                parts = [provider.hasRefreshToken ? String(localized: "signed in") : String(localized: "not signed in")]
+            }
         } else {
-            parts = [
-                provider.baseUrl.isEmpty ? String(localized: "its own endpoint") : provider.baseUrl,
-                provider.hasApiKey ? String(localized: "key set") : String(localized: "no key"),
-            ]
-        }
-        if !provider.allow.isEmpty {
-            let patternsText = SettingsList.text(provider.allow)
-            parts.append(String(localized: "offers \(patternsText)"))
-        }
-        if !provider.deny.isEmpty {
-            let patternsText = SettingsList.text(provider.deny)
-            parts.append(String(localized: "hides \(patternsText)"))
-        }
-        if provider.pricingInput != 0 || provider.pricingOutput != 0 {
-            let inputText = provider.pricingInput.formatted()
-            let outputText = provider.pricingOutput.formatted()
-            parts.append(String(localized: "\(inputText) in / \(outputText) out per million tokens"))
-        }
-        // The prices above are only what is left when no model's own
-        // price matches, so the count of those is said too.
-        let pricedCount = (provider.modelPricing ?? []).count
-        if pricedCount > 0 {
-            let countText = pricedCount.formatted()
-            parts.append(String(localized: "\(countText) models priced apart"))
+            // The key, and the address only when it is not the service's own:
+            // prices belong to the models below.
+            parts = [provider.hasApiKey ? String(localized: "key set") : String(localized: "no key")]
+            if !provider.baseUrl.isEmpty { parts.append(provider.baseUrl) }
         }
         return parts.joined(separator: " · ")
     }
@@ -2800,7 +2846,6 @@ private struct AgentProvidersView: View {
             let countText = names.count.formatted()
             let sampleText = names.prefix(5).joined(separator: ", ")
             model.doneText = String(localized: "\(countText) models, for example \(sampleText)")
-            model.addKnownModels(names)
         } catch {
             model.problemText = error.localizedDescription
         }
@@ -2814,6 +2859,251 @@ extension Array {
     }
 }
 
+/// AgentModelAddView offers the models a provider lists, searchable, and a
+/// row to type an id the list does not have. Choosing one pushes the
+/// model's page, where it is saved.
+private struct AgentModelAddView: View {
+    let model: AgentAdminModel
+    let providerName: String
+    /// Called when the model has been saved, to leave this list as well.
+    let onFinished: () -> Void
+    @State private var liveModels: [AgentLiveModel] = []
+    @State private var isLoading = true
+    @State private var searchText = ""
+    @State private var typedID = ""
+    @State private var problemText: String?
+    @State private var doneText: String?
+
+    /// What the provider lists that is not added yet and matches the search.
+    private var offeredModels: [AgentLiveModel] {
+        let addedIDs = Set(model.settings?.providers.first { $0.name == providerName }?.models.map(\.model) ?? [])
+        let words = searchText.trimmingCharacters(in: .whitespaces)
+        return liveModels.filter { liveModel in
+            liveModel.providerName == providerName && !addedIDs.contains(liveModel.modelID)
+                && (words.isEmpty || liveModel.modelID.localizedCaseInsensitiveContains(words))
+        }
+    }
+
+    private var trimmedID: String { typedID.trimmingCharacters(in: .whitespaces) }
+
+    /// The page of a model picked from the list or typed in, to be saved.
+    private func pickedPage(_ picked: PickedProviderModel) -> some View {
+        AgentModelPage(model: model, providerName: providerName, modelID: picked.modelID, newModel: picked, onFinished: onFinished)
+    }
+
+    var body: some View {
+        List {
+            Section {
+                TextField("Type an id", text: $typedID)
+                    .font(.body.monospaced())
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                NavigationLink {
+                    pickedPage(PickedProviderModel(modelID: trimmedID, reportedContextWindow: 0))
+                } label: {
+                    Label("Use this id", systemImage: "plus").foregroundStyle(.primary)
+                }
+                .disabled(trimmedID.isEmpty)
+            } footer: {
+                Text("A model the list does not offer, written as the provider knows it.")
+            }
+            Section {
+                ForEach(offeredModels, id: \.name) { liveModel in
+                    NavigationLink {
+                        pickedPage(PickedProviderModel(modelID: liveModel.modelID, reportedContextWindow: liveModel.contextLength ?? 0))
+                    } label: {
+                        Text(verbatim: liveModel.modelID).foregroundStyle(Color(.label))
+                    }
+                }
+            } header: {
+                Text("Offered by the provider")
+            }
+        }
+        .navigationTitle("Add model")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: Text("Search models"))
+        .overlay {
+            if isLoading {
+                ProgressView()
+            } else if offeredModels.isEmpty, !searchText.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+            }
+        }
+        .task { await load() }
+        .toast(done: $doneText, problem: $problemText)
+    }
+
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            liveModels = try await model.connection.agentLiveModels()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+}
+
+/// AgentModelPage is one model of one provider: its name, its id, its
+/// context window, its prices, whether it is on, and what uses it. A model
+/// picked in Add model is saved here the first time; one the provider lists
+/// can be removed unless a role uses it, which the server says.
+private struct AgentModelPage: View {
+    let model: AgentAdminModel
+    let providerName: String
+    let modelID: String
+    /// The model as Add model picked it, or nil for one the provider lists.
+    let newModel: PickedProviderModel?
+    /// Called after a save or a removal, when the page is not the one pushed
+    /// on the providers page itself.
+    let onFinished: (() -> Void)?
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft = AgentModelEntryDraft()
+    @State private var isFilled = false
+    @State private var isSaving = false
+    @State private var isConfirmingRemoval = false
+    @State private var doneText: String?
+    @State private var problemText: String?
+
+    /// The entry as the server lists it; nil until it has been saved.
+    private var storedEntry: AgentModelEntry? {
+        model.settings?.providers.first { $0.name == providerName }?.models.first { $0.model == modelID }
+    }
+
+    /// The window the provider reports, or the one its list gave.
+    private var reportedContextWindow: Int {
+        storedEntry?.reportedContextWindow ?? newModel?.reportedContextWindow ?? 0
+    }
+
+    private var contextWindowPlaceholder: String {
+        reportedContextWindow > 0 ? reportedContextWindow.formatted() : String(localized: "Not reported")
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("Name", text: $draft.name, prompt: Text(verbatim: modelID))
+                LabeledContent("Model ID") {
+                    Text(verbatim: modelID).font(.body.monospaced()).textSelection(.enabled)
+                }
+            }
+            Section {
+                LabeledContent("Context window") {
+                    TextField("Context window", text: contextWindowBinding, prompt: Text(verbatim: contextWindowPlaceholder))
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                }
+            } footer: {
+                Text("In tokens. Leave it blank to use the provider's figure.")
+            }
+            Section {
+                priceField("Input", text: $draft.inputText)
+                priceField("Output", text: $draft.outputText)
+                priceField("Cache read", text: $draft.cacheReadText)
+                priceField("Writing to the cache", text: $draft.cacheWriteText)
+                priceField("Audio input", text: $draft.audioInputText)
+            } header: {
+                Text("Price per million tokens")
+            } footer: {
+                Text("Zero is unknown, and the provider's own price is used instead.")
+            }
+            Section {
+                Toggle("On", isOn: $draft.isEnabled)
+            }
+            if let storedEntry {
+                Section {
+                    if storedEntry.usedFor.isEmpty {
+                        Text("Nothing uses it yet")
+                            .foregroundStyle(Color(.secondaryLabel))
+                    }
+                    ForEach(storedEntry.usedFor, id: \.self) { roleName in
+                        Text(AgentWords.modelLabel(roleName))
+                    }
+                } header: {
+                    Text("Used for")
+                }
+                Section {
+                    Button("Remove", systemImage: "trash", role: .destructive) { isConfirmingRemoval = true }
+                        .tint(.red)
+                        .actionColor(isDestructive: true)
+                        .disabled(isSaving)
+                        .confirmationDialog("Remove this model?", isPresented: $isConfirmingRemoval, titleVisibility: .visible) {
+                            Button("Remove", role: .destructive) { Task { await remove() } }
+                        }
+                }
+            }
+        }
+        .navigationTitle(draft.name.isEmpty ? modelID : draft.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { Task { await save() } }
+                    .disabled(!draft.canSave || isSaving || model.settings == nil)
+            }
+        }
+        .onAppear {
+            guard !isFilled else { return }
+            if let storedEntry {
+                draft = AgentModelEntryDraft(storedEntry)
+            } else {
+                draft = AgentModelEntryDraft(model: modelID)
+            }
+            isFilled = true
+        }
+        .toast(done: $doneText, problem: $problemText)
+    }
+
+    private var contextWindowBinding: Binding<String> {
+        Binding(get: { draft.contextWindowText }, set: { draft.contextWindowText = SettingsList.digits($0) })
+    }
+
+    private func priceField(_ label: LocalizedStringKey, text: Binding<String>) -> some View {
+        LabeledContent(label) {
+            // "Not set" rather than the label again: an empty price is the provider's.
+            TextField("Not set", text: Binding(get: { text.wrappedValue }, set: { text.wrappedValue = SettingsList.price($0) }))
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    private func finish() {
+        if let onFinished {
+            onFinished()
+        } else {
+            dismiss()
+        }
+    }
+
+    private func save() async {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            try await model.connection.saveAgentModelEntry(providerName: providerName, draft: draft)
+            try await model.reloadSettings()
+            model.doneText = String(localized: "Saved")
+            finish()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    /// The server refuses while a role uses the model and names the role,
+    /// which is shown as it comes.
+    private func remove() async {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            try await model.connection.deleteAgentModelEntry(providerName: providerName, model: modelID)
+            try await model.reloadSettings()
+            model.doneText = String(localized: "Removed")
+            finish()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+}
+
 /// AgentProviderForm adds a provider or changes one. A provider that runs
 /// on a person's plan is signed in to rather than keyed, and the sign-in is
 /// what saves it.
@@ -2821,8 +3111,6 @@ struct AgentProviderForm: View {
     let model: AgentAdminModel
     let providerIndex: Int?
 
-    /// The first model price's row, which the provider-prices screenshot scrolls to.
-    static let modelPriceRowId = "model-price"
     /// The line saying when the prices were last checked against the bill, which the provider-billing-check screenshot scrolls to.
     static let billedPricesRowId = "billed-prices"
 
@@ -2872,19 +3160,16 @@ struct AgentProviderForm: View {
                     }
                 }
                 Section {
-                    TextField("Models to offer", text: $draft.allowText, prompt: Text("Patterns, comma separated; empty offers all"))
-                    TextField("Models to hide", text: $draft.denyText, prompt: Text("Patterns, comma separated"))
-                }
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                Section("Price per million tokens") {
                     priceField("Input", text: $draft.pricingInputText)
                     priceField("Output", text: $draft.pricingOutputText)
                     priceField("Cache read", text: $draft.pricingCacheReadText)
                     priceField("Writing to the cache", text: $draft.pricingCacheWriteText)
                     priceField("Audio input", text: $draft.pricingAudioInputText)
+                } header: {
+                    Text("Price per million tokens")
+                } footer: {
+                    Text("Used for a model that has no price of its own.")
                 }
-                modelPricesSections
                 billedPricesSection
                 Section {
                     Toggle("Enabled", isOn: $draft.isEnabled)
@@ -3059,7 +3344,6 @@ struct AgentProviderForm: View {
                     draft.pricingCacheReadText = refreshed.pricingCacheReadText
                     draft.pricingCacheWriteText = refreshed.pricingCacheWriteText
                     draft.pricingAudioInputText = refreshed.pricingAudioInputText
-                    draft.modelPrices = refreshed.modelPrices
                 }
             }
         } catch {
@@ -3069,54 +3353,11 @@ struct AgentProviderForm: View {
 
     private func priceField(_ label: LocalizedStringKey, text: Binding<String>) -> some View {
         LabeledContent(label) {
-            TextField(label, text: Binding(get: { text.wrappedValue }, set: { text.wrappedValue = SettingsList.price($0) }))
+            // "Not set" rather than the label again: an empty price is the provider's.
+            TextField("Not set", text: Binding(get: { text.wrappedValue }, set: { text.wrappedValue = SettingsList.price($0) }))
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
         }
-    }
-
-    /// The prices of particular models, a group each: the first whose model
-    /// matches is the one used, so a pattern can sit under the exact names
-    /// it should not cover.
-    @ViewBuilder
-    private var modelPricesSections: some View {
-        ForEach(draft.modelPrices) { shown in
-            let price = modelPriceBinding(shown)
-            Section {
-                TextField("Model", text: price.model, prompt: Text(verbatim: "model-name*"))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .id(Self.modelPriceRowId)
-                priceField("In", text: price.inputText)
-                priceField("Out", text: price.outputText)
-                priceField("Cached", text: price.cacheReadText)
-                priceField("Caching", text: price.cacheWriteText)
-                priceField("Audio", text: price.audioInputText)
-                Button("Remove", systemImage: "trash", role: .destructive) {
-                    draft.modelPrices.removeAll { $0.id == shown.id }
-                }
-                .tint(.red)
-                .actionColor(isDestructive: true)
-            } header: {
-                Text("Prices for particular models")
-            }
-        }
-        Section {
-            Button("Price another model", systemImage: "plus") {
-                draft.modelPrices.append(AgentProviderDraft.ModelPriceDraft())
-            }
-            .actionColor()
-        } footer: {
-            Text("Per million tokens, as the prices above are. The first line whose model matches is the one used, so a pattern ending in * can sit under the exact names it should not cover. Anything not matched costs what the provider costs.")
-        }
-    }
-
-    private func modelPriceBinding(_ shown: AgentProviderDraft.ModelPriceDraft) -> Binding<AgentProviderDraft.ModelPriceDraft> {
-        Binding(
-            get: { draft.modelPrices.first { $0.id == shown.id } ?? shown },
-            set: { edited in
-                if let index = draft.modelPrices.firstIndex(where: { $0.id == shown.id }) { draft.modelPrices[index] = edited }
-            })
     }
 
     private func save() {
@@ -3227,7 +3468,12 @@ private struct ModelChoiceList: View {
     let title: LocalizedStringKey
     /// What choosing nothing means, or nil when nothing is no choice.
     let emptyTitle: String?
-    let knownModels: [String]
+    /// The models to list when only some are wanted, such as the ones a
+    /// capability is known for; nil lists every offered model.
+    let onlyModels: [String]?
+    /// The providers, whose models are listed under each one's name as
+    /// "Provider · Model".
+    let providers: [AgentProviderSettings]
     @Binding var selection: String
     @Environment(\.dismiss) private var dismiss
     @State private var typedName = ""
@@ -3247,12 +3493,18 @@ private struct ModelChoiceList: View {
             } footer: {
                 Text("A model the list does not offer yet, written provider:model.")
             }
-            Section {
-                if let emptyTitle {
+            if let emptyTitle {
+                Section {
                     choiceRow(text: emptyTitle, modelName: "")
                 }
-                ForEach(AgentModelChoices.listed(knownModels, chosen: selection), id: \.self) { modelName in
-                    choiceRow(text: modelName, modelName: modelName)
+            }
+            ForEach(AgentModelChoices.grouped(chosen: selection, providers: providers, onlyModels: onlyModels)) { group in
+                Section {
+                    ForEach(group.rows) { row in
+                        choiceRow(text: row.label, modelName: row.value)
+                    }
+                } header: {
+                    Text(verbatim: group.providerName)
                 }
             }
         }
@@ -3289,23 +3541,23 @@ private struct AgentModelsFormView: View {
 
     var body: some View {
         AgentSettingsForm(model: model, title: "Models", makeDraft: { $0.models }, parameters: { $0.agentParameters }) { draft, settings in
-            let choices = AgentModelChoices(knownModels: model.knownModels, providers: settings.providers)
+            let choices = AgentModelChoices(providers: settings.providers)
             Section {
                 ForEach(AgentModelAssignments.baseFieldNames, id: \.self) { fieldName in
-                    modelRow(fieldName, known: choices.forWork, draft: draft)
+                    modelRow(fieldName, onlyModels: choices.forWork, draft: draft)
                 }
             } footer: {
                 Text("Which model does which work. Default is anything not named; fast is used for sorting, summaries and compaction unless overridden; quick answers what you type first and hands anything that needs reasoning to the conversations model; embedding enables search by meaning.")
             }
             Section("Per kind of work") {
                 ForEach(AgentModelAssignments.workFieldNames.filter { $0 != "transcription" }, id: \.self) { fieldName in
-                    modelRow(fieldName, known: choices.forWork, draft: draft)
+                    modelRow(fieldName, onlyModels: choices.forWork, draft: draft)
                 }
-                modelRow("decide", known: choices.forDeciding, draft: draft)
-                modelRow("categorize", known: choices.forDeciding + choices.forWork, draft: draft)
+                modelRow("decide", onlyModels: choices.forDeciding, draft: draft)
+                modelRow("categorize", onlyModels: choices.forDeciding + choices.forWork, draft: draft)
             }
             Section {
-                modelRow("transcription", known: model.recordingModelCapabilities.filter(\.canAttributeRecordingSpeakers).map(\.name), draft: draft)
+                modelRow("transcription", onlyModels: model.recordingModelCapabilities.filter(\.canAttributeRecordingSpeakers).map(\.name), draft: draft)
                 if let capability = model.recordingModelCapabilities.first(where: { $0.name == draft.wrappedValue.transcription }), capability.canAttributeRecordingSpeakers {
                     LabeledContent("Voice references", value: capability.hasSpeakerReferences == true ? String(localized: "Supported") : String(localized: "Unavailable"))
                     if let maximumAudioBytes = capability.maximumAudioBytes, maximumAudioBytes > 0 {
@@ -3326,7 +3578,8 @@ private struct AgentModelsFormView: View {
                 NavigationLink {
                     ModelChoiceList(
                         title: "Add a model people may pick", emptyTitle: nil,
-                        knownModels: choices.forWork.filter { !draft.wrappedValue.choices.contains($0) },
+                        onlyModels: choices.forWork.filter { !draft.wrappedValue.choices.contains($0) },
+                        providers: settings.providers,
                         selection: Binding(
                             get: { "" },
                             set: { added in
@@ -3344,18 +3597,24 @@ private struct AgentModelsFormView: View {
         }
     }
 
-    private func modelRow(_ fieldName: String, known: [String], draft: Binding<AgentModelAssignments>) -> some View {
+    /// A chosen provider:model as "Provider · Model", as the picker lists it.
+    private func chosenLabel(_ chosen: String) -> String {
+        AgentModelChoices.grouped(chosen: chosen, providers: model.settings?.providers ?? [], onlyModels: []).first?.rows.first?.label ?? chosen
+    }
+
+    private func modelRow(_ fieldName: String, onlyModels: [String], draft: Binding<AgentModelAssignments>) -> some View {
         let chosen = draft.wrappedValue[fieldName: fieldName]
         let placeholder = AgentWords.modelPlaceholder(fieldName)
         return NavigationLink {
             ModelChoiceList(
-                title: AgentWords.modelLabel(fieldName), emptyTitle: placeholder, knownModels: known,
+                title: AgentWords.modelLabel(fieldName), emptyTitle: placeholder, onlyModels: onlyModels,
+                providers: model.settings?.providers ?? [],
                 selection: Binding(get: { draft.wrappedValue[fieldName: fieldName] }, set: { draft.wrappedValue[fieldName: fieldName] = $0 }))
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(AgentWords.modelLabel(fieldName)).foregroundStyle(Color(.label))
-                Text(verbatim: chosen.isEmpty ? placeholder : chosen)
-                    .font(chosen.isEmpty ? .footnote : .footnote.monospaced())
+                Text(verbatim: chosen.isEmpty ? placeholder : chosenLabel(chosen))
+                    .font(.footnote)
                     .foregroundStyle(Color(.secondaryLabel))
             }
         }
@@ -4597,14 +4856,43 @@ private struct SourceTypeGuideSheet: View {
 #endif
 
 #if DEBUG
-    /// `-TeaNodeScreen provider-prices`: the provider editor in a sheet, scrolled to the price of a particular model.
+    /// `-TeaNodeScreen providers`: the providers page, a section per provider with its credential, its models and Add model.
+    /// `-TeaNodeScreen provider-model`: the page of one model, with its window, prices and what uses it.
+    struct ProviderModelsDemoScreen: View {
+        @State private var model: AgentAdminModel
+        private let isShowingModel: Bool
+
+        init(connection: Connection, isShowingModel: Bool) {
+            _model = State(initialValue: AgentAdminModel(connection: connection))
+            self.isShowingModel = isShowingModel
+        }
+
+        var body: some View {
+            Group {
+                if isShowingModel {
+                    // The page fills its draft once, so it waits for the settings.
+                    if model.settings != nil {
+                        AgentModelPage(model: model, providerName: "chatgpt", modelID: "demo-sol", newModel: nil, onFinished: nil)
+                    } else {
+                        ProgressView()
+                    }
+                } else {
+                    AgentProvidersView(model: model)
+                }
+            }
+            .task { await model.load() }
+        }
+    }
+#endif
+
+#if DEBUG
     /// `-TeaNodeScreen provider-billing-check`: the same sheet for a provider with a billing key, scrolled to the prices from the bill.
     struct ProviderPricesDemoScreen: View {
         @State private var model: AgentAdminModel
         @State private var isShowingSheet = false
         private let scrollTarget: String
 
-        init(connection: Connection, scrollTarget: String = AgentProviderForm.modelPriceRowId) {
+        init(connection: Connection, scrollTarget: String) {
             _model = State(initialValue: AgentAdminModel(connection: connection))
             self.scrollTarget = scrollTarget
         }
