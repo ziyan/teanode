@@ -13,7 +13,8 @@ import (
 const ingestChunksPerRun = 2000
 
 // embedChunks gives vectors to chunks that have none, and says how many
-// it wrote and how many are left.
+// it wrote and how many are left. A most of zero or less writes every one
+// that is waiting, until the context ends.
 //
 // Embedding is measured against its own budget rather than the day's
 // token allowance. The first pass over a person's checkout and chat
@@ -26,12 +27,12 @@ func (self *Agent) embedChunks(ctx context.Context, agent *models.Agent, most in
 		return 0, 0, nil
 	}
 	written := 0
-	for written < most {
+	for most <= 0 || written < most {
 		if ctx.Err() != nil {
 			break
 		}
 		batch := ingestEmbedBatch
-		if remaining := most - written; remaining < batch {
+		if remaining := most - written; most > 0 && remaining < batch {
 			batch = remaining
 		}
 		var chunks []*models.AgentChunk

@@ -43,12 +43,11 @@ func TestRehearsePromptIsAboutThePersonsOwnLife(t *testing.T) {
 		"PersonName": "Alice",
 		"Index":      []string{"projects/portal — Portal: the customer-facing site"},
 		"Recent":     []string{"agreed to send the Rivermouth team a revised drawing"},
-		"Most":       8,
 	})
 	if err != nil {
 		t.Fatalf("render: %s", err)
 	}
-	for _, wanted := range []string{"Alice", "projects/portal", "Rivermouth", "At most 8 questions"} {
+	for _, wanted := range []string{"Alice", "projects/portal", "Rivermouth", "Questions in Alice"} {
 		if !strings.Contains(prompt, wanted) {
 			t.Fatalf("the prompt says %q:\n%s", wanted, prompt)
 		}

@@ -19,7 +19,7 @@ import (
 func (self *Agent) dreamConsolidate(ctx context.Context, run *Run, record *models.AgentDream, budget *dreamBudget) {
 	var pages []*models.AgentNode
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		pages, err = tx.ListAgentNodesToConsolidate(run.Agent.ID, dreamConsolidate)
+		pages, err = tx.ListAgentNodesToConsolidate(run.Agent.ID, 0)
 		return err
 	}); err != nil {
 		log.Warningf("cannot list the pages to rewrite: %s", err)
@@ -32,7 +32,7 @@ func (self *Agent) dreamConsolidate(ctx context.Context, run *Run, record *model
 	slots := make(chan struct{}, dreamRewriteConcurrency)
 	var group sync.WaitGroup
 	for _, page := range pages {
-		if ctx.Err() != nil || !budget.left() || !budget.consolidatingTimeLeft() {
+		if ctx.Err() != nil || !budget.left() {
 			break
 		}
 		slots <- struct{}{}

@@ -72,10 +72,10 @@ func TestADreamsIdeasGoThroughTheCheckEveryIdeaPasses(t *testing.T) {
 	badDay := proposal("I'll book a slot for the chimney sweep in spring.", boiler)
 	badDay.ExpiresOn = "next spring"
 	good := proposal("I'll remind you before the boiler service is due.", boiler)
-	beyondMost := proposal("I'll keep a list of the parts the boiler has had.", boiler)
+	another := proposal("I'll keep a list of the parts the boiler has had.", boiler)
 
-	summary := worker.keepDreamIdeas(t.Context(), run, []IdeaProposal{noEvidence, badDay, good, beyondMost}, 1)
-	if !strings.HasPrefix(summary, "kept 1 of 4; refused: ") || !strings.Contains(summary, "needs the evidence") || !strings.Contains(summary, "2006-01-02") {
+	summary := worker.keepDreamIdeas(t.Context(), run, []IdeaProposal{noEvidence, badDay, good, another})
+	if !strings.HasPrefix(summary, "kept 2 of 4; refused: ") || !strings.Contains(summary, "needs the evidence") || !strings.Contains(summary, "2006-01-02") {
 		t.Fatalf("the summary says what was kept and why the rest were refused: %q", summary)
 	}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -89,8 +89,13 @@ func TestADreamsIdeasGoThroughTheCheckEveryIdeaPasses(t *testing.T) {
 				personal = append(personal, idea)
 			}
 		}
-		if len(personal) != 1 || personal[0].Headline != good.Headline || personal[0].IdeaStatus != models.IdeaOpen || personal[0].ExpiresAt == nil {
-			t.Fatalf("only the good one is kept, and no more than the night may keep: %+v", personal)
+		if len(personal) != 2 {
+			t.Fatalf("the two good ones are kept, however many there are: %+v", personal)
+		}
+		for _, idea := range personal {
+			if idea.IdeaStatus != models.IdeaOpen {
+				t.Fatalf("a kept idea is open: %+v", idea)
+			}
 		}
 	})
 }

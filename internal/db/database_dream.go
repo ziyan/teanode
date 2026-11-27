@@ -76,7 +76,7 @@ type DreamOperation interface {
 	// with that nobody has read and the night has not decided about:
 	// newest first, and only the ones whose bytes this server actually
 	// holds, since a file it cannot fetch is not one it can decide to
-	// open.
+	// open. A limit of zero or less lists every one.
 	//
 	// Apart from ListAgentDocumentsToDigest because it is the opposite
 	// question. That one asks what to read; this one asks what is worth
@@ -87,10 +87,6 @@ type DreamOperation interface {
 	// MarkAgentDocumentsDeclined records that the night decided against
 	// opening these, and why, so that it is not paid for twice.
 	MarkAgentDocumentsDeclined(documentIds []string, reason string, at time.Time) error
-
-	// MarkAgentDocumentsPassedOver counts that a night showed these files
-	// and could not judge them, so the queue puts them behind the rest.
-	MarkAgentDocumentsPassedOver(documentIds []string) error
 
 	// UnmarkAgentDocumentsDigested puts back into the queue everything
 	// marked read since the given time: for a night that marked what it
@@ -475,9 +471,6 @@ func (self *transaction) CountAgentDocumentsReading(agentId string, names []stri
 // source fills one in; putting it to a model tonight would buy a decision
 // about a file nothing could then open.
 func (self *transaction) ListAgentAttachmentsToDecide(agentId string, limit int) ([]*models.AgentDocument, error) {
-	if limit <= 0 {
-		limit = 200
-	}
 	return self.documentsFrom(self.tx.Raw(`
 		SELECT * FROM "agent_document"
 		WHERE "agent_id" = ? AND "kind" = ? AND "storage_key" <> ''
@@ -485,20 +478,8 @@ func (self *transaction) ListAgentAttachmentsToDecide(agentId string, limit int)
 		  AND NOT jsonb_exists("metadata", 'digested')
 		  AND NOT EXISTS (
 			SELECT 1 FROM "agent_chunk" WHERE "document_id" = "agent_document"."id")
-		ORDER BY coalesce(("metadata"->>'passedOver')::int, 0) ASC, "happened_at" DESC NULLS LAST
-		LIMIT ?`, agentId, string(models.DocumentAttachment), limit))
-}
-
-// MarkAgentDocumentsPassedOver says a night showed these files to the
-// model in a batch whose list came back full, so they were not judged:
-// they go behind the files never shown, and come back in another batch.
-func (self *transaction) MarkAgentDocumentsPassedOver(documentIds []string) error {
-	if len(documentIds) == 0 {
-		return nil
-	}
-	return self.tx.Exec(
-		`UPDATE "agent_document" SET "metadata" = "metadata" || jsonb_build_object('passedOver', coalesce(("metadata"->>'passedOver')::int, 0) + 1) WHERE "id" = ANY(?)`,
-		pq.Array(documentIds)).Error
+		ORDER BY "happened_at" DESC NULLS LAST
+		LIMIT ?`, agentId, string(models.DocumentAttachment), limitOrAll(limit)))
 }
 
 // MarkAgentDocumentsDeclined says the night looked at what these would
@@ -615,9 +596,6 @@ func (self *transaction) MarkAgentDocumentsDigested(documentIds []string, at tim
 // ListAgentNodesToConsolidate is the pages whose facts have moved on
 // since their summary was written.
 func (self *transaction) ListAgentNodesToConsolidate(agentId string, limit int) ([]*models.AgentNode, error) {
-	if limit <= 0 {
-		limit = 100
-	}
 	// Either a fact has moved since the opening was written, or the page
 	// has an opening and no facts at all.
 	//
@@ -655,7 +633,7 @@ func (self *transaction) ListAgentNodesToConsolidate(agentId string, limit int) 
 			)
 		  )
 		ORDER BY n."pinned" DESC, n."used_at" DESC NULLS LAST, n."modified_at" DESC
-		LIMIT ?`, agentId, models.NodeFolder, models.NodePeriod, limit))
+		LIMIT ?`, agentId, models.NodeFolder, models.NodePeriod, limitOrAll(limit)))
 }
 
 func (self *transaction) MarkAgentNodeConsolidated(nodeId string, at time.Time) error {
@@ -876,15 +854,12 @@ func (self *transaction) WalkAgentGraph(agentId, fromId string, steps int) ([]*m
 // ListAgentNodesForWalking is where a REM-like pass starts: the pages
 // that matter most and have something to walk from.
 func (self *transaction) ListAgentNodesForWalking(agentId string, limit int) ([]*models.AgentNode, error) {
-	if limit <= 0 {
-		limit = 10
-	}
 	return self.nodesFrom(self.tx.Raw(`
 		SELECT n.* FROM "agent_node" n
 		WHERE n."agent_id" = ? AND NOT n."dormant" AND n."kind" NOT IN ('folder')
 		  AND EXISTS (SELECT 1 FROM "agent_edge" e WHERE e."from_id" = n."id" OR e."to_id" = n."id")
 		ORDER BY n."importance" DESC, n."used_at" DESC NULLS LAST
-		LIMIT ?`, agentId, limit))
+		LIMIT ?`, agentId, limitOrAll(limit)))
 }
 
 // ListAgentFactsWrittenBefore is what a build other than this one wrote.
@@ -988,15 +963,12 @@ func (self *transaction) FirstAgentFactSayingIt(agentId string, said *models.Age
 }
 
 func (self *transaction) ListAgentNodesCrowded(agentId string, above, limit int) ([]*models.AgentNode, error) {
-	if limit <= 0 {
-		limit = 5
-	}
 	return self.nodesFrom(self.tx.Raw(`
 		SELECT n.* FROM "agent_node" n
 		WHERE n."agent_id" = ? AND n."kind" <> ? AND NOT n."dormant"
 		  AND (SELECT count(*) FROM "agent_fact" f WHERE f."node_id" = n."id" AND NOT f."dormant" AND f."superseded_by" IS NULL) > ?
 		ORDER BY (SELECT count(*) FROM "agent_fact" f WHERE f."node_id" = n."id" AND NOT f."dormant" AND f."superseded_by" IS NULL) DESC
-		LIMIT ?`, agentId, models.NodeFolder, above, limit))
+		LIMIT ?`, agentId, models.NodeFolder, above, limitOrAll(limit)))
 }
 
 func (self *transaction) UnmarkAgentDocumentsDigested(agentId string, since time.Time) (int64, error) {
@@ -1008,9 +980,6 @@ func (self *transaction) UnmarkAgentDocumentsDigested(agentId string, since time
 }
 
 func (self *transaction) ListAgentMonthsToWriteUp(agentId string, names []string, least, limit int, guessed string, writtenBefore time.Time) ([]string, error) {
-	if limit <= 0 {
-		limit = 3
-	}
 	if len(names) == 0 {
 		names = []string{""}
 	}
@@ -1042,8 +1011,17 @@ func (self *transaction) ListAgentMonthsToWriteUp(agentId string, names []string
 		   OR EXISTS (SELECT 1 FROM "agent_node" n WHERE n."agent_id" = ? AND n."path" = 'time/' || month
 		              AND (btrim(n."summary") = '' OR (? <> '' AND n."summary" ~* ?) OR n."modified_at" < ?))
 		ORDER BY written ASC, month DESC
-		LIMIT ?`, agentId, agentId, pq.Array(names), agentId, least, agentId, guessed, guessed, writtenBefore, limit).Scan(&months).Error; err != nil {
+		LIMIT ?`, agentId, agentId, pq.Array(names), agentId, least, agentId, guessed, guessed, writtenBefore, limitOrAll(limit)).Scan(&months).Error; err != nil {
 		return nil, err
 	}
 	return months, nil
+}
+
+// limitOrAll is a row limit for a query written "LIMIT ?": a limit of zero or
+// less is no limit at all.
+func limitOrAll(limit int) any {
+	if limit <= 0 {
+		return nil
+	}
+	return limit
 }

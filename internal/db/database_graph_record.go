@@ -284,7 +284,7 @@ func (self *transaction) ListAgentRecordLinks(agentId, nodeId string) ([]*models
 }
 
 func (self *transaction) ListAgentRecordBacklinks(agentId string, recordKind models.AgentRecordKind, recordId string, startMS, endMS int64, limit int) ([]*models.AgentRecordLink, error) {
-	if limit <= 0 {
+	if limit == 0 {
 		limit = 200
 	}
 	query := self.tx.Where(`"agent_id" = ? AND "record_kind" = ? AND "record_id" = ?`, agentId, string(recordKind), recordId)
@@ -298,8 +298,12 @@ func (self *transaction) ListAgentRecordBacklinks(agentId string, recordKind mod
 		query = query.Where(`"passage_start_ms" <= ? AND "passage_end_ms" >= ?`, endMS, startMS)
 	}
 	var rows []agentRecordLinkModel
-	if err := query.Order(`"passage_start_ms" ASC, "record_relation" ASC, "created_at" ASC, "id" ASC`).
-		Limit(limit).Find(&rows).Error; err != nil {
+	query = query.Order(`"passage_start_ms" ASC, "record_relation" ASC, "created_at" ASC, "id" ASC`)
+	// A limit below zero lists every one.
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return self.recordLinksOf(agentId, rows, true)

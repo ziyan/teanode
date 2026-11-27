@@ -2,7 +2,6 @@ package agent_test
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -11,20 +10,12 @@ import (
 	"github.com/ziyan/teanode/internal/db/dbtest"
 )
 
-// What the person asked to be remembered is filed whole, past the number a
-// conversation may otherwise file; what they did not ask for still stops
-// there.
+// A conversation's run files every fact it found, however many: what the person
+// asked to be remembered and what it chose to keep alike.
 //
 // They ask for a list of thirty statements to be kept. The run files the
-// thirty, marked as asked, twenty more of its own choosing, and ten it
-// marks as asked though they quote the assistant: all thirty are kept,
-// and fifteen of the other thirty, since a mark the model wrote on words
-// the person did not say earns nothing.
-// theirReply finds the assistant's lines in the run's prompt, as
-// theirSentence finds the person's.
-var theirReply = regexp.MustCompile(`\[([a-zA-Z0-9]+)\] you: (.+)`)
-
-func TestWhatThePersonAskedToRememberIsFiledWhole(t *testing.T) {
+// thirty, and twenty more of its own choosing: all fifty are kept.
+func TestEveryFactTheRunFoundIsFiled(t *testing.T) {
 	world := newRememberWorld(t, func(prompt string) string {
 		if !strings.Contains(prompt, "What to file") {
 			return `{"facts":[]}`
@@ -35,18 +26,12 @@ func TestWhatThePersonAskedToRememberIsFiledWhole(t *testing.T) {
 			}
 			var facts []string
 			for number := 1; number <= 30; number++ {
-				facts = append(facts, fmt.Sprintf(`{"path":"things/lake-%d","node_kind":"thing","node_name":"Lake %d","kind":"fact","text":"Lake %d is %d metres deep.","quote":"Lake %d is %d metres deep","message_id":%q,"is_asked_to_remember":true}`,
+				facts = append(facts, fmt.Sprintf(`{"path":"things/lake-%d","node_kind":"thing","node_name":"Lake %d","kind":"fact","text":"Lake %d is %d metres deep.","quote":"Lake %d is %d metres deep","message_id":%q}`,
 					number, number, number, number*10, number, number*10, said[1]))
 			}
 			for number := 1; number <= 20; number++ {
 				facts = append(facts, fmt.Sprintf(`{"path":"things/river-%d","node_kind":"thing","node_name":"River %d","kind":"fact","text":"River %d was mentioned.","quote":"Please remember","message_id":%q}`,
 					number, number, number, said[1]))
-			}
-			for _, assistant := range theirReply.FindAllStringSubmatch(prompt, -1) {
-				for number := 1; number <= 10; number++ {
-					facts = append(facts, fmt.Sprintf(`{"path":"things/hill-%d","node_kind":"thing","node_name":"Hill %d","kind":"fact","text":"Hill %d was named.","quote":"I will remember them","message_id":%q,"is_asked_to_remember":true}`,
-						number, number, number, assistant[1]))
-				}
 			}
 			return `{"facts":[` + strings.Join(facts, ",") + `],"links":[],"supersedes":[]}`
 		}
@@ -67,20 +52,20 @@ func TestWhatThePersonAskedToRememberIsFiledWhole(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListAgentFactsLearnedSince: %s", err)
 		}
-		lakes, others := 0, 0
+		lakes, rivers := 0, 0
 		for _, fact := range facts {
 			switch {
 			case strings.HasPrefix(fact.Text, "Lake "):
 				lakes++
-			case strings.HasPrefix(fact.Text, "River "), strings.HasPrefix(fact.Text, "Hill "):
-				others++
+			case strings.HasPrefix(fact.Text, "River "):
+				rivers++
 			}
 		}
 		if lakes != 30 {
 			t.Fatalf("every statement they asked to keep is kept: %d of 30", lakes)
 		}
-		if others != 15 {
-			t.Fatalf("what they did not ask for stops at fifteen: %d", others)
+		if rivers != 20 {
+			t.Fatalf("what they did not ask for is kept too: %d of 20", rivers)
 		}
 	})
 }

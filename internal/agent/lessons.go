@@ -32,13 +32,6 @@ import (
 
 // The bounds of the lessons pass.
 const (
-	// minimumLessonCount is how many lessons one call may file however
-	// little it read, and lessonRunes how much more of the conversation one
-	// more lesson may be filed for: a part of a long working session read
-	// whole can teach more than a short exchange.
-	minimumLessonCount = 3
-	lessonRunes        = 5000
-
 	// The head and the tail of a long command, and of what it printed, are
 	// what the model is shown, with how much was left out between them said
 	// where it was: the head says what ran, and the end of the output is
@@ -268,12 +261,6 @@ func hasAnySucceeded(calls []*lessonCall) bool {
 	return false
 }
 
-// lessonsAllowedFor is how many lessons a call that read this transcript
-// may file: more for more work read, never fewer than minimumLessonCount.
-func lessonsAllowedFor(transcript string) int {
-	return max(minimumLessonCount, utf8.RuneCountInString(transcript)/lessonRunes)
-}
-
 // lessonAnswer is what the model said the work taught.
 type lessonAnswer struct {
 	Lessons []struct {
@@ -295,21 +282,17 @@ type verifiedLesson struct {
 	Evidence []models.Evidence
 }
 
-// verifyLessons keeps the lessons a command bears out, as many as are
-// allowed: at least one of the commands each names, among the calls the
+// verifyLessons keeps the lessons a command bears out: at least one of the commands each names, among the calls the
 // model was shown, ended with exit code 0. A lesson naming none, or only
 // commands that failed, are still running or were in another part of the
 // conversation, is the model's word alone and is dropped.
-func verifyLessons(answer lessonAnswer, calls []*lessonCall, conversationId string, allowedCount int) []verifiedLesson {
+func verifyLessons(answer lessonAnswer, calls []*lessonCall, conversationId string) []verifiedLesson {
 	byNumber := make(map[int]*lessonCall, len(calls))
 	for _, call := range calls {
 		byNumber[call.Number] = call
 	}
 	var kept []verifiedLesson
 	for _, lesson := range answer.Lessons {
-		if len(kept) >= allowedCount {
-			break
-		}
 		// Kept whole: a lesson is what a later turn is shown, and an
 		// approach cut where it was filed lost its last step for good.
 		appliesWhen := strings.TrimSpace(lesson.AppliesWhen)
@@ -387,14 +370,12 @@ func (self *Agent) readLessons(ctx context.Context, run *Run, conversation *mode
 // command in that part bears out, skipping any nearly the same in meaning
 // as one filed before or accepted earlier in this pass.
 func (self *Agent) readLessonPart(ctx context.Context, run *Run, conversation *models.AgentConversation, part lessonPart, partNumber, partCount int, accepted *[]*meaning) (int, error) {
-	allowedCount := lessonsAllowedFor(part.Transcript)
 	prompt, err := render("lessons.txt", map[string]any{
 		"PersonName":        personName(run.Owner),
 		"KnowledgeLanguage": languageName(KnowledgeLanguage(run.Agent, run.Owner)),
 		"Transcript":        part.Transcript,
 		"PartNumber":        partNumber,
 		"PartCount":         partCount,
-		"LessonCount":       allowedCount,
 	})
 	if err != nil {
 		return 0, err
@@ -414,7 +395,7 @@ func (self *Agent) readLessonPart(ctx context.Context, run *Run, conversation *m
 		log.Warningf("the lessons from conversation %s, part %d of %d, were not readable: %s", conversation.ID, partNumber, partCount, answer.Problem)
 		return 0, nil
 	}
-	lessons := verifyLessons(answer.Value, part.Calls, conversation.ID, allowedCount)
+	lessons := verifyLessons(answer.Value, part.Calls, conversation.ID)
 
 	filed := 0
 	for _, lesson := range lessons {

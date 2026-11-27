@@ -15,11 +15,10 @@ import (
 
 const (
 	// splitAbove is how many facts a page holds before the night divides
-	// it, and splitPages how many pages one night divides. A turn reads
-	// twenty facts of a page and the tool shows sixty; a page of two
-	// hundred is an inventory again, whatever its opening says.
+	// it. A turn reads twenty facts of a page and the tool shows sixty; a
+	// page of two hundred is an inventory again, whatever its opening says.
 	splitAbove = 40
-	splitPages = 5
+
 	// splitLeast is the fewest facts that make a page of their own.
 	splitLeast = 3
 )
@@ -33,11 +32,7 @@ func (self *Agent) dreamSplit(ctx context.Context, run *Run, record *models.Agen
 	}
 	var crowded []*models.AgentNode
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		pages := splitPages
-		if run.Agent.DreamBootstrap {
-			pages = splitPages * 2
-		}
-		crowded, err = tx.ListAgentNodesCrowded(run.Agent.ID, splitAbove, pages)
+		crowded, err = tx.ListAgentNodesCrowded(run.Agent.ID, splitAbove, 0)
 		return err
 	}); err != nil {
 		log.Warningf("cannot list the pages that have outgrown themselves: %s", err)

@@ -32,7 +32,6 @@ import (
 // all of it on the reading, so most nights never looked. It is one call a
 // day, so it is let past the share (dreamThoughtBeyondShare) rather than
 // given a share of its own; the reading that follows sees what it spent.
-// Nothing is looked for while enough ideas are waiting.
 func (self *Agent) dreamIdeas(ctx context.Context, run *Run, budget *dreamBudget) {
 	if !run.Agent.IsSuggestionsEnabled || ctx.Err() != nil {
 		return
@@ -49,7 +48,6 @@ func (self *Agent) dreamIdeas(ctx context.Context, run *Run, budget *dreamBudget
 		return
 	}
 	var kept, dismissed []string
-	var personalCount int
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		if err := self.refreshIdeas(ctx, tx, run.Agent, run.Owner, true); err != nil {
 			return err
@@ -64,17 +62,11 @@ func (self *Agent) dreamIdeas(ctx context.Context, run *Run, budget *dreamBudget
 				dismissed = append(dismissed, "- "+idea.Headline)
 			case models.IdeaOpen, models.IdeaStarted:
 				kept = append(kept, "- "+idea.Headline)
-				if idea.IdeaKind == models.IdeaPersonal && idea.IdeaStatus == models.IdeaOpen {
-					personalCount++
-				}
 			}
 		}
 		return nil
 	}); err != nil {
 		log.Warningf("cannot read the ideas of agent %q: %s", run.Agent.ID, err)
-		return
-	}
-	if personalCount >= dreamIdeasOpenMost {
 		return
 	}
 	toolRisks, err := self.ToolRisks(ctx, run.Agent, run.Owner)
@@ -91,12 +83,10 @@ func (self *Agent) dreamIdeas(ctx context.Context, run *Run, budget *dreamBudget
 	for _, category := range models.IdeaCategories() {
 		categoryLines = append(categoryLines, fmt.Sprintf("- %s: %s", category.IdeaCategory, strings.Join(category.Emojis, " ")))
 	}
-	most := min(dreamIdeasProposeMost, dreamIdeasOpenMost-personalCount)
 	prompt, err := render("idea_find.txt", map[string]any{
 		"PersonName": personName(run.Owner),
 		"Language":   languageName(Language(run.Agent, run.Owner)),
 		"Today":      run.Now.In(Location(run.Owner)).Format("Monday 2 January 2006"),
-		"Most":       most,
 		"Tools":      toolLines,
 		"Categories": categoryLines,
 		"Kept":       kept,
@@ -116,18 +106,10 @@ func (self *Agent) dreamIdeas(ctx context.Context, run *Run, budget *dreamBudget
 		self.retitle(ctx, run, thinking.Conversation, dreamIdeasTitle+", and answered with no object")
 		return
 	}
-	summary := self.keepDreamIdeas(ctx, run, proposals, most)
+	summary := self.keepDreamIdeas(ctx, run, proposals)
 	log.Infof("agent %q looked for ideas: %s", run.Agent.ID, summary)
 	self.retitle(ctx, run, thinking.Conversation, dreamIdeasTitle+": "+summary)
 }
-
-// How many personal ideas wait at most, and how many one night proposes:
-// a list of ideas nobody looks at is not worth a night's reading, and a
-// long one is a list nobody reads.
-const (
-	dreamIdeasOpenMost    = 8
-	dreamIdeasProposeMost = 4
-)
 
 // dreamIdeasApart is the least time between two looks for ideas. Under a
 // day, so that a night that runs at the same hour each day is not put off
@@ -166,15 +148,13 @@ func readDreamIdeas(text string) ([]IdeaProposal, error) {
 }
 
 // keepDreamIdeas proposes each idea through ProposeIdea, the idea tool's
-// own path, until most are kept, and says in a line what came of them.
-// A refusal is logged with its reason and the next idea is tried; the
-// model is not asked again. At most twice dreamIdeasProposeMost are tried
-// at all, because each that passes the rules costs a judgment by a model.
-func (self *Agent) keepDreamIdeas(ctx context.Context, run *Run, proposals []IdeaProposal, most int) string {
+// own path, and says in a line what came of them. A refusal is logged with
+// its reason and the next idea is tried; the model is not asked again.
+func (self *Agent) keepDreamIdeas(ctx context.Context, run *Run, proposals []IdeaProposal) string {
 	keptCount := 0
 	refusalReasons := []string{}
 	for index := range proposals {
-		if keptCount >= most || index >= 2*dreamIdeasProposeMost || ctx.Err() != nil {
+		if ctx.Err() != nil {
 			break
 		}
 		proposal := &proposals[index]

@@ -11,36 +11,22 @@ import (
 )
 
 // Model calls stay outside the transactions that write pages and facts.
-func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, asked askedFrom, selfPage *models.AgentNode, most int, shared *sharedWords) ([]*preparedFact, int) {
+func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, shown map[string]string, selfPage *models.AgentNode, shared *sharedWords) ([]*preparedFact, int) {
 	agentId := run.Agent.ID
 	// What each fact would say, and what its page would be called.
 	prepared := make([]*preparedFact, 0, len(answer.Facts))
-	// What the person asked to be remembered is counted apart, against an
-	// allowance of its own: a list of short statements they asked to have
-	// kept would otherwise lose all but its first few.
-	counted, askedCount, refusedCount := 0, 0, 0
+	refusedCount := 0
 	for index, wanted := range answer.Facts {
 		text := strings.TrimSpace(wanted.Text)
 		if text == "" {
 			continue
 		}
 		// Shared knowledge is read where it lives and never copied. Refused
-		// before the fact takes up the allowance or opens its page.
-		if shared.holds(wanted, asked.shown, theirWords) {
+		// before the fact opens its page.
+		if shared.holds(wanted, shown, theirWords) {
 			refusedCount++
 			log.Noticef("not filing %q on %q: %s", firstWordsOf(text, 8), wanted.Path, sharedPageRefusal)
 			continue
-		}
-		if asked.holds(wanted) {
-			if askedCount >= asked.most {
-				continue
-			}
-			askedCount++
-		} else {
-			if counted >= most {
-				continue
-			}
-			counted++
 		}
 		kind := models.AgentFactKind(strings.ToLower(strings.TrimSpace(wanted.Kind)))
 		if !models.IsAgentFactKind(kind) || kind.FromItsOwnReasoning() {
@@ -162,41 +148,4 @@ func (self *Agent) whenSaid(ctx context.Context, agentId string, evidenceKind mo
 		return &made
 	}
 	return nil
-}
-
-// askedFactRunes is how much text one more fact the person asked to be
-// remembered may be filed for: a short statement, where any other fact
-// is allowed one for every factRunes.
-const askedFactRunes = 40
-
-// askedFactsAllowedFor is how many facts the person asked to be
-// remembered a reading of this much text may file.
-func askedFactsAllowedFor(shown map[string]string) int {
-	return factsAllowedFor(shown) * factRunes / askedFactRunes
-}
-
-// askedFrom is what decides whether a fact was asked to be remembered:
-// the items whose asking counts, and what each said.
-type askedFrom struct {
-	askedBy map[string]bool
-	shown   map[string]string
-	most    int
-}
-
-// holds is whether a fact marked as asked to be remembered earns the
-// allowance: it cites an item whose asking counts -- the person's own
-// message, or a note a source marked as theirs -- and its quote is in that
-// item. The quote is what stops a fact read from somebody else's item in
-// the same batch from being passed off as the person's: the mark and the
-// citation are the model's to write, the item's words are not.
-func (self askedFrom) holds(wanted RememberedFact) bool {
-	if !wanted.IsAskedToRemember {
-		return false
-	}
-	messageId := strings.Trim(strings.TrimSpace(wanted.MessageID), "[]")
-	quote := strings.Join(strings.Fields(wanted.Quote), " ")
-	if messageId == "" || quote == "" || !self.askedBy[messageId] {
-		return false
-	}
-	return strings.Contains(strings.Join(strings.Fields(self.shown[messageId]), " "), quote)
 }

@@ -281,7 +281,7 @@ func TestRememberFilesWhatAConversationTaught(t *testing.T) {
 	// The sweep also describes a quiet conversation, so the filing run's
 	// prompt is the one that asks for filing.
 	prompt := world.promptSaying(t, "What to file")
-	for _, wanted := range []string{"Dr Patel", "What was said", "What to file", "at most", "Alice"} {
+	for _, wanted := range []string{"Dr Patel", "What was said", "What to file", "Alice"} {
 		if !strings.Contains(strings.ToLower(prompt), strings.ToLower(wanted)) {
 			t.Fatalf("the prompt should carry %q: %q", wanted, prompt)
 		}

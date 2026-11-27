@@ -560,26 +560,26 @@ func TestConfirmedSpeakersLinkTheirPagesToTheirTurns(t *testing.T) {
 	}
 }
 
-func TestOnePassMakesAtMostTheBoundOfNewLinks(t *testing.T) {
+func TestOnePassMakesEveryLinkItFinds(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
 	worker, run := digestSplitWorld(t, database, "http://127.0.0.1:1")
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		var cards []*models.Contact
-		for index := 0; index < recordLinksPerDreamCount+20; index++ {
+		for index := 0; index < 320; index++ {
 			cards = append(cards, &models.Contact{Name: fmt.Sprintf("Person Number%03d", index), Emails: []string{fmt.Sprintf("p%03d@example.com", index)}})
 		}
 		aBookWithCards(t, tx, run, "Shared", true, cards...)
-		for index := 0; index < recordLinksPerDreamCount+20; index++ {
+		for index := 0; index < 320; index++ {
 			recordLinkPage(t, tx, run, fmt.Sprintf("people/p%03d", index), models.NodePerson, fmt.Sprintf("P %03d", index), fmt.Sprintf("p%03d@example.com", index))
 		}
 	})
-	if counts := worker.dreamRecordLinks(context.Background(), run); counts.StatedCount != recordLinksPerDreamCount {
-		t.Errorf("bounded: %+v", counts)
+	if counts := worker.dreamRecordLinks(context.Background(), run); counts.StatedCount != 320 {
+		t.Errorf("every link in one pass: %+v", counts)
 	}
-	if counts := worker.dreamRecordLinks(context.Background(), run); counts.StatedCount != 20 {
-		t.Errorf("the rest on the next dream: %+v", counts)
+	if counts := worker.dreamRecordLinks(context.Background(), run); counts.StatedCount != 0 {
+		t.Errorf("nothing new on the next dream: %+v", counts)
 	}
 }
 
@@ -627,8 +627,8 @@ func TestGuestsOfThePersonsOwnEventAreStated(t *testing.T) {
 	}
 }
 
-// Only the events near now are read, not the whole calendar.
-func TestEventsFarFromNowAreNotLinked(t *testing.T) {
+// Events far from now are linked as well as the ones near it.
+func TestEventsFarFromNowAreLinked(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
 	worker, run := digestSplitWorld(t, database, "http://127.0.0.1:1")
@@ -661,12 +661,12 @@ func TestEventsFarFromNowAreNotLinked(t *testing.T) {
 			return object
 		}
 		near = put("near", time.Now().Add(48*time.Hour))
-		far = put("far", time.Now().Add(recordLinksEventWindow+30*24*time.Hour))
+		far = put("far", time.Now().Add(400*24*time.Hour))
 	})
 	worker.dreamRecordLinks(context.Background(), run)
 	links := recordLinksOf(t, database, run, project)
-	if theLinkTo(links, near.ID) == nil || theLinkTo(links, far.ID) != nil {
-		t.Errorf("only the event inside the window is linked: %+v", links)
+	if theLinkTo(links, near.ID) == nil || theLinkTo(links, far.ID) == nil {
+		t.Errorf("both events are linked: %+v", links)
 	}
 }
 

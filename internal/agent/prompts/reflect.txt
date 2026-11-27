@@ -70,7 +70,7 @@ Do not write one of these again just to keep it.
 
 {{end}}## What to write
 
-At most {{.Most}} observations, each one of these kinds:
+The observations worth keeping, each one of these kinds:
 
 - **pattern**: something that happens again and again.
 - **tension**: two things that pull against each other.

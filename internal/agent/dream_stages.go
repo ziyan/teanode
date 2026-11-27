@@ -73,14 +73,10 @@ const (
 	// be used.
 	retireUnusedFor = 45 * 24 * time.Hour
 
-	// walks is how many paths a generative pass takes, and walkSteps how
-	// far each goes. Five steps is far enough that the two ends are not
-	// obviously related and near enough that they might be.
-	walks     = 6
+	// walkSteps is how far each path of a generative pass goes. Five steps
+	// is far enough that the two ends are not obviously related and near
+	// enough that they might be.
 	walkSteps = 5
-
-	// rehearsalQuestions is how many questions a night asks itself.
-	rehearsalQuestions = 8
 
 	// reviseBatch is how much of what an older build wrote one night goes
 	// back over. Pacing, as everywhere here: what is not looked at
@@ -186,7 +182,7 @@ func (self *Agent) dreamAssociate(ctx context.Context, run *Run, record *models.
 	}
 	var starts []*models.AgentNode
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		starts, err = tx.ListAgentNodesForWalking(run.Agent.ID, walks)
+		starts, err = tx.ListAgentNodesForWalking(run.Agent.ID, 0)
 		return err
 	}); err != nil || len(starts) == 0 {
 		return
@@ -357,7 +353,6 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 		"PersonName": personName(run.Owner),
 		"Index":      index,
 		"Recent":     recent,
-		"Most":       rehearsalQuestions,
 	})
 	if err != nil {
 		return
@@ -382,8 +377,8 @@ func (self *Agent) dreamRehearse(ctx context.Context, run *Run, record *models.A
 	// tried at all is neither, and saying so is the point of the third
 	// outcome.
 	var gaps, asked []string
-	for index, question := range answer.Questions {
-		if index >= rehearsalQuestions || ctx.Err() != nil {
+	for _, question := range answer.Questions {
+		if ctx.Err() != nil {
 			break
 		}
 		question = strings.TrimSpace(question)

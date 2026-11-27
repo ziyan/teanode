@@ -10,7 +10,7 @@ Not a lesson: a fact about {{.PersonName}}, their people or their plans (those a
 {{.Transcript}}
 </conversation>
 
-For each lesson, at most {{.LessonCount}}:
+For each lesson worth keeping:
 
 - `appliesWhen`: the kind of work it is for, in words the next such request would use: "building the web dashboard on a machine without Node 20", not "the build".
 - `approach`: what worked, specific enough to repeat: the commands, flags, order or setting.
