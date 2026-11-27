@@ -48,3 +48,34 @@ func TestTabsSayWhoseEachIs(test *testing.T) {
 		test.Fatalf("tabs %+v", answer.Tabs)
 	}
 }
+
+// A page as long as it is reads on to its end, with no bound on how far in,
+// and a script's value comes a part at a time the same way.
+func TestAPageAndAValueHaveNoFarthestPoint(test *testing.T) {
+	if got := snapshotPartOf(900000, 20000).readCharacters(); got != 920001 {
+		test.Fatalf("a part far into a page is read: %d", got)
+	}
+	if part, next := snapshotPartOf(500000, 10).cut(strings.Repeat("a", 500010), true); len(part) != 10 || next != 0 && next != 500010 {
+		test.Fatalf("the part: %d characters, next %d", len(part), next)
+	}
+
+	value := strings.Repeat("v", 45)
+	if paged := pagedValue(value, 0, 100); paged != value {
+		test.Fatalf("a short value is given as it is: %q", paged)
+	}
+	var first struct {
+		ValuePart       string `json:"value_part"`
+		CharactersInAll int    `json:"characters_in_all"`
+		NextOffset      int    `json:"next_offset"`
+	}
+	if err := json.Unmarshal([]byte(pagedValue(value, 0, 20)), &first); err != nil || len(first.ValuePart) != 20 || first.CharactersInAll != 45 || first.NextOffset != 20 {
+		test.Fatalf("the first part of a long value: %+v %v", first, err)
+	}
+	var last struct {
+		ValuePart  string `json:"value_part"`
+		NextOffset int    `json:"next_offset"`
+	}
+	if err := json.Unmarshal([]byte(pagedValue(value, 40, 20)), &last); err != nil || len(last.ValuePart) != 5 || last.NextOffset != 0 {
+		test.Fatalf("the last part: %+v %v", last, err)
+	}
+}
