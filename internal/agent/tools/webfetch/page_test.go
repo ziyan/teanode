@@ -129,3 +129,44 @@ func TestThroughAComputerAPageOfScriptsSaysSo(t *testing.T) {
 		t.Errorf("answer %v", answer)
 	}
 }
+
+// Media past what an answer lists are counted, so a gallery is not taken for
+// the whole page.
+func TestAPageCountsTheMediaItLeavesOut(t *testing.T) {
+	var builder strings.Builder
+	builder.WriteString("<html><body>")
+	for number := 0; number < mostMedia+5; number++ {
+		builder.WriteString(`<img src="/pictures/` + strings.Repeat("a", number+1) + `.png">`)
+	}
+	builder.WriteString("</body></html>")
+	base, _ := url.Parse("https://www.example.org/")
+	read := readHTML(builder.String(), base)
+	if len(read.media) != mostMedia || read.mediaLeftOut != 5 {
+		t.Errorf("listed %d, left out %d", len(read.media), read.mediaLeftOut)
+	}
+}
+
+// A page larger than what is held in memory says so, and that the rest was
+// not read.
+func TestAPageLargerThanWhatIsReadSaysSo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(response, strings.Repeat("a line of text\n", (webFetchBytes/14)+1000))
+	}))
+	defer server.Close()
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	ctx := tools.WithRun(context.Background(), &deskRun{configuration: configuration})
+	arguments, _ := json.Marshal(map[string]any{"url": server.URL, "computer": "desk"})
+	result, err := runWebFetch(ctx, &tools.Call{Arguments: arguments})
+	if err != nil {
+		t.Fatalf("through the computer: %s", err)
+	}
+	var answer map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
+		t.Fatalf("answer: %s", err)
+	}
+	if note, _ := answer["size_note"].(string); !strings.Contains(note, "the rest was not") {
+		t.Errorf("answer without a size note: %v", answer["size_note"])
+	}
+}

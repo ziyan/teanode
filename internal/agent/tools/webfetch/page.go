@@ -15,11 +15,14 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 )
 
-// renderedBytes bounds the page a browser built, as it is read back.
+// renderedBytes bounds the page a browser built, as it is read back, in
+// memory. A page larger than this is read as far as it goes and the answer
+// says so.
 const renderedBytes = 4 << 20
 
 // mostMedia is how many media addresses a page lists: enough for a gallery,
-// short of a page of thumbnails crowding out its text.
+// short of a page of thumbnails crowding out its text. The answer counts the
+// ones it left out.
 const mostMedia = 40
 
 // thinTextCharacters is how little text a page may have before it is taken
@@ -40,6 +43,9 @@ type readPage struct {
 	text       string
 	media      []pageMedia
 	hasScripts bool
+
+	// mediaLeftOut is how many media addresses the page had past mostMedia.
+	mediaLeftOut int
 }
 
 // readHTML reads a page's HTML, with each media address made whole against
@@ -54,14 +60,15 @@ func readHTML(page string, base *url.URL) readPage {
 	read.hasScripts = document.Find("script").Length() > 0
 	seen := map[string]bool{}
 	add := func(kind, address, description string) {
-		if len(read.media) >= mostMedia {
-			return
-		}
 		whole := wholeAddress(base, address)
 		if whole == "" || seen[whole] {
 			return
 		}
 		seen[whole] = true
+		if len(read.media) >= mostMedia {
+			read.mediaLeftOut++
+			return
+		}
 		if kind == "" {
 			kind = kindByExtension(whole)
 		}
@@ -168,41 +175,42 @@ func asSentNote(render string, read readPage) string {
 // renderPage opens an address in a page of its own in the server's
 // headless browser, waits for its scripts to settle, and is the HTML they
 // built and the address it ended on.
-func renderPage(ctx context.Context, address string) (string, string, error) {
+func renderPage(ctx context.Context, address string) (string, string, bool, error) {
 	run, err := tools.RunFrom(ctx)
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	rendering, ok := run.(tools.Rendering)
 	if !ok {
-		return "", "", fmt.Errorf("this run has no browser")
+		return "", "", false, fmt.Errorf("this run has no browser")
 	}
 	page, closePage, err := rendering.RenderingPage(ctx)
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	defer closePage()
 	location, err := page.Navigate(ctx, address)
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	// Load is when the scripts start; what they fetch comes after. Waited
 	// for briefly: a page that never stops fetching is read as it is.
 	_, _ = page.Wait(ctx, "network_idle", "", 8*time.Second)
 	encoded, err := page.Evaluate(ctx, "document.documentElement.outerHTML", 0)
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	var built string
 	if err := json.Unmarshal([]byte(encoded), &built); err != nil {
-		return "", "", fmt.Errorf("the page could not be read back: %w", err)
+		return "", "", false, fmt.Errorf("the page could not be read back: %w", err)
 	}
-	if len(built) > renderedBytes {
+	isCut := len(built) > renderedBytes
+	if isCut {
 		built = built[:renderedBytes]
 	}
 	finalAddress := address
 	if location != nil && location.URL != "" {
 		finalAddress = location.URL
 	}
-	return built, finalAddress, nil
+	return built, finalAddress, isCut, nil
 }
