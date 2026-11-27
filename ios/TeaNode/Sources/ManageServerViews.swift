@@ -2928,13 +2928,6 @@ private struct ProviderEditing: Identifiable {
     let providerIndex: Int?
 }
 
-/// ProviderModelReference is one model of one provider, which a row of the
-/// providers page opens.
-private struct ProviderModelReference: Hashable {
-    let providerName: String
-    let modelID: String
-}
-
 /// PickedProviderModel is a model chosen in Add model that the provider
 /// does not list yet, with the window its own list reported.
 private struct PickedProviderModel: Hashable {
@@ -2967,7 +2960,11 @@ private struct AgentProvidersView: View {
                     Section {
                         credentialRow(index: index, provider: provider)
                         ForEach(provider.models) { entry in
-                            NavigationLink(value: ProviderModelReference(providerName: provider.name, modelID: entry.model)) {
+                            // A link with its page, not a value: the settings stack's path is
+                            // typed, and a value of another type is dropped without a word.
+                            NavigationLink {
+                                AgentModelPage(model: model, providerName: provider.name, modelID: entry.model, newModel: nil, onFinished: nil)
+                            } label: {
                                 modelRow(entry)
                             }
                         }
@@ -3001,9 +2998,6 @@ private struct AgentProvidersView: View {
         .refreshable { await model.load() }
         .sheet(item: $editing) { providerEditing in
             AgentProviderForm(model: model, providerIndex: providerEditing.providerIndex)
-        }
-        .navigationDestination(for: ProviderModelReference.self) { reference in
-            AgentModelPage(model: model, providerName: reference.providerName, modelID: reference.modelID, newModel: nil, onFinished: nil)
         }
         .navigationDestination(item: $addingProviderName) { providerName in
             AgentModelAddView(model: model, providerName: providerName, onFinished: { addingProviderName = nil })
@@ -3166,6 +3160,11 @@ private struct AgentModelAddView: View {
 
     private var trimmedID: String { typedID.trimmingCharacters(in: .whitespaces) }
 
+    /// The page of a model picked from the list or typed in, to be saved.
+    private func pickedPage(_ picked: PickedProviderModel) -> some View {
+        AgentModelPage(model: model, providerName: providerName, modelID: picked.modelID, newModel: picked, onFinished: onFinished)
+    }
+
     var body: some View {
         List {
             Section {
@@ -3173,7 +3172,9 @@ private struct AgentModelAddView: View {
                     .font(.body.monospaced())
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                NavigationLink(value: PickedProviderModel(modelID: trimmedID, reportedContextWindow: 0)) {
+                NavigationLink {
+                    pickedPage(PickedProviderModel(modelID: trimmedID, reportedContextWindow: 0))
+                } label: {
                     Label("Use this id", systemImage: "plus").foregroundStyle(.primary)
                 }
                 .disabled(trimmedID.isEmpty)
@@ -3182,8 +3183,10 @@ private struct AgentModelAddView: View {
             }
             Section {
                 ForEach(offeredModels, id: \.name) { liveModel in
-                    NavigationLink(value: PickedProviderModel(modelID: liveModel.modelID, reportedContextWindow: liveModel.contextLength ?? 0)) {
-                        Text(verbatim: liveModel.modelID).font(.body.monospaced()).foregroundStyle(Color(.label))
+                    NavigationLink {
+                        pickedPage(PickedProviderModel(modelID: liveModel.modelID, reportedContextWindow: liveModel.contextLength ?? 0))
+                    } label: {
+                        Text(verbatim: liveModel.modelID).foregroundStyle(Color(.label))
                     }
                 }
             } header: {
@@ -3199,11 +3202,6 @@ private struct AgentModelAddView: View {
             } else if offeredModels.isEmpty, !searchText.isEmpty {
                 ContentUnavailableView.search(text: searchText)
             }
-        }
-        .navigationDestination(for: PickedProviderModel.self) { picked in
-            AgentModelPage(
-                model: model, providerName: providerName, modelID: picked.modelID,
-                newModel: picked, onFinished: onFinished)
         }
         .task { await load() }
         .toast(done: $doneText, problem: $problemText)
