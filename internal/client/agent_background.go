@@ -30,6 +30,12 @@ type AgentBackgroundCommand struct {
 	IsStderrTruncated bool   `json:"isStderrTruncated,omitempty"`
 	StdoutByteCount   int    `json:"stdoutByteCount,omitempty"`
 	StderrByteCount   int    `json:"stderrByteCount,omitempty"`
+
+	// When one stream was read by offset: which, where the read began and
+	// where the next begins.
+	Stream           string `json:"stream,omitempty"`
+	StreamOffset     int    `json:"streamOffset,omitempty"`
+	StreamNextOffset int    `json:"streamNextOffset,omitempty"`
 }
 
 const backgroundCommandFields = `computer id command directory conversationId startedAt endedAt isRunning exitCode stopReason`
@@ -40,10 +46,10 @@ const (
 	DocumentListAgentBackgroundCommands = `query ($conversationId: String) {
 		ListAgentBackgroundCommands(conversationId: $conversationId) { ` + backgroundCommandFields + ` }
 	}`
-	DocumentReadAgentBackgroundCommand = `query ($computer: String!, $id: String!, $tailBytes: Int) {
-		ReadAgentBackgroundCommand(computer: $computer, id: $id, tailBytes: $tailBytes) {
+	DocumentReadAgentBackgroundCommand = `query ($computer: String!, $id: String!, $tailBytes: Int, $stream: String, $offset: Int, $lengthBytes: Int) {
+		ReadAgentBackgroundCommand(computer: $computer, id: $id, tailBytes: $tailBytes, stream: $stream, offset: $offset, lengthBytes: $lengthBytes) {
 			` + backgroundCommandFields + `
-			stdout stderr isStdoutTruncated isStderrTruncated stdoutByteCount stderrByteCount
+			stdout stderr isStdoutTruncated isStderrTruncated stdoutByteCount stderrByteCount stream streamOffset streamNextOffset
 		}
 	}`
 	DocumentStopAgentBackgroundCommand = `mutation ($computer: String!, $id: String!) {
@@ -70,13 +76,22 @@ func ListAgentBackgroundCommands(ctx context.Context, connection *Client, conver
 
 // ReadAgentBackgroundCommand is one background command with the last
 // tailBytes of each of its streams; zero leaves the amount to the server.
-func ReadAgentBackgroundCommand(ctx context.Context, connection *Client, computer, id string, tailBytes int) (*AgentBackgroundCommand, error) {
+// With stream (stdout or stderr), that stream's output is read instead from
+// offset, lengthBytes of it.
+func ReadAgentBackgroundCommand(ctx context.Context, connection *Client, computer, id string, tailBytes int, stream string, offset, lengthBytes int) (*AgentBackgroundCommand, error) {
 	var result struct {
 		ReadAgentBackgroundCommand *AgentBackgroundCommand `json:"ReadAgentBackgroundCommand"`
 	}
 	variables := map[string]any{"computer": computer, "id": id}
 	if tailBytes > 0 {
 		variables["tailBytes"] = tailBytes
+	}
+	if stream != "" {
+		variables["stream"] = stream
+		variables["offset"] = offset
+		if lengthBytes > 0 {
+			variables["lengthBytes"] = lengthBytes
+		}
 	}
 	if err := connection.Execute(ctx, DocumentReadAgentBackgroundCommand, variables, &result); err != nil {
 		return nil, err

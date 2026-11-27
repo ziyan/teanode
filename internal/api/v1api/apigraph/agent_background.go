@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/computer"
 )
 
 // Background commands: what the agent left running on the person's
@@ -42,6 +43,13 @@ type ReadAgentBackgroundCommandArguments struct {
 	Computer  string `json:"computer"`
 	ID        string `json:"id"`
 	TailBytes int    `json:"tailBytes" graphapi:"nullable"`
+
+	// Stream (stdout or stderr) reads that stream's whole output instead,
+	// from Offset in bytes, LengthBytes of it; the view's streamNextOffset
+	// continues from there.
+	Stream      string `json:"stream" graphapi:"nullable"`
+	Offset      int    `json:"offset" graphapi:"nullable"`
+	LengthBytes int    `json:"lengthBytes" graphapi:"nullable"`
 }
 
 // StopAgentBackgroundCommandArguments name one.
@@ -61,7 +69,7 @@ type AgentBackgroundCommandView struct {
 	EndedAt        *time.Time `json:"endedAt" graphapi:"nullable"`
 	IsRunning      bool       `json:"isRunning"`
 	ExitCode       int        `json:"exitCode"`
-	// StopReason is "stopped" or "lifetime" when it did not end by
+	// StopReason is "stopped" or "shutdown" when it did not end by
 	// itself, and empty otherwise.
 	StopReason string `json:"stopReason"`
 
@@ -73,6 +81,12 @@ type AgentBackgroundCommandView struct {
 	IsStderrTruncated bool   `json:"isStderrTruncated"`
 	StdoutByteCount   int    `json:"stdoutByteCount"`
 	StderrByteCount   int    `json:"stderrByteCount"`
+
+	// When one stream was read by offset: which, where the read began, and
+	// where the next begins.
+	Stream           string `json:"stream"`
+	StreamOffset     int    `json:"streamOffset"`
+	StreamNextOffset int    `json:"streamNextOffset"`
 }
 
 // backgroundReadBytes is how much of each stream a read gives by default,
@@ -119,7 +133,10 @@ func (self *graph) ReadAgentBackgroundCommand(ctx context.Context, arguments Rea
 	if tailBytes <= 0 {
 		tailBytes = backgroundReadBytes
 	}
-	command, err := worker.ReadBackgroundCommand(ctx, found.ID, arguments.Computer, arguments.ID, min(tailBytes, backgroundReadMostBytes))
+	command, err := worker.ReadBackgroundCommand(ctx, found.ID, arguments.Computer, &computer.BackgroundReadArguments{
+		ID: arguments.ID, TailBytes: min(tailBytes, backgroundReadMostBytes),
+		Stream: arguments.Stream, Offset: int64(arguments.Offset), LengthBytes: min(arguments.LengthBytes, backgroundReadMostBytes),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -150,5 +167,6 @@ func backgroundCommandView(command *agent.BackgroundCommand) *AgentBackgroundCom
 		Stdout: command.Stdout, Stderr: command.Stderr,
 		IsStdoutTruncated: command.IsStdoutTruncated, IsStderrTruncated: command.IsStderrTruncated,
 		StdoutByteCount: int(command.StdoutByteCount), StderrByteCount: int(command.StderrByteCount),
+		Stream: command.Stream, StreamOffset: int(command.StreamOffset), StreamNextOffset: int(command.StreamNextOffset),
 	}
 }

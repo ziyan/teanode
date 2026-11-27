@@ -34,6 +34,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/passwords"
 )
@@ -73,7 +74,7 @@ const (
 	listEntries    = 500
 	searchEntries  = 200
 	grepMatches    = 200
-	grepLineChars  = 300
+	grepLineBytes  = 2000 // a matching line longer than this is cut, and says how long it was
 	welcomeWait    = 15 * time.Second
 )
 
@@ -602,6 +603,11 @@ type ShellResult struct {
 	// background: started there, or moved there when the wait ran out.
 	// The output is then what it had written so far.
 	BackgroundID string `json:"backgroundId,omitempty"`
+
+	// OutputID names the command when it ended and wrote more than an
+	// answer carries: all of its output stays readable by this id, with an
+	// offset, as a background command's is.
+	OutputID string `json:"outputId,omitempty"`
 }
 
 // RunShell runs a command through the person's shell, in a directory of
@@ -625,40 +631,49 @@ func RunShell(ctx context.Context, options *Options, background *BackgroundComma
 		return nil, err
 	}
 	if arguments.IsBackground {
-		if err := background.adopt(held); err != nil {
-			held.stop()
-			<-held.done
-			return nil, err
-		}
+		background.adopt(held)
 		return shellResultOf(held, false, true), nil
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case <-held.done:
-		return shellResultOf(held, false, false), nil
+		return endedResult(held, background, false), nil
 	case <-timer.C:
 	case <-ctx.Done():
 		// The connection went with the call: nobody is waiting for the
 		// answer, and nobody asked for it to go on.
 		held.stop()
 		<-held.done
+		held.discard()
 		return nil, ctx.Err()
 	}
 	// Ended as the wait ran out: it did not time out, and it is not left
 	// in the background to be told about a second time.
 	if held.hasEnded() {
-		return shellResultOf(held, false, false), nil
+		return endedResult(held, background, false), nil
 	}
 	if arguments.ShouldKeepOnTimeout {
-		if err := background.adopt(held); err == nil {
-			return shellResultOf(held, false, true), nil
-		}
-		// No room in the background: stopped, as it always was.
+		background.adopt(held)
+		return shellResultOf(held, false, true), nil
 	}
 	held.stop()
 	<-held.done
-	return shellResultOf(held, true, false), nil
+	return endedResult(held, background, true), nil
+}
+
+// endedResult is the answer for a command that ended inside its call. When
+// it wrote more than an answer carries, it is kept, ended, so that the rest
+// can be read by its id; otherwise nothing of it is kept.
+func endedResult(held *backgroundCommand, background *BackgroundCommands, isTimedOut bool) *ShellResult {
+	result := shellResultOf(held, isTimedOut, false)
+	if (result.StdoutTruncated || result.StderrTruncated) && background != nil {
+		background.keepEnded(held)
+		result.OutputID = held.id
+		return result
+	}
+	held.discard()
+	return result
 }
 
 // shellResultOf is the answer to a call: how it ended, or, once it is in
@@ -793,7 +808,7 @@ func RunFilesystem(options *Options, arguments *FilesystemArguments) (any, error
 		}
 		return map[string]any{"from": path, "to": destination}, nil
 	case "list":
-		return listDirectory(path, arguments.Limit)
+		return listDirectory(path, arguments.Offset, arguments.Limit)
 	case "info":
 		info, err := os.Lstat(path)
 		if err != nil {
@@ -830,9 +845,9 @@ func RunFilesystem(options *Options, arguments *FilesystemArguments) (any, error
 		}
 		return map[string]any{"from": path, "to": destination}, nil
 	case "search":
-		return search(path, arguments.Pattern, arguments.Limit)
+		return search(path, arguments.Pattern, arguments.Offset, arguments.Limit)
 	case "grep":
-		return grep(path, arguments.Pattern, arguments.Limit)
+		return grep(path, arguments.Pattern, arguments.Offset, arguments.Limit)
 	}
 	return nil, fmt.Errorf("%q is not something the filesystem does", arguments.Action)
 }
@@ -941,7 +956,7 @@ func entryOf(path string, info fs.FileInfo, withPath bool) Entry {
 	return entry
 }
 
-func listDirectory(path string, limit int) (any, error) {
+func listDirectory(path string, offset, limit int) (any, error) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
@@ -950,21 +965,24 @@ func listDirectory(path string, limit int) (any, error) {
 		limit = listEntries
 	}
 	sort.Slice(entries, func(left, right int) bool { return entries[left].Name() < entries[right].Name() })
-	listed := make([]Entry, 0, min(len(entries), limit))
-	for _, entry := range entries {
+	offset = min(max(offset, 0), len(entries))
+	listed := make([]Entry, 0, min(len(entries)-offset, limit))
+	next := offset
+	for _, entry := range entries[offset:] {
 		if len(listed) >= limit {
 			break
 		}
+		next++
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
 		listed = append(listed, entryOf("", info, false))
 	}
-	return map[string]any{"path": path, "entries": listed, "total": len(entries), "more": len(entries) > len(listed)}, nil
+	return pagedFields(map[string]any{"path": path, "entries": listed, "total": len(entries)}, offset, next, len(entries)-next), nil
 }
 
-func search(root, pattern string, limit int) (any, error) {
+func search(root, pattern string, offset, limit int) (any, error) {
 	pattern = strings.TrimSpace(pattern)
 	if pattern == "" {
 		return nil, errors.New("a pattern is needed")
@@ -975,8 +993,9 @@ func search(root, pattern string, limit int) (any, error) {
 	if limit <= 0 {
 		limit = searchEntries
 	}
+	offset = max(offset, 0)
 	var found []Entry
-	more := false
+	matchedCount := 0
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -987,12 +1006,13 @@ func search(root, pattern string, limit int) (any, error) {
 		if matched, _ := filepath.Match(pattern, entry.Name()); !matched {
 			return nil
 		}
-		if len(found) >= limit {
-			more = true
-			return filepath.SkipAll
+		matchedCount++
+		if matchedCount <= offset || len(found) >= limit {
+			return nil
 		}
 		info, err := entry.Info()
 		if err != nil {
+			matchedCount--
 			return nil
 		}
 		found = append(found, entryOf(path, info, true))
@@ -1001,7 +1021,7 @@ func search(root, pattern string, limit int) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"root": root, "pattern": pattern, "entries": found, "more": more}, nil
+	return pagedFields(map[string]any{"root": root, "pattern": pattern, "entries": found}, offset, offset+len(found), matchedCount-offset-len(found)), nil
 }
 
 // Match is one line of a file that matched.
@@ -1009,6 +1029,23 @@ type Match struct {
 	Path string `json:"path"`
 	Line int    `json:"line"`
 	Text string `json:"text"`
+
+	// LineBytes is how long the line was, when Text is only the start of
+	// it; zero when Text is the whole line.
+	LineBytes int `json:"lineBytes,omitempty"`
+}
+
+// pagedFields adds to a page's fields how to read on: more, how many are
+// left, and the offset that continues from here.
+func pagedFields(fields map[string]any, offset, nextOffset, leftCount int) map[string]any {
+	leftCount = max(leftCount, 0)
+	fields["offset"] = offset
+	fields["more"] = leftCount > 0
+	fields["leftCount"] = leftCount
+	if leftCount > 0 {
+		fields["nextOffset"] = nextOffset
+	}
+	return fields
 }
 
 // skipped are the directories a walk leaves alone: what a tool made, not
@@ -1020,7 +1057,7 @@ func skipped(name string) bool {
 // grep finds the lines under a path — a file, or a directory walked —
 // that match a regular expression, up to limit of them; binary files and
 // very large ones are left out.
-func grep(root, pattern string, limit int) (any, error) {
+func grep(root, pattern string, offset, limit int) (any, error) {
 	pattern = strings.TrimSpace(pattern)
 	if pattern == "" {
 		return nil, errors.New("a pattern is needed")
@@ -1032,8 +1069,9 @@ func grep(root, pattern string, limit int) (any, error) {
 	if limit <= 0 {
 		limit = grepMatches
 	}
+	offset = max(offset, 0)
 	var found []Match
-	more := false
+	matchedCount := 0
 	searched := 0
 	scan := func(path string) error {
 		// Passwords' own files are not searched (see RunFilesystem).
@@ -1065,14 +1103,19 @@ func grep(root, pattern string, limit int) (any, error) {
 			if !expression.MatchString(line) {
 				continue
 			}
-			if len(found) >= limit {
-				more = true
-				return filepath.SkipAll
+			matchedCount++
+			if matchedCount <= offset || len(found) >= limit {
+				continue
 			}
-			if len(line) > grepLineChars {
-				line = line[:grepLineChars] + "…"
+			match := Match{Path: path, Line: number, Text: line}
+			if len(line) > grepLineBytes {
+				cut := grepLineBytes
+				for cut > 0 && !utf8.RuneStart(line[cut]) {
+					cut--
+				}
+				match.Text, match.LineBytes = line[:cut], len(line)
 			}
-			found = append(found, Match{Path: path, Line: number, Text: line})
+			found = append(found, match)
 		}
 		return nil
 	}
@@ -1091,7 +1134,7 @@ func grep(root, pattern string, limit int) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"root": root, "pattern": pattern, "matches": found, "files": searched, "more": more}, nil
+	return pagedFields(map[string]any{"root": root, "pattern": pattern, "matches": found, "files": searched}, offset, offset+len(found), matchedCount-offset-len(found)), nil
 }
 
 // edit replaces text in a file: the one place it occurs, or every place

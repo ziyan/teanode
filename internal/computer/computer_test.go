@@ -290,3 +290,64 @@ func TestASilentConnectionIsDropped(t *testing.T) {
 		t.Fatal("a silent connection was kept")
 	}
 }
+
+// A listing, a search and a grep give a page and say how to read on, with the
+// count left; a long matching line is cut only past the line bound, and says
+// how long it was.
+func TestListSearchAndGrepPageWithOffset(t *testing.T) {
+	home := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt", "c.txt", "d.txt", "e.log"} {
+		if err := os.WriteFile(filepath.Join(home, name), []byte("alpha\nbeta alpha\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	long := strings.Repeat("alpha ", 1000)
+	if err := os.WriteFile(filepath.Join(home, "wide.txt"), []byte(long+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read := func(arguments *FilesystemArguments) map[string]any {
+		t.Helper()
+		answer, err := RunFilesystem(&Options{Home: home}, arguments)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, _ := json.Marshal(answer)
+		var fields map[string]any
+		if err := json.Unmarshal(encoded, &fields); err != nil {
+			t.Fatal(err)
+		}
+		return fields
+	}
+
+	page := read(&FilesystemArguments{Action: "list", Path: "~", Limit: 4})
+	if page["more"] != true || page["leftCount"] != float64(2) || page["nextOffset"] != float64(4) || len(page["entries"].([]any)) != 4 {
+		t.Fatalf("a first page of a listing: %+v", page)
+	}
+	page = read(&FilesystemArguments{Action: "list", Path: "~", Limit: 4, Offset: 4})
+	if page["more"] != false || page["leftCount"] != float64(0) || len(page["entries"].([]any)) != 2 || page["nextOffset"] != nil {
+		t.Fatalf("the last page of a listing: %+v", page)
+	}
+
+	page = read(&FilesystemArguments{Action: "search", Path: "~", Pattern: "*.txt", Limit: 2})
+	if page["leftCount"] != float64(3) || page["nextOffset"] != float64(2) {
+		t.Fatalf("a first page of a search: %+v", page)
+	}
+	page = read(&FilesystemArguments{Action: "search", Path: "~", Pattern: "*.txt", Limit: 2, Offset: 4})
+	if page["leftCount"] != float64(0) || len(page["entries"].([]any)) != 1 {
+		t.Fatalf("the last page of a search: %+v", page)
+	}
+
+	page = read(&FilesystemArguments{Action: "grep", Path: "~", Pattern: "alpha", Limit: 5})
+	if page["leftCount"] != float64(6) || page["nextOffset"] != float64(5) {
+		t.Fatalf("a first page of a grep: %+v", page)
+	}
+	page = read(&FilesystemArguments{Action: "grep", Path: "~", Pattern: "alpha", Limit: 5, Offset: 10})
+	matches := page["matches"].([]any)
+	if page["leftCount"] != float64(0) || len(matches) != 1 {
+		t.Fatalf("the last page of a grep: %+v", page)
+	}
+	cut := matches[len(matches)-1].(map[string]any)
+	if cut["lineBytes"] != float64(len(long)) || len(cut["text"].(string)) != grepLineBytes {
+		t.Fatalf("a long line says it was cut and how long it was: %+v", cut)
+	}
+}
