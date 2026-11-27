@@ -102,3 +102,50 @@ func TestAPageOfWholePassagesFitsAndSaysWhereTheNextStarts(t *testing.T) {
 		t.Fatalf("the page ends with %q: %q", want, result.Content[len(result.Content)-200:])
 	}
 }
+
+// A read returns as much of a document as a run keeps of a result, not a
+// fixed few thousand characters, and says where to read on from.
+func TestAReadFillsWhatARunKeepsAndSaysWhereToReadOn(t *testing.T) {
+	run, database, closeDatabase := world(t, "readfills")
+	defer closeDatabase()
+	var documentID string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
+			AgentID: run.agent.ID, Kind: models.SourceArchive, Name: "field notes", Enabled: true,
+			Specification: models.AgentKnowledgeSpecification{Computer: "laptop", Path: "~/notes", Format: models.FormatRecords},
+		})
+		if err != nil {
+			t.Fatalf("PutAgentSource: %s", err)
+		}
+		document, err := tx.PutAgentDocument(&models.AgentDocument{
+			AgentID: run.agent.ID, SourceID: source.ID, ExternalID: "notes/long.md",
+			Kind: models.DocumentFile, Title: "long", Hash: "hash-of-long",
+		})
+		if err != nil {
+			t.Fatalf("PutAgentDocument: %s", err)
+		}
+		documentID = document.ID
+		var passages []*models.AgentChunk
+		for number := 0; number < 40; number++ {
+			passages = append(passages, &models.AgentChunk{Text: strings.Repeat("é", 1999), Segmented: true})
+		}
+		if err := tx.ReplaceAgentChunks(document, passages); err != nil {
+			t.Fatalf("ReplaceAgentChunks: %s", err)
+		}
+	})
+	ctx := tools.WithRun(context.Background(), run)
+	result, err := find(t, "knowledge").Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"read","id":"` + documentID + `"}`)})
+	if err != nil {
+		t.Fatalf("read: %s", err)
+	}
+	if len(result.Content) > tools.ResultCharacters {
+		t.Fatalf("a read of %d bytes is more than a run keeps", len(result.Content))
+	}
+	// Two-byte characters: more than the old 6000 fit in the budget.
+	if strings.Count(result.Content, "é") <= 6000 {
+		t.Fatalf("a read still returns a few thousand characters: %d", strings.Count(result.Content, "é"))
+	}
+	if !strings.Contains(result.Content, "read again with from: ") {
+		t.Fatalf("a read says where to read on: %q", result.Content[len(result.Content)-200:])
+	}
+}
