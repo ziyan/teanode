@@ -688,6 +688,8 @@ struct FeedList: View {
                 Button("Dismiss All (\(item.stackItemCount))", systemImage: "xmark.circle.fill") { Task { await model.dismissStack(item) } }
             }
         }
+        // A swipe either way dismisses the card, as the long press does.
+        .modifier(FeedSwipeToDismiss(isEnabled: true) { Task { await model.dismiss(item) } })
     }
 
     /// Whether the entry is a stack of the feed that is open in place.
