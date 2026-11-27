@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.237.0] - 2026-11-27
+
+### Added
+
+- Oversight: an Administrator can see what every person's agent is running, has done and has failed at, and open any of it read-only. Each read is recorded in the audit log. (#795)
+
 ## [0.236.5] - 2026-11-27
 
 ### Fixed
