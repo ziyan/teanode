@@ -381,7 +381,13 @@ func (self *codex) read(response *http.Response, model string, events chan<- Str
 			if message == "" {
 				message = "the service ended the answer without saying why"
 			}
-			events <- StreamEvent{Kind: StreamError, Err: &APIError{Status: http.StatusBadGateway, Message: message, Param: param}}
+			// A refusal of the request is the request's, not an outage:
+			// told apart, so that it is not taken for the service being down.
+			status := http.StatusBadGateway
+			if IsPolicyRefusal(&APIError{Message: message}) {
+				status = http.StatusBadRequest
+			}
+			events <- StreamEvent{Kind: StreamError, Err: &APIError{Status: status, Message: message, Param: param}}
 			return
 		}
 	}
