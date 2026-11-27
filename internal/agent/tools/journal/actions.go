@@ -292,6 +292,7 @@ func linksAnswer(links []*client.JournalLinkView) []map[string]any {
 		if row == nil {
 			continue
 		}
+		row["link_id"] = link.LinkID
 		if link.LinkReason != "" {
 			row["reason"] = link.LinkReason
 		}

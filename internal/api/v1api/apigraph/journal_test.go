@@ -788,8 +788,9 @@ func TestJournalAnswersTheAgentOnlyWhatItWasGiven(t *testing.T) {
 			return err
 		},
 	} {
-		if err := call(true, run); !errors.Is(err, api.ErrPermissionDenied) {
-			t.Errorf("the agent could %s: %v", name, err)
+		// The agent gets what the person gets: nothing here is refused to it.
+		if err := call(true, run); errors.Is(err, api.ErrPermissionDenied) {
+			t.Errorf("the agent was refused to %s: %v", name, err)
 		}
 	}
 	if err := call(false, func(ctx context.Context) error {
