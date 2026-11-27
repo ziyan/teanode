@@ -210,7 +210,8 @@ fun AgentRunsAdminScreen(onBack: () -> Unit, onOpenConversation: (String) -> Uni
                 val run = shownRuns!![index]
                 TeaNodeRow(
                     headline = run.title.ifEmpty { run.jobKind?.let { kind -> runKindName(kind) }.orEmpty() }, supportingMaxLines = 2,
-                    overline = listOfNotNull(run.ownerLabel.ifEmpty { null }, run.jobKind?.takeIf { kind -> kind.isNotEmpty() }?.let { kind -> runKindName(kind) }).joinToString(" · ").ifEmpty { null },
+                    // A run with no title is already called by its kind in the headline.
+                    overline = listOfNotNull(run.ownerLabel.ifEmpty { null }, run.jobKind?.takeIf { kind -> kind.isNotEmpty() && run.title.isNotEmpty() }?.let { kind -> runKindName(kind) }).joinToString(" · ").ifEmpty { null },
                     supporting = listOfNotNull(
                         if (run.isRunning) stringResource(R.string.manage_oversight_running_now) else null,
                         ServerTime.instant(run.lastAt)?.let { instant -> shortDateTime(instant) }, compactCount(run.tokenCount.toLong()),

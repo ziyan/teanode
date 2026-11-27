@@ -339,7 +339,7 @@
     <string name="manage_runs_kind">Kind</string>
     <string name="manage_runs_on_computer">a computer</string>
     <string name="manage_runs_on_server">this server</string>
-    <string name="manage_runs_what">What</string>
+    <string name="manage_runs_what">Search conversations</string>
     <string name="manage_runs_whose">Whose</string>
     <string name="manage_oversight">Oversight</string>
     <string name="manage_oversight_running">Running</string>

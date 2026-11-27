@@ -339,7 +339,7 @@
     <string name="manage_runs_kind">種類</string>
     <string name="manage_runs_on_computer">コンピューター</string>
     <string name="manage_runs_on_server">このサーバー</string>
-    <string name="manage_runs_what">内容</string>
+    <string name="manage_runs_what">会話を検索</string>
     <string name="manage_runs_whose">持ち主</string>
     <string name="manage_oversight">監視</string>
     <string name="manage_oversight_running">実行中</string>
