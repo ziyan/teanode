@@ -66,14 +66,7 @@
     <string name="settings_alerts_off_title">你的助手已关闭</string>
     <string name="settings_alerts_off_detail">请先在概览中开启它。</string>
     <string name="settings_alerts_toggle">告诉我邮件里我现在就该知道的事</string>
-    <string name="settings_alerts_quiet_from_label">安静开始</string>
-    <string name="settings_alerts_quiet_until_label">安静结束</string>
-    <string name="settings_alerts_at_most">每天最多</string>
-    <string name="settings_alerts_look_around_on">查看附近活动的日子</string>
-    <string name="settings_alerts_look_around_at">时间</string>
     <string name="settings_alerts_footer_one">代理会阅读收到的邮件，当邮件里有你现在就该知道的事时，不等你问就告诉你：关于家人的通知、有人在尝试登录你的账户、今天到期的事。它会写在主对话和你关联的聊天应用里。</string>
-    <string name="settings_alerts_footer_two">安静时段只说等不了的事，其余的等到早上再说。开始和结束相同表示没有安静时段。</string>
-    <string name="settings_alerts_footer_three">代理每周会查找你附近这个周末和下一周有什么活动，并在这一天的这个时间告诉你。</string>
     <string name="settings_alerts_enabled_said">代理会告诉你邮件里你该知道的事。</string>
     <string name="settings_alerts_disabled_said">代理不会主动告诉你邮件里的事。</string>
     <string name="settings_alerts_recent_header">最近的主动通知</string>

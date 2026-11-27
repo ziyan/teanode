@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -196,14 +197,26 @@ func (self *Agent) describeConversation(ctx context.Context, conversation *model
 	// only names what they talked about.
 	var agent *models.Agent
 	var owner *models.User
+	var deferral *Deferral
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if agent, err = tx.GetAgent(conversation.AgentID); err != nil || agent == nil {
 			return err
 		}
-		owner, err = tx.GetUser(agent.UserID)
-		return err
+		if owner, err = tx.GetUser(agent.UserID); err != nil || owner == nil {
+			return err
+		}
+		// A title is a model call like any other, and past the person's
+		// daily limit or the server's monthly one it waits: nothing is
+		// marked, and the next look tries again.
+		if err := RequireBudget(tx, self.settings.Configuration(), agent, owner, time.Now()); !errors.As(err, &deferral) {
+			return err
+		}
+		return nil
 	}); err != nil {
 		return "", err
+	}
+	if deferral != nil {
+		return "", nil
 	}
 	if agent == nil || owner == nil {
 		return mark("", "")

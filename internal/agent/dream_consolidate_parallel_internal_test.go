@@ -14,9 +14,9 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// Pages are rewritten a few at once, never more than the operator allows,
-// and every one is counted.
-func TestPagesAreRewrittenSideBySide(t *testing.T) {
+// Pages are rewritten dreamRewriteConcurrency at a time, and every one is
+// counted.
+func TestPagesAreRewrittenAsManyAtOnceAsTheNightAllows(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
 	var mutex sync.Mutex
@@ -47,7 +47,6 @@ func TestPagesAreRewrittenSideBySide(t *testing.T) {
 	}))
 	t.Cleanup(provider.Close)
 	worker, run := digestSplitWorld(t, database, provider.URL)
-	worker.settings.Configuration().Agent.Limits.RewriteConcurrency = 3
 
 	const pages = 6
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -77,11 +76,11 @@ func TestPagesAreRewrittenSideBySide(t *testing.T) {
 		t.Fatalf("only %d pages are due", due)
 	}
 	record := &models.AgentDream{}
-	worker.dreamConsolidate(t.Context(), run, record, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamConsolidate(t.Context(), run, record, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	if record.Rewritten != due {
 		t.Errorf("%d pages were counted rewritten, not %d", record.Rewritten, due)
 	}
-	if mostInFlight < 2 || mostInFlight > 3 {
-		t.Errorf("%d rewrites ran at once; between two and three were allowed and expected", mostInFlight)
+	if mostInFlight != dreamRewriteConcurrency {
+		t.Errorf("%d rewrites ran at once; %d were allowed", mostInFlight, dreamRewriteConcurrency)
 	}
 }

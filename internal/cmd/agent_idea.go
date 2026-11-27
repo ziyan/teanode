@@ -238,7 +238,8 @@ func runAgentIdeaStart(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeError(command, err)
 	}
-	if command.Bool("send") {
+	// An idea that started a goal has no opening request: nothing is sent.
+	if command.Bool("send") && started.OpeningRequest != "" {
 		return askOnce(ctx, command, connection, &client.AskAgentRequest{ConversationID: started.Conversation.ID, Message: started.OpeningRequest, Surface: "cli"}, command.Bool("json"), false)
 	}
 	if command.Bool("json") {

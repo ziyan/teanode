@@ -23,18 +23,10 @@ import (
 // budget like any other job.
 
 const (
-	// journalRoundsMost is how many times the job looks again for what was
-	// asked for while it was working, before it hands the rest back to the
-	// queue.
-	journalRoundsMost = 5
-
-	// journalLongest bounds one run of the job: up to five rounds of a call
-	// for each thing asked for.
+	// journalLongest bounds one run of the job, which looks again for what
+	// was asked for while it worked, until nothing it has not tried is
+	// waiting.
 	journalLongest = 30 * time.Minute
-
-	// journalMoreWaitingDelay is how long the job waits before it carries on
-	// with what was asked for during its last round.
-	journalMoreWaitingDelay = time.Minute
 
 	// journalTouchUpCharactersMost is the longest a touched-up text is kept.
 	journalTouchUpCharactersMost = 60000
@@ -76,10 +68,12 @@ func (self *Agent) runJournal(ctx context.Context, run *Run) error {
 		return nil
 	}
 
-	// A touch-up the model answered nothing for stays waiting; it is not
-	// tried again in every round.
+	// A touch-up the model answered nothing for stays waiting, and a
+	// narrative is written once: neither is tried again in every round, so
+	// the job ends when what is left has been tried.
 	unmade := map[string]bool{}
-	for round := 0; ; round++ {
+	attempted := map[string]bool{}
+	for {
 		var touchUps, narratives []models.JournalTarget
 		if err := run.Database().TransactionContext(ctx, func(transaction db.Transaction) (err error) {
 			if touchUps, err = transaction.ListJournalTouchUpsWaiting(userId); err != nil {
@@ -96,13 +90,14 @@ func (self *Agent) runJournal(ctx context.Context, run *Run) error {
 				touchUpsToMake = append(touchUpsToMake, target)
 			}
 		}
-		if len(touchUpsToMake) == 0 && len(narratives) == 0 {
-			return nil
+		var narrativesToWrite []models.JournalTarget
+		for _, target := range narratives {
+			if !attempted[journalTargetKey(target)] {
+				narrativesToWrite = append(narrativesToWrite, target)
+			}
 		}
-		// Asked for again and again while this ran: the rounds are bounded,
-		// and what is left goes back to the queue rather than being lost.
-		if round == journalRoundsMost {
-			return &Deferral{Until: time.Now().Add(journalMoreWaitingDelay), Reason: "more was asked for on the journal while this ran"}
+		if len(touchUpsToMake) == 0 && len(narrativesToWrite) == 0 {
+			return nil
 		}
 		for _, target := range touchUpsToMake {
 			isMade, err := self.touchUpJournalWords(ctx, run, target)
@@ -113,7 +108,8 @@ func (self *Agent) runJournal(ctx context.Context, run *Run) error {
 				unmade[journalTargetKey(target)] = true
 			}
 		}
-		for _, target := range narratives {
+		for _, target := range narrativesToWrite {
+			attempted[journalTargetKey(target)] = true
 			if err := self.writeRequestedJournalNarrative(ctx, run, target); err != nil {
 				return err
 			}

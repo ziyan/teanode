@@ -90,7 +90,7 @@ func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantA
 
 	// The key is checked by listing what it reaches, which is also what the
 	// model is chosen from. A refusal changes nothing.
-	listed, err := listProviderModels(ctx, &provider, self.config.Current().Agent.Limits.RequestTimeout.Duration())
+	listed, err := listProviderModels(ctx, &provider)
 	if err != nil {
 		// A refused key is the usual reason, and said in those words: the
 		// page shows it to somebody who has just pasted one.

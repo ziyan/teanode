@@ -36,6 +36,12 @@ func SetStopGrace(grace time.Duration) time.Duration {
 	return previous
 }
 
+// IsPersonsOwnGoalForTest is whether a turn the goal wakes counts as the
+// person asking.
+func IsPersonsOwnGoalForTest(goal *models.AgentConversation) bool {
+	return isPersonsOwnGoal(goal)
+}
+
 // SetIdleCompactionDelay is how long a conversation is quiet before it is
 // compacted, and returns what it was.
 func SetIdleCompactionDelay(delay time.Duration) time.Duration {

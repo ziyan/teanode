@@ -89,8 +89,4 @@
     <string name="goals_said_paused">Paused</string>
     <string name="goals_said_resumed">Resumed</string>
     <string name="goals_said_saved">Saved</string>
-    <string name="settings_brief_page_title">Daily brief</string>
-    <string name="settings_brief_time">Time</string>
-    <string name="settings_brief_next">Next: %s</string>
-    <string name="settings_brief_open_goal">Open the brief\'s goal</string>
 </resources>

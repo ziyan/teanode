@@ -194,40 +194,39 @@ type AgentFeaturesSettings struct {
 	Dreaming         bool `json:"dreaming"`
 }
 
-// AgentLimitsSettings are the operator's limits.
+// AgentLimitsSettings are the operator's limits: the money and token budget
+// and nothing else.
+//
+// Every other field is no longer used. The daily and monthly limits bound
+// the work, and what else was a setting is a fixed technical bound now.
+// They still answer, always zero or empty, for one release so an older app's
+// settings page loads; clients should stop asking for them.
 type AgentLimitsSettings struct {
+	DailyTokensPerAgent    int64   `json:"dailyTokensPerAgent"`
+	MonthlyTokensPerServer int64   `json:"monthlyTokensPerServer"`
+	DailyCostPerAgent      float64 `json:"dailyCostPerAgent"`
+	MonthlyCostPerServer   float64 `json:"monthlyCostPerServer"`
+
+	// No longer used; see the type's comment.
 	MaxRecordingMediaBytes   string  `json:"maxRecordingMediaBytes"`
 	MaxRecordingAccountBytes string  `json:"maxRecordingAccountBytes"`
 	MaxBodyCharacters        int     `json:"maxBodyCharacters"`
-	DailyTokensPerAgent      int64   `json:"dailyTokensPerAgent"`
-	MonthlyTokensPerServer   int64   `json:"monthlyTokensPerServer"`
-	DailyCostPerAgent        float64 `json:"dailyCostPerAgent"`
-	MonthlyCostPerServer     float64 `json:"monthlyCostPerServer"`
+	RequestTimeout           string  `json:"requestTimeout"`
+	Concurrency              int     `json:"concurrency"`
+	IngestChunksPerRun       int     `json:"ingestChunksPerRun"`
+	ScanConcurrency          int     `json:"scanConcurrency"`
+	RewriteConcurrency       int     `json:"rewriteConcurrency"`
 	MaxRoundsPerAsk          int     `json:"maxRoundsPerAsk"`
 	MaxRoundsPerResearch     int     `json:"maxRoundsPerResearch"`
 	MaxRoundsPerReply        int     `json:"maxRoundsPerReply"`
 	MaxRoundsPerDream        int     `json:"maxRoundsPerDream"`
 	MaxToolCallsPerRun       int     `json:"maxToolCallsPerRun"`
-	RequestTimeout           string  `json:"requestTimeout"`
-
-	// The bounds on work nobody is watching, each zero for its default:
-	// rounds a subagent takes, the share of the day goals may spend, a
-	// goal's turns alone, and turns finished background work may wake.
-	MaxRoundsPerSubagent int     `json:"maxRoundsPerSubagent"`
-	GoalShare            float64 `json:"goalShare"`
-	GoalTurnsAlone       int     `json:"goalTurnsAlone"`
-	BackgroundWakesAlone int     `json:"backgroundWakesAlone"`
-	Concurrency          int     `json:"concurrency"`
-
-	// What the memory work may spend. Embedding is budgeted apart from
-	// everything else because the first pass over a person's own files is
-	// a hundred million tokens at a thousandth of the price of a
-	// conversation.
-	EmbeddingTokensPerDay int64   `json:"embeddingTokensPerDay"`
-	DreamShare            float64 `json:"dreamShare"`
-	IngestChunksPerRun    int     `json:"ingestChunksPerRun"`
-	ScanConcurrency       int     `json:"scanConcurrency"`
-	RewriteConcurrency    int     `json:"rewriteConcurrency"`
+	MaxRoundsPerSubagent     int     `json:"maxRoundsPerSubagent"`
+	GoalShare                float64 `json:"goalShare"`
+	GoalTurnsAlone           int     `json:"goalTurnsAlone"`
+	BackgroundWakesAlone     int     `json:"backgroundWakesAlone"`
+	EmbeddingTokensPerDay    int64   `json:"embeddingTokensPerDay"`
+	DreamShare               float64 `json:"dreamShare"`
 }
 
 // AgentRetentionSettings says how long records are kept.
@@ -411,29 +410,10 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Dreaming:         agent.FeatureOn("dreaming"),
 		},
 		Limits: &AgentLimitsSettings{
-			MaxRecordingMediaBytes:   agent.Limits.MaxRecordingMediaBytes.String(),
-			MaxRecordingAccountBytes: agent.Limits.MaxRecordingAccountBytes.String(),
-			MaxBodyCharacters:        agent.Limits.MaxBodyCharacters,
-			DailyTokensPerAgent:      agent.Limits.DailyTokensPerAgent,
-			MonthlyTokensPerServer:   agent.Limits.MonthlyTokensPerServer,
-			DailyCostPerAgent:        agent.Limits.DailyCostPerAgent,
-			MonthlyCostPerServer:     agent.Limits.MonthlyCostPerServer,
-			MaxRoundsPerAsk:          agent.Limits.MaxRoundsPerAsk,
-			MaxRoundsPerResearch:     agent.Limits.MaxRoundsPerResearch,
-			MaxRoundsPerReply:        agent.Limits.MaxRoundsPerReply,
-			MaxRoundsPerDream:        agent.Limits.MaxRoundsPerDream,
-			MaxToolCallsPerRun:       agent.Limits.MaxToolCallsPerRun,
-			RequestTimeout:           agent.Limits.RequestTimeout.String(),
-			MaxRoundsPerSubagent:     agent.Limits.MaxRoundsPerSubagent,
-			GoalShare:                agent.Limits.GoalShare,
-			GoalTurnsAlone:           agent.Limits.GoalTurnsAlone,
-			BackgroundWakesAlone:     agent.Limits.BackgroundWakesAlone,
-			Concurrency:              agent.Limits.Concurrency,
-			EmbeddingTokensPerDay:    agent.Limits.EmbeddingTokensPerDay,
-			DreamShare:               agent.Limits.DreamShare,
-			IngestChunksPerRun:       agent.Limits.IngestChunksPerRun,
-			ScanConcurrency:          agent.Limits.ScanConcurrency,
-			RewriteConcurrency:       agent.Limits.RewriteConcurrency,
+			DailyTokensPerAgent:    agent.Limits.DailyTokensPerAgent,
+			MonthlyTokensPerServer: agent.Limits.MonthlyTokensPerServer,
+			DailyCostPerAgent:      agent.Limits.DailyCostPerAgent,
+			MonthlyCostPerServer:   agent.Limits.MonthlyCostPerServer,
 		},
 		Retention: &AgentRetentionSettings{
 			Runs:        agent.Retention.Runs.String(),
@@ -681,31 +661,34 @@ type AgentFeaturesParameters struct {
 	Dreaming         *bool `json:"dreaming"`
 }
 
-// AgentLimitsParameters change the limits.
+// AgentLimitsParameters change the limits. The fields AgentLimitsSettings
+// lists as no longer used are accepted and ignored.
 type AgentLimitsParameters struct {
+	DailyTokensPerAgent    *int64   `json:"dailyTokensPerAgent"`
+	MonthlyTokensPerServer *int64   `json:"monthlyTokensPerServer"`
+	DailyCostPerAgent      *float64 `json:"dailyCostPerAgent"`
+	MonthlyCostPerServer   *float64 `json:"monthlyCostPerServer"`
+
+	// No longer used; accepted and ignored.
 	MaxRecordingMediaBytes   *string  `json:"maxRecordingMediaBytes"`
 	MaxRecordingAccountBytes *string  `json:"maxRecordingAccountBytes"`
 	MaxBodyCharacters        *int     `json:"maxBodyCharacters"`
-	DailyTokensPerAgent      *int64   `json:"dailyTokensPerAgent"`
-	MonthlyTokensPerServer   *int64   `json:"monthlyTokensPerServer"`
-	DailyCostPerAgent        *float64 `json:"dailyCostPerAgent"`
-	MonthlyCostPerServer     *float64 `json:"monthlyCostPerServer"`
+	RequestTimeout           *string  `json:"requestTimeout"`
+	Concurrency              *int     `json:"concurrency"`
+	IngestChunksPerRun       *int     `json:"ingestChunksPerRun"`
+	ScanConcurrency          *int     `json:"scanConcurrency"`
+	RewriteConcurrency       *int     `json:"rewriteConcurrency"`
 	MaxRoundsPerAsk          *int     `json:"maxRoundsPerAsk"`
 	MaxRoundsPerResearch     *int     `json:"maxRoundsPerResearch"`
 	MaxRoundsPerReply        *int     `json:"maxRoundsPerReply"`
 	MaxRoundsPerDream        *int     `json:"maxRoundsPerDream"`
 	MaxToolCallsPerRun       *int     `json:"maxToolCallsPerRun"`
-	RequestTimeout           *string  `json:"requestTimeout"`
 	MaxRoundsPerSubagent     *int     `json:"maxRoundsPerSubagent"`
 	GoalShare                *float64 `json:"goalShare"`
 	GoalTurnsAlone           *int     `json:"goalTurnsAlone"`
 	BackgroundWakesAlone     *int     `json:"backgroundWakesAlone"`
-	Concurrency              *int     `json:"concurrency"`
 	EmbeddingTokensPerDay    *int64   `json:"embeddingTokensPerDay"`
 	DreamShare               *float64 `json:"dreamShare"`
-	IngestChunksPerRun       *int     `json:"ingestChunksPerRun"`
-	ScanConcurrency          *int     `json:"scanConcurrency"`
-	RewriteConcurrency       *int     `json:"rewriteConcurrency"`
 }
 
 // AgentRetentionParameters change how long records are kept.
@@ -971,29 +954,6 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 	}
 	if parameters.Limits != nil {
 		limits := &agent.Limits
-		if err := applyByteSize(&limits.MaxRecordingMediaBytes, parameters.Limits.MaxRecordingMediaBytes, "agent.limits.maxRecordingMediaBytes"); err != nil {
-			return err
-		}
-		if err := applyByteSize(&limits.MaxRecordingAccountBytes, parameters.Limits.MaxRecordingAccountBytes, "agent.limits.maxRecordingAccountBytes"); err != nil {
-			return err
-		}
-		applyInt(&limits.MaxBodyCharacters, parameters.Limits.MaxBodyCharacters)
-		applyInt(&limits.IngestChunksPerRun, parameters.Limits.IngestChunksPerRun)
-		if parameters.Limits.EmbeddingTokensPerDay != nil {
-			limits.EmbeddingTokensPerDay = *parameters.Limits.EmbeddingTokensPerDay
-		}
-		if parameters.Limits.DreamShare != nil {
-			limits.DreamShare = *parameters.Limits.DreamShare
-		}
-		if parameters.Limits.GoalShare != nil {
-			limits.GoalShare = *parameters.Limits.GoalShare
-		}
-		if parameters.Limits.ScanConcurrency != nil {
-			limits.ScanConcurrency = *parameters.Limits.ScanConcurrency
-		}
-		if parameters.Limits.RewriteConcurrency != nil {
-			limits.RewriteConcurrency = *parameters.Limits.RewriteConcurrency
-		}
 		if parameters.Limits.DailyTokensPerAgent != nil {
 			limits.DailyTokensPerAgent = *parameters.Limits.DailyTokensPerAgent
 		}
@@ -1006,18 +966,6 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 		if parameters.Limits.MonthlyCostPerServer != nil {
 			limits.MonthlyCostPerServer = *parameters.Limits.MonthlyCostPerServer
 		}
-		applyInt(&limits.MaxRoundsPerAsk, parameters.Limits.MaxRoundsPerAsk)
-		applyInt(&limits.MaxRoundsPerResearch, parameters.Limits.MaxRoundsPerResearch)
-		applyInt(&limits.MaxRoundsPerReply, parameters.Limits.MaxRoundsPerReply)
-		applyInt(&limits.MaxRoundsPerDream, parameters.Limits.MaxRoundsPerDream)
-		applyInt(&limits.MaxToolCallsPerRun, parameters.Limits.MaxToolCallsPerRun)
-		applyInt(&limits.MaxRoundsPerSubagent, parameters.Limits.MaxRoundsPerSubagent)
-		applyInt(&limits.GoalTurnsAlone, parameters.Limits.GoalTurnsAlone)
-		applyInt(&limits.BackgroundWakesAlone, parameters.Limits.BackgroundWakesAlone)
-		if err := applyDuration(&limits.RequestTimeout, parameters.Limits.RequestTimeout, "agent.limits.requestTimeout"); err != nil {
-			return err
-		}
-		applyInt(&limits.Concurrency, parameters.Limits.Concurrency)
 	}
 	if parameters.Retention != nil {
 		if err := applyDuration(&agent.Retention.Runs, parameters.Retention.Runs, "agent.retention.runs"); err != nil {
@@ -1205,7 +1153,7 @@ func (self *graph) TestAgentProvider(ctx context.Context, arguments TestAgentPro
 	if declared == nil {
 		return nil, fmt.Errorf("no provider called %q is declared; save the settings first", arguments.Name)
 	}
-	return listProviderModels(ctx, declared, configuration.Agent.Limits.RequestTimeout.Duration())
+	return listProviderModels(ctx, declared)
 }
 
 func (self *graph) ListAgentModels(ctx context.Context) ([]*AgentModel, error) {
@@ -1219,7 +1167,7 @@ func (self *graph) ListAgentModels(ctx context.Context) ([]*AgentModel, error) {
 		if !declared.IsEnabled() {
 			continue
 		}
-		listed, err := listProviderModels(ctx, declared, configuration.Agent.Limits.RequestTimeout.Duration())
+		listed, err := listProviderModels(ctx, declared)
 		if err != nil {
 			log.Warningf("cannot list the models of agent provider %q: %s", declared.Name, err)
 			continue
@@ -1229,19 +1177,22 @@ func (self *graph) ListAgentModels(ctx context.Context) ([]*AgentModel, error) {
 	return result, nil
 }
 
-// listProviderModels builds a client for one request. A short timeout of
-// its own, because a settings page waiting on a provider that does not
-// answer is a page nobody can use.
-func listProviderModels(ctx context.Context, declared *config.AgentProvider, timeout time.Duration) ([]*AgentModel, error) {
-	if timeout <= 0 || timeout > 20*time.Second {
-		timeout = 20 * time.Second
-	}
+// modelListTimeout is how long a settings page waits for a provider to list
+// its models: a page waiting on a provider that does not answer is a page
+// nobody can use.
+const modelListTimeout = 20 * time.Second
+
+// listProviderModels builds a client for one request, under a short timeout
+// of its own.
+func listProviderModels(ctx context.Context, declared *config.AgentProvider) ([]*AgentModel, error) {
+	ctx, cancel := context.WithTimeout(ctx, modelListTimeout)
+	defer cancel()
 	var provider llm.Service
 	var err error
 	if declared.Kind == config.AgentProviderKindCodex {
-		provider, err = llm.NewSignedInProvider(declared.Kind, declared.BaseURL, declared.RefreshToken, declared.Account, timeout)
+		provider, err = llm.NewSignedInProvider(declared.Kind, declared.BaseURL, declared.RefreshToken, declared.Account)
 	} else {
-		provider, err = llm.NewProvider(declared.Kind, declared.BaseURL, declared.APIKey, timeout)
+		provider, err = llm.NewProvider(declared.Kind, declared.BaseURL, declared.APIKey)
 	}
 	if err != nil {
 		return nil, err

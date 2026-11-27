@@ -25,13 +25,11 @@ import (
 //
 // The model decides what is worth saying and says it; the bounds are kept
 // here, because a model talked into interrupting somebody by a stranger's
-// message is exactly what they are for: a few a day at most, nothing at
-// night unless it cannot wait, nothing said twice, and nothing the person
-// muted.
+// message is exactly what they are for: nothing said twice in a week and
+// nothing the person muted. There is no count a day and no night: a card
+// lands in the feed at any hour, and the phone's own Focus or Do Not
+// Disturb decides whether it makes a sound.
 
-// How many a day and when the night is are the person's, on the agent
-// (alertBoundsOf in alert_mute.go); nothing is said in their night unless
-// it cannot wait, and what waited is said when it ends.
 const (
 	// alertRepeatWindow is how long an alert's subject key keeps the same
 	// thing from being said again, unless it changed.
@@ -516,9 +514,8 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 	if err != nil {
 		return fmt.Errorf("the alert decision did not answer with an object: %w", err)
 	}
-	bounds := alertBoundsOf(run.Agent, mutes)
-	plan := planAlerts(&decision, labeled, recent, now, location, bounds)
-	self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Alerts: told %d, dropped %d, held %d for the morning", len(plan.sends), len(plan.drops), plan.heldCount))
+	plan := planAlerts(&decision, labeled, recent, now, location, mutes)
+	self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Alerts: told %d, dropped %d", len(plan.sends), len(plan.drops)))
 
 	if len(plan.drops) > 0 {
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
@@ -551,7 +548,7 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 			return err
 		}
 	}
-	return self.alertFollowUp(ctx, run, labeled, plan, now, location, bounds)
+	return self.alertFollowUp(ctx, run, labeled)
 }
 
 // followUpsOf is the follow-ups a candidate is about that are still stored,
@@ -601,25 +598,16 @@ func alertBehindTurn(now time.Time) error {
 	return &Deferral{Until: now.Add(alertAfterTurn), Reason: "a turn is running in the main conversation"}
 }
 
-// alertFollowUp says when the job runs next: in the morning when an alert
-// was held for it, and shortly when candidates wait that this run did not
-// read, which a job already running could not be queued again for. Held
-// for the morning, only something pressing that arrived after readAt
-// brings it forward: what this run read and held, or left unread behind
-// a backlog, waits for the morning with it, rather than being read again
-// every two minutes all night.
-func (self *Agent) alertFollowUp(ctx context.Context, run *Run, labeled []*labeledCandidate, plan *alertPlan, readAt time.Time, location *time.Location, bounds *alertBounds) error {
+// alertFollowUp says when the job runs next: shortly when candidates wait
+// that this run did not read, which a job already running could not be
+// queued again for.
+func (self *Agent) alertFollowUp(ctx context.Context, run *Run, labeled []*labeledCandidate) error {
 	now := time.Now()
-	var until time.Time
-	reason := ""
-	if plan.heldCount > 0 {
-		until, reason = nextAlertMorning(now, location, bounds), "alerts held for the morning"
-	}
 	decided := map[string]bool{}
 	for _, entry := range labeled {
 		decided[entry.candidate.ID] = true
 	}
-	isLeft, isNewAndPressing := false, false
+	isLeft := false
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 		waiting, err := tx.ListWaitingAgentAlertCandidates(run.Agent.ID, alertCandidatesAtOnce*2)
 		if err != nil {
@@ -630,23 +618,15 @@ func (self *Agent) alertFollowUp(ctx context.Context, run *Run, labeled []*label
 				continue
 			}
 			isLeft = true
-			isPressing := candidate.AlertSignal == models.AlertSignalNow || candidate.CandidateKind == models.AlertCandidateBurst
-			isNewAndPressing = isNewAndPressing || (isPressing && candidate.CreatedAt.After(readAt))
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
-	switch {
-	case plan.heldCount > 0 && isNewAndPressing:
-		until, reason = now.Add(alertGather), "something pressing arrived while the last decision ran"
-	case plan.heldCount == 0 && isLeft:
-		until, reason = now.Add(alertGather), "candidates wait that the last decision did not read"
-	}
-	if until.IsZero() {
+	if !isLeft {
 		return nil
 	}
-	return &Deferral{Until: until, Reason: reason}
+	return &Deferral{Until: now.Add(alertGather), Reason: "candidates wait that the last decision did not read"}
 }
 
 // rememberCandidates looks each candidate up in the person's memory, by who
@@ -737,18 +717,12 @@ type droppedCandidate struct {
 type alertPlan struct {
 	sends []*plannedAlert
 	drops []droppedCandidate
-
-	// heldCount is how many alerts wait for the morning, their
-	// candidates left waiting with them.
-	heldCount int
 }
 
 // planAlerts keeps the bounds over what the model decided: every candidate
-// told at most once, nothing the person muted, the day's most, the night,
-// and nothing said twice in a week unless the model says what changed.
-// Urgent alerts first, so that the day's last places go to what could not
-// wait.
-func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*models.AgentAlert, now time.Time, location *time.Location, bounds *alertBounds) *alertPlan {
+// told at most once, nothing the person muted, and nothing said twice in a
+// week unless the model says what changed. Urgent alerts first.
+func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*models.AgentAlert, now time.Time, location *time.Location, mutes []*models.AgentAlertMute) *alertPlan {
 	plan := &alertPlan{}
 	byLabel := map[string]*labeledCandidate{}
 	for _, entry := range labeled {
@@ -761,19 +735,12 @@ func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*
 		}
 	}
 
-	local := now.In(location)
-	dayStart := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
-	sentTodayCount := 0
 	lastSaid := map[string]time.Time{}
 	for _, alert := range recent {
-		if !alert.SentAt.Before(dayStart) {
-			sentTodayCount++
-		}
 		if said, ok := lastSaid[alert.SubjectKey]; !ok || alert.SentAt.After(said) {
 			lastSaid[alert.SubjectKey] = alert.SentAt
 		}
 	}
-	isQuiet := isAlertQuietHour(local, bounds)
 
 	alerts := append([]AlertDecided(nil), decision.Alerts...)
 	sort.SliceStable(alerts, func(left, right int) bool { return alerts[left].IsUrgent && !alerts[right].IsUrgent })
@@ -805,7 +772,7 @@ func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*
 		// was asked; the model's own key is matched as well, for a mute
 		// the person named by a subject in their words.
 		subjectKey := alertSubjectKey(decidedAlert.SubjectKey, covered[0])
-		if mutedBy(bounds.mutes, &alertFacts{subjectKeys: []string{subjectKey}}) != nil {
+		if mutedBy(mutes, &alertFacts{subjectKeys: []string{subjectKey}}) != nil {
 			drop(covered, alertMutedReason)
 			continue
 		}
@@ -815,17 +782,6 @@ func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*
 				continue
 			}
 		}
-		if isQuiet && !decidedAlert.IsUrgent {
-			// Left waiting, with its candidates: the morning's decision
-			// sees them again with whatever else arrived overnight.
-			plan.heldCount++
-			continue
-		}
-		if sentTodayCount >= bounds.dailyMost {
-			drop(covered, fmt.Sprintf("the day's %d alerts had been said", bounds.dailyMost))
-			continue
-		}
-		sentTodayCount++
 		lastSaid[subjectKey] = now
 		plan.sends = append(plan.sends, &plannedAlert{
 			subjectKey: subjectKey, alertText: alertText, isUrgent: decidedAlert.IsUrgent, candidates: covered, covered: coveredTermsOf(coveredFacts),
@@ -850,31 +806,6 @@ func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*
 		}
 	}
 	return plan
-}
-
-// isAlertQuietHour says whether a moment, in the person's zone, is their
-// night. A night that starts when it ends is no night at all.
-func isAlertQuietHour(local time.Time, bounds *alertBounds) bool {
-	minute := local.Hour()*60 + local.Minute()
-	start, end := bounds.quietStartMinute, bounds.quietEndMinute
-	switch {
-	case start == end:
-		return false
-	case start < end:
-		return minute >= start && minute < end
-	default:
-		return minute >= start || minute < end
-	}
-}
-
-// nextAlertMorning is when the night after now ends, in the person's zone.
-func nextAlertMorning(now time.Time, location *time.Location, bounds *alertBounds) time.Time {
-	local := now.In(location)
-	morning := time.Date(local.Year(), local.Month(), local.Day(), bounds.quietEndMinute/60, bounds.quietEndMinute%60, 0, 0, location)
-	if !local.Before(morning) {
-		morning = morning.AddDate(0, 0, 1)
-	}
-	return morning
 }
 
 var (

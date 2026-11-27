@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -144,19 +145,17 @@ func TestOnlyOneRunSpeaksAboutATrip(t *testing.T) {
 func TestSpeakingFirstIsSpentOnceTheAgentHasSpoken(t *testing.T) {
 	now := time.Date(2030, 3, 6, 18, 0, 0, 0, time.UTC)
 	queuedAt := now.Add(-time.Minute)
-	sinceQueued, today, yesterday := now.Add(-time.Second), now.Add(-3*time.Hour), now.Add(-25*time.Hour)
+	sinceQueued, hoursBefore, yesterday := now.Add(-time.Second), now.Add(-3*time.Hour), now.Add(-25*time.Hour)
 	for name, test := range map[string]struct {
-		spokeFirstAt   *time.Time
-		isDailyLimited bool
-		want           bool
+		spokeFirstAt *time.Time
+		want         bool
 	}{
-		"never spoke":                      {nil, true, false},
-		"spoke since it was queued":        {&sinceQueued, false, true},
-		"spoke today, once a day":          {&today, true, true},
-		"spoke today, not limited":         {&today, false, false},
-		"spoke over a day ago, once a day": {&yesterday, true, false},
+		"never spoke":               {nil, false},
+		"spoke since it was queued": {&sinceQueued, true},
+		"spoke hours before":        {&hoursBefore, false},
+		"spoke over a day before":   {&yesterday, false},
 	} {
-		if got := isSpeakingFirstSpent(test.spokeFirstAt, queuedAt, test.isDailyLimited, now); got != test.want {
+		if got := isSpeakingFirstSpent(test.spokeFirstAt, queuedAt); got != test.want {
 			t.Errorf("%s: %v, want %v", name, got, test.want)
 		}
 	}
@@ -170,4 +169,40 @@ func TestAMessageIsNotedOnAGoalOnce(t *testing.T) {
 	if len(arrivals) != 2 {
 		t.Fatalf("%+v", arrivals)
 	}
+}
+
+// A trip that was told is not due any more: the look is refreshed only every
+// few hours, and until then it would come before every other reason to speak.
+func TestATripToldIsNoLongerDue(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	now := time.Date(2030, 3, 1, 9, 0, 0, 0, time.UTC)
+	worker := &Agent{tripLooks: map[string]*tripLook{"agent01": {lookedAt: now, isDue: true}}}
+	reason := worker.tripReason()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "trip-bea"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		found, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		worker.tripLooks = map[string]*tripLook{found.ID: {lookedAt: now, isDue: true}}
+		isDue, err := reason.isDue(t.Context(), tx, found, owner, time.Hour, now)
+		if err != nil || !isDue {
+			t.Fatalf("before it is told the trip is due: %v %v", isDue, err)
+		}
+		note, err := json.Marshal(&tripNote{EventID: "event", Summary: "Lake weekend", Place: "Example Lake", FirstOn: "2030-03-05"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reason.checkIn(t.Context(), tx, found, owner, now, map[string]string{preparedTrip: string(note)}); err != nil {
+			t.Fatal(err)
+		}
+		if isDue, err := reason.isDue(t.Context(), tx, found, owner, time.Hour, now); err != nil || isDue {
+			t.Fatalf("once it is told the trip is not due: %v %v", isDue, err)
+		}
+	})
 }

@@ -52,8 +52,11 @@ type ChatTurn struct {
 	IsMemberTurn bool
 }
 
-// The bounds of a member turn: the owner's budget pays for it, and somebody
-// else chose to spend it.
+// The bounds of a member turn. They protect the owner from other people's
+// use: a member's turn is somebody else's choice to spend the owner's money,
+// and in a deployment where the owner's model costs nothing in the daily
+// accounting no budget would ever stop it. They are not caps on the owner's
+// own work, which has none.
 const (
 	memberTurnMaximumRounds = 8
 	memberTurnSearches      = 6

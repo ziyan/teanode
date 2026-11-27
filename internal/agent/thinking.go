@@ -179,8 +179,6 @@ func (self *Agent) thinkingOn(ctx context.Context, run *Run, title, prompt strin
 		Message: prompt, Surface: string(kind), ReadOnly: readOnly, ReadOnlyTools: readOnlyTools, Short: true,
 		Allow: allow, Headless: true, MaxRounds: rounds, UsageKind: string(kind), Work: work, Model: modelName,
 		Pictures:                pictures,
-		CallLimits:              toolCallLimitsOf(ctx),
-		IsPersonOmitted:         isPersonOmittedIn(ctx),
 		recordingEvidenceSafety: recordingEvidenceSafetyOf(ctx),
 		ReadThenAnswer:          true, ResultCharacters: thinkResultCharacters,
 	})
@@ -240,38 +238,6 @@ func (self *Agent) retitle(ctx context.Context, run *Run, conversation *models.A
 	}
 }
 
-// roundsFor is how many turns a thinking run may take, from the operator's
-// limits with the plan's defaults behind them.
-func roundsFor(configuration *config.Configuration, kind models.AgentJobKind) int {
-	limits := configuration.Agent.Limits
-	switch kind {
-	case models.AgentJobTriage:
-		if limits.MaxRoundsPerTriage > 0 {
-			return limits.MaxRoundsPerTriage
-		}
-		return 3
-	case models.AgentJobReply:
-		if limits.MaxRoundsPerReply > 0 {
-			return limits.MaxRoundsPerReply
-		}
-		return 6
-	case models.AgentJobDream, models.AgentJobIngest:
-		if limits.MaxRoundsPerDream > 0 {
-			return limits.MaxRoundsPerDream
-		}
-		// Four was right while a night could only look a page up: one
-		// call to find what it needed, one to answer. A night with the
-		// person's computer spends three rounds on the smallest useful
-		// errand -- find the file, run something over it, read what came
-		// back -- and had nothing left to answer with. Twelve leaves room
-		// for that and for the lookup either side of it, and the last
-		// round is still told it is the last. An operator who wants the
-		// old pacing sets maxRoundsPerDream.
-		return 12
-	}
-	return 4
-}
-
 // noTools is the allow set of a call that needs none: one round, one
 // answer, and the transcript a run gets.
 var noTools = map[string]bool{}
@@ -315,7 +281,7 @@ func (self *Agent) canThink(configuration *config.Configuration) bool {
 // the prompt asked for.
 func (self *Agent) sortWithTools(ctx context.Context, run *Run, mail *models.Mail, prompt string) (*models.MailInsight, func(db.Transaction) (string, error), error) {
 	thinking, err := self.think(ctx, run, fmt.Sprintf("Sorting %q", mail.Subject), prompt,
-		triageTools, roundsFor(run.Configuration(), models.AgentJobTriage), models.AgentJobTriage, config.AgentWorkTriage)
+		triageTools, 0, models.AgentJobTriage, config.AgentWorkTriage)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -343,7 +309,7 @@ func (self *Agent) sortWithTools(ctx context.Context, run *Run, mail *models.Mai
 // when the model ended with something other than the object.
 func (self *Agent) draftWithTools(ctx context.Context, run *Run, mail *models.Mail, prompt string) (*ReplyAnswer, func(db.Transaction, string) (string, error), error) {
 	thinking, err := self.think(ctx, run, fmt.Sprintf("Answering %q", mail.Subject), prompt,
-		replyTools, roundsFor(run.Configuration(), models.AgentJobReply), models.AgentJobReply, config.AgentWorkReply)
+		replyTools, 0, models.AgentJobReply, config.AgentWorkReply)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -14376,12 +14376,6 @@ button.idea-history-title {
   overflow-wrap: anywhere;
 }
 
-/* The night's two clocks and the day's most on one line, folding under
-   each other on a phone. */
-.alert-settings input[type='time'] {
-  min-width: 7rem;
-}
-
 /* A plan's allowance under its provider: one bar per window, then when the
    plan last said so. */
 .plan-usage {

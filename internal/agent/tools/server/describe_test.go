@@ -183,8 +183,13 @@ func TestLargeSettingsAndNestedLimitsRemainReadable(test *testing.T) {
 		}
 		if sectionPath == "agent.limits" {
 			fields := described[sectionPath].(map[string]any)
-			if fields["maxRecordingMediaBytes"] == nil || fields["maxRecordingAccountBytes"] == nil {
-				test.Fatal("recording limits disappeared from the settings tool")
+			for _, wanted := range []string{"dailyTokensPerAgent", "dailyCostPerAgent", "monthlyTokensPerServer", "monthlyCostPerServer"} {
+				if fields[wanted] == nil {
+					test.Fatalf("the budget limit %s disappeared from the settings tool", wanted)
+				}
+			}
+			if len(fields) != 4 {
+				test.Fatalf("the limits are the four of the budget and nothing else: %v", fields)
 			}
 		}
 	}

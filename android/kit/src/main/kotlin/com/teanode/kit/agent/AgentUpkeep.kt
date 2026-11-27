@@ -8,7 +8,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.max
 
-/** The agent's own settings the upkeep pages read: its dreaming hours, alerts and the weekly look around. */
+/** The agent's own settings the upkeep pages read: its dreaming hours and alerts. */
 @Serializable
 data class AgentUpkeepPreferences(
     val id: String,
@@ -18,24 +18,10 @@ data class AgentUpkeepPreferences(
     val dreamUntil: String? = null,
     val dreamBootstrap: Boolean? = null,
     val isAlertsEnabled: Boolean = true,
-    val alertQuietStart: String? = null,
-    val alertQuietEnd: String? = null,
-    val alertDailyMost: Int = 0,
-    val lookAroundWeekday: String? = null,
-    val lookAroundTime: String? = null,
 ) {
     val isRunning: Boolean get() = enabled && operatorDisabledAt.isNullOrEmpty()
     val shownDreamFrom: String get() = UpkeepClock.orDefault(dreamFrom, "01:00")
     val shownDreamUntil: String get() = UpkeepClock.orDefault(dreamUntil, "06:00")
-    val shownAlertQuietStart: String get() = UpkeepClock.orDefault(alertQuietStart, "22:00")
-    val shownAlertQuietEnd: String get() = UpkeepClock.orDefault(alertQuietEnd, "07:00")
-    val shownAlertDailyMost: Int get() = if (alertDailyMost > 0) alertDailyMost else 5
-    val shownLookAroundWeekday: String get() = lookAroundWeekday?.takeIf { day -> lookAroundWeekdays.contains(day) } ?: "thursday"
-    val shownLookAroundTime: String get() = UpkeepClock.orDefault(lookAroundTime, "17:00")
-
-    companion object {
-        val lookAroundWeekdays = listOf("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
-    }
 }
 
 /** Times of day as the upkeep settings write them, "HH:MM". */
@@ -254,18 +240,12 @@ data class MemoryCheckQuestion(
 suspend fun Connection.agentUpkeep(): AgentUpkeepPreferences? = execute<ReadAgentUpkeepAnswer>(AgentUpkeepDocuments.AGENT_UPKEEP).ReadAgent?.agent
 
 suspend fun Connection.updateAgentUpkeep(
-    dreamFrom: String? = null, dreamUntil: String? = null, isAlertsEnabled: Boolean? = null, alertQuietStart: String? = null, alertQuietEnd: String? = null,
-    alertDailyMost: Int? = null, lookAroundWeekday: String? = null, lookAroundTime: String? = null,
+    dreamFrom: String? = null, dreamUntil: String? = null, isAlertsEnabled: Boolean? = null,
 ): AgentUpkeepPreferences? {
     val variables = mutableMapOf<String, JsonElement>()
     dreamFrom?.let { variables.putAll(variablesOf("dreamFrom" to it)) }
     dreamUntil?.let { variables.putAll(variablesOf("dreamUntil" to it)) }
     isAlertsEnabled?.let { variables.putAll(variablesOf("isAlertsEnabled" to it)) }
-    alertQuietStart?.let { variables.putAll(variablesOf("alertQuietStart" to it)) }
-    alertQuietEnd?.let { variables.putAll(variablesOf("alertQuietEnd" to it)) }
-    alertDailyMost?.let { variables.putAll(variablesOf("alertDailyMost" to it)) }
-    lookAroundWeekday?.let { variables.putAll(variablesOf("lookAroundWeekday" to it)) }
-    lookAroundTime?.let { variables.putAll(variablesOf("lookAroundTime" to it)) }
     return execute<UpdateAgentUpkeepAnswer>(AgentUpkeepDocuments.UPDATE_AGENT_UPKEEP, variables).UpdateAgent?.agent
 }
 

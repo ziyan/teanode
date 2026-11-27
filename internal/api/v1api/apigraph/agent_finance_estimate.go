@@ -2,6 +2,7 @@ package apigraph
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
@@ -10,7 +11,7 @@ import (
 )
 
 // AssetEstimateGoalName is what the goal that estimates assets from the web
-// is called. Found by title, as the daily brief's is, because a person who
+// is called. Found by title, because a person who
 // renames it has made it theirs and allowing another estimate should leave
 // it alone.
 const AssetEstimateGoalName = agent.AssetEstimateGoalTitle
@@ -65,4 +66,25 @@ func (self *graph) startAssetEstimates(ctx context.Context, tx db.Transaction, p
 	if _, err := worker.RunGoalNow(tx, found, estimates.ID); err != nil {
 		log.Warningf("cannot run the asset estimate goal of agent %s: %s", found.ID, err)
 	}
+}
+
+// findGoalByTitle is the agent's goal of that title that is still kept at,
+// working, waiting or paused, or nil. Only a goal its switch or the person
+// wrote counts: a goal the agent gave the same title stays the agent's,
+// since a switch adopting it would make the agent's words read as the
+// person's.
+func findGoalByTitle(tx db.Transaction, agentId, goalTitle string) (*models.AgentConversation, error) {
+	goals, err := tx.ListAgentGoals(agentId, []models.AgentGoalState{models.GoalWorking, models.GoalWaiting, models.GoalPaused}, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, goal := range goals {
+		if goal.GoalWrittenBy != models.WrittenByBuiltIn && goal.GoalWrittenBy != models.WrittenByPerson {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(goal.GoalTitle), goalTitle) {
+			return goal, nil
+		}
+	}
+	return nil, nil
 }

@@ -48,24 +48,15 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 	record.Coarse = false
 
 	waiting, characters := self.markTinyRead(ctx, run, waiting)
-	// How much of a document the reading is shown: all of it, unless the
-	// operator bounded it.
+	// How much of a document the reading is shown: all of it.
 	shownOf := func(document *models.AgentDocument) int64 {
-		shown := characters[document.ID]
-		if limit := int64(digestDocumentRunes(run.Configuration())); limit > 0 {
-			shown = min(shown, limit)
-		}
-		return shown
+		return characters[document.ID]
 	}
 
 	// Batches go to the model a few at a time where it has the slots: a
 	// service metered by the call gets one, a model of the person's own
 	// as many as it can take. Each batch marks its own documents read as
 	// it finishes, so a night that ends between batches loses nothing.
-	concurrency := run.Configuration().Agent.Limits.ScanConcurrency
-	if concurrency < 1 {
-		concurrency = 1
-	}
 	// A batch is one source's documents. The night's order puts chat
 	// before notes before code, and where that order crossed from one
 	// source into another inside a batch the model carried the page it
@@ -79,7 +70,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 	var mutex sync.Mutex
 	complete := dreamDigestCompletion(record, budget, &mutex)
 	var group sync.WaitGroup
-	slots := make(chan struct{}, concurrency)
+	slots := make(chan struct{}, dreamScanConcurrency)
 	stopped := false
 	// Batches the model has not answered, in a row. One is a slow answer
 	// on a long batch -- a stream that ran past the request timeout
@@ -111,7 +102,7 @@ func (self *Agent) dreamDigest(ctx context.Context, run *Run, record *models.Age
 		}
 		batch := waiting[start:end]
 		start = end
-		isInParts := len(batch) == 1 && shown > digestBatchRunes && digestDocumentRunes(run.Configuration()) == 0
+		isInParts := len(batch) == 1 && shown > digestBatchRunes
 		slots <- struct{}{}
 		group.Add(1)
 		go func() {

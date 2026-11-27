@@ -84,7 +84,6 @@ export const AGENT_TABS: PageTab[] = [
   { id: 'sources', label: 'agent.tabSources' },
   { id: 'memory', label: 'agent.tabMemory' },
   { id: 'dreams', label: 'agent.tabDreams' },
-  { id: 'brief', label: 'agent.tabBrief' },
   { id: 'connections', label: 'agent.tabConnections' },
   { id: 'activity', label: 'agent.tabActivity' },
 ]

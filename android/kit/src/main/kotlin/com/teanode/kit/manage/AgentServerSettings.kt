@@ -213,15 +213,10 @@ data class AgentModelChoices(val forWork: List<String>, val forDeciding: List<St
     }
 }
 
-/** The caps on what people and the whole server may spend, how far one run may go, and what unattended work may take. */
+/** The caps on what people and the whole server may spend, in tokens and in money, and nothing else: every other bound is fixed on the server. */
 @Serializable
 data class AgentLimits(
-    val maxBodyCharacters: Double = 0.0, val dailyTokensPerAgent: Double = 0.0, val dailyCostPerAgent: Double = 0.0, val monthlyCostPerServer: Double = 0.0,
-    val monthlyTokensPerServer: Double = 0.0, val maxRoundsPerAsk: Double = 0.0, val maxRoundsPerResearch: Double = 0.0, val maxRoundsPerReply: Double = 0.0,
-    val maxToolCallsPerRun: Double = 0.0, val requestTimeout: String = "", val maxRecordingMediaBytes: String? = null, val maxRecordingAccountBytes: String? = null,
-    val concurrency: Double = 0.0, val maxRoundsPerDream: Double = 0.0, val scanConcurrency: Double = 0.0, val rewriteConcurrency: Double = 0.0, val dreamShare: Double = 0.0,
-    val ingestChunksPerRun: Double = 0.0, val embeddingTokensPerDay: Double = 0.0, val maxRoundsPerSubagent: Double = 0.0, val goalShare: Double = 0.0,
-    val goalTurnsAlone: Double = 0.0, val backgroundWakesAlone: Double = 0.0,
+    val dailyTokensPerAgent: Double = 0.0, val dailyCostPerAgent: Double = 0.0, val monthlyCostPerServer: Double = 0.0, val monthlyTokensPerServer: Double = 0.0,
 )
 
 /** How long run transcripts and corrections are kept. */
@@ -419,42 +414,25 @@ data class AgentProviderDraft(
 data class AgentLimitsDraft(val limitTexts: Map<String, String>, val retention: AgentRetention, val currency: String) {
     val agentParameters: JsonObject
         get() {
-            val limits = LIMIT_GROUPS.flatten().associateWith { limitName ->
-                val typed = limitTexts[limitName].orEmpty()
-                if (TEXT_LIMIT_NAMES.contains(limitName)) JsonPrimitive(typed) else SettingsList.numberValue(SettingsList.number(typed))
-            }
+            val limits = LIMIT_GROUPS.flatten().associateWith { limitName -> SettingsList.numberValue(SettingsList.number(limitTexts[limitName].orEmpty())) }
             return objectOf("limits" to JsonObject(limits), "retention" to objectOf("runs" to retention.runs, "corrections" to retention.corrections), "currency" to currency)
         }
 
     companion object {
-        /** The limits in the order the form groups them; three are written as text (a duration, or a size with its unit) rather than a number. */
+        /** The limits in the order the form groups them. */
         val LIMIT_GROUPS: List<List<String>> = listOf(
-            listOf("dailyTokensPerAgent", "monthlyTokensPerServer", "maxBodyCharacters"),
+            listOf("dailyTokensPerAgent", "monthlyTokensPerServer"),
             listOf("dailyCostPerAgent", "monthlyCostPerServer"),
-            listOf("maxRoundsPerAsk", "maxRoundsPerResearch", "maxRoundsPerReply", "maxToolCallsPerRun"),
-            listOf("maxRoundsPerDream", "scanConcurrency", "rewriteConcurrency", "dreamShare"),
-            listOf("ingestChunksPerRun", "embeddingTokensPerDay"),
-            listOf("maxRoundsPerSubagent", "goalShare", "goalTurnsAlone", "backgroundWakesAlone"),
-            listOf("requestTimeout", "concurrency"),
-            listOf("maxRecordingMediaBytes", "maxRecordingAccountBytes"),
         )
-
-        val TEXT_LIMIT_NAMES = setOf("requestTimeout", "maxRecordingMediaBytes", "maxRecordingAccountBytes")
 
         fun of(settings: AgentServerSettings): AgentLimitsDraft {
             val limits = settings.limits
             val numbers = mapOf(
-                "maxBodyCharacters" to limits.maxBodyCharacters, "dailyTokensPerAgent" to limits.dailyTokensPerAgent, "monthlyTokensPerServer" to limits.monthlyTokensPerServer,
-                "dailyCostPerAgent" to limits.dailyCostPerAgent, "monthlyCostPerServer" to limits.monthlyCostPerServer, "maxRoundsPerAsk" to limits.maxRoundsPerAsk,
-                "maxRoundsPerResearch" to limits.maxRoundsPerResearch, "maxRoundsPerReply" to limits.maxRoundsPerReply, "maxToolCallsPerRun" to limits.maxToolCallsPerRun,
-                "concurrency" to limits.concurrency, "maxRoundsPerDream" to limits.maxRoundsPerDream, "scanConcurrency" to limits.scanConcurrency,
-                "rewriteConcurrency" to limits.rewriteConcurrency, "dreamShare" to limits.dreamShare, "ingestChunksPerRun" to limits.ingestChunksPerRun,
-                "embeddingTokensPerDay" to limits.embeddingTokensPerDay, "maxRoundsPerSubagent" to limits.maxRoundsPerSubagent, "goalShare" to limits.goalShare,
-                "goalTurnsAlone" to limits.goalTurnsAlone, "backgroundWakesAlone" to limits.backgroundWakesAlone,
+                "dailyTokensPerAgent" to limits.dailyTokensPerAgent, "monthlyTokensPerServer" to limits.monthlyTokensPerServer,
+                "dailyCostPerAgent" to limits.dailyCostPerAgent, "monthlyCostPerServer" to limits.monthlyCostPerServer,
             )
             // Zero is said as 0, as the dashboard's form shows a stored limit.
-            val texts = numbers.mapValues { entry -> if (entry.value == 0.0) "0" else SettingsList.text(entry.value) } +
-                mapOf("requestTimeout" to limits.requestTimeout, "maxRecordingMediaBytes" to (limits.maxRecordingMediaBytes ?: "0"), "maxRecordingAccountBytes" to (limits.maxRecordingAccountBytes ?: "0"))
+            val texts = numbers.mapValues { entry -> if (entry.value == 0.0) "0" else SettingsList.text(entry.value) }
             return AgentLimitsDraft(texts, settings.retention, settings.currency)
         }
     }

@@ -1,6 +1,6 @@
 # Goals spend a share of the day, and fewer switches
 
-- Status: accepted
+- Status: superseded in part by `20261126-no-limits-on-how-often-work-starts.md`: the share of the day goals may spend (`goalShare`) and the turns a goal takes alone (`goalTurnsAlone`) are gone. The single Suggestions switch, the goal cards in the feed and the reasons it keeps the skill watches and ideas stand.
 - Date: 2026-11-23
 - Deciders: the-owner
 

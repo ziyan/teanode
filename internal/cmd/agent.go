@@ -56,7 +56,6 @@ func NewAgentCommand() *cli.Command {
 			newAgentSignInCommand(),
 			newAgentSettingsCommand(),
 			newAgentSourceCommand(),
-			newAgentBriefCommand(),
 			newAgentPricesCommand(),
 			{
 				Name:  "speak-first",
@@ -202,11 +201,7 @@ func newAgentSettingsCommand() *cli.Command {
 					"speech-voice (the voice answers are read aloud in on a voice call, such as marin or cedar; empty for the server's),\n" +
 					"dream-from, dream-until (HH:MM in your zone: when it may dream),\n" +
 					"alerts (true|false: whether it tells you unasked what your mail says you should know now),\n" +
-					"alert-quiet-start, alert-quiet-end (HH:MM in your zone: its night, when only what cannot wait is said),\n" +
-					"alert-daily-most (how many a day at most; 0 for the default of 5),\n" +
 					"feed-destination (feed|main: where what it says unasked goes, your feed or your main conversation),\n" +
-					"look-around-weekday (sunday to saturday), look-around-time (HH:MM in your zone: when it looks around your town\n" +
-					"for what is on each week; empty for the default of thursday at 17:00),\n" +
 					"unattended (comma list of outward, money, destructive, granting, listed: what it may do without your word\n" +
 					"when you are not there; empty for nothing),\n" +
 					"voice.tone (formal|neutral|casual), voice.length (short|medium|long), voice.greeting,\n" +
@@ -292,127 +287,6 @@ func newAgentSourceCommand() *cli.Command {
 			},
 		},
 	}
-}
-
-// newAgentBriefCommand is the daily brief: the same switch the dashboard has.
-func newAgentBriefCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "brief",
-		Usage: "a brief each morning, by mail: what the day holds and what is waiting",
-		Description: "It writes an ordinary schedule called \"Daily brief\", which \"teanode agent\n" +
-			"schedule list\" shows and anybody may rewrite.\n\n" +
-			"  teanode agent brief on --at 07:30 --days 1-5\n" +
-			"  teanode agent brief now\n" +
-			"  teanode agent brief off",
-		Commands: []*cli.Command{
-			{
-				Name:  "on",
-				Usage: "turn the brief on, or change when it comes",
-				Flags: []cli.Flag{
-					JSONFlag(),
-					&cli.StringFlag{Name: "at", Usage: "the time of day in your own zone, as HH:MM"},
-					&cli.StringFlag{Name: "days", Usage: "which days, 1 (Monday) to 7 (Sunday): 1-5, or 1,3,5"},
-				},
-				Action: runAgentBriefOn,
-			},
-			{
-				Name:   "off",
-				Usage:  "stop the brief; the schedule stays, switched off",
-				Flags:  []cli.Flag{JSONFlag()},
-				Action: runAgentBriefOff,
-			},
-			{
-				Name:   "now",
-				Usage:  "send one immediately",
-				Flags:  []cli.Flag{JSONFlag()},
-				Action: runAgentBriefNow,
-			},
-		},
-	}
-}
-
-func runAgentBriefOn(ctx context.Context, command *cli.Command) error {
-	return setBrief(ctx, command, true)
-}
-
-func runAgentBriefOff(ctx context.Context, command *cli.Command) error {
-	return setBrief(ctx, command, false)
-}
-
-func setBrief(ctx context.Context, command *cli.Command, enabled bool) error {
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	days, err := readDays(command.String("days"))
-	if err != nil {
-		return err
-	}
-	goal, err := client.SetAgentBrief(ctx, connection, enabled, command.String("at"), days)
-	if err != nil {
-		return describeError(command, err)
-	}
-	if command.Bool("json") {
-		return PrintJSON(goal)
-	}
-	if goal == nil {
-		fmt.Println("there was no brief to stop")
-		return nil
-	}
-	when := "off"
-	if goal.GoalState == "working" {
-		when = goalWhen(goal)
-		if goal.GoalNextAt != nil {
-			when += ", next " + goal.GoalNextAt.Local().Format("Mon 2 Jan 15:04")
-		}
-	}
-	fmt.Printf("%s: %s\n", goal.GoalTitle, when)
-	return nil
-}
-
-// readDays turns "1-5" or "1,3,5" into the days themselves.
-func readDays(value string) ([]int, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil, nil
-	}
-	days := []int{}
-	for _, part := range strings.Split(value, ",") {
-		part = strings.TrimSpace(part)
-		if from, until, found := strings.Cut(part, "-"); found {
-			first, err := strconv.Atoi(strings.TrimSpace(from))
-			last, secondErr := strconv.Atoi(strings.TrimSpace(until))
-			if err != nil || secondErr != nil || first < 1 || last > 7 || first > last {
-				return nil, fmt.Errorf("%q is not a range of days", part)
-			}
-			for day := first; day <= last; day++ {
-				days = append(days, day)
-			}
-			continue
-		}
-		day, err := strconv.Atoi(part)
-		if err != nil || day < 1 || day > 7 {
-			return nil, fmt.Errorf("%q is not a day; they are 1 (Monday) to 7 (Sunday)", part)
-		}
-		days = append(days, day)
-	}
-	return days, nil
-}
-
-func runAgentBriefNow(ctx context.Context, command *cli.Command) error {
-	connection, err := openClient(command)
-	if err != nil {
-		return err
-	}
-	schedule, err := client.RunAgentBriefNow(ctx, connection)
-	if err != nil {
-		return describeError(command, err)
-	}
-	if command.Bool("json") {
-		return PrintJSON(schedule)
-	}
-	fmt.Println("sending; it will arrive in a moment")
-	return nil
 }
 
 func newAgentAdminCommand() *cli.Command {
@@ -560,12 +434,7 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		DreamUntil         string     `json:"dreamUntil"`
 		DreamedAt          *time.Time `json:"dreamedAt"`
 		IsAlertsEnabled    bool       `json:"isAlertsEnabled"`
-		AlertQuietStart    string     `json:"alertQuietStart"`
-		AlertQuietEnd      string     `json:"alertQuietEnd"`
-		AlertDailyMost     int        `json:"alertDailyMost"`
 		FeedDestination    string     `json:"feedDestination"`
-		LookAroundWeekday  string     `json:"lookAroundWeekday"`
-		LookAroundTime     string     `json:"lookAroundTime"`
 		DailyTokens        int64      `json:"dailyTokens"`
 		DailyCost          float64    `json:"dailyCost"`
 		OperatorDisabledAt *time.Time `json:"operatorDisabledAt"`
@@ -611,12 +480,9 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		hours += ", last ran " + formatTime(agent.DreamedAt)
 	}
 	fields = append(fields, [2]string{"dreams", hours})
-	// Alerts, with the defaults filled in for the same reason.
 	alerts := "off"
 	if agent.IsAlertsEnabled {
-		settings := &models.Agent{AlertQuietStart: agent.AlertQuietStart, AlertQuietEnd: agent.AlertQuietEnd, AlertDailyMost: agent.AlertDailyMost}
-		start, end := settings.AlertQuietHours()
-		alerts = fmt.Sprintf("on, at most %d a day, quiet from %s to %s", settings.EffectiveAlertDailyMost(), start, end)
+		alerts = "on"
 	}
 	fields = append(fields, [2]string{"alerts", alerts})
 	feedDestination := agent.FeedDestination
@@ -624,9 +490,6 @@ func printAgentView(command *cli.Command, view *client.AgentView) error {
 		feedDestination = models.FeedDestinationFeed
 	}
 	fields = append(fields, [2]string{"says unasked things in", map[string]string{models.FeedDestinationFeed: "the feed", models.FeedDestinationMain: "the main conversation"}[feedDestination]})
-	lookAround := &models.Agent{LookAroundWeekday: agent.LookAroundWeekday, LookAroundTime: agent.LookAroundTime}
-	lookAroundWeekday, lookAroundTime := lookAround.LookAroundSchedule()
-	fields = append(fields, [2]string{"looks around town", lookAroundWeekday + " at " + lookAroundTime})
 	if view.Budget != nil {
 		limit := "unlimited"
 		if view.Budget.Limit > 0 {
@@ -713,22 +576,8 @@ func runAgentSettingsSet(ctx context.Context, command *cli.Command) error {
 				return err
 			}
 			variables["isAlertsEnabled"] = enabled
-		case "alert-quiet-start":
-			variables["alertQuietStart"] = value
-		case "alert-quiet-end":
-			variables["alertQuietEnd"] = value
-		case "alert-daily-most":
-			most, err := strconv.Atoi(value)
-			if err != nil {
-				return fmt.Errorf("%s: %q is not a number", key, value)
-			}
-			variables["alertDailyMost"] = most
 		case "feed-destination":
 			variables["feedDestination"] = value
-		case "look-around-weekday":
-			variables["lookAroundWeekday"] = value
-		case "look-around-time":
-			variables["lookAroundTime"] = value
 		case "confirm":
 			variables["confirm"] = commaList(value)
 		case "unattended":

@@ -339,9 +339,8 @@ bytes rather than by where it sits, so the same screenshot pasted into
 four threads is one document. The daemon hashes and measures it, the
 server asks for its bytes with the `blob` action and keeps them in object
 storage under that hash. A file larger than the limit the source runs
-under — `agent.limits.maxScannedAttachmentBytes`, 25 MB by default, or
-the source's own — is named on the source's page as passed over and never
-uploaded.
+under (`computer.DefaultMaxAttachmentBytes`, 25 MB, or the source's own) is
+named on the source's page as passed over and never uploaded.
 
 `text` is what the file says, where the script already knows. A file that
 arrives with text is a document like any other — chunked, embedded,
@@ -499,10 +498,10 @@ untouched link at the floor.
 
 A dream is one run of the agent over its own graph, and not only at
 night: it runs when the person has been quiet for half an hour, inside
-the hours they set for it, at most once every six hours. It has its own share of
-the day's tokens (30% by default) — the day's share and not each night's, so
-what today's earlier nights spent comes off it, read back from the usage rows,
-and four nights in a day cannot spend four shares between them. A call claims
+the hours they set for it, at most once every six hours. It has no share of the
+day of its own: it is bounded by the person's daily limit like everything else,
+less what the day has already spent in conversation and in earlier nights, read
+back from the usage rows. A call claims
 an estimate against the allowance before it is made and corrects it with what
 it really cost afterwards, because the reading runs several batches at once and
 a check with nothing claimed answers all of them the same. Nothing it
@@ -534,9 +533,9 @@ and a call that would change something — `note`, `page`, `link`, `move`,
 telling the model to say the change in the object it ends with. Each call
 is judged as it is made (`AskSettings.ReadOnlyTools`), so the half that
 reads is kept rather than the tools being taken away.
-`limits.maxRoundsPerDream` (twelve by default, because
-finding a file, running something over it and answering is three rounds
-before the answer) is how many times one call may go back to the model.
+A call of the night has no limit on how many times it goes back to the model:
+it answers when it has what it needs, and a run that reads and then answers is
+told to answer once its history fills.
 The dream log's Open
 button on the agent page shows that dream's runs in the activity table, and
 `teanode agent dream runs <id>` lists them for `teanode agent run show`.
@@ -1427,9 +1426,9 @@ off when nothing waits to be read.
 
 It is meant for a model of the person's own. Point `models.scan` at it
 (an OpenAI-compatible server such as llama.cpp or vLLM, declared as a
-provider at zero price) and set `limits.scanConcurrency` to the slots it
-has; the reading then costs nothing but the machine's time, and a dream
-that would have been a dollar of a metered service is free. On a metered
+provider at zero price); the reading, one call at a time
+(`dreamScanConcurrency`), then costs nothing but the machine's time, and a
+dream that would have been a dollar of a metered service is free. On a metered
 service bootstrapping is still bounded by the dream's share of the daily
 budget.
 

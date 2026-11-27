@@ -272,8 +272,8 @@ questions in a drawer on every page or with `teanode agent ask`, through the
 same operations the dashboard uses, with your permissions. It can reach your
 calendar and contacts, your own computer and browser tab, the web, and servers
 you connect over the Model Context Protocol. It tells you, unasked, when mail
-shows something that cannot wait, within quiet hours and a daily limit you
-set. Operators cap what it may spend.
+shows something that cannot wait. Operators cap what it may spend, in money a
+day for each person and a month for the server.
 
 **Talk to it.** A call in the drawer, on a laptop or a phone: what you say is
 transcribed as you say it, the answer is written for the ear and read back,

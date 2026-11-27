@@ -55,16 +55,15 @@ func (self *Agent) meaningOf(ctx context.Context, agentId, kind, text string) *m
 	return &meaning{ModelName: modelName, Vector: vectors[0]}
 }
 
-// embed is one call to the embedding model, at the configured width.
+// embed is one call to the embedding model, at the configured width. It does
+// not wait on the daily budget: embedding stays outside the daily allowance
+// (see ingest_embedding.go).
 func (self *Agent) embed(ctx context.Context, agentId, kind string, texts []string) ([][]float32, string, bool) {
 	embedder, model, modelName, dimensions, ok := self.embedderFor()
 	if !ok || len(texts) == 0 {
 		return nil, "", false
 	}
-	configuration := self.settings.Configuration()
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	vectors, usage, err := embedder.Embed(callContext, llm.EmbedRequest{
+	vectors, usage, err := embedder.Embed(ctx, llm.EmbedRequest{
 		Model: model, Inputs: texts, Dimensions: dimensions,
 	})
 	RecordUsage(self.settings.Database, agentId, "", modelName, kind, usage)

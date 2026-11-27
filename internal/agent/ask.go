@@ -150,17 +150,20 @@ type AskSettings struct {
 	ReadOnlyTools map[string]bool
 
 	// Allow, when set, is the only tools offered by name; Headless adds
-	// the remote tools marked for runs with nobody present. MaxRounds
-	// overrides the limit; UsageKind names the usage rows.
+	// the remote tools marked for runs with nobody present. MaxRounds is
+	// how many times a call that is built to take few may go back to the
+	// model (one for a single answer); zero, the rule, has no limit: the
+	// turn goes on until the model answers, the budget defers it, the loop
+	// guard stops it or the person does. UsageKind names the usage rows.
 	Allow     map[string]bool
 	Headless  bool
 	MaxRounds int
 
 	// CallLimits is how many times the turn may call each named tool. A
 	// call past the limit is answered with an error and does not run, so a
-	// run that is paid for by the search or the page has a bound the model
-	// cannot talk its way past. A tool not named has none. See
-	// withToolCallLimits.
+	// turn that other people ask for, on the owner's money, has a bound the
+	// model cannot talk its way past. A tool not named has none. Only a
+	// member turn in a chat sets it (chat_turn.go).
 	CallLimits map[string]int
 
 	// IsFetchLimitedToSearched holds web_fetch to the addresses a
@@ -170,7 +173,7 @@ type AskSettings struct {
 	IsFetchLimitedToSearched bool
 
 	// IsPersonOmitted leaves the person's own page and the index of what
-	// the agent knows out of the prompt; see withPersonOmitted.
+	// the agent knows out of the prompt.
 	IsPersonOmitted bool
 
 	// PreApproved is the calls the person approved on a card whose turn
@@ -1518,13 +1521,7 @@ func (self *AskRun) turn() error {
 		usageKind = "ask"
 	}
 
-	maximumRounds := configuration.Agent.Limits.MaxRoundsPerAsk
-	if maximumRounds <= 0 {
-		maximumRounds = 40
-	}
-	if settings.MaxRounds > 0 {
-		maximumRounds = settings.MaxRounds
-	}
+	maximumRounds := settings.MaxRounds
 	// A compaction that failed is not tried again this turn, and a request
 	// the provider refused for its size is compacted hard and sent once
 	// more.
@@ -1533,7 +1530,7 @@ func (self *AskRun) turn() error {
 	// the fourth: the turn stops rather than spending its rounds on it.
 	failures := map[string]int{}
 	recalledThisTurn := false
-	for round := 0; round < maximumRounds; round++ {
+	for round := 0; maximumRounds <= 0 || round < maximumRounds; round++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -1666,7 +1663,7 @@ func (self *AskRun) turn() error {
 		// writes the call out as words, which the server then mangles,
 		// and the answer is neither a call nor an answer.
 		toolChoice := ""
-		if (round == maximumRounds-1 || answerNow) && len(definitions) > 0 {
+		if ((maximumRounds > 0 && round == maximumRounds-1) || answerNow) && len(definitions) > 0 {
 			messages = append(messages, llm.ChatMessage{Role: llm.RoleUser, Content: lastRoundNotice})
 			toolChoice = "none"
 		}
@@ -1780,7 +1777,7 @@ func (self *AskRun) turn() error {
 		if strings.TrimSpace(answer.Content) != "" {
 			self.emit(Event{Kind: EventMessage, Text: answer.Content})
 		}
-		if len(answer.ToolCalls) == 0 && textualToolCall(answer.Content) && round < maximumRounds-1 {
+		if len(answer.ToolCalls) == 0 && textualToolCall(answer.Content) && (maximumRounds <= 0 || round < maximumRounds-1) {
 			// A tool call written out as words is one the server could not
 			// read: a local model's template asks for XML the server parses
 			// only when it is well formed, and two calls in one breath, or
@@ -2042,12 +2039,12 @@ const lastRoundNotice = "This is the last round: no tool can be called now. Answ
 // chat streams when the provider can, so the drawer sees the words as they
 // come, and falls back to one call when it cannot.
 func (self *AskRun) chat(ctx context.Context, provider llm.Provider, request *llm.ChatRequest) (*llm.ChatResponse, error) {
-	timeout := self.agent.settings.Configuration().Agent.Limits.RequestTimeout.Duration()
-	callContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	events, err := provider.ChatStream(callContext, request)
+	// No total time on the answer: the provider's stream is cut when
+	// nothing arrives for a while, and a plain call has a generous total
+	// of its own (see internal/llm/timing.go).
+	events, err := provider.ChatStream(ctx, request)
 	if err != nil {
-		return provider.Chat(callContext, request)
+		return provider.Chat(ctx, request)
 	}
 	var response *llm.ChatResponse
 	var text strings.Builder

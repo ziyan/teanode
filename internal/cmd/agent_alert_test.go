@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/urfave/cli/v3"
 )
 
 // alertServer answers the alert and settings documents, and keeps what it
@@ -34,7 +37,7 @@ func alertServer(test *testing.T) (*httptest.Server, func() []map[string]any) {
 		case strings.Contains(document.Query, "MuteAgentAlert"):
 			_, _ = response.Write([]byte(`{"data":{"MuteAgentAlert":{"id":"mute-1","muteScope":"domain","muteTarget":"shop.example.com","alertId":"alert-1","createdAt":"2026-09-29T10:00:00Z"}}}`))
 		case strings.Contains(document.Query, "UpdateAgent"):
-			_, _ = response.Write([]byte(`{"data":{"UpdateAgent":{"agent":{"id":"agent-1","name":"Agent","enabled":true,"isAlertsEnabled":false,"alertQuietStart":"21:00","alertDailyMost":3},"sources":[]}}}`))
+			_, _ = response.Write([]byte(`{"data":{"UpdateAgent":{"agent":{"id":"agent-1","name":"Agent","enabled":true,"isAlertsEnabled":false},"sources":[]}}}`))
 		default:
 			response.WriteHeader(http.StatusBadRequest)
 		}
@@ -59,7 +62,7 @@ func TestTheAlertCommandsSendWhatTheDashboardWould(test *testing.T) {
 	if printed := runAgainst(test, server, "alert", "unmute", "mute-1"); !strings.Contains(printed, "mute-1: unmuted") {
 		test.Errorf("unmute printed %q", printed)
 	}
-	runAgainst(test, server, "settings", "set", "alerts=false", "alert-quiet-start=21:00", "alert-daily-most=3", "look-around-weekday=friday", "look-around-time=18:30")
+	runAgainst(test, server, "settings", "set", "alerts=false")
 
 	variables := sent()
 	if len(variables) != 3 {
@@ -71,8 +74,17 @@ func TestTheAlertCommandsSendWhatTheDashboardWould(test *testing.T) {
 	if variables[1]["muteId"] != "mute-1" {
 		test.Errorf("unmute sent %v", variables[1])
 	}
-	if variables[2]["isAlertsEnabled"] != false || variables[2]["alertQuietStart"] != "21:00" || variables[2]["alertDailyMost"] != float64(3) ||
-		variables[2]["lookAroundWeekday"] != "friday" || variables[2]["lookAroundTime"] != "18:30" {
+	if variables[2]["isAlertsEnabled"] != false {
 		test.Errorf("settings sent %v", variables[2])
+	}
+	for _, removed := range []string{"alert-quiet-start=21:00", "alert-daily-most=3", "look-around-weekday=friday"} {
+		command := &cli.Command{
+			Name: "fixture", Writer: &bytes.Buffer{},
+			Flags:    []cli.Flag{&cli.StringFlag{Name: "url", Value: server.URL}, &cli.StringFlag{Name: "token", Value: "fixture-token"}},
+			Commands: []*cli.Command{NewAgentCommand()},
+		}
+		if err := command.Run(test.Context(), []string{"fixture", "agent", "settings", "set", removed}); err == nil {
+			test.Errorf("%s is still a key", removed)
+		}
 	}
 }

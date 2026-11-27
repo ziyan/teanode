@@ -246,11 +246,6 @@ type AgentConversation struct {
 	// cards are not urgent.
 	IsGoalNotifiedWhenPosted bool `json:"isGoalNotifiedWhenPosted"`
 
-	// BackgroundWakeCount is how many turns ended background commands and
-	// finished background work have woken here since the person last
-	// wrote, which bounds a chain of them.
-	BackgroundWakeCount int `json:"backgroundWakeCount,omitempty"`
-
 	// ChatID is the chat a conversation of the kind chat is the member's
 	// own for; empty for every other.
 	ChatID string `json:"-"`
@@ -391,7 +386,7 @@ const (
 	GoalActivityResumed  AgentGoalActivityKind = "resumed"
 	GoalActivityMet      AgentGoalActivityKind = "met"
 	GoalActivityDropped  AgentGoalActivityKind = "dropped"
-	GoalActivityStalled  AgentGoalActivityKind = "stalled"
+	GoalActivityStalled  AgentGoalActivityKind = "stalled" // no longer written; goals do not stall, old logs keep it
 	GoalActivityFailed   AgentGoalActivityKind = "failed"
 )
 
@@ -819,7 +814,7 @@ const (
 	NoteGoalChanged  AgentNoteKind = "goal_changed"
 	NoteGoalCleared  AgentNoteKind = "goal_cleared"
 	NoteGoalMet      AgentNoteKind = "goal_met"     // the detail is what was said of it, or the goal
-	NoteGoalStalled  AgentNoteKind = "goal_stalled" // the detail is how many turns went by alone
+	NoteGoalStalled  AgentNoteKind = "goal_stalled" // no longer written; old transcripts keep it, and the detail is how many turns went by alone
 )
 
 // noteEnglish is each kind in English, for whoever reads a note without

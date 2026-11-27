@@ -188,12 +188,6 @@
     <string name="settings_audit_title">Audit log</string>
     <string name="settings_audit_unset">unset</string>
     <string name="settings_audit_via_agent">via their agent</string>
-    <string name="settings_brief_footer">What the day holds and what is waiting for you, in your feed. Turning it on starts a goal called “Daily brief”, where you can see what it did.</string>
-    <string name="settings_brief_off">The brief is off. The goal is paused.</string>
-    <string name="settings_brief_on">The brief is on.</string>
-    <string name="settings_brief_send_now">Send one now</string>
-    <string name="settings_brief_sent">Sending one now; it will arrive in a moment.</string>
-    <string name="settings_brief_title">A brief each morning</string>
     <string name="settings_circles_accept">Accept</string>
     <string name="settings_circles_account_made">%s has an account and is in the circle</string>
     <string name="settings_circles_admin">Admin</string>
@@ -818,6 +812,4 @@
     </plurals>
     <string name="settings_unsent_mail">A message you wrote has not been sent.</string>
     <string name="settings_unsent_deleted">Signing out deletes them from this phone.</string>
-    <string name="settings_stepper_decrease">Decrease</string>
-    <string name="settings_stepper_increase">Increase</string>
 </resources>

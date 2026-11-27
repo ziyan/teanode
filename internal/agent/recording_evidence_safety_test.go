@@ -111,7 +111,7 @@ func TestRecordingDreamProviderLookupRestrictsLaterPhases(test *testing.T) {
 	computer := &fakeComputer{agent: worker, agentId: run.Agent.ID, answers: func(string, json.RawMessage) (bool, string) { commandCount.Add(1); return true, `{}` }}
 	worker.AttachComputer(run.Agent.ID, computer, ComputerIdentity{Name: "fixture-computer", System: "linux", Home: "~"})
 	ctx := withRecordingEvidenceSafety(test.Context())
-	budget := newDreamBudget(run.Configuration(), run.Agent, 1, 0)
+	budget := newDreamBudget(run.Configuration(), run.Agent, 0)
 	thinking, err := worker.dreamThought(ctx, run, budget, "Looked for fixture ideas", "Read the knowledge passage, then answer with {}.", true)
 	if err != nil {
 		test.Fatal(err)
@@ -245,7 +245,7 @@ func TestRecordingDreamInitialSnapshotRefusesProviderExecution(test *testing.T) 
 			var commandCount atomic.Int64
 			worker.AttachComputer(run.Agent.ID, &fakeComputer{agent: worker, agentId: run.Agent.ID, answers: func(string, json.RawMessage) (bool, string) { commandCount.Add(1); return true, `{}` }}, ComputerIdentity{Name: "fixture-computer", System: "linux", Home: "~"})
 			ctx := withRecordingEvidenceSafety(test.Context())
-			thinking, err := worker.dreamThought(ctx, run, newDreamBudget(run.Configuration(), run.Agent, 1, 0), "Initial ideas fixture", "Answer with {}.", true)
+			thinking, err := worker.dreamThought(ctx, run, newDreamBudget(run.Configuration(), run.Agent, 0), "Initial ideas fixture", "Answer with {}.", true)
 			if err != nil {
 				test.Fatal(err)
 			}
@@ -266,7 +266,7 @@ func TestRecordingDreamMixedMemoryBatchCannotWriteBeforeEvidenceMarker(test *tes
 	defer provider.Close()
 	worker, run := digestSplitWorld(test, database, provider.URL)
 	ctx := withRecordingEvidenceSafety(test.Context())
-	thinking, err := worker.dreamThought(ctx, run, newDreamBudget(run.Configuration(), run.Agent, 1, 0), "Mixed memory batch fixture", "Answer with {}.", true)
+	thinking, err := worker.dreamThought(ctx, run, newDreamBudget(run.Configuration(), run.Agent, 0), "Mixed memory batch fixture", "Answer with {}.", true)
 	if err != nil {
 		test.Fatal(err)
 	}

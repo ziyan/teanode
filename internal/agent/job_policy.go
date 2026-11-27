@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -74,7 +75,12 @@ func outcomeForJob(job *models.AgentJob, err error, finishedAt time.Time) *db.Ag
 	// forward: asking for a dream now cannot make a second job while one
 	// is queued, and a retry is only offered for a job already given up
 	// on.
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	//
+	// A provider that went quiet or never finished answering is also a
+	// deadline to errors.Is, but it is the provider failing: requeued with
+	// no mark against it, a job against a provider that hangs would come
+	// back for ever. It takes the retry ladder like any other failure.
+	if !llm.IsProviderTimeout(err) && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 		outcome.JobStatus = models.AgentJobQueued
 		return outcome
 	}

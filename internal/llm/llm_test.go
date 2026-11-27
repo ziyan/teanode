@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ziyan/teanode/internal/config"
 )
@@ -65,7 +64,7 @@ func TestOpenAIChatToolCallsAndUsage(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, err := chatFor("openai", server.URL+"/v1", "key-1", time.Second)
+	provider, err := chatFor("openai", server.URL+"/v1", "key-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +106,7 @@ func TestOpenAIChatPlainAnswer(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, _ := chatFor("openai", server.URL+"/v1", "key-1", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "key-1")
 	response, err := provider.Chat(context.Background(), &ChatRequest{Model: "m", Messages: []ChatMessage{{Role: RoleUser, Content: "hi"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +120,7 @@ func TestOpenAIStreamAssemblesTextAndToolCalls(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, _ := chatFor("openai", server.URL+"/v1", "key-1", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "key-1")
 	events, err := provider.ChatStream(context.Background(), &ChatRequest{Model: "m", Messages: []ChatMessage{{Role: RoleUser, Content: "hi"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +158,7 @@ func TestOpenAIListModelsAndEmbed(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, _ := chatFor("openai", server.URL+"/v1", "key-1", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "key-1")
 	models, err := provider.ListModels(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +182,7 @@ func TestEmbeddingAsksForAWidthWhenOneIsWanted(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, _ := chatFor("openai", server.URL+"/v1", "key-1", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "key-1")
 	if _, _, err := provider.(Embedder).Embed(context.Background(), EmbedRequest{
 		Model: "e", Inputs: []string{"a"}, Dimensions: 512,
 	}); err != nil {
@@ -208,7 +207,7 @@ func TestOpenAIErrorsCarryTheProvidersMessage(t *testing.T) {
 	var requests []map[string]any
 	server := fakeOpenAI(t, &requests)
 	defer server.Close()
-	provider, _ := chatFor("openai", server.URL+"/v1", "wrong", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "wrong")
 	_, err := provider.ListModels(context.Background())
 	var apiError *APIError
 	if err == nil || !strings.Contains(err.Error(), "bad key") {
@@ -256,7 +255,7 @@ func TestAnthropicChatEncodesAlternationAndDecodesToolUse(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"id":"m2","model":"claude","content":[{"type":"text","text":"Reading."},{"type":"tool_use","id":"tu_2","name":"mail_read","input":{"item_id":"i2"}}],"stop_reason":"tool_use","usage":{"input_tokens":30,"output_tokens":8,"cache_creation_input_tokens":12}}`))
 	}))
 	defer server.Close()
-	provider, _ := chatFor("anthropic", server.URL, "k", time.Second)
+	provider, _ := chatFor("anthropic", server.URL, "k")
 	response, err := provider.Chat(context.Background(), &ChatRequest{
 		Model: "claude",
 		Messages: []ChatMessage{
@@ -332,7 +331,7 @@ func TestGeminiChatEncodesFunctionCalling(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"Looking."},{"functionCall":{"name":"mail_search","args":{"query":"roof"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":15,"candidatesTokenCount":4,"cachedContentTokenCount":5},"modelVersion":"gemini-x-001"}`))
 	}))
 	defer server.Close()
-	provider, _ := chatFor("gemini", server.URL, "g", time.Second)
+	provider, _ := chatFor("gemini", server.URL, "g")
 	response, err := provider.Chat(context.Background(), &ChatRequest{
 		Model: "gemini-x",
 		Messages: []ChatMessage{
@@ -385,7 +384,6 @@ func TestRegistryResolvesWorkAndFilters(t *testing.T) {
 			{Name: "cloud", Kind: "anthropic", APIKey: "k", Enabled: &off},
 		},
 		Models: config.AgentModels{Default: "local:qwen2.5:14b", Fast: "local:qwen2.5:7b", Reply: "local:qwen2.5:14b"},
-		Limits: config.AgentLimits{RequestTimeout: config.Duration(time.Second)},
 	}
 	registry, err := Open(configuration)
 	if err != nil {
@@ -513,7 +511,7 @@ func TestOpenAIFoldsSystemMessagesForATemplateThatWantsOne(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"id":"c","model":"m","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
 	}))
 	defer server.Close()
-	provider, _ := chatFor("openai", server.URL+"/v1", "k", time.Second)
+	provider, _ := chatFor("openai", server.URL+"/v1", "k")
 	request := &ChatRequest{Model: "m", Messages: []ChatMessage{
 		{Role: RoleSystem, Content: "You are helpful."},
 		{Role: RoleUser, Content: "hi"},
@@ -536,8 +534,8 @@ func TestOpenAIFoldsSystemMessagesForATemplateThatWantsOne(t *testing.T) {
 // what most of these tests are about. NewProvider answers a Service, since
 // not every kind chats; asserting it once here keeps that out of every
 // test that only wants to send a message.
-func chatFor(kind, baseUrl, apiKey string, timeout time.Duration) (Provider, error) {
-	service, err := NewProvider(kind, baseUrl, apiKey, timeout)
+func chatFor(kind, baseUrl, apiKey string) (Provider, error) {
+	service, err := NewProvider(kind, baseUrl, apiKey)
 	if err != nil {
 		return nil, err
 	}

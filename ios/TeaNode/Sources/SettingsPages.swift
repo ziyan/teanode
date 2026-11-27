@@ -10,7 +10,7 @@ enum SettingsPage: Hashable {
     case photoBackup, photoFaces, health, journal
     /// Agent settings, with the page of it to open once it is read, if any.
     case agentSettings(AgentSettingsPart?)
-    case knowledgeSources, memory, dreams, dailyBrief, alerts, connections, activity
+    case knowledgeSources, memory, dreams, alerts, connections, activity
     case manage, manageMail, manageQueue, manageReports, manageDomains
     case managePeople, manageGroups, manageRoles, manageAuditLog, manageServices, manageServer, manageAgents
     case mailbox, mailboxNameAndSignature, mailboxAutoReply, mailboxFolders, mailboxRules, mailboxPrograms
@@ -55,7 +55,6 @@ struct SettingsPageScreen: View {
         case .knowledgeSources: KnowledgeSourcesView(connection: connection)
         case .memory: AgentMemorySettingsView(connection: connection)
         case .dreams: DreamsView(connection: connection)
-        case .dailyBrief: DailyBriefView(connection: connection)
         case .alerts: MutedAlertsView(connection: connection)
         case .connections: ConnectionsView(connection: connection)
         case .activity: AgentActivityView(connection: connection)

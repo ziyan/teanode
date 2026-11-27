@@ -7,6 +7,11 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
+// ingestChunksPerRun is how many chunks one pass of an ingest job embeds
+// before it hands the queue back, so that one source cannot hold the worker
+// for as long as an archive is large.
+const ingestChunksPerRun = 2000
+
 // embedChunks gives vectors to chunks that have none, and says how many
 // it wrote and how many are left.
 //
@@ -19,9 +24,6 @@ func (self *Agent) embedChunks(ctx context.Context, agent *models.Agent, most in
 	_, _, modelName, _, ok := self.embedderFor()
 	if !ok {
 		return 0, 0, nil
-	}
-	if most <= 0 {
-		most = 2000
 	}
 	written := 0
 	for written < most {

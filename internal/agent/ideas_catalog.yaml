@@ -32,6 +32,24 @@
       body: "我每天早上阅读新邮件，给你一份简短清单：哪些要回复，哪些有截止日期，哪些可以等。"
       openingRequest: "每个工作日早上8点，告诉我今天哪些邮件需要我处理。"
 
+- ideaKey: daily_brief
+  ideaCategory: work
+  emoji: "🗓️"
+  headline: Send me a daily brief on weekday mornings.
+  body: At 7:30 on weekdays I look at your calendar and your mail and post a few short cards to your feed on what the day holds and what is waiting for an answer.
+  openingRequest: Send me a daily brief on weekday mornings.
+  neededToolNames: [goal]
+  usedCheck: daily_brief
+  translations:
+    ja:
+      headline: "平日の朝に、毎日のまとめを送ってください。"
+      body: "平日の7時30分に、カレンダーとメールを見て、その日の予定と返事待ちのことを短いカードにしてフィードに届けます。"
+      openingRequest: "平日の朝に毎日のまとめを送って。"
+    zh:
+      headline: "工作日早上给我发一份每日简报。"
+      body: "工作日早上7:30，我查看你的日历和邮件，把今天的安排和等你回复的事整理成几张简短的卡片发到你的动态里。"
+      openingRequest: "工作日早上给我发一份每日简报。"
+
 - ideaKey: reply_drafts
   ideaCategory: mail
   emoji: "✉️"

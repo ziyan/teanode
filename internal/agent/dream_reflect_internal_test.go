@@ -65,7 +65,7 @@ func TestTheNightReflectsOnATheme(t *testing.T) {
 	idByPath := reflectionWorld(t, database, run.Agent.ID)
 
 	record := &models.AgentDream{}
-	worker.dreamReflect(t.Context(), run, record, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamReflect(t.Context(), run, record, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	if record.ReflectionsWritten != 1 || len(sentPrompts()) != 1 {
 		t.Fatalf("%d reflections written with %d calls", record.ReflectionsWritten, len(sentPrompts()))
 	}
@@ -89,7 +89,7 @@ func TestTheNightReflectsOnATheme(t *testing.T) {
 	})
 
 	// Nothing changed: nothing is asked.
-	worker.dreamReflect(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamReflect(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	if len(sentPrompts()) != 1 {
 		t.Errorf("a theme with the same overview was reflected on again")
 	}
@@ -117,7 +117,7 @@ func TestAReflectionReplacesOrRetiresOnlyWhatItNames(t *testing.T) {
 				t.Fatalf("SetAgentNodeOverview: %s", err)
 			}
 		})
-		worker.dreamReflect(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+		worker.dreamReflect(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	}
 	// standing is the live reflections' texts by their references.
 	standing := func() map[string]string {
@@ -155,7 +155,7 @@ func TestAReflectionReplacesOrRetiresOnlyWhatItNames(t *testing.T) {
 		return found
 	}
 
-	worker.dreamReflect(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0))
+	worker.dreamReflect(t.Context(), run, &models.AgentDream{}, newDreamBudget(worker.settings.Configuration(), run.Agent, 0))
 	if got := standing(); len(got) != 1 || got["themes/orchard-work#1"] == "" {
 		t.Fatalf("after the first reflection: %v", got)
 	}
@@ -229,7 +229,7 @@ func TestTheThemesAreReflectedOnTogetherOnceAWeek(t *testing.T) {
 	})
 
 	now := time.Now()
-	budget := newDreamBudget(worker.settings.Configuration(), run.Agent, 1, 0)
+	budget := newDreamBudget(worker.settings.Configuration(), run.Agent, 0)
 	if written := worker.reflectAcrossThemes(t.Context(), run, budget, now); written != 1 {
 		t.Fatalf("%d reflections across the themes", written)
 	}

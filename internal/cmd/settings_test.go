@@ -52,7 +52,7 @@ func TestSecretsInsideAJSONValueAreRead(t *testing.T) {
 }
 
 func TestSettingsDescriptionReadsNestedInputObjects(test *testing.T) {
-	limitsType := &client.Type{Name: "AgentLimitsInput", Kind: "INPUT_OBJECT", InputFields: []*client.Argument{{Name: "maxRecordingMediaBytes", Type: &client.TypeReference{Name: "Int64", Kind: "SCALAR"}}}}
+	limitsType := &client.Type{Name: "AgentLimitsInput", Kind: "INPUT_OBJECT", InputFields: []*client.Argument{{Name: "dailyTokensPerAgent", Type: &client.TypeReference{Name: "Int64", Kind: "SCALAR"}}}}
 	agentType := &client.Type{Name: "AgentInput", Kind: "INPUT_OBJECT", InputFields: []*client.Argument{{Name: "limits", Type: &client.TypeReference{Kind: "NON_NULL", OfType: &client.TypeReference{Name: limitsType.Name, Kind: "INPUT_OBJECT"}}}}}
 	schema := &client.Schema{Types: map[string]*client.Type{agentType.Name: agentType, limitsType.Name: limitsType}, Operations: map[string]*client.Operation{
 		"UpdateSettings": {Name: "UpdateSettings", Arguments: []*client.Argument{{Name: "agent", Type: &client.TypeReference{Name: agentType.Name, Kind: "INPUT_OBJECT"}}}},
@@ -61,7 +61,7 @@ func TestSettingsDescriptionReadsNestedInputObjects(test *testing.T) {
 	if err != nil || found != limitsType {
 		test.Fatal("nested recording limits were not described", err)
 	}
-	for _, sectionPath := range []string{"agent.noSuchField", "agent.limits.maxRecordingMediaBytes", "database"} {
+	for _, sectionPath := range []string{"agent.noSuchField", "agent.limits.dailyTokensPerAgent", "database"} {
 		if _, err := settingsDescriptionInput(schema, sectionPath); err == nil {
 			test.Fatal("unknown or scalar subsection was accepted", sectionPath)
 		}

@@ -1336,10 +1336,6 @@ func startupOnly(configuration *config.Configuration) map[string]any {
 		"agent.enabled":   configuration.Agent.Enabled,
 		"agent.providers": withoutRefreshTokens(configuration.Agent.Providers),
 		"agent.models":    configuration.Agent.Models,
-		// The worker sizes its slots once, when it starts. Raising the
-		// number to let an ingest run beside a dream did nothing until a
-		// restart, and the status line said none was owed.
-		"agent.limits.concurrency": configuration.Agent.Limits.Concurrency,
 		// The certificate and the keys a renewal writes are left out, because
 		// every renewal, by whichever instance made it, would otherwise ask
 		// every instance for a restart; see withoutRenewal.

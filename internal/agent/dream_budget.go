@@ -16,15 +16,13 @@ import (
 // Every caller already stops on an error from a call, which is what
 // should happen here too; it is named so that the reading can tell it
 // from a model that went quiet.
-var errNothingLeftToSpend = errors.New("the night has spent its share of the day")
+var errNothingLeftToSpend = errors.New("the night has spent what the day allows")
 
 // dreamBudget is what a night may spend.
 //
-// The allowance is the day's share less what today's earlier nights have
-// already spent of it, not a fresh fraction each time. The share exists
-// to leave the rest of the day to the person, and a night runs as often
-// as every six hours: taken fresh, four nights spent four shares and the
-// conversation they were protecting paid for it.
+// The allowance is what the daily limit has left when the night begins,
+// whoever spent the rest of the day: the person's conversations and the
+// earlier nights, which run as often as every six hours.
 type dreamBudget struct {
 	// Read and written from several batches at once when the reading
 	// runs concurrently.
@@ -36,8 +34,7 @@ type dreamBudget struct {
 	// come back and say what they really cost.
 	reserved int64
 
-	// exhausted is a night whose share of the day was gone before it
-	// began. Its own field because an allowance of zero has always meant
+	// exhausted is a night that began with the day's tokens gone. Its own field because an allowance of zero has always meant
 	// "nothing caps this", and today's earlier nights leaving nothing is
 	// the opposite of that.
 	exhausted bool
@@ -69,7 +66,7 @@ func (self *dreamBudget) whyItStopped() string {
 	if self.refused {
 		return "the provider would not bill this account; the reading stops here"
 	}
-	return "the night has spent its share of the day; the reading stops here"
+	return "the night has spent what the day allows; the reading stops here"
 }
 
 // refuse records that the provider will not answer again tonight.
@@ -154,9 +151,10 @@ func (self *dreamBudget) readingTimeLeft() bool {
 	return self.digestUntil.IsZero() || time.Now().Before(self.digestUntil)
 }
 
-// newDreamBudget is the share of the day this night may have, given what
-// the day's earlier nights have already spent of it.
-func newDreamBudget(configuration *config.Configuration, agent *models.Agent, share float64, spentDreaming int64) *dreamBudget {
+// newDreamBudget is what this night may spend: the person's daily tokens
+// less what the day has already spent, in conversation and in earlier
+// nights.
+func newDreamBudget(configuration *config.Configuration, agent *models.Agent, spentToday int64) *dreamBudget {
 	daily := agent.DailyTokens
 	if daily <= 0 {
 		daily = configuration.Agent.Limits.DailyTokensPerAgent
@@ -164,7 +162,7 @@ func newDreamBudget(configuration *config.Configuration, agent *models.Agent, sh
 	if daily <= 0 {
 		return &dreamBudget{allowed: 0} // no cap
 	}
-	allowed := int64(float64(daily)*share) - spentDreaming
+	allowed := daily - spentToday
 	if allowed <= 0 {
 		return &dreamBudget{exhausted: true}
 	}
@@ -209,13 +207,13 @@ func (self *dreamBudget) reserve() bool {
 	return true
 }
 
-// reserveBeyondShare is reserve for the one call that must run whatever
+// reserveBeyondAllowance is reserve for the one call that must run whatever
 // the night has spent: the look for ideas, at most once a day (see
 // dreamIdeas). Only a provider that will not bill the account stops it,
 // because nothing the night does changes that. The estimate is still
 // claimed and the cost still booked, so the calls after it see what it
 // spent.
-func (self *dreamBudget) reserveBeyondShare() bool {
+func (self *dreamBudget) reserveBeyondAllowance() bool {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	if self.refused {

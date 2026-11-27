@@ -399,9 +399,30 @@ func TestSecretIsAdoptedFromTheLegacyFile(t *testing.T) {
 // through the dashboard invisible until the process restarted.
 //
 
-// A configuration an older release wrote with the goal caps the spending
-// share replaced still loads, and the caps are gone the next time it is
-// written.
+// A configuration an older release wrote with the caps on how often or how
+// much the agent's work runs still loads, and the caps are gone the next time
+// it is written.
+const retiredLimitsText = "    goalTurnsPerDay: 30\n    goalsInProgress: 5\n" +
+	"    goalShare: 0.5\n    dreamShare: 0.3\n    goalTurnsAlone: 24\n    backgroundWakesAlone: 20\n" +
+	"    maxRoundsPerAsk: 150\n    maxRoundsPerResearch: 8\n    maxRoundsPerReply: 6\n" +
+	"    maxRoundsPerTriage: 3\n    maxRoundsPerDream: 4\n    maxRoundsPerSubagent: 20\n" +
+	"    maxToolCallsPerRun: 60\n    embeddingTokensPerDay: 1000000\n" +
+	"    maxBodyCharacters: 12000\n    scanConcurrency: 1\n    recallTokens: 1200\n    digestDocumentRunes: 5000\n" +
+	"    rewriteConcurrency: 1\n    ingestChunksPerRun: 2000\n    requestTimeout: 60s\n" +
+	"    maxRecordingMediaBytes: 2GB\n    maxRecordingAccountBytes: 64GB\n    maxAttachmentBytes: 25MB\n" +
+	"    maxSentFileBytes: 100MB\n    maxChatAttachmentAccountBytes: 1GB\n    maxScannedAttachmentBytes: 25MB\n" +
+	"    concurrency: 2\n"
+
+var retiredLimitKeys = []string{
+	"goalTurnsPerDay", "goalsInProgress", "goalShare", "dreamShare", "goalTurnsAlone",
+	"backgroundWakesAlone", "maxRoundsPerAsk", "maxRoundsPerResearch", "maxRoundsPerReply",
+	"maxRoundsPerTriage", "maxRoundsPerDream", "maxRoundsPerSubagent", "maxToolCallsPerRun",
+	"embeddingTokensPerDay", "maxBodyCharacters", "scanConcurrency", "recallTokens", "digestDocumentRunes",
+	"rewriteConcurrency", "ingestChunksPerRun", "requestTimeout", "maxRecordingMediaBytes",
+	"maxRecordingAccountBytes", "maxAttachmentBytes", "maxSentFileBytes", "maxChatAttachmentAccountBytes",
+	"maxScannedAttachmentBytes", "concurrency",
+}
+
 func TestTheRetiredGoalCapsStillLoad(t *testing.T) {
 	filename, _ := writeValidConfiguration(t, nil)
 	content, err := os.ReadFile(filename)
@@ -415,7 +436,7 @@ func TestTheRetiredGoalCapsStillLoad(t *testing.T) {
 		t.Fatalf("the saved file has no agent limits to add to:\n%s", text)
 	}
 	limitsAt += agentAt + len("\n  limits:\n")
-	text = text[:limitsAt] + "    goalTurnsPerDay: 30\n    goalsInProgress: 5\n" + text[limitsAt:]
+	text = text[:limitsAt] + retiredLimitsText + text[limitsAt:]
 	if err := os.WriteFile(filename, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +451,9 @@ func TestTheRetiredGoalCapsStillLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(saved), "goalTurnsPerDay") || strings.Contains(string(saved), "goalsInProgress") {
-		t.Error("the retired goal caps are written again")
+	for _, key := range retiredLimitKeys {
+		if strings.Contains(string(saved), key+":") {
+			t.Errorf("the retired key %s is written again", key)
+		}
 	}
 }

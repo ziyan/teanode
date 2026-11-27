@@ -103,7 +103,10 @@ func (self *Agent) lookForTrip(ctx context.Context, agent *models.Agent, now tim
 	if agent.OnboardedAt == nil {
 		return
 	}
-	if look := self.tripLooks[agent.ID]; look != nil && now.Sub(look.lookedAt) < tripLookEvery {
+	self.tripLooksMutex.Lock()
+	look := self.tripLooks[agent.ID]
+	self.tripLooksMutex.Unlock()
+	if look != nil && now.Sub(look.lookedAt) < tripLookEvery {
 		return
 	}
 	var owner *models.User
@@ -118,18 +121,33 @@ func (self *Agent) lookForTrip(ctx context.Context, agent *models.Agent, now tim
 		log.Debugf("cannot look for a trip for agent %q: %s", agent.ID, err)
 		return
 	}
+	self.tripLooksMutex.Lock()
+	defer self.tripLooksMutex.Unlock()
 	if self.tripLooks == nil {
 		self.tripLooks = map[string]*tripLook{}
 	}
 	self.tripLooks[agent.ID] = &tripLook{lookedAt: now, isDue: trip != nil}
 }
 
+// clearTripDue forgets that a trip is due once it has been told. The look is
+// refreshed only every tripLookEvery, and with nothing else keeping the
+// agent from speaking twice in a day, a trip already told would stay due
+// until then and come before every other reason to speak.
+func (self *Agent) clearTripDue(agentId string) {
+	self.tripLooksMutex.Lock()
+	defer self.tripLooksMutex.Unlock()
+	if look := self.tripLooks[agentId]; look != nil {
+		look.isDue = false
+	}
+}
+
 // tripReason speaks about a trip a few days before it.
 func (self *Agent) tripReason() speakFirstReason {
 	return speakFirstReason{
-		name:           SpeakFirstTrip,
-		isDailyLimited: true,
+		name: SpeakFirstTrip,
 		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
+			self.tripLooksMutex.Lock()
+			defer self.tripLooksMutex.Unlock()
 			look := self.tripLooks[agent.ID]
 			return look != nil && look.isDue, nil
 		},
@@ -144,6 +162,7 @@ func (self *Agent) tripReason() speakFirstReason {
 			if err != nil || !isClaimed {
 				return "", err
 			}
+			self.clearTripDue(agent.ID)
 			if trip.IsToldBefore {
 				return speakFirstMessage(owner, now, "A trip starts tomorrow.", prepared) + tripEveCheckIn(&trip, personName(owner)), nil
 			}
@@ -207,8 +226,13 @@ func (self *Agent) tripToSpeakAbout(ctx context.Context, agent *models.Agent, ow
 // none or it was spoken about since the sweep looked.
 func (self *Agent) prepareTrip(ctx context.Context, run *Run, now time.Time) (map[string]string, bool, error) {
 	trip, isToldBefore, err := self.tripToSpeakAbout(ctx, run.Agent, run.Owner, now, strings.HasSuffix(run.Job.SubjectID, askedSuffix))
-	if err != nil || trip == nil {
+	if err != nil {
 		return nil, false, err
+	}
+	if trip == nil {
+		// Told since the sweep looked: it is not due any more.
+		self.clearTripDue(run.Agent.ID)
+		return nil, false, nil
 	}
 	location := Location(run.Owner)
 	note, err := json.Marshal(&tripNote{

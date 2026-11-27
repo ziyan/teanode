@@ -28,10 +28,8 @@ class AgentServerSettingsTest {
            "reply":"","ask":"","schedule":"","compact":"","scan":"","synthesize":"","decide":"decider:judge","categorize":"","embeddingDimensions":0,
            "choices":["main:model-large"]},
          "features":{"triage":true,"autoReply":false,"browser":false},
-         "limits":{"maxBodyCharacters":20000,"dailyTokensPerAgent":1000000,"monthlyTokensPerServer":0,"dailyCostPerAgent":2.5,"monthlyCostPerServer":0,
-           "maxRoundsPerAsk":20,"maxRoundsPerResearch":10,"maxRoundsPerReply":5,"maxRoundsPerDream":30,"maxToolCallsPerRun":50,"requestTimeout":"2m",
-           "concurrency":4,"scanConcurrency":2,"rewriteConcurrency":2,"dreamShare":0.3,"ingestChunksPerRun":500,"embeddingTokensPerDay":0,
-           "maxRoundsPerSubagent":0,"goalShare":0,"goalTurnsAlone":0,"backgroundWakesAlone":0},
+         "limits":{"dailyTokensPerAgent":1000000,"monthlyTokensPerServer":0,"dailyCostPerAgent":2.5,"monthlyCostPerServer":0,
+           "requestTimeout":"2m","concurrency":4,"maxBodyCharacters":20000},
          "retention":{"runs":"720h","corrections":"2160h"},"currency":"USD","search":{"kind":"brave","hasApiKey":true},
          "tools":{"disabled":["shell"],"confirm":["mail"],"catalog":[
            {"name":"mail_send","family":"mail","risk":"outward","description":"Sends mail.","confirms":true,"core":true,"actions":null},
@@ -226,23 +224,22 @@ class AgentServerSettingsTest {
     }
 
     @Test
-    fun theLimitsAreSentAsNumbersAndTheTimeoutAsADuration() {
+    fun theLimitsAreTheFourBudgetNumbersAndNothingElse() {
+        // The answer still carries keys an older server sends; they are not read and not sent back.
         val limits = AgentLimitsDraft.of(settings)
-        assertEquals("0.3", limits.limitTexts["dreamShare"])
+        assertEquals(setOf("dailyTokensPerAgent", "monthlyTokensPerServer", "dailyCostPerAgent", "monthlyCostPerServer"), limits.limitTexts.keys)
         assertEquals("0", limits.limitTexts["monthlyTokensPerServer"])
-        val section = limits.copy(limitTexts = limits.limitTexts + ("concurrency" to "8"), currency = "EUR").agentParameters
-        assertEquals("8", section.text("limits", "concurrency"))
-        assertEquals("2m", section.text("limits", "requestTimeout"))
+        val section = limits.copy(limitTexts = limits.limitTexts + ("monthlyCostPerServer" to "500"), currency = "EUR").agentParameters
+        assertEquals("500", section.text("limits", "monthlyCostPerServer"))
+        assertNull(section.text("limits", "concurrency"))
+        assertNull(section.text("limits", "requestTimeout"))
+        assertNull(section.text("limits", "maxBodyCharacters"))
         assertEquals("EUR", section.text("currency"))
         assertEquals("720h", section.text("retention", "runs"))
     }
 
     @Test
-    fun recordingSizesRemainByteSizeStringsAndTranscriptionHasNoDefault() {
-        val limits = AgentLimitsDraft.of(settings)
-        val sent = limits.copy(limitTexts = limits.limitTexts + ("maxRecordingMediaBytes" to "3 GB")).agentParameters
-        assertEquals("3 GB", sent.text("limits", "maxRecordingMediaBytes"))
-        assertEquals("0", limits.limitTexts["maxRecordingAccountBytes"])
+    fun transcriptionHasNoDefault() {
         val models = settings.models.assigning("transcription", "audio-service:speaker-model")
         assertEquals("new-audio:speaker-model", models.renamingProvider("audio-service", "new-audio").assignment("transcription"))
         assertTrue(AgentModelAssignments.WORK_FIELD_NAMES.contains("transcription"))

@@ -8,10 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -221,13 +221,7 @@ func (self *Agent) prepareRecordingAudio(ctx context.Context, run *Run, transcri
 	if hex.EncodeToString(digest.Sum(nil)) != transcriptRun.OriginalSHA256 {
 		return self.recordingProgress(ctx, run, transcriptRun, models.RecordingProcessingFailed, "original media failed its integrity check", transcriptRun.DerivedDurationMS)
 	}
-	maximumAccountBytes := self.settings.Configuration().Agent.Limits.MaxRecordingAccountBytes.Bytes()
-	if maximumAccountBytes == 0 {
-		maximumAccountBytes = 64 << 30
-	}
-	if maximumAccountBytes > math.MaxInt64 {
-		return fmt.Errorf("recording: account limit exceeds supported byte sizes")
-	}
+	maximumAccountBytes := int64(config.MaxRecordingAccountBytes)
 	var publicationError error
 	durationMS, err := decoder.Decode(ctx, original, media.TimelineStartMS, recordingMaximumDurationMS, chunkDurationMS, func(decoded *recording.DecodedAudioChunk) error {
 		_, publicationError = self.storeRecordingChunk(ctx, run, transcriptRun, files, decoded, int64(maximumAccountBytes))

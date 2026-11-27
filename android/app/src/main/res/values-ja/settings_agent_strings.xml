@@ -66,14 +66,7 @@
     <string name="settings_alerts_off_title">エージェントはオフです</string>
     <string name="settings_alerts_off_detail">まず概要でオンにしてください。</string>
     <string name="settings_alerts_toggle">今知っておくべきメールの内容を伝える</string>
-    <string name="settings_alerts_quiet_from_label">静かにする開始</string>
-    <string name="settings_alerts_quiet_until_label">静かにする終了</string>
-    <string name="settings_alerts_at_most">1 日の上限</string>
-    <string name="settings_alerts_look_around_on">近所を調べる曜日</string>
-    <string name="settings_alerts_look_around_at">時刻</string>
     <string name="settings_alerts_footer_one">エージェントは届いたメールを読み、今知っておくべきことがあれば頼まれなくても伝えます。家族に関する連絡、アカウントへの不審なアクセス、今日が期限のものなどです。メインの会話と、連携したチャットアプリに書きます。</string>
-    <string name="settings_alerts_footer_two">静かな時間帯には待てないことだけを伝え、それ以外は朝まで待ちます。開始と終了が同じなら静かな時間帯はありません。</string>
-    <string name="settings_alerts_footer_three">エージェントは毎週、週末とその次の週に近所で開かれることを調べ、この曜日のこの時刻にお伝えします。</string>
     <string name="settings_alerts_enabled_said">メールで今知っておくべきことを伝えます。</string>
     <string name="settings_alerts_disabled_said">メールについて頼まれずに伝えることはしません。</string>
     <string name="settings_alerts_recent_header">最近のお知らせ</string>

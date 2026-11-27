@@ -1186,12 +1186,8 @@ func TestAPersonKeepsOnlySoMuchOfTheFilesTheySendInChats(t *testing.T) {
 	world := newChatWorld(t)
 	world.shareCircle(t, world.alice, "Home", world.bob)
 	aliceChat := world.openDirect(t, world.alice, world.bob)
-	if err := world.graph.config.Update(func(configuration *config.Configuration) error {
-		configuration.Agent.Limits.MaxChatAttachmentAccountBytes = 1000
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
+	// Only rows: nothing is stored, so sizes of megabytes cost nothing.
+	const megabyte = 1 << 20
 	upload := func(size int64) string {
 		t.Helper()
 		var attachmentId string
@@ -1211,17 +1207,17 @@ func TestAPersonKeepsOnlySoMuchOfTheFilesTheySendInChats(t *testing.T) {
 	send := func(attachmentId string) (map[string]any, []string) {
 		return world.ask(t, world.alice, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "a file", attachmentIds: [%q]) { runId } }`, aliceChat, attachmentId))
 	}
-	first, second, third := upload(600), upload(300), upload(200)
+	first, second, third := upload(600*megabyte), upload(300*megabyte), upload(200*megabyte)
 	if _, failures := send(first); len(failures) > 0 {
 		t.Fatalf("the first file: %v", failures)
 	}
 	if _, failures := send(second); len(failures) > 0 {
-		t.Fatalf("the second file, to 900 of 1000 bytes: %v", failures)
+		t.Fatalf("the second file, to 900 of 1024 megabytes: %v", failures)
 	}
-	// Uploaded and not sent counts for nothing yet; sending it would pass 1000.
+	// Uploaded and not sent counts for nothing yet; sending it would pass a gigabyte.
 	_, failures := send(third)
 	said := strings.Join(failures, "; ")
-	for _, expected := range []string{"900 bytes", "200 bytes", "1000 bytes", "delete old messages with files"} {
+	for _, expected := range []string{"900.0 MB", "200.0 MB", "1.0 GB", "delete old messages with files"} {
 		if !strings.Contains(said, expected) {
 			t.Errorf("the refusal does not say %q: %q", expected, said)
 		}

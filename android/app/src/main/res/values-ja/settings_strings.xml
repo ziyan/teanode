@@ -188,12 +188,6 @@
     <string name="settings_audit_title">監査ログ</string>
     <string name="settings_audit_unset">未設定</string>
     <string name="settings_audit_via_agent">エージェント経由</string>
-    <string name="settings_brief_footer">今日の予定と待っていることを、フィードに届けます。オンにすると「Daily brief」という目標が始まり、そこで内容を確認できます。</string>
-    <string name="settings_brief_off">ブリーフを停止しました。目標は一時停止中です。</string>
-    <string name="settings_brief_on">ブリーフを開始しました。</string>
-    <string name="settings_brief_send_now">今すぐ送る</string>
-    <string name="settings_brief_sent">送信しています。まもなく届きます。</string>
-    <string name="settings_brief_title">毎朝のブリーフ</string>
     <string name="settings_circles_accept">参加</string>
     <string name="settings_circles_account_made">%1$sのアカウントを作成し、サークルに追加しました</string>
     <string name="settings_circles_admin">管理者</string>
@@ -813,6 +807,4 @@
     </plurals>
     <string name="settings_unsent_mail">書いたメッセージが未送信です。</string>
     <string name="settings_unsent_deleted">ログアウトすると、これらはこの端末から削除されます。</string>
-    <string name="settings_stepper_decrease">減らす</string>
-    <string name="settings_stepper_increase">増やす</string>
 </resources>

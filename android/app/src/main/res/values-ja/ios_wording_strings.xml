@@ -9,10 +9,7 @@
     <string name="mail_manage_published_at">公開先</string>
     <string name="mail_manage_policy">ポリシー</string>
     <string name="mail_manage_teach_header">フィルタに教える</string>
-    <string name="settings_brief_footer_on">今日の予定と待っていることを、フィードに届けます。それが「Daily brief」という目標で、開くと内容を変えられます。</string>
-    <string name="settings_brief_days">曜日</string>
     <string name="settings_brief_choose_day">曜日を 1 つ以上選んでください。</string>
-    <string name="settings_brief_start">ブリーフを送る</string>
     <string name="settings_server_about_available">入手可能</string>
     <string name="settings_server_about_last_checked">最終確認</string>
     <string name="settings_server_about_release_page">リリースページ</string>

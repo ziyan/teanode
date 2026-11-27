@@ -212,8 +212,8 @@ type AgentKnowledgeSpecification struct {
 	OwnCommitsAtLeast int `json:"ownCommitsAtLeast,omitempty"`
 
 	// MaxAttachmentBytes is the largest file this source carries off the
-	// person's machine, in bytes. Zero means the server's own limit,
-	// agent.limits.maxScannedAttachmentBytes, which is what nearly every
+	// person's machine, in bytes. Zero means the default,
+	// computer.DefaultMaxAttachmentBytes, which is what nearly every
 	// source wants; it is here for the one archive whose pictures are
 	// bigger than everybody else's.
 	MaxAttachmentBytes int64 `json:"maxAttachmentBytes,omitempty"`

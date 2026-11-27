@@ -241,7 +241,7 @@ What stands between an item and a page:
   app, a webhook, a goal, a dream, a command left running, a restart resumed, a
   program that speaks MCP (another program, not the person), a goal the agent
   wrote for itself, a goal that keeps its own pace or waits for mail, one of the
-  built-in goals (the daily brief and the asset estimates, recorded as written by
+  built-in goals (the daily brief, the look around and the asset estimates, recorded as written by
   `built_in`: they read the inbox and the web, so mail could steer them, though
   their description is still handed to the turn as the person's words), or any
   surface not known to be the person's. A goal with no writer recorded counts as
