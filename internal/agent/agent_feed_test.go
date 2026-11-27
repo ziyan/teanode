@@ -187,6 +187,31 @@ func TestAnActionChoiceSaysItInTheMainConversationWithTheCardAttached(t *testing
 	}
 }
 
+// An action chosen by a turn answering for the person, who asked it to in
+// words, is recorded with that turn's conversation and starts no turn of its
+// own: the turn that chose carries it out.
+func TestAnActionAnsweredInATurnStartsNoTurnOfItsOwn(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	card := world.post(t, &models.AgentFeedItem{Title: "Unsubscribe from three shops?", Choices: []models.FeedChoice{
+		{ChoiceKey: "unsubscribe", ChoiceLabel: "Unsubscribe", ChoiceRole: models.FeedChoiceAction},
+		{ChoiceKey: "not_now", ChoiceLabel: "Not now", ChoiceRole: models.FeedChoiceDismiss},
+	}})
+	settled, err := world.worker.ChooseFeedItem(context.Background(), &agent.FeedChoiceSettings{
+		Agent: world.agent, Owner: world.owner, Operations: world.operations, Item: card, ChoiceKey: "unsubscribe",
+		AnsweringConversationID: "answering-conversation-1",
+	})
+	if err != nil || settled.ChosenChoiceKey != "unsubscribe" || settled.ChosenConversationID != "answering-conversation-1" || settled.IsOutcomePending {
+		t.Fatalf("recorded, with no outcome to wait for: %+v %v", settled, err)
+	}
+	world.worker.Wait()
+	if _, messages := world.mainConversation(t); len(messages) != 0 {
+		t.Fatalf("a second turn started in the main conversation: %+v", messages)
+	}
+	if _, err := world.choose(t, card, "not_now"); err == nil || !strings.Contains(err.Error(), "already answered") {
+		t.Fatalf("the card was answered twice: %v", err)
+	}
+}
+
 // A like is written to the agent's memory as a preference, and a "show less
 // like this" records the opposite and dismisses the card.
 func TestALikeIsWrittenToMemory(t *testing.T) {

@@ -72,6 +72,12 @@ func feedText(item *models.AgentFeedItem, fieldName, text string, characters int
 	return cutMarked(text, characters)
 }
 
+// feedWhole is a card's text as kept whole: trimmed, with its dashes
+// rewritten as for every field.
+func feedWhole(text string) string {
+	return strings.TrimSpace(rewriteFeedDashes(text))
+}
+
 // feedLine is feedText on one line: its line breaks are blanks.
 func feedLine(item *models.AgentFeedItem, fieldName, text string, characters int) string {
 	return feedText(item, fieldName, strings.Join(strings.Fields(text), " "), characters)

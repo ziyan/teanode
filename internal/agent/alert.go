@@ -1012,10 +1012,6 @@ func (self *Agent) deliverAlert(ctx context.Context, run *Run, conversationId st
 	return nil
 }
 
-// alertCardTitleCharacters is how much of an alert's first words are the
-// headline of its card.
-const alertCardTitleCharacters = 90
-
 // deliverAlertToFeed says one alert as a card in the feed and records it, so
 // that the bounds on how often a subject is told, and the mutes, work as they
 // do for an alert said in the conversation. The candidates are taken first, in
@@ -1063,17 +1059,55 @@ func (self *Agent) deliverAlertToFeed(ctx context.Context, run *Run, planned *pl
 	if planned.isUrgent {
 		urgency = models.FeedUrgencyNow
 	}
-	title := firstFeedLine(planned.alertText)
-	if title == "" {
-		title = "Something to know"
-	}
+	title, body := alertCardHeadline(planned.alertText)
 	if _, _, err := self.PostFeedItem(ctx, &FeedPost{AgentID: run.Agent.ID, Item: &models.AgentFeedItem{
 		FeedItemKind: models.FeedItemAlert, FeedSourceKind: models.FeedSourceAlert, FeedSourceID: alert.ID,
-		Title: cutRunes(title, alertCardTitleCharacters), Body: planned.alertText, PictureSymbol: "exclamationmark.triangle",
+		Title: title, Body: body, PictureSymbol: "exclamationmark.triangle",
 		CoalesceKey: "alert:" + planned.subjectKey, FeedUrgency: urgency,
 	}}); err != nil {
 		return err
 	}
 	log.Noticef("agent %q told its person about %q unasked, in the feed", run.Agent.ID, alert.SubjectKey)
 	return nil
+}
+
+// alertCardHeadline splits an alert into its card's headline, the first
+// sentence whole, and the body, the rest of it; an alert of one sentence is a
+// headline alone.
+func alertCardHeadline(alertText string) (string, string) {
+	text := strings.TrimSpace(alertText)
+	if text == "" {
+		return "Something to know", ""
+	}
+	for index := 0; index < len(text)-1; index++ {
+		if (text[index] == '.' || text[index] == '!' || text[index] == '?') && (text[index+1] == ' ' || text[index+1] == '\n') {
+			// A period after a short abbreviation is not the end of a
+			// sentence ("e.g. this"); one inside a number has no blank after
+			// it and is never looked at.
+			if text[index] == '.' && isAlertAbbreviation(text[:index]) {
+				continue
+			}
+			return strings.TrimSpace(text[:index+1]), strings.TrimSpace(text[index+1:])
+		}
+	}
+	return text, ""
+}
+
+// isAlertAbbreviation is whether the words before a period end in a short
+// abbreviation (a single letter, or e.g., i.e., vs., etc.), which does not end
+// a sentence.
+func isAlertAbbreviation(before string) bool {
+	fields := strings.Fields(before)
+	if len(fields) == 0 {
+		return false
+	}
+	last := strings.ToLower(fields[len(fields)-1])
+	if len([]rune(last)) == 1 {
+		return true
+	}
+	switch last {
+	case "e.g", "i.e", "vs", "etc", "mr", "mrs", "ms", "dr", "st", "no":
+		return true
+	}
+	return false
 }

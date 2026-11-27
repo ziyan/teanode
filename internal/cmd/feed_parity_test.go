@@ -13,10 +13,9 @@ import (
 )
 
 // The feed is on the API, the command line and the agent's feed tool under
-// the same names. The agent posts, changes, withdraws, dismisses, restores and lists; choosing,
-// liking, reading and discussing are the person's: a card is the person's to
-// answer, and a like is what the agent learns from, so the agent does not
-// press its own buttons.
+// the same names. The agent does all of it, the person's buttons too when
+// they ask in words; only discussing has no action, since asking the agent
+// about a card is already the conversation that discussing opens.
 func TestFeedParity(test *testing.T) {
 	test.Parallel()
 
@@ -33,17 +32,17 @@ func TestFeedParity(test *testing.T) {
 		action     string
 	}{
 		"ListAgentFeed":             {"list", "list"},
-		"ListAgentFeedStack":        {"stack", ""},
-		"GetAgentFeedItem":          {"show", ""},
-		"ChooseAgentFeedItem":       {"choose", ""},
-		"LikeAgentFeedItem":         {"like", ""},
-		"ShowLessLikeAgentFeedItem": {"less", ""},
+		"ListAgentFeedStack":        {"stack", "stack"},
+		"GetAgentFeedItem":          {"show", "show"},
+		"ChooseAgentFeedItem":       {"choose", "choose"},
+		"LikeAgentFeedItem":         {"like", "like"},
+		"ShowLessLikeAgentFeedItem": {"less", "less"},
 		"DismissAgentFeedItems":     {"dismiss", "dismiss"},
 		"RestoreAgentFeedItems":     {"restore", "restore"},
 		"WithdrawAgentFeedItem":     {"withdraw", "withdraw"},
 		"ResolveAgentFeedItem":      {"resolve", "resolve"},
 		"UnresolveAgentFeedItem":    {"unresolve", "unresolve"},
-		"MarkAgentFeedRead":         {"read", ""},
+		"MarkAgentFeedRead":         {"read", "read"},
 		"DiscussAgentFeedItem":      {"discuss", ""},
 		"PostAgentFeedItem":         {"post", "post"},
 	}
@@ -92,7 +91,7 @@ func TestFeedParity(test *testing.T) {
 	}
 	// An action of the tool is an operation, or the update of a post by id.
 	for action := range actions {
-		known := action == "update" || action == "withdraw" // PostAgentFeedItem with feedItemId; DismissAgentFeedItems of one card
+		known := action == "update" || action == "withdraw" || action == "unlike" // PostAgentFeedItem with feedItemId; DismissAgentFeedItems of one card; LikeAgentFeedItem with isLiked false
 		for _, names := range table {
 			known = known || names.action == action
 		}
@@ -103,6 +102,9 @@ func TestFeedParity(test *testing.T) {
 	// "unlike" is LikeAgentFeedItem with isLiked false.
 	if commands["unlike"] == nil {
 		test.Error("teanode agent feed has no unlike")
+	}
+	if !actions["unlike"] {
+		test.Error("the feed tool has no unlike")
 	}
 	isOperationCommand := map[string]bool{"unlike": true}
 	for _, names := range table {

@@ -254,7 +254,7 @@ func TestAlertJobTellsTheBurstInTheFeedInsteadOfTheMainConversation(t *testing.T
 		card := items[0]
 		if card.FeedItemKind != models.FeedItemAlert || card.FeedSourceKind != models.FeedSourceAlert || card.FeedSourceID != alerts[0].ID ||
 			card.CoalesceKey != "alert:photo app sign-in codes" || card.FeedUrgency != models.FeedUrgencyNow || card.FeedStackKey != "" ||
-			!strings.HasPrefix(card.Title, "Heads up:") || card.Body != alerts[0].AlertText {
+			!strings.HasPrefix(card.Title, "Heads up:") || card.Title+" "+card.Body != alerts[0].AlertText {
 			t.Fatalf("the card: %+v", card)
 		}
 	})

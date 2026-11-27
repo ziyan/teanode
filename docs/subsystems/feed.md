@@ -105,19 +105,11 @@ event, and neither moves the card, makes it unread or notifies the phones.
 
 - **The first resolution stands.** Resolving a card already resolved is refused
   ("already resolved"), so a later note never replaces the first.
-- **A goal's own turn** resolves only a card it posted (its `feed_source_id` is
-  that goal), and never one the person resolved: it cannot replace that, nor take
-  it off. The tool names the goal's conversation as `runConversationId` when the
-  turn is a goal's own (the same test as the restore refusal), and the operation
-  holds it to those rules. A person tapping, or the command line, is `person`;
-  the agent's tool outside a goal's own turn is `agent`.
-- **A shell command of the agent** (the command line run by the agent, which
-  sends the `X-Teanode-Agent-Command` header with the person's token) cannot
-  resolve, unresolve, restore or withdraw: the operations answer permission
-  denied, saying these are for the person and for the feed tool inside a turn.
-  This holds whatever `runConversationId` the command sends, so the goal limits
-  above cannot be skipped by leaving it out. The in-process feed tool carries no
-  request and is not affected.
+- **Who resolved it.** The tool names the goal's conversation as
+  `runConversationId` when the turn is a goal's own, so the card is marked
+  `goal` with that conversation; a person tapping, or the command line, is
+  `person`; the agent's tool in any other turn is `agent`. Any of them may
+  resolve any card, or take any resolution off when it was wrong.
 - **Posting the same subject again** (a coalesce key replace) clears the
   resolution, since it is a new state of the subject. An `update` that changes
   the text keeps it.
@@ -203,9 +195,12 @@ The server holds a few of them itself, in `NormalizeFeedItem`:
   chart text, layout text, captions and stack title are rewritten: a spaced dash
   becomes a comma, an unspaced one a hyphen, a spaced dash at a line's start is a
   list bullet and one at the edge of the text goes.
-- **Cut, not refused.** A title, label or caption a little too long is cut with
-  an ellipsis, and the answer's `postNotes` lists the fields cut ("title was cut
-  to 200 characters"). A change does not list again what an earlier post cut.
+- **Whole titles.** A card's title and body, and a stack's title, are kept
+  whole: the screens wrap them. An alert's card takes the alert's first
+  sentence as its title and the rest as its body.
+- **Cut, not refused.** A label or caption a little too long is cut with an
+  ellipsis, and the answer's `postNotes` lists the fields cut ("factLabel was
+  cut to 80 characters"). A change does not list again what an earlier post cut.
 - **An update keeps what it leaves out.** `PostAgentFeedItem` with a `feedItemId`
   writes only the fields it was given: title, kind, body, choices, media, charts
   and layout stay as they were.
@@ -255,6 +250,13 @@ speaking first and what goals post back to the main conversation.
   conversation (`DiscussAgentFeedItem` answers the main conversation's id and
   marks the card read) or the session.
 
+The agent answers for the person when they ask it to in words ("yes,
+unsubscribe me"): the feed tool's `choose` sends the turn's own conversation as
+`runConversationId`. An action is then only recorded, with that conversation,
+and starts no turn of its own, since the turn that chose carries it out; the
+card has no outcome to wait for. A conversation that is not the person's is
+refused.
+
 ## Dismissing and restoring
 
 `DismissAgentFeedItems` closes cards: exactly one of `feedItemIds` (at most
@@ -275,8 +277,8 @@ one dismissed last comes back. A question a dismissal stopped stays stopped,
 though the card's buttons still work because they post to the main
 conversation. Every surface offers Undo after a dismissal, which is a restore
 of the ids the dismissal answered. The agent's `feed` tool has `dismiss` and
-`restore` actions for when the person asks, and a goal's own turn cannot
-restore; `teanode agent feed dismiss` and `restore` do the same. The dashboard
+`restore` actions for when the person asks, in a conversation or in a goal's
+instructions; `teanode agent feed dismiss` and `restore` do the same. The dashboard
 has a dismiss button on each card, Dismiss all on a stack and Dismiss read
 above the list.
 
@@ -306,10 +308,19 @@ and still sends one event for each card.
 `teanode agent feed withdraw`) deletes the card: a card the agent took back
 because it no longer holds is not among the dismissed cards and cannot be put
 back. A card the person answered or resolved is theirs and is refused ("dismiss
-it instead"); a goal's own turn (the tool sends `runConversationId`, and the
-operation checks it again) may withdraw only a card whose feed source is that
-goal; and the files of the card's pictures are deleted with it, once the
-deletion commits. A shell command of the agent is refused, as for resolving.
+it instead"), since a person puts a card away by dismissing it; and the files
+of the card's pictures are deleted with it, once the deletion commits.
+
+## Doing the person's part for them
+
+Everything a person's button does, the feed tool does too when they ask in
+words: `choose`, `like` and `unlike`, `less` (show less like this) and `read`,
+next to `dismiss` and `restore`. `show` reads one card and `stack` one stack,
+and `list` and `stack` page on with `after`, the `nextCursor` of the page before.
+A goal's own turn does them too when its instructions say to, and so does the
+agent's shell running `teanode agent feed`. Only discussing has no action,
+since asking the agent about a card is already the conversation discussing
+opens.
 
 ## Liking
 
