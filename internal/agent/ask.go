@@ -1991,12 +1991,12 @@ const lastRoundNotice = "This is the last round: no tool can be called now. Answ
 // chat streams when the provider can, so the drawer sees the words as they
 // come, and falls back to one call when it cannot.
 func (self *AskRun) chat(ctx context.Context, provider llm.Provider, request *llm.ChatRequest) (*llm.ChatResponse, error) {
-	timeout := self.agent.settings.Configuration().Agent.Limits.RequestTimeout.Duration()
-	callContext, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	events, err := provider.ChatStream(callContext, request)
+	// No total time on the answer: the provider's stream is cut when
+	// nothing arrives for a while, and a plain call has a generous total
+	// of its own (see internal/llm/timing.go).
+	events, err := provider.ChatStream(ctx, request)
 	if err != nil {
-		return provider.Chat(callContext, request)
+		return provider.Chat(ctx, request)
 	}
 	var response *llm.ChatResponse
 	var text strings.Builder

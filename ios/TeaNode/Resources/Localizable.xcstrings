@@ -12835,22 +12835,6 @@
         }
       }
     },
-    "Characters of a message given to a model": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "モデルに渡すメッセージの文字数"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "交给模型的邮件字符数"
-          }
-        }
-      }
-    },
     "Charitable gifts": {
       "localizations": {
         "ja": {
@@ -30969,22 +30953,6 @@
         }
       }
     },
-    "Page rewrites at once": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同時に書き直すページ数"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同时改写的页面数"
-          }
-        }
-      }
-    },
     "Pages in the agent's memory that mention what was said here.": {
       "localizations": {
         "ja": {
@@ -31093,22 +31061,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "部分正确"
-          }
-        }
-      }
-    },
-    "Passages embedded per ingest run": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "取り込み 1 回あたりの埋め込み段落数"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每次导入嵌入的段落数"
           }
         }
       }
@@ -33259,22 +33211,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "阅读与整理：做梦、导入、记忆整理"
-          }
-        }
-      }
-    },
-    "Reading calls at once": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同時に行う読み取り呼び出し数"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同时进行的阅读调用数"
           }
         }
       }
@@ -35829,22 +35765,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "运行记录"
-          }
-        }
-      }
-    },
-    "Runs at once": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同時実行数"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "并发运行数"
           }
         }
       }
@@ -44560,22 +44480,6 @@
         }
       }
     },
-    "Timeout per call": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "呼び出しごとのタイムアウト"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "单次调用超时"
-          }
-        }
-      }
-    },
     "Title": {
       "localizations": {
         "ja": {
@@ -53164,38 +53068,6 @@
         }
       }
     },
-    "Original recording file limit": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "原始录音文件限制"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "元の録音ファイルの上限"
-          }
-        }
-      }
-    },
-    "Recording storage per account": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每个账户的录音存储空间"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アカウントごとの録音容量"
-          }
-        }
-      }
-    },
     "Off: choose a model with speaker attribution": {
       "localizations": {
         "zh-Hans": {
@@ -53208,22 +53080,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "オフ：話者識別に対応したモデルを選んでください"
-          }
-        }
-      }
-    },
-    "Sizes accept units such as GB. Zero uses 2 GB per original and 64 GB per account. Pending uploads and files awaiting deletion count toward storage.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "大小可使用 GB 等单位。零表示每个原始文件默认 2 GB，每个账户默认 64 GB。待上传和待删除的文件均计入存储量。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "GB などの単位を使えます。ゼロは元のファイルごとに 2 GB、アカウントごとに 64 GB の既定値です。アップロード待ちと削除待ちのファイルも容量に含まれます。"
           }
         }
       }

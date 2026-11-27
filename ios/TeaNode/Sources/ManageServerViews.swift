@@ -2077,14 +2077,6 @@ private enum AgentWords {
         case "dailyCostPerAgent": "Daily cost per person"
         case "monthlyCostPerServer": "Monthly cost, whole server"
         case "monthlyTokensPerServer": "Tokens per month, whole server (0 = no cap)"
-        case "maxBodyCharacters": "Characters of a message given to a model"
-        case "maxRecordingMediaBytes": "Original recording file limit"
-        case "maxRecordingAccountBytes": "Recording storage per account"
-        case "requestTimeout": "Timeout per call"
-        case "concurrency": "Runs at once"
-        case "scanConcurrency": "Reading calls at once"
-        case "rewriteConcurrency": "Page rewrites at once"
-        case "ingestChunksPerRun": "Passages embedded per ingest run"
         default: LocalizedStringKey(limitName)
         }
     }
@@ -3708,8 +3700,8 @@ private struct AgentFeaturesFormView: View {
 }
 
 /// AgentLimitsFormView is the caps on what one person and the whole server
-/// may spend, how far one run may go, what unattended work may take, and
-/// how long transcripts and corrections are kept.
+/// may spend, in tokens and in money, and how long transcripts and
+/// corrections are kept.
 private struct AgentLimitsFormView: View {
     let model: AgentAdminModel
 
@@ -3734,20 +3726,15 @@ private struct AgentLimitsFormView: View {
                             .textInputAutocapitalization(.characters)
                         }
                     }
-                    if limitNames.contains("requestTimeout") {
-                        LabeledContent("Keep run transcripts for") {
-                            TextField("Keep run transcripts for", text: draft.retention.runs).multilineTextAlignment(.trailing)
-                        }
-                        LabeledContent("Keep corrections for") {
-                            TextField("Keep corrections for", text: draft.retention.corrections).multilineTextAlignment(.trailing)
-                        }
-                    }
-                } footer: {
-                    if limitNames.contains("maxRecordingMediaBytes") {
-                        Text("Sizes accept units such as GB. Zero uses 2 GB per original and 64 GB per account. Pending uploads and files awaiting deletion count toward storage.")
-                    }
                 }
-                .id(limitNames.contains("maxRecordingMediaBytes") ? "recording-quotas" : (limitNames.first ?? ""))
+            }
+            Section {
+                LabeledContent("Keep run transcripts for") {
+                    TextField("Keep run transcripts for", text: draft.retention.runs).multilineTextAlignment(.trailing)
+                }
+                LabeledContent("Keep corrections for") {
+                    TextField("Keep corrections for", text: draft.retention.corrections).multilineTextAlignment(.trailing)
+                }
             }
         }
     }
@@ -3758,7 +3745,7 @@ private struct AgentLimitsFormView: View {
                 AgentWords.limitLabel(limitName),
                 text: Binding(get: { draft.wrappedValue.limitTexts[limitName] ?? "" }, set: { draft.wrappedValue.limitTexts[limitName] = $0 })
             )
-            .keyboardType((limitName == "requestTimeout" || limitName.hasPrefix("maxRecording")) ? .default : .decimalPad)
+            .keyboardType(.decimalPad)
             .multilineTextAlignment(.trailing)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
@@ -4841,16 +4828,12 @@ private struct SourceTypeGuideSheet: View {
         var body: some View {
             ScrollViewReader { proxy in
                 Group {
-                    if screen == "recording-model-settings" {
-                        AgentModelsFormView(model: model)
-                    } else {
-                        AgentLimitsFormView(model: model)
-                    }
+                    AgentModelsFormView(model: model)
                 }
                 .task {
                     await model.load()
                     try? await Task.sleep(for: .milliseconds(200))
-                    proxy.scrollTo(screen == "recording-model-settings" ? "recording-transcription" : "recording-quotas", anchor: .top)
+                    proxy.scrollTo("recording-transcription", anchor: .top)
                 }
             }
         }

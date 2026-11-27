@@ -4,7 +4,7 @@
 
     extension DemoServer {
         static let recordingAgentSettingsFixture =
-            #"{"enabled":true,"instructions":"","allowPrivateAddresses":[],"skipCertificateCheck":[],"providers":[],"models":{"default":"","fast":"","quick":"","embedding":"","triage":"","research":"","summarize":"","reply":"","ask":"","schedule":"","compact":"","scan":"","synthesize":"","decide":"","categorize":"","transcription":"demo:transcription","embeddingDimensions":0,"choices":[]},"features":{},"limits":{"maxBodyCharacters":0,"dailyTokensPerAgent":0,"monthlyTokensPerServer":0,"dailyCostPerAgent":0,"monthlyCostPerServer":0,"concurrency":0,"scanConcurrency":0,"rewriteConcurrency":0,"ingestChunksPerRun":0,"requestTimeout":"2m","maxRecordingMediaBytes":"2GB","maxRecordingAccountBytes":"64GB"},"retention":{"runs":"720h","corrections":"2160h"},"currency":"USD","search":{"kind":"","hasApiKey":false},"tools":{"disabled":[],"confirm":[],"catalog":[]},"voice":{"enabled":false,"provider":"","transcriptionModel":"","silenceMS":0,"speechModel":"","speechVoice":"","askModel":""},"browser":{"enabled":false,"cdpEndpoint":"","attachTabs":true,"allowPrivateAddresses":[],"idleTimeout":"5m","maxContexts":4},"mcpServers":[],"finance":{"offeredProviders":[],"plaid":{"environment":"","clientId":"","hasSecret":false,"countryCodes":[],"products":[]}},"works":[],"families":[],"kinds":[]}"#
+            #"{"enabled":true,"instructions":"","allowPrivateAddresses":[],"skipCertificateCheck":[],"providers":[],"models":{"default":"","fast":"","quick":"","embedding":"","triage":"","research":"","summarize":"","reply":"","ask":"","schedule":"","compact":"","scan":"","synthesize":"","decide":"","categorize":"","transcription":"demo:transcription","embeddingDimensions":0,"choices":[]},"features":{},"limits":{"dailyTokensPerAgent":0,"monthlyTokensPerServer":0,"dailyCostPerAgent":0,"monthlyCostPerServer":0},"retention":{"runs":"720h","corrections":"2160h"},"currency":"USD","search":{"kind":"","hasApiKey":false},"tools":{"disabled":[],"confirm":[],"catalog":[]},"voice":{"enabled":false,"provider":"","transcriptionModel":"","silenceMS":0,"speechModel":"","speechVoice":"","askModel":""},"browser":{"enabled":false,"cdpEndpoint":"","attachTabs":true,"allowPrivateAddresses":[],"idleTimeout":"5m","maxContexts":4},"mcpServers":[],"finance":{"offeredProviders":[],"plaid":{"environment":"","clientId":"","hasSecret":false,"countryCodes":[],"products":[]}},"works":[],"families":[],"kinds":[]}"#
         static let providerPricesFixture =
             #""providers":[{"name":"openai","kind":"openai","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,"allow":[],"deny":[],"pricingInput":2.5,"pricingOutput":10,"pricingCacheRead":1.25,"pricingCacheWrite":0,"pricingAudioInput":6,"modelPricing":[{"model":"gpt-4o-transcribe*","input":2.5,"output":10,"cacheRead":0,"cacheWrite":0,"audioInput":6}],"planUsage":null}]"#
         /// The provider of `provider-prices` with a billing key, for `provider-billing-check`.
@@ -394,7 +394,7 @@
         var body: some View {
             NavigationStack {
                 switch screen {
-                case "recording-model-settings", "recording-quota-settings": RecordingOperatorDemoScreen(connection: connection, screen: screen)
+                case "recording-model-settings": RecordingOperatorDemoScreen(connection: connection, screen: screen)
                 case "recording-citation":
                     RecordingCitationScreen(
                         connection: connection,

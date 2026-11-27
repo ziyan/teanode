@@ -125,7 +125,7 @@ func (self *Agent) runRecordingIngest(ctx context.Context, run *Run, source *mod
 	if err := self.CurateRecordingSpeakers(ctx, run.Owner.ID, specification.RecordingID); err != nil {
 		return err
 	}
-	if _, _, err := self.embedChunks(ctx, run.Agent, 2000); err != nil {
+	if _, _, err := self.embedChunks(ctx, run.Agent, ingestChunksPerRun); err != nil {
 		return err
 	}
 	return run.Database().TransactionContext(ctx, func(transaction db.Transaction) error {

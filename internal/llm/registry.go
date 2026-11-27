@@ -58,10 +58,6 @@ func Open(configuration *config.Agent) (*Registry, error) {
 		providers:     map[string]*providerEntry{},
 		cache:         map[string]cachedModels{},
 	}
-	timeout := configuration.Limits.RequestTimeout.Duration()
-	if timeout <= 0 {
-		timeout = 60 * time.Second
-	}
 	for _, declared := range configuration.Providers {
 		if !declared.IsEnabled() {
 			continue
@@ -76,9 +72,9 @@ func Open(configuration *config.Agent) (*Registry, error) {
 		switch declared.Kind {
 		case config.AgentProviderKindCodex:
 			service, err = NewSignedInProvider(declared.Kind, declared.BaseURL,
-				declared.RefreshToken, declared.Account, timeout)
+				declared.RefreshToken, declared.Account)
 		default:
-			service, err = NewProvider(declared.Kind, declared.BaseURL, declared.APIKey, timeout)
+			service, err = NewProvider(declared.Kind, declared.BaseURL, declared.APIKey)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("llm: provider %q: %w", declared.Name, err)

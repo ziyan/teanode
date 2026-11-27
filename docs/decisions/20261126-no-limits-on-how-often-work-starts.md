@@ -101,11 +101,52 @@ agent's `alertDailyMost`, `alertQuietStart`, `alertQuietEnd`,
 are ignored when sent, so an older app's settings page loads and saves. Their
 columns stay until a later migration drops them.
 
+## The Limits page holds only the budget
+
+The owner looked at the Limits page and asked why these limits were necessary:
+no one can configure them correctly. So the page, and `config.AgentLimits`,
+hold only the person's daily tokens and daily cost and the server's monthly
+tokens and monthly cost. Every other field stops being a setting:
+
+- **Gone**, because they bound nothing the money limit does not:
+  `digestDocumentRunes` (a dream reads every document whole, a long one in
+  parts), and `requestTimeout` (below).
+- **A constant, at the value it had, with its reason beside it:**
+  `MaxRecordingMediaBytes` (2 GB), `MaxRecordingAccountBytes` (64 GB),
+  `MaxAttachmentBytes` (25 MB), `MaxSentFileBytes` (100 MB) and
+  `MaxChatAttachmentAccountBytes` (1 GB) in `internal/config/agent.go`, which
+  are sizes the disk and the upload path are built for;
+  `MaxScannedAttachmentBytes` is `computer.DefaultMaxAttachmentBytes` (25 MB);
+  `messageBodyCharactersMost` (12,000), `recallTokens` (1,200),
+  `ingestChunksPerRun` (2,000), `dreamScanConcurrency` and
+  `dreamRewriteConcurrency` (one each) in the agent package; and
+  `WorkerConcurrency` (2).
+
+`requestTimeout` (60 seconds) cut a whole answer at a minute, and a long
+document read ("Read 20 documents") failed with "the answer stopped: context
+deadline exceeded" while the provider was still sending. It is replaced, for
+every provider, by two clocks in `internal/llm/timing.go`:
+
+- an answer has no total time limit; a streamed one is cut only when nothing
+  has arrived for 3 minutes, and every byte, a heartbeat comment included,
+  starts the 3 minutes again (the wait for the first byte counts too);
+- a call that does not stream (a model list, a vector) has 15 minutes in all,
+  so a connection that died without telling anyone still ends.
+
+The HTTP clients carry no timeout of their own, since a client timeout bounds
+the whole of a response. Both cuts report `context.DeadlineExceeded`, as the
+old one did, with a sentence that says which clock ran out.
+
+The removed YAML keys load with a warning through `deprecatedLimits`. The
+removed GraphQL fields keep answering zero or empty for one release and are
+ignored when sent, as the fields above are. The dashboard, the iPhone app, the
+Android app and the command line show and send the four budget fields only.
+
 ## What stays, and why
 
 None of these is a count of how often or how much work runs:
 
-- the person's daily limit and the server's monthly one, the catch-all;
+- the person's daily limit and the server's monthly one, the catch-all, and the only limits there are to set;
 - the rhythms of background jobs, which are each job's schedule: a dream at
   most every 6 hours, ideas every 20 hours, reflection and evaluation weekly,
   journal periods daily;

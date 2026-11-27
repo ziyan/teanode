@@ -338,11 +338,7 @@ func New(settings *Settings) *Agent {
 			WaitGroup:     &self.waitGroup,
 		})
 	}
-	concurrency := settings.Configuration().Agent.Limits.Concurrency
-	if concurrency <= 0 {
-		concurrency = 1
-	}
-	self.slots = make(chan struct{}, concurrency)
+	self.slots = make(chan struct{}, config.WorkerConcurrency)
 	self.Register(models.AgentJobNoop, func(ctx context.Context, run *Run) error {
 		log.Debugf("noop job %s ran for agent %s", run.Job.ID, run.Agent.ID)
 		return nil

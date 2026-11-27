@@ -406,13 +406,21 @@ const retiredLimitsText = "    goalTurnsPerDay: 30\n    goalsInProgress: 5\n" +
 	"    goalShare: 0.5\n    dreamShare: 0.3\n    goalTurnsAlone: 24\n    backgroundWakesAlone: 20\n" +
 	"    maxRoundsPerAsk: 150\n    maxRoundsPerResearch: 8\n    maxRoundsPerReply: 6\n" +
 	"    maxRoundsPerTriage: 3\n    maxRoundsPerDream: 4\n    maxRoundsPerSubagent: 20\n" +
-	"    maxToolCallsPerRun: 60\n    embeddingTokensPerDay: 1000000\n"
+	"    maxToolCallsPerRun: 60\n    embeddingTokensPerDay: 1000000\n" +
+	"    maxBodyCharacters: 12000\n    scanConcurrency: 1\n    recallTokens: 1200\n    digestDocumentRunes: 5000\n" +
+	"    rewriteConcurrency: 1\n    ingestChunksPerRun: 2000\n    requestTimeout: 60s\n" +
+	"    maxRecordingMediaBytes: 2GB\n    maxRecordingAccountBytes: 64GB\n    maxAttachmentBytes: 25MB\n" +
+	"    maxSentFileBytes: 100MB\n    maxChatAttachmentAccountBytes: 1GB\n    maxScannedAttachmentBytes: 25MB\n" +
+	"    concurrency: 2\n"
 
 var retiredLimitKeys = []string{
 	"goalTurnsPerDay", "goalsInProgress", "goalShare", "dreamShare", "goalTurnsAlone",
 	"backgroundWakesAlone", "maxRoundsPerAsk", "maxRoundsPerResearch", "maxRoundsPerReply",
 	"maxRoundsPerTriage", "maxRoundsPerDream", "maxRoundsPerSubagent", "maxToolCallsPerRun",
-	"embeddingTokensPerDay",
+	"embeddingTokensPerDay", "maxBodyCharacters", "scanConcurrency", "recallTokens", "digestDocumentRunes",
+	"rewriteConcurrency", "ingestChunksPerRun", "requestTimeout", "maxRecordingMediaBytes",
+	"maxRecordingAccountBytes", "maxAttachmentBytes", "maxSentFileBytes", "maxChatAttachmentAccountBytes",
+	"maxScannedAttachmentBytes", "concurrency",
 }
 
 func TestTheRetiredGoalCapsStillLoad(t *testing.T) {

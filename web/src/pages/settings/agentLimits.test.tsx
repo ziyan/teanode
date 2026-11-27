@@ -27,22 +27,22 @@ const removed = [
   'goalShare',
   'goalTurnsAlone',
   'backgroundWakesAlone',
+  'maxBodyCharacters',
+  'maxRecordingMediaBytes',
+  'maxRecordingAccountBytes',
+  'requestTimeout',
+  'concurrency',
+  'scanConcurrency',
+  'rewriteConcurrency',
+  'ingestChunksPerRun',
 ]
 
 const settings = {
   limits: {
-    maxBodyCharacters: 1000,
-    maxRecordingMediaBytes: '1G',
-    maxRecordingAccountBytes: '10G',
     dailyTokensPerAgent: 0,
     dailyCostPerAgent: 30,
     monthlyCostPerServer: 500,
     monthlyTokensPerServer: 0,
-    requestTimeout: '60s',
-    concurrency: 2,
-    scanConcurrency: 2,
-    rewriteConcurrency: 2,
-    ingestChunksPerRun: 10,
   },
   retention: { runs: '30d', corrections: '90d' },
   currency: 'USD',
@@ -75,4 +75,18 @@ it('does not send the removed limits when saved', async () => {
   expect(sent).toContain('dailyCostPerAgent')
   expect(sent).toContain('monthlyCostPerServer')
   expect(screen.queryByText(/Share of the day/)).toBeNull()
+})
+
+it('shows only the token and money budget', () => {
+  const { container } = render(
+    <MemoryRouter>
+      <TranslationProvider>
+        <ToastProvider>
+          <LimitsForm settings={settings} onSaved={() => undefined} />
+        </ToastProvider>
+      </TranslationProvider>
+    </MemoryRouter>,
+  )
+  expect(container.querySelectorAll('input[inputmode="numeric"]')).toHaveLength(4)
+  expect(screen.queryByText(/Timeout per call/)).toBeNull()
 })

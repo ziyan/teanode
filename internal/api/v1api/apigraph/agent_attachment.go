@@ -119,17 +119,15 @@ func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *h
 	if !ok {
 		return
 	}
-	limit := self.config.Current().Agent.Limits.MaxAttachmentBytes.Bytes()
-	if limit > 0 {
-		request.Body = http.MaxBytesReader(response, request.Body, int64(limit)+multipartOverhead)
-	}
+	limit := uint64(config.MaxAttachmentBytes)
+	request.Body = http.MaxBytesReader(response, request.Body, int64(limit)+multipartOverhead)
 	uploads, err := readUploads(request, limit)
 	if err != nil {
 		status := http.StatusBadRequest
 		var tooLarge *http.MaxBytesError
 		if errors.Is(err, errTooLarge) || errors.As(err, &tooLarge) {
 			status = http.StatusRequestEntityTooLarge
-			err = fmt.Errorf("the files come to more than %s", self.config.Current().Agent.Limits.MaxAttachmentBytes)
+			err = fmt.Errorf("the files come to more than %s", config.ByteSize(config.MaxAttachmentBytes))
 		}
 		writeJSON(response, status, map[string]string{"error": err.Error()})
 		return

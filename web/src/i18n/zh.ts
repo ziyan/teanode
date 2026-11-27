@@ -1796,10 +1796,6 @@ export const zh: Catalog = {
   'agentSettings.limit.monthlyCostPerServer': '整台服务器每月金额',
   'agentSettings.currency': '货币',
   'agentSettings.limit.monthlyTokensPerServer': '整台服务器每月 token（0 = 不限）',
-  'agentSettings.limit.maxRecordingMediaBytes': '录音文件大小上限',
-  'agentSettings.limit.maxRecordingAccountBytes': '每个账户的录音存储上限',
-  'agentSettings.recordingLimitsHint':
-    '可填写 2GB 或 64GB 等大小。0 使用默认值：每个文件 2GB、每个账户 64GB。尚未完成上传或删除的文件仍计入上限。',
   'agentSettings.recordingCapture': '录制中',
   'agentSettings.recordingLiveTranscription': '录制时实时转写',
   'agentSettings.recordingLiveTranscriptionDescription':
@@ -1807,12 +1803,6 @@ export const zh: Catalog = {
   'agentSettings.recordingAccurateWords': '录音文字更准确',
   'agentSettings.recordingAccurateWordsDescription':
     '用语音转写模型把每位说话人的发言再转写一遍，并提供来自用户自身数据的名称和术语，使拼写更准确。说话人和时间不变，用户的修改仍然优先。音频会再向用户的代理计费一次。',
-  'agentSettings.limit.maxBodyCharacters': '交给模型的邮件字符数',
-  'agentSettings.limit.requestTimeout': '单次调用超时',
-  'agentSettings.limit.concurrency': '并发运行数',
-  'agentSettings.limit.scanConcurrency': '同时进行的阅读调用数',
-  'agentSettings.limit.rewriteConcurrency': '同时改写的页面数',
-  'agentSettings.limit.ingestChunksPerRun': '每次导入嵌入的段落数',
   'agentSettings.retentionRuns': '运行记录保留',
   'agentSettings.retentionCorrections': '更正记录保留',
   'agent.runKind': '类型',
@@ -2076,7 +2066,7 @@ export const zh: Catalog = {
   'agentSettings.modelInherit': '与默认相同（分类、摘要和压缩用快速模型）',
   'agentSettings.fewerModels': '收起',
   'agentSettings.addChoice': '添加可供选择的模型…',
-  'agentSettings.limitsDescription': '一个人以及整台服务器每天、每月的用量上限；一次运行能走多远；记录和纠正保留多久。',
+  'agentSettings.limitsDescription': '一个人以及整台服务器每天、每月的用量上限（令牌或金额）；记录和纠正保留多久。',
   'agentSettings.searchDescription': 'web_search 使用的服务。没有它，助手仍可读取给定的网页。',
   'agentSettings.noServers': '没有已连接的服务器。添加一个，让每个助手都能使用它的工具。',
   'agentSettings.authIs': '认证 {auth}',

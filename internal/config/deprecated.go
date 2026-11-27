@@ -77,6 +77,22 @@ type deprecatedLimits struct {
 	RetiredMaxRoundsPerSubagent  int     `yaml:"maxRoundsPerSubagent,omitempty"`
 	RetiredMaxToolCallsPerRun    int     `yaml:"maxToolCallsPerRun,omitempty"`
 	RetiredEmbeddingTokensPerDay int64   `yaml:"embeddingTokensPerDay,omitempty"`
+
+	// Technical bounds that were settings: now constants, or gone.
+	RetiredMaxBodyCharacters             int      `yaml:"maxBodyCharacters,omitempty"`
+	RetiredScanConcurrency               int      `yaml:"scanConcurrency,omitempty"`
+	RetiredRecallTokens                  int      `yaml:"recallTokens,omitempty"`
+	RetiredDigestDocumentRunes           int      `yaml:"digestDocumentRunes,omitempty"`
+	RetiredRewriteConcurrency            int      `yaml:"rewriteConcurrency,omitempty"`
+	RetiredIngestChunksPerRun            int      `yaml:"ingestChunksPerRun,omitempty"`
+	RetiredRequestTimeout                Duration `yaml:"requestTimeout,omitempty"`
+	RetiredMaxRecordingMediaBytes        ByteSize `yaml:"maxRecordingMediaBytes,omitempty"`
+	RetiredMaxRecordingAccountBytes      ByteSize `yaml:"maxRecordingAccountBytes,omitempty"`
+	RetiredMaxAttachmentBytes            ByteSize `yaml:"maxAttachmentBytes,omitempty"`
+	RetiredMaxSentFileBytes              ByteSize `yaml:"maxSentFileBytes,omitempty"`
+	RetiredMaxChatAttachmentAccountBytes ByteSize `yaml:"maxChatAttachmentAccountBytes,omitempty"`
+	RetiredMaxScannedAttachmentBytes     ByteSize `yaml:"maxScannedAttachmentBytes,omitempty"`
+	RetiredConcurrency                   int      `yaml:"concurrency,omitempty"`
 }
 
 // retiredLimitNotices lists each retired key that is set, with the line
@@ -103,6 +119,22 @@ func (self *deprecatedLimits) retiredLimitNotices() []string {
 	add(self.RetiredMaxRoundsPerSubagent > 0, "maxRoundsPerSubagent", reason)
 	add(self.RetiredMaxToolCallsPerRun > 0, "maxToolCallsPerRun", reason)
 	add(self.RetiredEmbeddingTokensPerDay > 0, "embeddingTokensPerDay", reason)
+
+	const fixed = "is no longer a setting: it is a fixed technical bound now, and the daily and monthly money limits are the only limits"
+	add(self.RetiredMaxBodyCharacters > 0, "maxBodyCharacters", fixed)
+	add(self.RetiredScanConcurrency > 0, "scanConcurrency", fixed)
+	add(self.RetiredRecallTokens > 0, "recallTokens", fixed)
+	add(self.RetiredRewriteConcurrency > 0, "rewriteConcurrency", fixed)
+	add(self.RetiredIngestChunksPerRun > 0, "ingestChunksPerRun", fixed)
+	add(self.RetiredMaxRecordingMediaBytes > 0, "maxRecordingMediaBytes", fixed)
+	add(self.RetiredMaxRecordingAccountBytes > 0, "maxRecordingAccountBytes", fixed)
+	add(self.RetiredMaxAttachmentBytes > 0, "maxAttachmentBytes", fixed)
+	add(self.RetiredMaxSentFileBytes > 0, "maxSentFileBytes", fixed)
+	add(self.RetiredMaxChatAttachmentAccountBytes > 0, "maxChatAttachmentAccountBytes", fixed)
+	add(self.RetiredMaxScannedAttachmentBytes > 0, "maxScannedAttachmentBytes", fixed)
+	add(self.RetiredConcurrency > 0, "concurrency", fixed)
+	add(self.RetiredDigestDocumentRunes > 0, "digestDocumentRunes", "is no longer used: every document is read whole")
+	add(self.RetiredRequestTimeout > 0, "requestTimeout", "is no longer used: an answer has no total time limit, a streamed one is cut when nothing arrives for 3 minutes, and one that does not stream gets 15 minutes")
 	return notices
 }
 

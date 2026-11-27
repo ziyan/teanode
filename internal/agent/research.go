@@ -71,7 +71,7 @@ func (self *Agent) runResearch(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
-	message, err := BuildMessageContext(ctx, run.Storage(), mail, configuration.Agent.Limits.MaxBodyCharacters, false)
+	message, err := BuildMessageContext(ctx, run.Storage(), mail, messageBodyCharactersMost, false)
 	if err != nil {
 		return err
 	}

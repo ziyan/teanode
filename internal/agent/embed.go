@@ -83,9 +83,7 @@ func (self *Agent) runEmbed(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	vectors, usage, err := selection.Embedder.Embed(callContext, llm.EmbedRequest{
+	vectors, usage, err := selection.Embedder.Embed(ctx, llm.EmbedRequest{
 		Model: selection.Model, Inputs: []string{embedText(message)},
 		Dimensions: selection.Dimensions,
 	})
@@ -158,9 +156,7 @@ func (self *Agent) meaningSearch(ctx context.Context, agent *models.Agent, mailb
 	if agent != nil && !self.isBudgetLeftToEmbed(ctx, agent.ID) {
 		return nil, nil
 	}
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	vectors, usage, err := selection.Embedder.Embed(callContext, llm.EmbedRequest{
+	vectors, usage, err := selection.Embedder.Embed(ctx, llm.EmbedRequest{
 		Model: selection.Model, Inputs: []string{strings.TrimSpace(query)},
 		Dimensions: selection.Dimensions,
 	})

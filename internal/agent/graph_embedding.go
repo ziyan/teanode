@@ -95,10 +95,7 @@ func (self *Agent) embed(ctx context.Context, agentId, kind string, texts []stri
 	if !ok || len(texts) == 0 || !self.isBudgetLeftToEmbed(ctx, agentId) {
 		return nil, "", false
 	}
-	configuration := self.settings.Configuration()
-	callContext, cancel := context.WithTimeout(ctx, configuration.Agent.Limits.RequestTimeout.Duration())
-	defer cancel()
-	vectors, usage, err := embedder.Embed(callContext, llm.EmbedRequest{
+	vectors, usage, err := embedder.Embed(ctx, llm.EmbedRequest{
 		Model: model, Inputs: texts, Dimensions: dimensions,
 	})
 	RecordUsage(self.settings.Database, agentId, "", modelName, kind, usage)

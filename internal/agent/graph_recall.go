@@ -12,7 +12,6 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -590,7 +589,7 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 	if err != nil {
 		return nil, err
 	}
-	budget, factBudget := recallBudgetOf(self.agent.settings.Configuration())
+	budget, factBudget := recallTokens, recallFactTokens
 	explanation := self.explanation
 	if explanation != nil {
 		explanation.explainFacts(paths)
@@ -1166,15 +1165,4 @@ func (self *Agent) exemplarsFor(ctx context.Context, agent *models.Agent, messag
 		exemplars = append(exemplars, when+cutMarked(strings.TrimSpace(chunk.Text), 1200))
 	}
 	return exemplars
-}
-
-// recallBudgetOf is the overlay's budget for graph blocks and the part of
-// it held back for loose facts: recallTokens and recallFactTokens, or the
-// operator's agent.limits.recallTokens with a third of it for the facts.
-func recallBudgetOf(configuration *config.Configuration) (int, int) {
-	if configuration != nil && configuration.Agent.Limits.RecallTokens > 0 {
-		budget := configuration.Agent.Limits.RecallTokens
-		return budget, budget / 3
-	}
-	return recallTokens, recallFactTokens
 }

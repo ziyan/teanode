@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
@@ -250,13 +250,7 @@ func (self *Agent) publishRecordingRun(ctx context.Context, run *Run, transcript
 			return publish(nil)
 		}
 		decoded.ChunkIndex = len(chunks)
-		maximumAccountBytes := self.settings.Configuration().Agent.Limits.MaxRecordingAccountBytes.Bytes()
-		if maximumAccountBytes == 0 {
-			maximumAccountBytes = 64 << 30
-		}
-		if maximumAccountBytes > math.MaxInt64 {
-			return fmt.Errorf("recording: account limit exceeds supported byte sizes")
-		}
+		maximumAccountBytes := int64(config.MaxRecordingAccountBytes)
 		if handoffChunk, err = self.storeRecordingChunk(ctx, run, transcriptRun, files, decoded, int64(maximumAccountBytes)); err != nil {
 			return err
 		}

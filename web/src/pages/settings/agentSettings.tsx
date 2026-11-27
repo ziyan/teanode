@@ -124,18 +124,10 @@ export type Agent = {
   }
   features: Record<string, boolean>
   limits: {
-    maxBodyCharacters: number
-    maxRecordingMediaBytes: string
-    maxRecordingAccountBytes: string
     dailyTokensPerAgent: number
     dailyCostPerAgent: number
     monthlyCostPerServer: number
     monthlyTokensPerServer: number
-    requestTimeout: string
-    concurrency: number
-    scanConcurrency: number
-    rewriteConcurrency: number
-    ingestChunksPerRun: number
   }
   retention: { runs: string; corrections: string }
   currency: string
@@ -180,7 +172,7 @@ export const AGENT_SELECTION = `agent {
   providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast quick transcription embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-  limits { maxRecordingMediaBytes maxRecordingAccountBytes maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer requestTimeout concurrency scanConcurrency rewriteConcurrency ingestChunksPerRun }
+  limits { dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer }
   retention { runs corrections }
   currency
   search { kind hasApiKey }
@@ -1302,18 +1294,10 @@ function asPrice(typed: string): string {
 
 function limitFields(settings: Agent) {
   return {
-    maxRecordingMediaBytes: settings.limits.maxRecordingMediaBytes,
-    maxRecordingAccountBytes: settings.limits.maxRecordingAccountBytes,
-    maxBodyCharacters: String(settings.limits.maxBodyCharacters),
     dailyTokensPerAgent: String(settings.limits.dailyTokensPerAgent),
     monthlyTokensPerServer: String(settings.limits.monthlyTokensPerServer),
     dailyCostPerAgent: String(settings.limits.dailyCostPerAgent),
     monthlyCostPerServer: String(settings.limits.monthlyCostPerServer),
-    requestTimeout: settings.limits.requestTimeout,
-    concurrency: String(settings.limits.concurrency),
-    scanConcurrency: String(settings.limits.scanConcurrency),
-    rewriteConcurrency: String(settings.limits.rewriteConcurrency),
-    ingestChunksPerRun: String(settings.limits.ingestChunksPerRun),
   }
 }
 
@@ -1336,11 +1320,7 @@ export function LimitsForm({ settings, onSaved }: Props) {
       <span>{t(`agentSettings.limit.${field}`)}</span>
       <input
         value={limits[field]}
-        inputMode={
-          ['requestTimeout', 'maxRecordingMediaBytes', 'maxRecordingAccountBytes'].includes(field)
-            ? undefined
-            : 'numeric'
-        }
+        inputMode="numeric"
         onChange={(event) => setLimits({ ...limits, [field]: event.target.value })}
       />
     </label>
@@ -1354,18 +1334,10 @@ export function LimitsForm({ settings, onSaved }: Props) {
         void save({
           agent: {
             limits: {
-              maxRecordingMediaBytes: limits.maxRecordingMediaBytes,
-              maxRecordingAccountBytes: limits.maxRecordingAccountBytes,
-              maxBodyCharacters: number(limits.maxBodyCharacters),
               dailyTokensPerAgent: number(limits.dailyTokensPerAgent),
               monthlyTokensPerServer: number(limits.monthlyTokensPerServer),
               dailyCostPerAgent: number(limits.dailyCostPerAgent),
               monthlyCostPerServer: number(limits.monthlyCostPerServer),
-              requestTimeout: limits.requestTimeout,
-              concurrency: number(limits.concurrency),
-              scanConcurrency: number(limits.scanConcurrency),
-              rewriteConcurrency: number(limits.rewriteConcurrency),
-              ingestChunksPerRun: number(limits.ingestChunksPerRun),
             },
             retention,
             currency,
@@ -1375,11 +1347,7 @@ export function LimitsForm({ settings, onSaved }: Props) {
     >
       <h3>{t('agentSettings.limits')}</h3>
       <p className="muted">{t('agentSettings.limitsDescription')}</p>
-      <div className="row">{(['maxRecordingMediaBytes', 'maxRecordingAccountBytes'] as const).map(numeric)}</div>
-      <p className="muted">{t('agentSettings.recordingLimitsHint')}</p>
-      <div className="row">
-        {(['dailyTokensPerAgent', 'monthlyTokensPerServer', 'maxBodyCharacters'] as const).map(numeric)}
-      </div>
+      <div className="row">{(['dailyTokensPerAgent', 'monthlyTokensPerServer'] as const).map(numeric)}</div>
       <div className="row">
         {(['dailyCostPerAgent', 'monthlyCostPerServer'] as const).map(numeric)}
         <label className="shrink">
@@ -1392,12 +1360,7 @@ export function LimitsForm({ settings, onSaved }: Props) {
           />
         </label>
       </div>
-      {/* How wide the night's reading and the ingest run. */}
       <div className="row">
-        {(['scanConcurrency', 'rewriteConcurrency', 'ingestChunksPerRun'] as const).map(numeric)}
-      </div>
-      <div className="row">
-        {(['requestTimeout', 'concurrency'] as const).map(numeric)}
         <label className="shrink">
           <span>{t('agentSettings.retentionRuns')}</span>
           <input

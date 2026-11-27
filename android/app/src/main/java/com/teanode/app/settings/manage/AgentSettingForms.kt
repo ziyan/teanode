@@ -271,39 +271,28 @@ private fun limitLabel(limitName: String): String = stringResource(
         "dailyTokensPerAgent" -> R.string.manage_limit_daily_tokens
         "dailyCostPerAgent" -> R.string.manage_limit_daily_cost
         "monthlyCostPerServer" -> R.string.manage_limit_monthly_cost
-        "monthlyTokensPerServer" -> R.string.manage_limit_monthly_tokens
-        "maxBodyCharacters" -> R.string.manage_limit_body_characters
-        "maxRecordingMediaBytes" -> R.string.manage_limit_recording_file
-        "maxRecordingAccountBytes" -> R.string.manage_limit_recording_account
-        "requestTimeout" -> R.string.manage_limit_timeout
-        "concurrency" -> R.string.manage_limit_concurrency
-        "scanConcurrency" -> R.string.manage_limit_scan_concurrency
-        "rewriteConcurrency" -> R.string.manage_limit_rewrite_concurrency
-        else -> R.string.manage_limit_ingest_chunks
+        // "monthlyTokensPerServer"
+        else -> R.string.manage_limit_monthly_tokens
     },
 )
 
-/** The caps on what one person and the whole server may spend, what unattended work may take, and how long transcripts and corrections are kept. */
+/** The caps on what one person and the whole server may spend, in tokens and in money, and how long transcripts and corrections are kept. */
 @Composable
 fun AgentLimitsScreen(onBack: () -> Unit) {
     AgentSettingsFormScreen(stringResource(R.string.manage_limits), onBack, { settings -> AgentLimitsDraft.of(settings) }, { draft -> draft.agentParameters }) { draft, onChange, _ ->
         FooterText(stringResource(R.string.manage_limits_footer))
         AgentLimitsDraft.LIMIT_GROUPS.forEach { limitNames ->
             limitNames.forEach { limitName ->
-                val isText = AgentLimitsDraft.TEXT_LIMIT_NAMES.contains(limitName)
                 FormField(
                     draft.limitTexts[limitName].orEmpty(), { typed -> onChange(draft.copy(limitTexts = draft.limitTexts + (limitName to typed))) }, limitLabel(limitName),
-                    keyboardType = if (isText) KeyboardType.Text else KeyboardType.Decimal,
+                    keyboardType = KeyboardType.Decimal,
                 )
             }
             if (limitNames.contains("dailyCostPerAgent")) {
                 FormField(draft.currency, { typed -> onChange(draft.copy(currency = typed.uppercase().take(3))) }, stringResource(R.string.manage_currency), placeholder = "USD")
             }
-            if (limitNames.contains("requestTimeout")) {
-                FormField(draft.retention.runs, { typed -> onChange(draft.copy(retention = draft.retention.copy(runs = typed))) }, stringResource(R.string.manage_keep_runs))
-                FormField(draft.retention.corrections, { typed -> onChange(draft.copy(retention = draft.retention.copy(corrections = typed))) }, stringResource(R.string.manage_keep_corrections))
-            }
-            if (limitNames.contains("maxRecordingMediaBytes")) FooterText(stringResource(R.string.manage_limits_recording_footer))
         }
+        FormField(draft.retention.runs, { typed -> onChange(draft.copy(retention = draft.retention.copy(runs = typed))) }, stringResource(R.string.manage_keep_runs))
+        FormField(draft.retention.corrections, { typed -> onChange(draft.copy(retention = draft.retention.copy(corrections = typed))) }, stringResource(R.string.manage_keep_corrections))
     }
 }

@@ -237,7 +237,7 @@ func (self *Agent) runTriage(ctx context.Context, run *Run) error {
 		return nil // the message is gone
 	}
 
-	message, err := BuildMessageContext(ctx, run.Storage(), mail, configuration.Agent.Limits.MaxBodyCharacters, false)
+	message, err := BuildMessageContext(ctx, run.Storage(), mail, messageBodyCharactersMost, false)
 	if err != nil {
 		return err
 	}

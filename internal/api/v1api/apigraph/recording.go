@@ -2,8 +2,7 @@ package apigraph
 
 import (
 	"context"
-	"fmt"
-	"math"
+	"github.com/ziyan/teanode/internal/config"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/models"
@@ -84,19 +83,7 @@ type UpdateRecordingCaptureArguments struct {
 }
 
 func (self *graph) recordingLimits() (*RecordingLimitsView, error) {
-	limits := self.config.Current().Agent.Limits
-	maximumMediaBytes := limits.MaxRecordingMediaBytes.Bytes()
-	maximumAccountBytes := limits.MaxRecordingAccountBytes.Bytes()
-	if maximumMediaBytes == 0 {
-		maximumMediaBytes = 2 << 30
-	}
-	if maximumAccountBytes == 0 {
-		maximumAccountBytes = 64 << 30
-	}
-	if maximumMediaBytes > math.MaxInt64 || maximumAccountBytes > math.MaxInt64 {
-		return nil, fmt.Errorf("recording limits exceed supported byte sizes")
-	}
-	return &RecordingLimitsView{MaximumMediaBytes: int64(maximumMediaBytes), MaximumAccountBytes: int64(maximumAccountBytes), UploadPartBytes: models.RecordingUploadPartBytes}, nil
+	return &RecordingLimitsView{MaximumMediaBytes: config.MaxRecordingMediaBytes, MaximumAccountBytes: config.MaxRecordingAccountBytes, UploadPartBytes: models.RecordingUploadPartBytes}, nil
 }
 
 func (self *graph) ListRecordings(ctx context.Context, arguments ListRecordingsArguments) ([]*models.Recording, error) {

@@ -80,8 +80,7 @@ A program over MCP sends bytes it holds with `source: "upload"`: the answer's
 PUT within an hour, signed with the server's secret over a name of its own, so
 an address that opens a file cannot replace one. The row waits with no bytes
 (`message_id` `upload`) until they arrive, and one never uploaded goes with
-the uploads nobody sent. A file is at most `agent.limits.maxSentFileBytes`,
-100 MB by default.
+the uploads nobody sent. A file is at most 100 MB (`config.MaxSentFileBytes`).
 
 A page (HTML or SVG) sent this way is served inline in the artifact sandbox
 and drawn in a frame, and a PDF inline in the browser's viewer; the same file
@@ -388,7 +387,7 @@ agent is off is kept, but the text read out of it for a model is not, because
 there is no model to spend it on. A person may send 60 messages a
 minute on one instance (`ratelimit`), a message is at most 16,000 characters,
 and it needs words or a file. A person keeps at most 1GB of the files they sent
-in chats (`agent.limits.maxChatAttachmentAccountBytes`, `db.ChatAttachmentBytes`):
+in chats (`config.MaxChatAttachmentAccountBytes`, `db.ChatAttachmentBytes`):
 a message with files stays until somebody deletes it, and nothing sweeps
 them, so a send past the limit is refused with how much they keep and that
 deleting old messages with files makes room. An edit, a reaction and a deleted

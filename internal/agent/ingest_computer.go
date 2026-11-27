@@ -122,7 +122,7 @@ func (self *Agent) readFromComputer(ctx context.Context, run *Run, source *model
 			self.releaseComputer(name, source.ID)
 		}
 	}
-	mostAttachmentBytes := maxAttachmentBytes(run.Configuration(), source)
+	mostAttachmentBytes := maxAttachmentBytes(source)
 	// Who the person is, so that the device can tell the checkouts they
 	// work in from the ones they cloned. Sent with every page rather than
 	// held over there: an address added to their card takes effect on the

@@ -544,9 +544,8 @@ func (self *Agent) watchOne(ctx context.Context, run *Run, skill *skills.Skill, 
 		}
 		content = text
 	}
-	maximumCharacters := configuration.Agent.Limits.MaxBodyCharacters
-	if maximumCharacters > 0 && len([]rune(content)) > maximumCharacters {
-		content = cutRunes(content, maximumCharacters) + "\n[cut here: it goes on]"
+	if len([]rune(content)) > messageBodyCharactersMost {
+		content = cutRunes(content, messageBodyCharactersMost) + "\n[cut here: it goes on]"
 	}
 
 	var memories, corrections []string

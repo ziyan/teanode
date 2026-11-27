@@ -1449,20 +1449,13 @@ public struct AgentModelChoices: Hashable, Sendable {
 }
 
 /// AgentLimits are the caps on what people and the whole server may spend,
-/// and the technical bounds of a call.
+/// in tokens and in money, and nothing else: every other bound is fixed on
+/// the server.
 public struct AgentLimits: Codable, Hashable, Sendable {
-    public let maxBodyCharacters: Int
     public let dailyTokensPerAgent: Int
     public let dailyCostPerAgent: Double
     public let monthlyCostPerServer: Double
     public let monthlyTokensPerServer: Int
-    public let requestTimeout: String
-    public var maxRecordingMediaBytes: String? = nil
-    public var maxRecordingAccountBytes: String? = nil
-    public let concurrency: Int
-    public let scanConcurrency: Int
-    public let rewriteConcurrency: Int
-    public let ingestChunksPerRun: Int
 }
 
 /// AgentRetention is how long run transcripts and corrections are kept.
@@ -1806,15 +1799,10 @@ public struct AgentProviderDraft: Hashable, Sendable {
 /// AgentLimitsDraft is the limits, the retention and the currency as their
 /// form holds them, each limit as typed.
 public struct AgentLimitsDraft: Hashable, Sendable {
-    /// The limits in the order the form groups them; requestTimeout is the
-    /// one written as a duration rather than a number.
+    /// The limits in the order the form groups them.
     public static let limitGroups: [[String]] = [
-        ["dailyTokensPerAgent", "monthlyTokensPerServer", "maxBodyCharacters"],
+        ["dailyTokensPerAgent", "monthlyTokensPerServer"],
         ["dailyCostPerAgent", "monthlyCostPerServer"],
-        ["scanConcurrency", "rewriteConcurrency"],
-        ["ingestChunksPerRun"],
-        ["requestTimeout", "concurrency"],
-        ["maxRecordingMediaBytes", "maxRecordingAccountBytes"],
     ]
 
     public var limitTexts: [String: String]
@@ -1824,18 +1812,12 @@ public struct AgentLimitsDraft: Hashable, Sendable {
     public init(_ settings: AgentServerSettings) {
         let limits = settings.limits
         let numbers: [String: Double] = [
-            "maxBodyCharacters": Double(limits.maxBodyCharacters), "dailyTokensPerAgent": Double(limits.dailyTokensPerAgent),
+            "dailyTokensPerAgent": Double(limits.dailyTokensPerAgent),
             "monthlyTokensPerServer": Double(limits.monthlyTokensPerServer), "dailyCostPerAgent": limits.dailyCostPerAgent,
-            "monthlyCostPerServer": limits.monthlyCostPerServer, "concurrency": Double(limits.concurrency),
-            "scanConcurrency": Double(limits.scanConcurrency), "rewriteConcurrency": Double(limits.rewriteConcurrency),
-            "ingestChunksPerRun": Double(limits.ingestChunksPerRun),
+            "monthlyCostPerServer": limits.monthlyCostPerServer,
         ]
         // Zero is said as 0, as the dashboard's form shows a stored limit.
-        var limitTexts = numbers.mapValues { number in number == 0 ? "0" : SettingsList.text(number) }
-        limitTexts["requestTimeout"] = limits.requestTimeout
-        limitTexts["maxRecordingMediaBytes"] = limits.maxRecordingMediaBytes ?? "0"
-        limitTexts["maxRecordingAccountBytes"] = limits.maxRecordingAccountBytes ?? "0"
-        self.limitTexts = limitTexts
+        limitTexts = numbers.mapValues { number in number == 0 ? "0" : SettingsList.text(number) }
         retention = settings.retention
         currency = settings.currency
     }
@@ -1844,7 +1826,7 @@ public struct AgentLimitsDraft: Hashable, Sendable {
         var limits: [String: JSONValue] = [:]
         for name in Self.limitGroups.joined() {
             let typed = limitTexts[name] ?? ""
-            limits[name] = (name == "requestTimeout" || name == "maxRecordingMediaBytes" || name == "maxRecordingAccountBytes") ? .string(typed) : .number(SettingsList.number(typed))
+            limits[name] = .number(SettingsList.number(typed))
         }
         return [
             "limits": .object(limits),
@@ -2615,7 +2597,7 @@ extension Documents {
           providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
           models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize transcription embeddingDimensions choices }
           features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
-          limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer requestTimeout concurrency scanConcurrency rewriteConcurrency ingestChunksPerRun maxRecordingMediaBytes maxRecordingAccountBytes }
+          limits { dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer }
           retention { runs corrections }
           currency
           search { kind hasApiKey }

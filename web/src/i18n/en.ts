@@ -1867,10 +1867,6 @@ export const en = {
   'agentSettings.limit.monthlyCostPerServer': 'Monthly cost, whole server',
   'agentSettings.currency': 'Currency',
   'agentSettings.limit.monthlyTokensPerServer': 'Tokens per month, whole server (0 = no cap)',
-  'agentSettings.limit.maxRecordingMediaBytes': 'Recording file limit',
-  'agentSettings.limit.maxRecordingAccountBytes': 'Recording storage per account',
-  'agentSettings.recordingLimitsHint':
-    'Use sizes such as 2GB or 64GB. Zero uses the default: 2GB per file and 64GB per account. Uploads awaiting completion or deletion still count.',
   'agentSettings.recordingCapture': 'Recording while capturing',
   'agentSettings.recordingLiveTranscription': 'Live transcription while recording',
   'agentSettings.recordingLiveTranscriptionDescription':
@@ -1878,12 +1874,6 @@ export const en = {
   'agentSettings.recordingAccurateWords': 'Accurate words in recordings',
   'agentSettings.recordingAccurateWordsDescription':
     "Transcribe each speaker's turn a second time with the voice transcription model, which is given the names and terms from the person's own data and spells them better. Speakers and times do not change, and a person's corrections still win. The audio is charged a second time to the person's agent.",
-  'agentSettings.limit.maxBodyCharacters': 'Characters of a message given to a model',
-  'agentSettings.limit.requestTimeout': 'Timeout per call',
-  'agentSettings.limit.concurrency': 'Runs at once',
-  'agentSettings.limit.scanConcurrency': 'Reading calls at once',
-  'agentSettings.limit.rewriteConcurrency': 'Page rewrites at once',
-  'agentSettings.limit.ingestChunksPerRun': 'Passages embedded per ingest run',
   'agentSettings.retentionRuns': 'Keep run transcripts for',
   'agentSettings.retentionCorrections': 'Keep corrections for',
   'agent.runKind': 'Kind',
@@ -2153,7 +2143,7 @@ export const en = {
   'agentSettings.fewerModels': 'Fewer choices',
   'agentSettings.addChoice': 'Add a model people may pick…',
   'agentSettings.limitsDescription':
-    'Caps on what one person, and the whole server, may spend in a day and a month; how far one run may go; how long transcripts and corrections are kept.',
+    'What one person, and the whole server, may spend in a day and a month, in tokens or in money; how long transcripts and corrections are kept.',
   'agentSettings.searchDescription':
     'The service web_search asks. Without one the agent can still fetch a page it is given.',
   'agentSettings.noServers': 'No connected servers. Add one to give every agent its tools.',

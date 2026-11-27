@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/ziyan/teanode/internal/config"
 )
@@ -79,8 +78,10 @@ type EmbedRequest struct {
 // a conversation asserts Provider, one that needs vectors asserts Embedder,
 // one that needs a decision asserts Decider. The registry does this on the
 // caller's behalf and says which provider cannot do what was asked.
-func NewProvider(kind, baseUrl, apiKey string, timeout time.Duration) (Service, error) {
-	client := &http.Client{Timeout: timeout}
+func NewProvider(kind, baseUrl, apiKey string) (Service, error) {
+	// No timeout on the client: it would bound the whole of an answer, and
+	// a streamed one has no length to bound. See timing.go.
+	client := &http.Client{}
 	switch kind {
 	case config.AgentProviderKindOpenAI:
 		return newOpenAI(baseUrl, apiKey, client), nil
@@ -89,7 +90,7 @@ func NewProvider(kind, baseUrl, apiKey string, timeout time.Duration) (Service, 
 	case config.AgentProviderKindGemini:
 		return newGemini(baseUrl, apiKey, client), nil
 	case config.AgentProviderKindTypeSafe:
-		return newTypeSafe(baseUrl, apiKey, timeout)
+		return newTypeSafe(baseUrl, apiKey, plainRequestTimeout)
 	}
 	return nil, fmt.Errorf("llm: %q is not a provider kind", kind)
 }
@@ -97,8 +98,8 @@ func NewProvider(kind, baseUrl, apiKey string, timeout time.Duration) (Service, 
 // NewSignedInProvider builds a client for a kind that signs in rather than
 // taking a key. Separate from NewProvider because what it needs is not a
 // key but a refresh token, and the account the work is billed to.
-func NewSignedInProvider(kind, baseUrl, refreshToken, account string, timeout time.Duration) (Provider, error) {
-	client := &http.Client{Timeout: timeout}
+func NewSignedInProvider(kind, baseUrl, refreshToken, account string) (Provider, error) {
+	client := &http.Client{}
 	switch kind {
 	case config.AgentProviderKindCodex:
 		return newCodex(baseUrl, refreshToken, account, client)
@@ -107,7 +108,8 @@ func NewSignedInProvider(kind, baseUrl, refreshToken, account string, timeout ti
 }
 
 // doJSON posts a JSON body and decodes a JSON answer, turning a non-2xx
-// status into an APIError carrying whatever message the provider wrote.
+// status into an APIError carrying whatever message the provider wrote. The
+// whole call is bounded by plainRequestTimeout.
 func doJSON(ctx context.Context, client *http.Client, method, url string, headers map[string]string, body any, result any) error {
 	var reader io.Reader
 	if body != nil {
@@ -128,7 +130,7 @@ func doJSON(ctx context.Context, client *http.Client, method, url string, header
 	for name, value := range headers {
 		request.Header.Set(name, value)
 	}
-	response, err := client.Do(request)
+	response, err := guardedDo(client, request, 0, plainRequestTimeout)
 	if err != nil {
 		return fmt.Errorf("llm: %w", err)
 	}
@@ -150,7 +152,8 @@ func doJSON(ctx context.Context, client *http.Client, method, url string, header
 }
 
 // openStream posts a JSON body and returns the response body for the
-// caller to read as server-sent events, or an APIError.
+// caller to read as server-sent events, or an APIError. The stream is cut
+// when nothing arrives for streamIdleTimeout, and not otherwise.
 func openStream(ctx context.Context, client *http.Client, url string, headers map[string]string, body any) (io.ReadCloser, error) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
@@ -165,7 +168,7 @@ func openStream(ctx context.Context, client *http.Client, url string, headers ma
 	for name, value := range headers {
 		request.Header.Set(name, value)
 	}
-	response, err := client.Do(request)
+	response, err := guardedDo(client, request, streamIdleTimeout, 0)
 	if err != nil {
 		return nil, fmt.Errorf("llm: %w", err)
 	}

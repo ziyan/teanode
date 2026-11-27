@@ -161,7 +161,7 @@ func (self *Agent) runExtract(ctx context.Context, run *Run) error {
 		return nil
 	}
 
-	message, err := BuildMessageContext(ctx, run.Storage(), mail, configuration.Agent.Limits.MaxBodyCharacters, false)
+	message, err := BuildMessageContext(ctx, run.Storage(), mail, messageBodyCharactersMost, false)
 	if err != nil {
 		return err
 	}

@@ -45,7 +45,7 @@ type AgentMutation interface {
 	// Send the caller a file in their main chat, the conversation the
 	// dashboard and the phone open on: the file is named here, and its bytes
 	// go with one PUT to the address answered, within an hour, up to
-	// agent.limits.maxSentFileBytes. It is posted when they arrive, and the
+	// config.MaxSentFileBytes. It is posted when they arrive, and the
 	// phone is told. For the command line and scripts. Needs agent:use.
 	SendAgentFileToMainChat(ctx context.Context, arguments SendAgentFileToMainChatArguments) (*AgentFileUpload, error)
 

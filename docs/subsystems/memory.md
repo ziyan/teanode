@@ -339,9 +339,8 @@ bytes rather than by where it sits, so the same screenshot pasted into
 four threads is one document. The daemon hashes and measures it, the
 server asks for its bytes with the `blob` action and keeps them in object
 storage under that hash. A file larger than the limit the source runs
-under — `agent.limits.maxScannedAttachmentBytes`, 25 MB by default, or
-the source's own — is named on the source's page as passed over and never
-uploaded.
+under (`computer.DefaultMaxAttachmentBytes`, 25 MB, or the source's own) is
+named on the source's page as passed over and never uploaded.
 
 `text` is what the file says, where the script already knows. A file that
 arrives with text is a document like any other — chunked, embedded,
@@ -1427,9 +1426,9 @@ off when nothing waits to be read.
 
 It is meant for a model of the person's own. Point `models.scan` at it
 (an OpenAI-compatible server such as llama.cpp or vLLM, declared as a
-provider at zero price) and set `limits.scanConcurrency` to the slots it
-has; the reading then costs nothing but the machine's time, and a dream
-that would have been a dollar of a metered service is free. On a metered
+provider at zero price); the reading, one call at a time
+(`dreamScanConcurrency`), then costs nothing but the machine's time, and a
+dream that would have been a dollar of a metered service is free. On a metered
 service bootstrapping is still bounded by the dream's share of the daily
 budget.
 

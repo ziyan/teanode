@@ -628,7 +628,7 @@ func (self *openAI) responses(ctx context.Context, request *ChatRequest) (<-chan
 	}
 	post.Header.Set("Content-Type", "application/json")
 	post.Header.Set("Accept", "text/event-stream")
-	answer, err := self.client.Do(post)
+	answer, err := guardedDo(self.client, post, streamIdleTimeout, 0)
 	if err != nil {
 		return nil, fmt.Errorf("llm: %w", err)
 	}

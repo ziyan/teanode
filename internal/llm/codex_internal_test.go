@@ -263,7 +263,7 @@ func TestATokenTheServiceRefusesIsFetchedAgainOnce(test *testing.T) {
 func TestTheSignedInProviderChats(test *testing.T) {
 	test.Parallel()
 
-	service, err := NewSignedInProvider("openai-codex", "", "a-refresh-token-for-"+test.Name(), "an-account", time.Second)
+	service, err := NewSignedInProvider("openai-codex", "", "a-refresh-token-for-"+test.Name(), "an-account")
 	if err != nil {
 		test.Fatalf("NewSignedInProvider: %s", err)
 	}
@@ -273,10 +273,10 @@ func TestTheSignedInProviderChats(test *testing.T) {
 
 	// Without a refresh token there is nothing to sign in with, and that is
 	// refused when it is built rather than at the first request.
-	if _, err := NewSignedInProvider("openai-codex", "", "  ", "", time.Second); err == nil {
+	if _, err := NewSignedInProvider("openai-codex", "", "  ", ""); err == nil {
 		test.Error("a sign-in with no refresh token was accepted")
 	}
-	if _, err := NewSignedInProvider("openai", "", "a-refresh-token", "", time.Second); err == nil {
+	if _, err := NewSignedInProvider("openai", "", "a-refresh-token", ""); err == nil {
 		test.Error("a keyed kind was accepted as one that signs in")
 	}
 }
