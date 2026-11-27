@@ -1735,7 +1735,7 @@ func (self *AskRun) turn() error {
 			CacheReadTokens: response.Usage.CacheReadTokens, CacheWriteTokens: response.Usage.CacheWriteTokens,
 			Cost: configuration.Agent.CostOf(modelName, response.Usage.PromptTokens, response.Usage.AudioInputTokens, response.Usage.CompletionTokens, response.Usage.CacheReadTokens, response.Usage.CacheWriteTokens)}
 		self.carryJudgements(answerUsage)
-		var posted *postedChatMessage
+		var posted []*postedChatMessage
 		if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			// In a chat the words are said to the people there, as the chat's
 			// message; only the calls the round made, and what they cost,
@@ -1746,8 +1746,8 @@ func (self *AskRun) turn() error {
 					return err
 				}
 				if len(answer.ToolCalls) == 0 {
-					if posted != nil {
-						history[len(history)-1].SourceID = posted.message.ID
+					if len(posted) > 0 {
+						history[len(history)-1].SourceID = posted[len(posted)-1].message.ID
 					}
 					// What the answering round cost, and the judgments
 					// carried to it, are the owner's own row, as in any
@@ -1859,7 +1859,7 @@ func (self *AskRun) turn() error {
 			}
 			for index, toolCall := range batch {
 				result := outcomes[index].content
-				if images := outcomes[index].images; len(images) > 0 && len(lookingAt) < attachmentImagesPerTurn {
+				if images := outcomes[index].images; len(images) > 0 {
 					lookingAt = append(lookingAt, images...)
 				}
 				stuck := false

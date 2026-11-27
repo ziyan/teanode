@@ -136,10 +136,13 @@ One system message after the history, rebuilt each round:
   out) is fenced as untrusted data. The block is not stored: the reference
   keeps its chip, and an earlier turn names the transaction by id alone.
 - Their text.
-- Then each attachment, by what it is. A picture within 10 MiB, up to eight per
-  turn, is read from storage and sent as an image part with a `[picture
-  attached: …]` marker. A file whose text was extracted at upload is inlined in
-  an `<attachment>` block. Anything else is named, with a line saying the agent
+- Then each attachment, by what it is. A picture within 10 MiB is read from storage and sent as an image part with a `[picture
+  attached: …]` marker. A file whose text was extracted at upload (kept whole on
+  the row) is inlined in an `<attachment>` block, its first 60000 characters
+  and, when there is more, a line giving how many characters follow and the
+  call that reads them: the `conversation` tool's `read_attachment`, with the
+  file's `agent_attachment_id` and an `offset`, which answers a page of 60000
+  characters and a `next_offset` until the end. Anything else is named, with a line saying the agent
   cannot open it and should ask if it matters.
 
 From the next round on, the same message is rendered by `historyTurn`:
@@ -161,8 +164,9 @@ A long conversation is folded into a note so the turn can continue.
   run in the conversation for 45 seconds, here or on another instance, the
   finished turn compacts it, says nothing to anyone watching, and the next turn
   starts from the note. It waits for quiet up to 8 times. A throttle keyed on
-  the conversation lets one instance do it at a time. A chat's turn, a member's
-  turn and a read-then-answer run are not compacted this way.
+  the conversation lets one instance do it at a time. A member's turn and a
+  read-then-answer run are not compacted this way; a chat's own turn is, like
+  any other conversation.
 - **Before a round**, only past the hard limit: four fifths of the window, or
   30000 when the window is not known, so the request still fits. The person
   waits on this one, which is why it is the last resort. The window is looked
@@ -182,11 +186,13 @@ A long conversation is folded into a note so the turn can continue.
 2. **Find the resume point.** Walk the older half backwards for the last stored
    message id. That id — not the note — is what `CompactedThrough` records.
    Without one, nothing is written and the history is returned unchanged.
-3. **Write the note.** Pack the older half into chunks of 12000 tokens, each
-   message cut to 6000 characters, and call the compact model once per chunk,
+3. **Write the note.** Pack the older half into chunks of 12000 tokens, every
+   message whole (one longer than a chunk is read in parts, each marked as part
+   of that message), and call the compact model once per chunk,
    carrying the previous note forward so the note is folded rather than
    stacked. The prompt asks for plain text under five headings — Decided, Open,
-   Learned, Prefers, Identifiers — under 400 words, and says that only the
+   Learned, Prefers, Identifiers, as long as what matters needs, since the
+   note is all that remains of the older conversation, and says that only the
    person's own words decide what was decided or preferred.
 4. **Store it** as a `compaction` message and set `CompactedThrough` in the
    same transaction.
@@ -223,8 +229,7 @@ can all leave one.
 | `askTailMessages` | 12 | messages kept verbatim |
 | `compactLeastTail` | 2 | fewest kept, and the tail after an overflow |
 | `compactChunkTokens` | 12000 | conversation per note-writing call |
-| `compactMessageCharacters` | 6000 | one message inside a chunk |
-| `attachmentTextCharacters` | 60000 | text extracted from a file at upload |
+| `tools.AttachmentPageCharacters` | 60000 | the part of a file's text a turn shows, or one `read_attachment` gives |
 | `attachmentImageBytes` | 10 MiB | a picture the model may look at |
 | `DeferralThreshold` | 40 | catalog size above which tools defer |
 

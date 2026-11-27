@@ -701,7 +701,7 @@ type AgentReference struct {
 	// AgentMessageID points at a message earlier in the same conversation
 	// instead: the person swiped it, or picked Reply on it, to say what
 	// they are answering. QuotedRole is whose it was, "user" or
-	// "assistant", and QuotedText what it said, cut short; the server
+	// "assistant", and QuotedText what it said, whole; the server
 	// fills both in from the stored message whatever the dashboard sent,
 	// and drops the reference when the message is not in the
 	// conversation. A line the dashboard has no id for yet, an answer

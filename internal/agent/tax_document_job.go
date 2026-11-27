@@ -242,7 +242,7 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 	prompt, err := render("read_tax_document.txt", map[string]any{
 		"PersonName": personName(run.Owner),
 		"IsPicture":  len(source.pictures) > 0,
-		"Document":   fenced(capAttachmentText(finance.MaskTaxpayerNumbers(source.documentText))),
+		"Document":   fenced(finance.MaskTaxpayerNumbers(source.documentText)),
 	})
 	if err != nil {
 		return err

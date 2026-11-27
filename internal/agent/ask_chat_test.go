@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -543,5 +544,71 @@ func TestQuestionsFromOthersToAnAgentAreOnlyQueuedSoFar(t *testing.T) {
 	}
 	if err := ask(fixture.ann); err != nil {
 		t.Errorf("the owner's own question was refused: %s", err)
+	}
+}
+
+// What the model reads of the owner's chat is every message since the last
+// compaction, not the newest few hundred.
+func TestAnOwnerTurnReadsEveryMessageOfTheChat(t *testing.T) {
+	fixture := newChatFixture(t, []string{roofAnswer})
+	const messageCount = 450
+	for index := range messageCount {
+		fixture.said(t, fixture.ben, fmt.Sprintf("message number %d", index))
+	}
+	trigger := fixture.said(t, fixture.ann, "which invoice is due?")
+	run, err := fixture.worker.Ask(&agent.AskSettings{
+		Agent: fixture.bertie, Owner: fixture.ann, Operations: mailOperations(), Conversation: fixture.annThread,
+		Message: "which invoice is due?", Surface: "chat",
+		Chat: &agent.ChatTurn{ChatID: fixture.chat.ID, MessageID: trigger.ID, AskerUserID: fixture.ann.ID, AskerName: "Ann Example"},
+	})
+	if err != nil {
+		t.Fatalf("Ask: %s", err)
+	}
+	collect(run)
+	read := ""
+	for _, each := range (*fixture.requests)[0]["messages"].([]any) {
+		read += fmt.Sprint(each.(map[string]any)["content"]) + "\n"
+	}
+	if !strings.Contains(read, "message number 0\n") || !strings.Contains(read, fmt.Sprintf("message number %d\n", messageCount-1)) {
+		t.Fatalf("the first or the last message of the chat was not read")
+	}
+}
+
+// An answer longer than a message may be is posted as several messages, in
+// order, with every word in them.
+func TestALongAnswerIsPostedAsSeveralChatMessages(t *testing.T) {
+	var paragraphs []string
+	for index := range 60 {
+		paragraphs = append(paragraphs, fmt.Sprintf("Paragraph %d. %s", index, strings.Repeat("word ", 60)))
+	}
+	long := strings.Join(paragraphs, "\n\n")
+	encoded, err := json.Marshal(long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer := `{"id":"s2","model":"m","choices":[{"delta":{"content":` + string(encoded) + `},"finish_reason":"stop"}]}
+{"id":"s2","choices":[],"usage":{"prompt_tokens":120,"completion_tokens":8}}`
+	fixture := newChatFixture(t, []string{answer})
+	trigger := fixture.said(t, fixture.ann, "write it all out")
+	run, err := fixture.worker.Ask(&agent.AskSettings{
+		Agent: fixture.bertie, Owner: fixture.ann, Operations: mailOperations(), Conversation: fixture.annThread,
+		Message: "write it all out", Surface: "chat",
+		Chat: &agent.ChatTurn{ChatID: fixture.chat.ID, MessageID: trigger.ID, AskerUserID: fixture.ann.ID, AskerName: "Ann Example"},
+	})
+	if err != nil {
+		t.Fatalf("Ask: %s", err)
+	}
+	collect(run)
+	bodies := fixture.chatBodies(t)[1:]
+	if len(bodies) != 2 {
+		t.Fatalf("the long answer was posted as %d messages", len(bodies))
+	}
+	for _, body := range bodies {
+		if len([]rune(body)) > models.ChatMessageMostCharacters {
+			t.Errorf("a message of %d characters", len([]rune(body)))
+		}
+	}
+	if strings.Join(strings.Fields(strings.Join(bodies, " ")), " ") != strings.Join(strings.Fields(long), " ") {
+		t.Error("the messages do not hold every word of the answer")
 	}
 }

@@ -8,11 +8,6 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// replyQuoteCharacters is the most of a message replied to that a turn
-// keeps: enough to say which part of a long answer is meant, and kept on
-// every later turn the history carries, so not the whole of one.
-const replyQuoteCharacters = 1000
-
 // isReplyReference says the reference is a message of the conversation
 // the person is replying to, rather than a thread, a page or a finance
 // transaction.
@@ -25,7 +20,7 @@ func isReplyReference(reference models.AgentReference) bool {
 // taken from the stored message whatever the dashboard sent; one that is
 // not in the conversation is dropped. One without an id, a line the
 // dashboard had not been given an id for yet, keeps the words the person
-// saw, bounded.
+// saw. Either way the words are kept whole.
 func resolveReply(tx db.Transaction, conversationId string, reference models.AgentReference) (*models.AgentReference, error) {
 	reply := models.AgentReference{AgentMessageID: strings.TrimSpace(reference.AgentMessageID)}
 	if reply.AgentMessageID != "" {
@@ -49,7 +44,7 @@ func resolveReply(tx db.Transaction, conversationId string, reference models.Age
 		}
 		reply.QuotedText = reference.QuotedText
 	}
-	reply.QuotedText = cutMarked(strings.TrimSpace(reply.QuotedText), replyQuoteCharacters)
+	reply.QuotedText = strings.TrimSpace(reply.QuotedText)
 	if reply.QuotedText == "" {
 		return nil, nil
 	}

@@ -17,7 +17,8 @@ import (
 
 // Files a person hands their agent with a turn. A picture is shown to the
 // model as an image, once, in the turn it came with; a text file, or the
-// text of a PDF, is read to it, capped; everything else (a video, a
+// text of a PDF, is read to it, the first part in the turn and the rest a
+// part at a time through the conversation tool; everything else (a video, a
 // recording, an archive, a document nobody here can parse) is named, with
 // its type and size and a line saying the agent cannot open it. Earlier turns name every file
 // rather than carry it again, so a conversation with pictures in it does
@@ -25,15 +26,9 @@ import (
 
 // The bounds.
 const (
-	// attachmentTextCharacters is the most of a text file the model reads.
-	attachmentTextCharacters = 60000
-
 	// attachmentImageBytes is the largest picture handed to a model as an
 	// image; the providers refuse larger ones.
 	attachmentImageBytes = 10 << 20
-
-	// attachmentImagesPerTurn bounds the pictures in one turn.
-	attachmentImagesPerTurn = 8
 
 	// orphanAttachmentAge is how long an uploaded file waits for the turn
 	// it was meant for before the sweep takes it.
@@ -98,16 +93,18 @@ func ExtractAttachmentText(ctx context.Context, name, contentType string, conten
 	// A person's taxpayer number is never kept whole on a row, whatever
 	// the file was handed in as: a W-2 dropped into a conversation is a
 	// file like any other.
-	return capAttachmentText(finance.MaskTaxpayerNumbersInFile(text))
+	return finance.MaskTaxpayerNumbersInFile(text)
 }
 
-// capAttachmentText is the most of a file's text a model reads, marked
-// where it was cut.
-func capAttachmentText(text string) string {
-	if len(text) > attachmentTextCharacters {
-		text = strings.ToValidUTF8(text[:attachmentTextCharacters], "") + "\n[cut here: the file goes on]"
+// attachmentTextBlock is a file's text as a turn shows it: the first page,
+// and when there is more, how many characters follow and the call that reads
+// them.
+func attachmentTextBlock(attachment *models.AgentAttachment) string {
+	shown, next := tools.PageOfText(attachment.Text, 0, tools.AttachmentPageCharacters)
+	if next > 0 {
+		shown += fmt.Sprintf("\n[the file goes on: %d more characters; read them with the conversation tool, action read_attachment, agent_attachment_id %s, offset %d]", utf8.RuneCountInString(attachment.Text)-next, attachment.ID, next)
 	}
-	return text
+	return fmt.Sprintf("<attachment name=%q type=%q agent_attachment_id=%q>\n%s\n</attachment>", attachment.Name, attachment.ContentType, attachment.ID, shown)
 }
 
 // describeAttachment is a file in a line: name, type, size and the id a
@@ -261,7 +258,7 @@ func userTurn(ctx context.Context, store storage.Storage, text string, attachmen
 	var named []models.AgentAttachment
 	for _, attachment := range attachments {
 		switch {
-		case IsImageAttachment(attachment.ContentType) && attachment.Size <= attachmentImageBytes && len(images) < attachmentImagesPerTurn && store != nil:
+		case IsImageAttachment(attachment.ContentType) && attachment.Size <= attachmentImageBytes && store != nil:
 			content, err := store.GetFile(ctx, attachment.ID)
 			if err != nil {
 				named = append(named, *attachment)
@@ -270,7 +267,7 @@ func userTurn(ctx context.Context, store storage.Storage, text string, attachmen
 			images = append(images, llm.ContentPart{Type: "image", MediaType: attachment.ContentType, Data: content})
 			blocks = append(blocks, fmt.Sprintf("[picture attached: %s]", describeAttachment(attachment)))
 		case attachment.Text != "":
-			blocks = append(blocks, fmt.Sprintf("<attachment name=%q type=%q agent_attachment_id=%q>\n%s\n</attachment>", attachment.Name, attachment.ContentType, attachment.ID, attachment.Text))
+			blocks = append(blocks, attachmentTextBlock(attachment))
 		default:
 			named = append(named, *attachment)
 		}
@@ -278,8 +275,7 @@ func userTurn(ctx context.Context, store storage.Storage, text string, attachmen
 	if len(named) > 0 {
 		blocks = append(blocks, attachmentLines(named)+"\nYou cannot open these kinds of file; if what is in one matters, ask the person.")
 	}
-	// After the person's own, and outside the count above: the caller
-	// bounded these itself, and what it passes is never what somebody
+	// After the person's own: what the caller passes is never what somebody
 	// uploaded.
 	images = append(images, pictures...)
 	message := llm.ChatMessage{Role: llm.RoleUser, Content: strings.Join(blocks, "\n\n")}

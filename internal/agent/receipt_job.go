@@ -261,7 +261,7 @@ func readReceiptPDF(ctx context.Context, run *Run, attachment *models.AgentAttac
 		return nil
 	}
 	if text != "" {
-		source.receiptText = capAttachmentText(finance.MaskTaxpayerNumbersInFile(text))
+		source.receiptText = finance.MaskTaxpayerNumbersInFile(text)
 		return nil
 	}
 	pages, err := renderPDFPages(ctx, content, receiptPDFPageCount)

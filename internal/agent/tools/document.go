@@ -55,3 +55,30 @@ func DocumentBytes(ctx context.Context, files storage.Files, document *models.Ag
 	}
 	return files.GetFile(ctx, document.StorageKey)
 }
+
+// AttachmentPageCharacters is how much of a file's text one view of it holds:
+// what a turn shows of a file the person attached, and what one
+// read_attachment gives. The rest is read on from next_offset, so a long file
+// is read through, never cut.
+const AttachmentPageCharacters = 60000
+
+// PageOfText is the part of a text from offset, at most limit characters,
+// and where the next part starts, or zero when this is the end. Counted in
+// characters, so a part never ends inside one.
+func PageOfText(text string, offset, limit int) (string, int) {
+	if limit <= 0 {
+		limit = AttachmentPageCharacters
+	}
+	characters := []rune(text)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(characters) {
+		return "", 0
+	}
+	end := offset + limit
+	if end >= len(characters) {
+		return string(characters[offset:]), 0
+	}
+	return string(characters[offset:end]), end
+}

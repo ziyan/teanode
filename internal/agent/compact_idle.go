@@ -58,12 +58,12 @@ func hardHistoryLimit(contextLength int) int {
 }
 
 // isIdleCompactionDue says the turn that just ended left a history worth
-// compacting while the conversation is quiet. A chat's turn, a member's turn
-// and a read-then-answer run carry history of their own making and are not
-// compacted.
+// compacting while the conversation is quiet, in a chat as in any other
+// conversation. A member's turn and a read-then-answer run carry history of
+// their own making and are not compacted.
 func (self *AskRun) isIdleCompactionDue() bool {
 	settings := self.settings
-	if settings.Conversation == nil || settings.Conversation.ID == "" || settings.Chat != nil || settings.isMemberTurn() || settings.ReadThenAnswer {
+	if settings.Conversation == nil || settings.Conversation.ID == "" || settings.isMemberTurn() || settings.ReadThenAnswer {
 		return false
 	}
 	return self.lastHistoryTokens > softHistoryLimit(self.lastContextLength)
