@@ -409,6 +409,7 @@
     <string name="settings_people_set_password_for">为 %1$s 设置密码</string>
     <string name="settings_people_title">人员</string>
     <string name="settings_permission_agent_act">阅读每个人的助手对话和运行记录，并以本人身份与其助手对话</string>
+    <string name="settings_permission_agent_observe">阅读每个人的助手对话和运行记录，只读不写；每次阅读都会记录在案</string>
     <string name="settings_permission_agent_audit">查看每个人的助手：能访问什么、用量和上限，但不看内容</string>
     <string name="settings_permission_agent_use">拥有助手，把自己的邮箱交给它，并与它对话</string>
     <string name="settings_permission_audit_read">读取审计日志</string>

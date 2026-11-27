@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="chats_acting_as">This is %1$s\'s agent. What you say here reaches it as %2$s, and the server log says you did.</string>
+    <string name="chats_observed_note">This is %1$s\'s conversation. You are observing it and cannot write here.</string>
     <string name="chats_add">Add</string>
     <string name="chats_add_files">Add files</string>
     <string name="chats_add_people">Add people</string>

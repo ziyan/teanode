@@ -224,6 +224,7 @@ type Transaction interface {
 	LocationVisitNoticeOperation
 	AgentProviderSignInOperation
 	AgentTurnOperation
+	OversightOperation
 	AgentComputerAttachmentOperation
 
 	DomainOperation

@@ -41,7 +41,9 @@
             }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
-            if query.contains("StorageUsage(") {
+            if let oversightAnswer = Self.oversightAnswer(query: query, body: request.httpBody) {
+                answer = oversightAnswer
+            } else if query.contains("StorageUsage(") {
                 // First: its document names fields (rowFileSizes, disks) that the questions below are looked for by.
                 answer = Self.storageUsageAnswer(body: request.httpBody)
             } else if let chatCallAnswer = Self.chatCallAnswer(query: query, body: request.httpBody) {
@@ -957,7 +959,7 @@
         /// check.
         static let session = #"""
             {"data":{"GetSession":{"username":"robin","userId":"robin","manages":true,
-              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use","location:use","health:use","passwords:use","shopping:use","journal:use"],"byDomain":[]},
+              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","agent:observe","circle:use","photos:use","location:use","health:use","passwords:use","shopping:use","journal:use"],"byDomain":[]},
               "impersonatorUsername":null}}}
             """#
 

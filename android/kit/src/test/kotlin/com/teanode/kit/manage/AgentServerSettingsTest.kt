@@ -61,7 +61,65 @@ class AgentServerSettingsTest {
         assertEquals(listOf(AgentAdminTab.Usage), auditor.agentAdminTabs)
         assertEquals(AgentAdminTab.entries, OperatorAccess(true, listOf("agent:audit", "agent:act", "server:manage")).agentAdminTabs)
         assertEquals(listOf(AgentAdminTab.Usage, AgentAdminTab.Runs), OperatorAccess(true, listOf("agent:act")).agentAdminTabs)
+        assertEquals(listOf(AgentAdminTab.Usage, AgentAdminTab.Runs), OperatorAccess(true, listOf("agent:observe")).agentAdminTabs)
         assertFalse(OperatorAccess(true, domainPermissions = listOf(OperatorAccess.DomainPermissions("domain-1", listOf("server:manage")))).canManageServer)
+    }
+
+    @Test
+    fun observingIsOpenedByAgentObserveAndImpliedByAgentAct() {
+        assertTrue(OperatorAccess(true, listOf("agent:observe")).canObserveAgents)
+        assertFalse(OperatorAccess(true, listOf("agent:observe")).canActAsAgents)
+        assertTrue(OperatorAccess(true, listOf("agent:act")).canObserveAgents)
+        assertFalse(OperatorAccess(true, listOf("agent:audit", "server:manage")).canObserveAgents)
+        assertTrue(OperatorAccess(true, listOf("agent:observe")).canOpenAgentAdmin)
+        assertFalse(OperatorAccess(true, domainPermissions = listOf(OperatorAccess.DomainPermissions("domain-1", listOf("agent:observe")))).canObserveAgents)
+    }
+
+    @Test
+    fun theOversightRangesCountBackFromNow() {
+        val now = Instant.parse("2030-02-10T12:00:00Z")
+        assertEquals("2030-02-09T12:00:00Z", OversightRange.Day.since(now))
+        assertEquals("2030-02-03T12:00:00Z", OversightRange.Week.since(now))
+        assertEquals("2030-01-11T12:00:00Z", OversightRange.Month.since(now))
+    }
+
+    @Test
+    fun theOversightFilterSendsItsRangeAndRunningOnly() {
+        val variables = ServerAgentRunFilter(jobKind = OversightKinds.MAIN, since = "2030-02-03T12:00:00Z", until = "2030-02-10T12:00:00Z", isRunningOnly = true).variables(25, 50)
+        assertEquals(JsonArray(listOf(JsonPrimitive("main"))), variables["kinds"])
+        assertEquals("2030-02-03T12:00:00Z", (variables["since"] as JsonPrimitive).content)
+        assertEquals("2030-02-10T12:00:00Z", (variables["until"] as JsonPrimitive).content)
+        assertEquals(JsonPrimitive(true), variables["isRunningOnly"])
+        val plain = ServerAgentRunFilter().variables(25, 0)
+        assertTrue(plain["since"] is kotlinx.serialization.json.JsonNull)
+        assertTrue(plain["isRunningOnly"] is kotlinx.serialization.json.JsonNull)
+    }
+
+    @Test
+    fun aRunRowNamesItsOwnerAndTheCountIsTheNewOneWhenSent() {
+        val page = TeaNodeJson.decodeFromString(
+            ServerAgentRunPage.serializer(),
+            """{"total":2,"totalCount":9,"runs":[{"id":"c1","title":"Planning","jobKind":"named","lastAt":"2030-02-10T11:00:00Z","ownerUsername":"robin","ownerName":"Robin Hale","isRunning":true,"usage":{"promptTokens":10,"completionTokens":5,"cost":0}},
+              {"id":"c2","ownerUsername":"alex","ownerName":""}]}""",
+        )
+        assertEquals(9, page.matchCount)
+        assertEquals("Robin Hale", page.runs[0].ownerLabel)
+        assertTrue(page.runs[0].isRunning)
+        assertEquals("alex", page.runs[1].ownerLabel)
+        assertFalse(page.runs[1].isRunning)
+        assertEquals(2, TeaNodeJson.decodeFromString(ServerAgentRunPage.serializer(), """{"total":2,"runs":[]}""").matchCount)
+    }
+
+    @Test
+    fun aFailedTurnIsReadWithItsOwnerAndError() {
+        val page = TeaNodeJson.decodeFromString(
+            AgentFailedTurnPage.serializer(),
+            """{"totalCount":1,"failedTurns":[{"conversationId":"c1","conversationKind":"main","conversationTitle":null,"ownerUsername":"robin","ownerName":"","failedAt":"2030-02-10T11:00:00Z","errorText":"The model did not answer.","agentId":"agent-1"}]}""",
+        )
+        assertEquals(1, page.totalCount)
+        assertEquals("robin", page.failedTurns[0].ownerLabel)
+        assertNull(page.failedTurns[0].conversationTitle)
+        assertEquals("The model did not answer.", page.failedTurns[0].errorText)
     }
 
     @Test

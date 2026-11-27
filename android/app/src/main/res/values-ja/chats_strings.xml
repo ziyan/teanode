@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="chats_acting_as">これは %1$s のエージェントです。ここで話しかけると %2$s として届き、サーバーのログにそのことが残ります。</string>
+    <string name="chats_observed_note">これは %1$s の会話です。閲覧のみで、ここには書き込めません。</string>
     <string name="chats_add">追加</string>
     <string name="chats_add_files">ファイルを追加</string>
     <string name="chats_add_people">メンバーを追加</string>

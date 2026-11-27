@@ -1,16 +1,15 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 
-import { RUN_KINDS, runKindLabel } from '../agentRuns'
 import { graphql, openAgentConversation } from '../api'
 import { ErrorMessage, Loading, Tag, formatCount, formatMoney, formatTime } from '../components/common'
 import { UsageChart } from '../components/usageChart'
-import { Column, DataTable, Range } from '../components/dataTable'
 import { FormDialog } from '../components/dialog'
 import { PencilIcon, ToggleOffIcon, ToggleOnIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { Tabs } from '../components/tabs'
 import { Tooltip } from '../components/tooltip'
+import { OversightTab } from './agentOversight'
 import { AGENT_PARTS, AgentPart } from './settings/agentParts'
 import { IntegrationsSection } from './settings/integrations'
 import { useToast } from '../components/toast'
@@ -93,7 +92,13 @@ function dayOf(date: Date): string {
 }
 
 function total(totals: UsageRow['totals']): number {
-  return totals.promptTokens + totals.completionTokens + totals.cacheReadTokens + totals.cacheWriteTokens + totals.audioInputTokens
+  return (
+    totals.promptTokens +
+    totals.completionTokens +
+    totals.cacheReadTokens +
+    totals.cacheWriteTokens +
+    totals.audioInputTokens
+  )
 }
 
 export function AgentAdminPage() {
@@ -103,10 +108,11 @@ export function AgentAdminPage() {
   const navigate = useNavigate()
   const session = useSession()
   // The tabs of /manage/agent are in pageTabs.ts: everyone's agents and their
-  // limits, what they cost, every run any of them made, and the jobs given up
-  // on. Runs are behind agent:act and the settings behind server:manage.
+  // limits, what they cost, Oversight (what every agent is doing, has done and
+  // failed at) and the jobs given up on. Oversight is behind agent:observe or
+  // agent:act and the settings behind server:manage.
   const tabs = shownTabs(AGENT_ADMIN_TABS, { hasPermission: (key) => hasPermission(session.permissions, key) })
-  // The job whose runs the Runs tab is narrowed to, from a job given up
+  // The job whose runs the Oversight tab is narrowed to, from a job given up
   // on: what it tried is the way to see why it failed.
   const [jobRuns, setJobRuns] = useState<string | null>(null)
   const [by, setBy] = useState('day')
@@ -132,6 +138,10 @@ export function AgentAdminPage() {
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
+  // The tab was called Runs, and a link to it still lands on Oversight.
+  if (tab === 'runs' && tabs.some((candidate) => candidate.id === 'oversight')) {
+    return <Navigate to="/manage/agent/oversight" replace />
+  }
   if (!tabs.some((candidate) => candidate.id === tab)) {
     return <Navigate to={`/manage/agent/${tabs[0].id}`} replace />
   }
@@ -357,7 +367,7 @@ export function AgentAdminPage() {
           </SettingsSection>
         </>
       ) : null}
-      {tab === 'runs' ? (
+      {tab === 'oversight' ? (
         <>
           <SettingsSection card title={t('agentAdmin.deadLetters')}>
             {dead.length === 0 ? (
@@ -399,7 +409,7 @@ export function AgentAdminPage() {
                         type="button"
                         onClick={() => {
                           setJobRuns(job.id)
-                          navigate('/manage/agent/runs')
+                          navigate('/manage/agent/oversight')
                         }}
                       >
                         {t('agentAdmin.jobRuns')}
@@ -416,7 +426,7 @@ export function AgentAdminPage() {
               ))
             )}
           </SettingsSection>
-          <RunsSection agents={agents} job={jobRuns} onAll={() => setJobRuns(null)} />
+          <OversightTab job={jobRuns} onAllRuns={() => setJobRuns(null)} />
         </>
       ) : null}
 
@@ -482,142 +492,18 @@ export function AgentAdminPage() {
   )
 }
 
-const ALL_RUNS = `
-  query ($first: Int, $offset: Int, $agentId: String, $jobId: String, $kinds: [String!], $query: String) {
-    ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, jobId: $jobId, kinds: $kinds, query: $query) {
-      total
-      runs { id agentId title jobKind lastAt usage { promptTokens cacheReadTokens completionTokens cost } }
-    }
+const JOB_RUNS = `
+  query ($first: Int, $jobId: String) {
+    ListAllAgentRuns(first: $first, jobId: $jobId) { runs { id } }
   }`
 
 // openJobConversation opens the conversation of the job's latest run, the
 // one that shows what it tried and where it failed, rather than the
 // conversation the job was about.
 async function openJobConversation(job: Job): Promise<boolean> {
-  const answer = await graphql<{ ListAllAgentRuns: { runs: Run[] } }>(ALL_RUNS, { first: 1, jobId: job.id })
+  const answer = await graphql<{ ListAllAgentRuns: { runs: { id: string }[] } }>(JOB_RUNS, { first: 1, jobId: job.id })
   const run = answer.ListAllAgentRuns.runs[0]
   if (run) return openAgentConversation(run.id)
   if (job.kind === 'remember' && job.subjectId) return openAgentConversation(job.subjectId)
   return false
-}
-
-type Run = {
-  id: string
-  agentId: string
-  title: string
-  jobKind: string
-  lastAt: string
-  usage: { promptTokens: number; cacheReadTokens: number; completionTokens: number; cost: number }
-}
-
-// RunsSection is every model call any agent on this server made, newest
-// first, paged and filtered on the server, each row a transcript the drawer
-// opens -- and, for whoever holds agent:act, speaks into as that person.
-function RunsSection({ agents, job, onAll }: { agents: Summary[]; job: string | null; onAll: () => void }) {
-  const { t, plural } = useTranslation()
-  const [range, setRange] = useState<Range>({ offset: 0, limit: 50, filters: {}, order: null })
-  const chosenAgent = range.filters.agentId
-  const kinds = range.filters.jobKind
-  const query = range.filters.title
-  const agentId = Array.isArray(chosenAgent) && chosenAgent.length === 1 ? chosenAgent[0] : null
-  const { data, error, loading } = useQuery(
-    () =>
-      graphql<{ ListAllAgentRuns: { total: number; runs: Run[] } }>(ALL_RUNS, {
-        first: range.limit,
-        offset: range.offset,
-        agentId,
-        jobId: job,
-        kinds: Array.isArray(kinds) && kinds.length > 0 ? kinds : null,
-        query: typeof query === 'string' && query.trim() !== '' ? query.trim() : null,
-      }),
-    [range.offset, range.limit, agentId, job, JSON.stringify(kinds), query],
-    // Refreshed: runs are ordered by their last message, and a run that
-    // just spoke belongs at the top while the person watches.
-    { refresh: true },
-  )
-  const runs = data?.ListAllAgentRuns.runs ?? []
-  const total = data?.ListAllAgentRuns.total ?? 0
-  const onRange = useCallback((next: Range) => setRange(next), [])
-  const nameOf = (agentId: string) => agents.find((summary) => summary.agentId === agentId)?.username ?? agentId
-  if (error) {
-    return <ErrorMessage error={error} />
-  }
-  const columns: Column<Run>[] = [
-    { key: 'lastAt', header: t('agent.when'), width: '11rem', value: (run) => formatTime(run.lastAt) },
-    {
-      key: 'agentId',
-      header: t('agentAdmin.runAgent'),
-      width: '10rem',
-      filter: 'select',
-      options: agents.map((summary) => ({ value: summary.agentId, label: summary.username })),
-      value: (run) => run.agentId,
-      render: (run) => nameOf(run.agentId),
-    },
-    {
-      key: 'jobKind',
-      header: t('agent.runKind'),
-      width: '8rem',
-      filter: 'select',
-      options: RUN_KINDS.map((kind) => ({ value: kind, label: runKindLabel(t, kind) })),
-      value: (run) => run.jobKind,
-      render: (run) => <Tag value={runKindLabel(t, run.jobKind)} />,
-    },
-    { key: 'title', header: t('agent.runWhat'), filter: 'text', truncate: true, value: (run) => run.title },
-    {
-      key: 'cost',
-      header: t('agent.runCost'),
-      width: '9rem',
-      optional: true,
-      value: (run) => String(run.usage.cost),
-      render: (run) => (
-        <span className="muted">
-          {formatCount(run.usage.promptTokens + run.usage.cacheReadTokens + run.usage.completionTokens)}
-          {run.usage.cost ? ` · ${formatMoney(run.usage.cost)}` : ''}
-        </span>
-      ),
-    },
-    {
-      key: 'open',
-      header: '',
-      width: '6rem',
-      render: (run) => (
-        <button
-          type="button"
-          onClick={() => {
-            if (!openAgentConversation(run.id)) window.scrollTo(0, 0)
-          }}
-        >
-          {t('agent.open')}
-        </button>
-      ),
-    },
-  ]
-  return (
-    <SettingsSection
-      card
-      title={t('agentAdmin.runs')}
-      description={job ? t('agentAdmin.runsOfJob') : t('agentAdmin.runsHint')}
-      action={
-        job ? (
-          <button type="button" onClick={onAll}>
-            {t('agent.allRuns')}
-          </button>
-        ) : null
-      }
-    >
-      <DataTable
-        columns={columns}
-        rows={runs}
-        rowKey={(run) => run.id}
-        loading={loading && !data}
-        remote={{ total, onRange }}
-        emptyMessage={t('agent.noActivity')}
-        countLabel={(count, filtering) =>
-          filtering
-            ? plural(count, { one: 'agent.runsFilteredOne', other: 'agent.runsFilteredOther' }, { total })
-            : plural(count, { one: 'agent.runsOne', other: 'agent.runsOther' })
-        }
-      />
-    </SettingsSection>
-  )
 }

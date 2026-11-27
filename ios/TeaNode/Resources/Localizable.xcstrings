@@ -98938,6 +98938,422 @@
           }
         }
       }
+    },
+    "Oversight": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "监督"
+          }
+        }
+      }
+    },
+    "Recent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近"
+          }
+        }
+      }
+    },
+    "Last 24 hours": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "過去 24 時間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "过去 24 小时"
+          }
+        }
+      }
+    },
+    "Last 7 days": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "過去 7 日間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "过去 7 天"
+          }
+        }
+      }
+    },
+    "Last 30 days": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "過去 30 日間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "过去 30 天"
+          }
+        }
+      }
+    },
+    "Main chats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メインチャット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主对话"
+          }
+        }
+      }
+    },
+    "Named chats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前付きチャット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命名对话"
+          }
+        }
+      }
+    },
+    "Named chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前付きチャット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命名对话"
+          }
+        }
+      }
+    },
+    "Untitled conversation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無題の会話"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名的对话"
+          }
+        }
+      }
+    },
+    "Nothing is running": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行中のものはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有正在运行的内容"
+          }
+        }
+      }
+    },
+    "No conversation has a turn in flight right now.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在、処理中のやり取りがある会話はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前没有对话正在进行回合。"
+          }
+        }
+      }
+    },
+    "No conversations": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有对话"
+          }
+        }
+      }
+    },
+    "None had activity in this time.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この期間に動きのあった会話はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这段时间内没有任何活动。"
+          }
+        }
+      }
+    },
+    "No failed turns": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失敗したやり取りはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有失败的回合"
+          }
+        }
+      }
+    },
+    "No turn ended in an error in this time.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この期間にエラーで終わったやり取りはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这段时间内没有回合以错误结束。"
+          }
+        }
+      }
+    },
+    "1 conversation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 件の会話"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个对话"
+          }
+        }
+      }
+    },
+    "%@ conversations": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 件の会話"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 个对话"
+          }
+        }
+      }
+    },
+    "1 failed turn": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失敗したやり取り 1 件"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个失败的回合"
+          }
+        }
+      }
+    },
+    "%@ failed turns": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失敗したやり取り %@ 件"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 个失败的回合"
+          }
+        }
+      }
+    },
+    "Conversations with a turn in flight right now. Opening one is read-only, and each read is logged.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在やり取りが進行中の会話です。開くと読むだけで、読むたびに記録されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此刻正在进行回合的对话。打开后只能阅读，每次阅读都会被记录。"
+          }
+        }
+      }
+    },
+    "Every person's agent conversations, by last activity. Opening one is read-only, and each read is logged.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全員のエージェントの会話を、最後の動きの順に並べています。開くと読むだけで、読むたびに記録されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个人的助手对话，按最近活动排序。打开后只能阅读，每次阅读都会被记录。"
+          }
+        }
+      }
+    },
+    "Turns that ended in an error, newest first. Opening one is read-only, and each read is logged.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エラーで終わったやり取りを新しい順に並べています。開くと読むだけで、読むたびに記録されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以错误结束的回合，最新的在前。打开后只能阅读，每次阅读都会被记录。"
+          }
+        }
+      }
+    },
+    "Press and hold a job to open what it tried, or retry it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジョブを長押しすると、試した内容を開く、または再試行できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "长按任务可打开它尝试过的内容，或重试。"
+          }
+        }
+      }
+    },
+    "This is %@'s conversation. You are observing it and cannot write here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これは %@ の会話です。見ているだけで、ここには書き込めません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这是 %@ 的对话。你只是在旁观，不能在这里写入。"
+          }
+        }
+      }
+    },
+    "This is another person's conversation. You are observing it and cannot write here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これは別の人の会話です。見ているだけで、ここには書き込めません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这是另一个人的对话。你只是在旁观，不能在这里写入。"
+          }
+        }
+      }
+    },
+    "Read every person's agent conversations and runs, without acting; each read is logged": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全員のエージェントの会話と実行を、操作はせずに読む。読むたびに記録される"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阅读每个人的助手对话和运行记录，但不代为操作；每次阅读都会被记录"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
