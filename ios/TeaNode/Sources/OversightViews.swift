@@ -247,7 +247,7 @@ struct OversightView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(verbatim: run.ownerLabel.isEmpty ? run.agentId : run.ownerLabel).foregroundStyle(Color(.label))
             Text(verbatim: Self.title(of: run)).font(.subheadline).foregroundStyle(Color(.secondaryLabel)).lineLimit(2)
-            HStack(spacing: 8) {
+            OversightRowFooter(details: runDetails(run)) {
                 if run.isRunning {
                     Label("Running", systemImage: "waveform")
                         .labelStyle(.tag)
@@ -259,7 +259,6 @@ struct OversightView: View {
                 if let jobKind = run.jobKind, !jobKind.isEmpty, !run.title.isEmpty {
                     UpkeepTag(text: Self.kindTitle(jobKind))
                 }
-                Text(verbatim: runDetails(run)).font(.caption).foregroundStyle(Color(.secondaryLabel)).lineLimit(2)
             }
         }
         .accessibilityElement(children: .combine)
@@ -274,12 +273,11 @@ struct OversightView: View {
             if !turn.errorText.isEmpty {
                 Text(verbatim: turn.errorText).font(.footnote).foregroundStyle(Color(.secondaryLabel)).lineLimit(3)
             }
-            HStack(spacing: 8) {
+            OversightRowFooter(details: UpkeepWords.when(turn.failedAt)) {
                 UpkeepTag(text: String(localized: "Failed"), tone: .bad)
                 if !turn.conversationKind.isEmpty {
                     UpkeepTag(text: Self.kindTitle(turn.conversationKind))
                 }
-                Text(verbatim: UpkeepWords.when(turn.failedAt)).font(.caption).foregroundStyle(Color(.secondaryLabel)).lineLimit(1)
             }
         }
         .accessibilityElement(children: .combine)
@@ -473,3 +471,33 @@ struct OversightView: View {
         }
     }
 #endif
+
+/// A row's tags and its details (when, tokens, cost). They share one line when
+/// it fits; otherwise the details go under the tags, and at the largest text
+/// sizes each tag takes its own line, so no word is ever broken in two and the
+/// details never shrink into a narrow column beside the tags.
+private struct OversightRowFooter<Tags: View>: View {
+    let details: String
+    @ViewBuilder let tags: () -> Tags
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                tags()
+                detailsText.fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) { tags() }.fixedSize()
+                detailsText
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 3) { tags() }
+                detailsText
+            }
+        }
+    }
+
+    private var detailsText: some View {
+        Text(verbatim: details).font(.caption).foregroundStyle(Color(.secondaryLabel))
+    }
+}
