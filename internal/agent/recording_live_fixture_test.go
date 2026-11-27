@@ -259,7 +259,7 @@ func newLiveRecordingFixture(test *testing.T) *liveRecordingFixture {
 	// The second pass is a request of its own, so tests that count the
 	// provider's requests start without it and a test turns it on.
 	configuration.Agent.Recording.IsAccurateWordsEnabled = new(false)
-	configuration.Agent.Providers = []config.AgentProvider{{Name: "fixture", Kind: "openai", BaseURL: provider.server.URL, APIKey: "fixture-key"}}
+	configuration.Agent.Providers = []config.AgentProvider{{Name: "fixture", Kind: "openai", BaseURL: provider.server.URL, APIKey: "fixture-key", ModelEntries: []config.AgentModelEntry{{Model: "gpt-4o-transcribe-diarize"}, {Model: "summary-model"}}}}
 	registry, err := llm.Open(&configuration.Agent)
 	if err != nil {
 		test.Fatal(err)

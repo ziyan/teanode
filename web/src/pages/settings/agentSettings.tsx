@@ -5,7 +5,7 @@ import { graphql } from '../../api'
 import { RESTART_PATH, SaveRow, announceSaved } from '../../components/common'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { PencilIcon, TrashIcon } from '../../components/icons'
-import { Select } from '../../components/select'
+import { Select, SelectOption } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { SkillsSection } from './skillsSection'
 import { SourceTypesSection } from './sourceTypesSection'
@@ -14,6 +14,7 @@ import { useToast } from '../../components/toast'
 import { ToolPolicyAccordion } from '../../components/toolPolicy'
 import { Tooltip } from '../../components/tooltip'
 import { ProviderSignIn } from './providerSignIn'
+import { AgentModelEntry, MODEL_ENTRY_FIELDS, ModelOption, ProviderModels, modelOptions } from './providerModels'
 import { BillingCheck, PriceCheckDialog, PriceCheckLine, runPriceCheck, useBillingChecks } from './providerPriceCheck'
 import { PlanUsage, PlanUsageBars } from '../../components/planUsage'
 import { useTranslation } from '../../i18n/i18n'
@@ -41,19 +42,11 @@ export type AgentProvider = {
   hasRefreshToken: boolean
   account: string
   enabled: boolean
-  allow: string[]
-  deny: string[]
+  // What the provider offers, each with its own settings.
+  models: AgentModelEntry[]
   pricingInput: number
   pricingCacheWrite: number
   pricingAudioInput: number
-  modelPricing: {
-    model: string
-    input: number
-    output: number
-    cacheRead: number
-    cacheWrite: number
-    audioInput: number
-  }[]
   pricingOutput: number
   pricingCacheRead: number
   // What a provider that runs on a plan last said of its allowance; null
@@ -169,7 +162,7 @@ export type Agent = {
 
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
-  providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
+  providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput models { ${MODEL_ENTRY_FIELDS} } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast quick transcription embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer }
@@ -286,18 +279,16 @@ import { AgentPart } from './agentParts'
 export type { AgentPart } from './agentParts'
 
 export function AgentForm({ settings, onSaved, part }: Props & { part?: AgentPart }) {
-  const [known, setKnown] = useState<string[]>([])
   const [knownModels, setKnownModels] = useState<KnownAgentModel[]>([])
 
-  // The model pickers are fed by what the enabled providers offer, read
-  // once per visit; a provider that cannot be reached simply contributes
-  // nothing, and Test on its row says why.
+  // The pickers list the models under each provider; what a model can do
+  // (transcribe, say) is read once per visit from the providers themselves,
+  // and a provider that cannot be reached contributes nothing.
   useEffect(() => {
     let cancelled = false
     graphql<{ ListAgentModels: KnownAgentModel[] }>(LIST_MODELS)
       .then((data) => {
         if (!cancelled) {
-          setKnown(data.ListAgentModels.map((model) => model.name))
           setKnownModels(data.ListAgentModels)
         }
       })
@@ -314,12 +305,8 @@ export function AgentForm({ settings, onSaved, part }: Props & { part?: AgentPar
       {shows('general') ? <GeneralForm settings={settings} onSaved={onSaved} /> : null}
       {shows('models') ? (
         <>
-          <ProvidersSection
-            settings={settings}
-            onSaved={onSaved}
-            onModels={(names) => setKnown((previous) => Array.from(new Set([...previous, ...names])).sort())}
-          />
-          <ModelsForm settings={settings} onSaved={onSaved} known={known} knownModels={knownModels} />
+          <ProvidersSection settings={settings} onSaved={onSaved} />
+          <ModelsForm settings={settings} onSaved={onSaved} knownModels={knownModels} />
           <VoiceForm settings={settings} onSaved={onSaved} />
           <RecordingForm settings={settings} onSaved={onSaved} />
           <FeaturesForm settings={settings} onSaved={onSaved} />
@@ -433,21 +420,11 @@ type ProviderDraft = {
   hasBillingApiKey: boolean
   hasRefreshToken: boolean
   enabled: boolean
-  allow: string
-  deny: string
   pricingInput: string
   pricingOutput: string
   pricingCacheRead: string
   pricingCacheWrite: string
   pricingAudioInput: string
-  modelPricing: {
-    model: string
-    input: string
-    output: string
-    cacheRead: string
-    cacheWrite: string
-    audioInput: string
-  }[]
 }
 
 function providerDraft(provider?: AgentProvider): ProviderDraft {
@@ -462,21 +439,11 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         hasBillingApiKey: provider.hasBillingApiKey,
         hasRefreshToken: provider.hasRefreshToken,
         enabled: provider.enabled,
-        allow: list(provider.allow),
-        deny: list(provider.deny),
         pricingInput: provider.pricingInput ? String(provider.pricingInput) : '',
         pricingOutput: provider.pricingOutput ? String(provider.pricingOutput) : '',
         pricingCacheRead: provider.pricingCacheRead ? String(provider.pricingCacheRead) : '',
         pricingCacheWrite: provider.pricingCacheWrite ? String(provider.pricingCacheWrite) : '',
         pricingAudioInput: provider.pricingAudioInput ? String(provider.pricingAudioInput) : '',
-        modelPricing: (provider.modelPricing ?? []).map((priced) => ({
-          model: priced.model,
-          input: priced.input ? String(priced.input) : '',
-          output: priced.output ? String(priced.output) : '',
-          cacheRead: priced.cacheRead ? String(priced.cacheRead) : '',
-          cacheWrite: priced.cacheWrite ? String(priced.cacheWrite) : '',
-          audioInput: priced.audioInput ? String(priced.audioInput) : '',
-        })),
       }
     : {
         name: '',
@@ -488,14 +455,11 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         hasBillingApiKey: false,
         hasRefreshToken: false,
         enabled: true,
-        allow: '',
-        deny: '',
         pricingInput: '',
         pricingOutput: '',
         pricingCacheRead: '',
         pricingCacheWrite: '',
         pricingAudioInput: '',
-        modelPricing: [],
       }
 }
 
@@ -514,14 +478,11 @@ function providerValues(provider: AgentProvider) {
     apiKey: '',
     billingApiKey: '',
     enabled: provider.enabled,
-    allow: provider.allow,
-    deny: provider.deny,
     pricingInput: provider.pricingInput,
     pricingOutput: provider.pricingOutput,
     pricingCacheRead: provider.pricingCacheRead,
     pricingCacheWrite: provider.pricingCacheWrite,
     pricingAudioInput: provider.pricingAudioInput,
-    modelPricing: provider.modelPricing ?? [],
   }
 }
 
@@ -533,30 +494,18 @@ function draftValues(draft: ProviderDraft) {
     apiKey: draft.apiKey,
     billingApiKey: draft.billingApiKey,
     enabled: draft.enabled,
-    allow: split(draft.allow),
-    deny: split(draft.deny),
     pricingInput: Number(draft.pricingInput) || 0,
     pricingOutput: Number(draft.pricingOutput) || 0,
     pricingCacheRead: Number(draft.pricingCacheRead) || 0,
     pricingCacheWrite: Number(draft.pricingCacheWrite) || 0,
     pricingAudioInput: Number(draft.pricingAudioInput) || 0,
-    modelPricing: draft.modelPricing
-      .filter((priced) => priced.model.trim())
-      .map((priced) => ({
-        model: priced.model.trim(),
-        input: Number(priced.input) || 0,
-        output: Number(priced.output) || 0,
-        cacheRead: Number(priced.cacheRead) || 0,
-        cacheWrite: Number(priced.cacheWrite) || 0,
-        audioInput: Number(priced.audioInput) || 0,
-      })),
   }
 }
 
 // ProvidersSection: the model services, a row each. The list is sent
 // whole whenever a row changes, because a list is what it is; the row
 // being edited is the one in the dialog.
-export function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (names: string[]) => void }) {
+export function ProvidersSection({ settings, onSaved }: Props) {
   const { t } = useTranslation()
   const toast = useToast()
   const { busy, save } = useSectionSave(onSaved)
@@ -601,7 +550,6 @@ export function ProvidersSection({ settings, onSaved, onModels }: Props & { onMo
       const data = await graphql<{ TestAgentProvider: { name: string }[] }>(TEST_PROVIDER, { name })
       const names = data.TestAgentProvider.map((model) => model.name)
       toast.done(t('agentSettings.testResult', { count: names.length, sample: names.slice(0, 5).join(', ') }))
-      onModels(names)
     } catch (caught) {
       toast.failed(messageOf(caught))
     } finally {
@@ -633,85 +581,80 @@ export function ProvidersSection({ settings, onSaved, onModels }: Props & { onMo
                 provider.baseUrl || t('agentSettings.publicService'),
                 provider.hasApiKey ? t('agentSettings.keySet') : t('agentSettings.keyMissing'),
               ]
-        if (provider.allow.length > 0) detail.push(t('agentSettings.offers', { patterns: list(provider.allow) }))
-        if (provider.deny.length > 0) detail.push(t('agentSettings.hides', { patterns: list(provider.deny) }))
         if (provider.pricingInput || provider.pricingOutput) {
           detail.push(
             t('agentSettings.priced', { input: String(provider.pricingInput), output: String(provider.pricingOutput) }),
           )
         }
-        // A provider whose models are priced apart says so, since the
-        // prices above are only what is left when none of them matches.
-        if ((provider.modelPricing ?? []).length > 0) {
-          detail.push(t('agentSettings.pricedModels', { count: String(provider.modelPricing.length) }))
-        }
         return (
-          <SettingsRow
-            key={provider.name || index}
-            title={provider.name}
-            badge={
-              <>
-                <Tag value={provider.kind} />
-                {provider.planUsage?.planName ? (
-                  <Tag value={t('agentSettings.planName', { name: capitalized(provider.planUsage.planName) })} />
-                ) : null}
-                {!provider.enabled && <Tag value={t('agentSettings.disabled')} />}
-              </>
-            }
-            subtitle={
-              <>
-                {detail.join(' · ')}
-                {provider.hasBillingApiKey ? (
-                  <div>
-                    <PriceCheckLine check={checks[provider.name]} />
-                  </div>
-                ) : null}
-                {provider.planUsage ? <PlanUsageBars usage={provider.planUsage} /> : null}
-              </>
-            }
-            actions={
-              <>
-                {provider.hasBillingApiKey ? (
-                  <button type="button" disabled={busy || isChecking} onClick={() => void checkPrices(provider.name)}>
-                    {isChecking ? t('agentSettings.priceChecking') : t('agentSettings.priceCheckNow')}
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  disabled={
-                    busy ||
-                    testing !== null ||
-                    (!provider.hasApiKey && !provider.hasRefreshToken && provider.kind !== 'openai')
-                  }
-                  onClick={() => void test(provider.name)}
-                >
-                  {testing === provider.name ? t('agentSettings.testing') : t('agentSettings.test')}
-                </button>
-                <Tooltip label={t('common.edit')}>
+          <div className="provider-block" key={provider.name || index}>
+            <SettingsRow
+              title={provider.name}
+              badge={
+                <>
+                  <Tag value={provider.kind} />
+                  {provider.planUsage?.planName ? (
+                    <Tag value={t('agentSettings.planName', { name: capitalized(provider.planUsage.planName) })} />
+                  ) : null}
+                  {!provider.enabled && <Tag value={t('agentSettings.disabled')} />}
+                </>
+              }
+              subtitle={
+                <>
+                  {detail.join(' · ')}
+                  {provider.hasBillingApiKey ? (
+                    <div>
+                      <PriceCheckLine check={checks[provider.name]} />
+                    </div>
+                  ) : null}
+                  {provider.planUsage ? <PlanUsageBars usage={provider.planUsage} /> : null}
+                </>
+              }
+              actions={
+                <>
+                  {provider.hasBillingApiKey ? (
+                    <button type="button" disabled={busy || isChecking} onClick={() => void checkPrices(provider.name)}>
+                      {isChecking ? t('agentSettings.priceChecking') : t('agentSettings.priceCheckNow')}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    className="icon-action"
-                    aria-label={`${provider.name}: ${t('common.edit')}`}
-                    disabled={busy}
-                    onClick={() => setEditing({ index, draft: providerDraft(provider) })}
+                    disabled={
+                      busy ||
+                      testing !== null ||
+                      (!provider.hasApiKey && !provider.hasRefreshToken && provider.kind !== 'openai')
+                    }
+                    onClick={() => void test(provider.name)}
                   >
-                    <PencilIcon size={16} />
+                    {testing === provider.name ? t('agentSettings.testing') : t('agentSettings.test')}
                   </button>
-                </Tooltip>
-                <Tooltip label={t('agentSettings.remove')}>
-                  <button
-                    type="button"
-                    className="icon-action danger"
-                    aria-label={`${provider.name}: ${t('agentSettings.remove')}`}
-                    disabled={busy}
-                    onClick={() => setRemoving(index)}
-                  >
-                    <TrashIcon size={16} />
-                  </button>
-                </Tooltip>
-              </>
-            }
-          />
+                  <Tooltip label={t('common.edit')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${provider.name}: ${t('common.edit')}`}
+                      disabled={busy}
+                      onClick={() => setEditing({ index, draft: providerDraft(provider) })}
+                    >
+                      <PencilIcon size={16} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('agentSettings.remove')}>
+                    <button
+                      type="button"
+                      className="icon-action danger"
+                      aria-label={`${provider.name}: ${t('agentSettings.remove')}`}
+                      disabled={busy}
+                      onClick={() => setRemoving(index)}
+                    >
+                      <TrashIcon size={16} />
+                    </button>
+                  </Tooltip>
+                </>
+              }
+            />
+            <ProviderModels providerName={provider.name} models={provider.models ?? []} busy={busy} onSaved={onSaved} />
+          </div>
         )
       })}
       {editing ? (
@@ -910,16 +853,6 @@ function ProviderDialog({
       )}
       <div className="row">
         <label>
-          <span>{t('agentSettings.providerAllow')}</span>
-          <input value={draft.allow} onChange={(event) => set({ allow: event.target.value })} />
-        </label>
-        <label>
-          <span>{t('agentSettings.providerDeny')}</span>
-          <input value={draft.deny} onChange={(event) => set({ deny: event.target.value })} />
-        </label>
-      </div>
-      <div className="row">
-        <label>
           <span>{t('agentSettings.pricingInput')}</span>
           <input
             value={draft.pricingInput}
@@ -960,87 +893,6 @@ function ProviderDialog({
           />
         </label>
       </div>
-      <p className="field-label">{t('agentSettings.modelPricing')}</p>
-      <p className="muted field-hint">{t('agentSettings.modelPricingHint')}</p>
-      {draft.modelPricing.length > 0 && (
-        <div className="priced-models">
-          {draft.modelPricing.map((priced, index) => {
-            const change = (fields: Partial<(typeof draft.modelPricing)[number]>) =>
-              set({ modelPricing: draft.modelPricing.map((row, at) => (at === index ? { ...row, ...fields } : row)) })
-            const named = priced.model.trim() || t('agentSettings.pricingModel')
-            return (
-              <div className="priced-models-row" key={index}>
-                <input
-                  value={priced.model}
-                  placeholder="gpt-5*"
-                  aria-label={t('agentSettings.pricingModel')}
-                  onChange={(event) => change({ model: event.target.value })}
-                />
-                <input
-                  value={priced.input}
-                  inputMode="decimal"
-                  placeholder={t('agentSettings.pricingIn')}
-                  aria-label={`${named}: ${t('agentSettings.pricingIn')}`}
-                  onChange={(event) => change({ input: asPrice(event.target.value) })}
-                />
-                <input
-                  value={priced.output}
-                  inputMode="decimal"
-                  placeholder={t('agentSettings.pricingOut')}
-                  aria-label={`${named}: ${t('agentSettings.pricingOut')}`}
-                  onChange={(event) => change({ output: asPrice(event.target.value) })}
-                />
-                <input
-                  value={priced.cacheRead}
-                  inputMode="decimal"
-                  placeholder={t('agentSettings.pricingCached')}
-                  aria-label={`${named}: ${t('agentSettings.pricingCached')}`}
-                  onChange={(event) => change({ cacheRead: asPrice(event.target.value) })}
-                />
-                <input
-                  value={priced.cacheWrite}
-                  inputMode="decimal"
-                  placeholder={t('agentSettings.pricingCaching')}
-                  aria-label={`${named}: ${t('agentSettings.pricingCaching')}`}
-                  onChange={(event) => change({ cacheWrite: asPrice(event.target.value) })}
-                />
-                <input
-                  value={priced.audioInput}
-                  inputMode="decimal"
-                  placeholder={t('agentSettings.pricingAudio')}
-                  aria-label={`${named}: ${t('agentSettings.pricingAudio')}`}
-                  onChange={(event) => change({ audioInput: asPrice(event.target.value) })}
-                />
-                <Tooltip label={t('common.remove')}>
-                  <button
-                    type="button"
-                    className="icon-action danger"
-                    aria-label={`${named}: ${t('common.remove')}`}
-                    onClick={() => set({ modelPricing: draft.modelPricing.filter((_, at) => at !== index) })}
-                  >
-                    <TrashIcon size={14} />
-                  </button>
-                </Tooltip>
-              </div>
-            )
-          })}
-        </div>
-      )}
-      <div className="priced-models-add">
-        <button
-          type="button"
-          onClick={() =>
-            set({
-              modelPricing: [
-                ...draft.modelPricing,
-                { model: '', input: '', output: '', cacheRead: '', cacheWrite: '', audioInput: '' },
-              ],
-            })
-          }
-        >
-          {t('agentSettings.addModelPricing')}
-        </button>
-      </div>
       <label className="checkbox">
         <input type="checkbox" checked={draft.enabled} onChange={(event) => set({ enabled: event.target.checked })} />
         {t('integrations.enabled')}
@@ -1049,22 +901,24 @@ function ProviderDialog({
   )
 }
 
-// ModelPicker is one model assignment: a list of what the providers offer,
-// a box to narrow it, and room for a name the list does not know yet.
+// ModelPicker is one model assignment: the models the providers offer, as
+// "Provider · Model" under a heading per provider, a box to narrow them, and
+// room for a name the list does not know yet. What it stores is what a role
+// stores, provider:model, with the model's id.
 function ModelPicker({
   value,
-  known,
+  options,
   label,
   placeholder,
   onChange,
 }: {
   value: string
-  known: string[]
+  options: SelectOption[]
   label: string
   placeholder: string
   onChange: (value: string) => void
 }) {
-  const names = value && !known.includes(value) ? [value, ...known] : known
+  const listed = value && !options.some((option) => option.value === value) ? [{ value, label: value }] : []
   return (
     <label>
       <span>{label}</span>
@@ -1074,7 +928,7 @@ function ModelPicker({
         value={value}
         label={label}
         placeholder={placeholder}
-        options={[{ value: '', label: placeholder }, ...names.map((name) => ({ value: name, label: name }))]}
+        options={[{ value: '', label: placeholder }, ...listed, ...options]}
         onChange={onChange}
       />
     </label>
@@ -1084,12 +938,7 @@ function ModelPicker({
 // ModelsForm assigns work to models: three every deployment needs, then
 // one per kind of work for whoever wants to spend differently on sorting
 // than on conversations, and the models a person may pick for their own.
-function ModelsForm({
-  settings,
-  onSaved,
-  known,
-  knownModels,
-}: Props & { known: string[]; knownModels: KnownAgentModel[] }) {
+export function ModelsForm({ settings, onSaved, knownModels }: Props & { knownModels: KnownAgentModel[] }) {
   const { t } = useTranslation()
   const { busy, problem, saved, save } = useSaver(onSaved)
   const [models, setModels] = useState(settings.models)
@@ -1106,18 +955,22 @@ function ModelsForm({
   const deciders = settings.providers
     .filter((provider) => provider.kind === 'typesafe')
     .map((provider) => provider.name)
-  const isDecider = (name: string) => deciders.includes(name.split(':')[0])
+  const known = modelOptions(settings.providers)
+  const isDecider = (option: ModelOption) => deciders.includes(option.provider)
   // A provider lists every model it has, and most of OpenAI's do not hold a
   // conversation: embeddings, speech in and out, pictures, realtime audio.
   // Offered for the default, a list of a hundred and forty began with
-  // babbage-002. So the pickers are narrowed by name, the embedding picker to
+  // babbage-002. So the pickers are narrowed by id, the embedding picker to
   // embedding models and the others to the rest; a name left out can still
   // be typed in.
-  const isTranscriber = (name: string) => knownModels.some((model) => model.name === name && model.canTranscribe)
-  const knownForWork = known.filter((name) => !isDecider(name) && !NOT_CONVERSATION.test(name) && !isTranscriber(name))
-  const knownEmbedding = known.filter((name) => EMBEDDING.test(name))
+  const isTranscriber = (option: ModelOption) =>
+    knownModels.some((model) => model.name === option.value && model.canTranscribe)
+  const knownForWork = known.filter(
+    (option) => !isDecider(option) && !NOT_CONVERSATION.test(option.id) && !isTranscriber(option),
+  )
+  const knownEmbedding = known.filter((option) => EMBEDDING.test(option.id))
   const knownForDeciding = known.filter(isDecider)
-  const choosable = knownForWork.filter((name) => !models.choices.includes(name))
+  const choosable = knownForWork.filter((option) => !models.choices.includes(option.value))
 
   return (
     <form
@@ -1134,7 +987,7 @@ function ModelsForm({
           <ModelPicker
             key={field}
             value={models[field]}
-            known={field === 'embedding' && knownEmbedding.length > 0 ? knownEmbedding : knownForWork}
+            options={field === 'embedding' && knownEmbedding.length > 0 ? knownEmbedding : knownForWork}
             label={t(`agentSettings.model.${field}`)}
             placeholder={field === 'quick' ? t('agentSettings.modelQuickOff') : t('agentSettings.modelNone')}
             onChange={(value) => setModels({ ...models, [field]: value })}
@@ -1142,7 +995,7 @@ function ModelsForm({
         ))}
         <ModelPicker
           value={models.transcription}
-          known={knownModels.filter((model) => model.canTranscribe).map((model) => model.name)}
+          options={known.filter(isTranscriber)}
           label={t('agentSettings.recordingTranscription')}
           placeholder={t('agentSettings.recordingTranscriptionOff')}
           onChange={(value) => setModels({ ...models, transcription: value })}
@@ -1180,7 +1033,7 @@ function ModelsForm({
               <ModelPicker
                 key={field}
                 value={models[field]}
-                known={knownForWork}
+                options={knownForWork}
                 label={t(`agentSettings.work.${field}`)}
                 placeholder={t(
                   field === 'synthesize' ? 'agentSettings.modelInheritResearch' : 'agentSettings.modelInherit',
@@ -1190,14 +1043,14 @@ function ModelsForm({
             ))}
             <ModelPicker
               value={models.decide}
-              known={knownForDeciding}
+              options={knownForDeciding}
               label={t('agentSettings.work.decide')}
               placeholder={t('agentSettings.modelDecideOff')}
               onChange={(value) => setModels({ ...models, decide: value })}
             />
             <ModelPicker
               value={models.categorize}
-              known={[...knownForDeciding, ...knownForWork]}
+              options={[...knownForDeciding, ...knownForWork]}
               label={t('agentSettings.work.categorize')}
               placeholder={t('agentSettings.modelInheritCategorize')}
               onChange={(value) => setModels({ ...models, categorize: value })}
@@ -1229,10 +1082,7 @@ function ModelsForm({
                 value=""
                 label={t('agentSettings.modelChoices')}
                 placeholder={t('agentSettings.addChoice')}
-                options={[
-                  { value: '', label: t('agentSettings.addChoice') },
-                  ...choosable.map((name) => ({ value: name, label: name })),
-                ]}
+                options={[{ value: '', label: t('agentSettings.addChoice') }, ...choosable]}
                 onChange={(value) => {
                   if (value && !models.choices.includes(value)) {
                     setModels({ ...models, choices: [...models.choices, value] })

@@ -142,6 +142,50 @@ func (self *deprecatedLimits) empty() bool {
 	return *self == deprecatedLimits{}
 }
 
+// What older releases stored. A provider's models was an object of allow and
+// deny patterns, and modelPricing priced models or families of them by
+// pattern. Both are read, converted into entries and dropped.
+
+// deprecatedProvider is the old keys of one provider.
+type deprecatedProvider struct {
+	// Filter is the old models object. Only its presence is used: the
+	// patterns say what a provider may offer, and the entries now say what
+	// it does.
+	Filter *deprecatedModelFilter
+
+	// Pricing is the old modelPricing, in order: the first entry matching
+	// a model priced it.
+	Pricing []deprecatedModelPricing
+}
+
+type deprecatedModelFilter struct {
+	Allow []string `yaml:"allow,omitempty"`
+	Deny  []string `yaml:"deny,omitempty"`
+}
+
+type deprecatedModelPricing struct {
+	Model      string  `yaml:"model"`
+	Input      float64 `yaml:"input,omitempty"`
+	Output     float64 `yaml:"output,omitempty"`
+	CacheRead  float64 `yaml:"cacheRead,omitempty"`
+	CacheWrite float64 `yaml:"cacheWrite,omitempty"`
+	AudioInput float64 `yaml:"audioInput,omitempty"`
+}
+
+// priceFor is what the old list priced a model at: the first entry that
+// names it, by pattern or by id.
+// It is nil when none does, and a value when one does, all zeros included,
+// because the old list read a matching zero entry as free.
+func (self *deprecatedProvider) priceFor(model string) *AgentPricing {
+	model = modelWithoutWidth(model)
+	for _, priced := range self.Pricing {
+		if matchesAny([]string{priced.Model}, model) {
+			return &AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite, AudioInput: priced.AudioInput}
+		}
+	}
+	return nil
+}
+
 // migrateDeprecated adopts what it can from the older layout and says what it
 // did, so an operator is not left wondering where a setting went.
 func (self *Configuration) migrateDeprecated() {
@@ -149,6 +193,7 @@ func (self *Configuration) migrateDeprecated() {
 	self.migrateDomainKey()
 	self.migrateAcme()
 	self.migrateGoalLimits()
+	self.Agent.migrateProviderModels()
 }
 
 func (self *Configuration) migrateGoalLimits() {

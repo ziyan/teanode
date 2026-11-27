@@ -258,26 +258,6 @@ func pricePointer(pricing *config.AgentPricing, tokenKind string) *float64 {
 	return nil
 }
 
-func modelPricingPointer(entry *config.AgentModelPricing, tokenKind string) *float64 {
-	switch tokenKind {
-	case llm.BilledTokenKindInput:
-		return &entry.Input
-	case llm.BilledTokenKindCachedInput:
-		return &entry.CacheRead
-	case llm.BilledTokenKindCacheWrite:
-		return &entry.CacheWrite
-	case llm.BilledTokenKindOutput:
-		return &entry.Output
-	case llm.BilledTokenKindAudioInput:
-		return &entry.AudioInput
-	}
-	return nil
-}
-
-func isPricePattern(model string) bool {
-	return strings.ContainsAny(model, "*?[")
-}
-
 // comparePrices sets what the bill implies beside what the provider is
 // configured with, for the models TeaNode used. Rates for a model nobody
 // here used are the account's other programs, and are left out.
@@ -297,20 +277,23 @@ func comparePrices(provider *config.AgentProvider, rates []llm.BilledRate, usedM
 			if !isMatch || seen[key{model, rate.TokenKind}] {
 				continue
 			}
+			// A model with no entry is not one the provider offers, and the
+			// check changes entries only: it never makes one.
+			if provider.ModelEntryFor(model) == nil {
+				continue
+			}
 			pricing := provider.PricingFor(model)
 			configured := pricePointer(&pricing, rate.TokenKind)
 			if configured == nil {
 				continue
 			}
 			seen[key{model, rate.TokenKind}] = true
-			index := provider.PricingEntryIndexFor(model)
-			isPattern := index >= 0 && isPricePattern(provider.ModelPricing[index].Model)
 			compared = append(compared, models.AgentBilledPrice{
 				Model: model, TokenKind: rate.TokenKind,
 				ConfiguredPerMillion: *configured, BilledPerMillion: rate.PerMillion,
-				DayCount: rate.DayCount, IsPattern: isPattern,
+				DayCount: rate.DayCount,
 			})
-			if isPattern || !isPriceWrong(*configured, rate.PerMillion) {
+			if !isPriceWrong(*configured, rate.PerMillion) {
 				continue
 			}
 			changed = append(changed, models.AgentPriceChange{
@@ -370,26 +353,22 @@ func isPriceWrong(configured, billed float64) bool {
 	return math.Abs(billed-configured)/configured > priceTolerance
 }
 
-// applyPriceChanges sets each price on the provider's entry for the model,
-// or on a new entry when only the provider's own prices applied. A new entry
-// starts from the prices the model was charged at, so the kinds the bill did
-// not speak about keep their value. An entry that is a pattern is left, as
-// it prices other models too.
+// applyPriceChanges sets each price on the model's entry. An entry with no
+// prices of its own starts from the prices the model was charged at, which
+// are the provider's, so the kinds the bill did not speak about keep their
+// value. A model with no entry is left: the check changes what a provider
+// offers no more than it changes its prices.
 func applyPriceChanges(provider *config.AgentProvider, changes []models.AgentPriceChange) {
 	for _, change := range changes {
-		index := provider.PricingEntryIndexFor(change.Model)
-		if index >= 0 && isPricePattern(provider.ModelPricing[index].Model) {
+		entry := provider.ModelEntryFor(change.Model)
+		if entry == nil {
 			continue
 		}
-		if index < 0 {
-			effective := provider.PricingFor(change.Model)
-			provider.ModelPricing = append(provider.ModelPricing, config.AgentModelPricing{
-				Model: change.Model, Input: effective.Input, Output: effective.Output,
-				CacheRead: effective.CacheRead, CacheWrite: effective.CacheWrite, AudioInput: effective.AudioInput,
-			})
-			index = len(provider.ModelPricing) - 1
+		if !entry.HasPricing() {
+			inherited := provider.PricingFor(change.Model)
+			entry.Pricing = &inherited
 		}
-		if price := modelPricingPointer(&provider.ModelPricing[index], change.TokenKind); price != nil {
+		if price := pricePointer(entry.Pricing, change.TokenKind); price != nil {
 			*price = change.AfterPerMillion
 		}
 	}

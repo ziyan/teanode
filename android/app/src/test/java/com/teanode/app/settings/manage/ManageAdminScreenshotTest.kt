@@ -52,6 +52,8 @@ class ManageAdminScreenshotTest {
         composeRule.waitForIdle()
     }
 
+    @Composable private fun providers() = AgentProvidersScreen(onBack = {}, onOpenProvider = {}, onOpenModel = { _, _ -> }, onAddModel = {})
+
     @Test fun `agents hub light`() = shoot("manage-agents-hub-light") { AgentAdminHubScreen(onBack = {}, onOpen = {}) }
     @Test fun `agents hub dark`() = shoot("manage-agents-hub-dark", AppearanceChoice.Dark) { AgentAdminHubScreen(onBack = {}, onOpen = {}) }
     @Test fun `agents hub largest text`() = shoot("manage-agents-hub-largest-text", fontScale = 2f) { AgentAdminHubScreen(onBack = {}, onOpen = {}) }
@@ -59,9 +61,20 @@ class ManageAdminScreenshotTest {
     @Test fun `personal agents light`() = shoot("manage-personal-light") { AgentPersonalSettingsScreen(onBack = {}) }
     @Test fun `personal agents dark`() = shoot("manage-personal-dark", AppearanceChoice.Dark) { AgentPersonalSettingsScreen(onBack = {}) }
 
-    @Test fun `providers light`() = shoot("manage-providers-light") { AgentProvidersScreen(onBack = {}, onOpenProvider = {}) }
-    @Test fun `providers dark`() = shoot("manage-providers-dark", AppearanceChoice.Dark) { AgentProvidersScreen(onBack = {}, onOpenProvider = {}) }
-    @Test fun `providers largest text`() = shoot("manage-providers-largest-text", fontScale = 2f) { AgentProvidersScreen(onBack = {}, onOpenProvider = {}) }
+    @Test fun `providers light`() = shoot("manage-providers-light") { providers() }
+    @Test fun `providers dark`() = shoot("manage-providers-dark", AppearanceChoice.Dark) { providers() }
+    @Test fun `providers largest text`() = shoot("manage-providers-largest-text", fontScale = 2f) { providers() }
+
+    @Test fun `model light`() = shoot("manage-model-light") { AgentModelScreen(providerIndex = 0, model = "model-large", onBack = {}) }
+    @Test fun `model dark`() = shoot("manage-model-dark", AppearanceChoice.Dark) { AgentModelScreen(providerIndex = 0, model = "model-large", onBack = {}) }
+    @Test fun `model largest text`() = shoot("manage-model-largest-text", fontScale = 2f) { AgentModelScreen(providerIndex = 0, model = "model-small", onBack = {}) }
+    @Test fun `model with its own window light`() = shoot("manage-model-window-light") { AgentModelScreen(providerIndex = 0, model = "model-small", onBack = {}) }
+    @Test fun `model used for light`() = shoot("manage-model-used-for-light", before = { scrollTo("Used for") }) { AgentModelScreen(providerIndex = 0, model = "model-large", onBack = {}) }
+    @Test fun `model used for dark`() = shoot("manage-model-used-for-dark", AppearanceChoice.Dark, before = { scrollTo("Used for") }) { AgentModelScreen(providerIndex = 0, model = "model-large", onBack = {}) }
+    @Test fun `add model light`() = shoot("manage-add-model-light") { AgentAddModelScreen(providerIndex = 0, onBack = {}, onAdded = {}) }
+    @Test fun `add model dark`() = shoot("manage-add-model-dark", AppearanceChoice.Dark) { AgentAddModelScreen(providerIndex = 0, onBack = {}, onAdded = {}) }
+    @Test fun `type a model id`() = shoot("manage-type-model-id-light", before = { click("Type an id") }) { AgentAddModelScreen(providerIndex = 0, onBack = {}, onAdded = {}) }
+    @Test fun `role picker light`() = shoot("manage-role-picker-light", before = { click("Default") }) { AgentModelsScreen(onBack = {}) }
 
     @Test fun `provider editor light`() = shoot("manage-provider-editor-light") { AgentProviderFormScreen(providerIndex = 0, onBack = {}) }
     @Test fun `provider editor dark`() = shoot("manage-provider-editor-dark", AppearanceChoice.Dark) { AgentProviderFormScreen(providerIndex = 0, onBack = {}) }

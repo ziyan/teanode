@@ -269,6 +269,7 @@ func (self *graph) GetSettings(ctx context.Context) (*Settings, error) {
 	// catalog and is what the tool policy is written against.
 	self.withSkillTools(ctx, settings.Agent)
 	self.withPlanUsage(settings.Agent)
+	self.withReportedContextWindows(settings.Agent)
 	return settings, nil
 }
 

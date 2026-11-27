@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.240.1] - 2026-11-27
+
+### Changed
+
+- The AI providers settings list each provider's models under its sign-in or key, each with its own name, context window and prices. The allow and deny patterns are gone. (#800)
+
+## [0.240.0] - 2026-11-27
+
+### Added
+
+- Feed cards can be marked resolved when their problem clears, carry charts with where their numbers came from, and show a still from a home camera. (#796)
+
 ## [0.239.0] - 2026-11-27
 
 ### Changed

@@ -5,15 +5,16 @@ import (
 	"testing"
 )
 
-// A model is priced by its own entry where it has one, by a pattern that
-// covers it next, and by its provider's prices otherwise.
+// A model is priced by its own entry where the entry has prices, and by its
+// provider's prices otherwise.
 func TestPricingPerModel(t *testing.T) {
 	agent := &Agent{Providers: []AgentProvider{{
 		Name:    "openai",
 		Pricing: AgentPricing{Input: 1, Output: 2, CacheRead: 0.5},
-		ModelPricing: []AgentModelPricing{
-			{Model: "gpt-5.6-terra", Input: 10, Output: 40, CacheRead: 5},
-			{Model: "gpt-5*", Input: 3, Output: 9, CacheRead: 1},
+		ModelEntries: []AgentModelEntry{
+			{Model: "gpt-5.6-terra", Pricing: &AgentPricing{Input: 10, Output: 40, CacheRead: 5}},
+			{Model: "gpt-5.6-luna", Pricing: &AgentPricing{Input: 3, Output: 9, CacheRead: 1}},
+			{Model: "whisper"},
 		},
 	}}}
 	// A million of each, so the numbers are the prices themselves.
@@ -21,48 +22,34 @@ func TestPricingPerModel(t *testing.T) {
 		t.Fatalf("the model's own entry: %v", cost)
 	}
 	if cost := agent.CostOf("openai:gpt-5.6-luna", 0, 0, 1_000_000, 0, 0); cost != 9 {
-		t.Fatalf("the pattern that covers it: %v", cost)
+		t.Fatalf("the other entry: %v", cost)
 	}
 	if cost := agent.CostOf("openai:whisper", 0, 0, 0, 1_000_000, 0); cost != 0.5 {
-		t.Fatalf("the provider's own prices: %v", cost)
+		t.Fatalf("an entry with no prices takes the provider's: %v", cost)
+	}
+	if cost := agent.CostOf("openai:not-an-entry", 0, 0, 0, 1_000_000, 0); cost != 0.5 {
+		t.Fatalf("a model with no entry takes the provider's: %v", cost)
 	}
 	if cost := agent.CostOf("elsewhere:thinker", 1_000_000, 0, 0, 0, 0); cost != 0 {
 		t.Fatalf("a provider that is not configured prices nothing: %v", cost)
 	}
-	// The first entry that matches wins, so order is the operator's.
-	agent.Providers[0].ModelPricing = []AgentModelPricing{{Model: "gpt-5*", Input: 3}, {Model: "gpt-5.6-terra", Input: 10}}
-	if cost := agent.CostOf("openai:gpt-5.6-terra", 1_000_000, 0, 0, 0, 0); cost != 3 {
-		t.Fatalf("the first match wins: %v", cost)
-	}
 }
 
-// A model name written with a slash is matched by a plain star: it is a
-// name, not a path.
-func TestPricingMatchesNamesWithSlashes(t *testing.T) {
+// A model id written with a slash is an id like another: an entry is matched
+// by the whole id, with no pattern in it.
+func TestPricingMatchesIDsWithSlashes(t *testing.T) {
 	agent := &Agent{Providers: []AgentProvider{{
 		Name: "router",
-		ModelPricing: []AgentModelPricing{
-			{Model: "anthropic/claude-*", Input: 3},
-			{Model: "*", Input: 1},
+		ModelEntries: []AgentModelEntry{
+			{Model: "vendor-a/claude-sonnet", Pricing: &AgentPricing{Input: 3}},
+			{Model: "*", Pricing: &AgentPricing{Input: 1}},
 		},
 	}}}
-	if cost := agent.CostOf("router:anthropic/claude-sonnet-4.5", 1_000_000, 0, 0, 0, 0); cost != 3 {
-		t.Fatalf("a family under a vendor: %v", cost)
+	if cost := agent.CostOf("router:vendor-a/claude-sonnet", 1_000_000, 0, 0, 0, 0); cost != 3 {
+		t.Fatalf("an id under a vendor: %v", cost)
 	}
-	if cost := agent.CostOf("router:meta/llama-4", 1_000_000, 0, 0, 0, 0); cost != 1 {
-		t.Fatalf("a star covers everything, slashes and all: %v", cost)
-	}
-	if cost := agent.CostOf("router:plain-model", 1_000_000, 0, 0, 0, 0); cost != 1 {
-		t.Fatalf("and names without a slash: %v", cost)
-	}
-	// A question mark is one character, and a pattern that matches
-	// nothing still matches nothing.
-	narrow := &Agent{Providers: []AgentProvider{{Name: "one", ModelPricing: []AgentModelPricing{{Model: "gpt-?", Input: 5}}}}}
-	if cost := narrow.CostOf("one:gpt-5", 1_000_000, 0, 0, 0, 0); cost != 5 {
-		t.Fatalf("one character: %v", cost)
-	}
-	if cost := narrow.CostOf("one:gpt-50", 1_000_000, 0, 0, 0, 0); cost != 0 {
-		t.Fatalf("not two: %v", cost)
+	if cost := agent.CostOf("router:vendor-b/llama", 1_000_000, 0, 0, 0, 0); cost != 0 {
+		t.Fatalf("a star is not a pattern any more, it is an id nobody asked for: %v", cost)
 	}
 }
 
@@ -84,9 +71,9 @@ func TestCostPricesAudioInputApart(t *testing.T) {
 	agent := &Agent{Providers: []AgentProvider{{
 		Name:    "one",
 		Pricing: AgentPricing{Input: 2.5, Output: 10},
-		ModelPricing: []AgentModelPricing{
-			{Model: "transcriber", Input: 2.5, Output: 10, AudioInput: 6},
-			{Model: "unpriced-audio", Input: 2.5, Output: 10},
+		ModelEntries: []AgentModelEntry{
+			{Model: "transcriber", Pricing: &AgentPricing{Input: 2.5, Output: 10, AudioInput: 6}},
+			{Model: "unpriced-audio", Pricing: &AgentPricing{Input: 2.5, Output: 10}},
 		},
 	}}}
 	if cost := agent.CostOf("one:transcriber", 0, 1_000_000, 0, 0, 0); cost != 6 {
@@ -145,8 +132,8 @@ func TestTheAllowListSaysWhatCannotBeUsed(t *testing.T) {
 func TestPricingForIgnoresTheWidthSuffix(t *testing.T) {
 	provider := AgentProvider{
 		Pricing: AgentPricing{Input: 0.15, Output: 0.6},
-		ModelPricing: []AgentModelPricing{
-			{Model: "text-embedding-3-small", Input: 0.02},
+		ModelEntries: []AgentModelEntry{
+			{Model: "text-embedding-3-small", Pricing: &AgentPricing{Input: 0.02}},
 		},
 	}
 	if got := provider.PricingFor("text-embedding-3-small@512").Input; got != 0.02 {

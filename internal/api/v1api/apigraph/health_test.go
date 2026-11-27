@@ -724,10 +724,10 @@ func TestHealthSettingsNameTheModelProviderAndTheAgentSwitch(t *testing.T) {
 	}
 	if err := world.graph.config.Update(func(configuration *config.Configuration) error {
 		configuration.Agent.Providers = []config.AgentProvider{
-			{Name: "primary", Kind: config.AgentProviderKindOpenAI, APIKey: "test-key"},
-			{Name: "secondary", Kind: config.AgentProviderKindAnthropic, APIKey: "test-key"},
-			{Name: "third", Kind: config.AgentProviderKindGemini, APIKey: "test-key"},
-			{Name: "Local Gateway", Kind: config.AgentProviderKindOpenAI, BaseURL: "http://gateway.example.test/v1", APIKey: "test-key"},
+			{Name: "primary", Kind: config.AgentProviderKindOpenAI, APIKey: "test-key", ModelEntries: []config.AgentModelEntry{{Model: "large-model"}, {Model: "small-model"}}},
+			{Name: "secondary", Kind: config.AgentProviderKindAnthropic, APIKey: "test-key", ModelEntries: []config.AgentModelEntry{{Model: "small-model"}}},
+			{Name: "third", Kind: config.AgentProviderKindGemini, APIKey: "test-key", ModelEntries: []config.AgentModelEntry{{Model: "small-model"}}},
+			{Name: "Local Gateway", Kind: config.AgentProviderKindOpenAI, BaseURL: "http://gateway.example.test/v1", APIKey: "test-key", ModelEntries: []config.AgentModelEntry{{Model: "small-model"}}},
 		}
 		configuration.Agent.Models.Default = "primary:large-model"
 		configuration.Agent.Models.Quick = "secondary:small-model"
