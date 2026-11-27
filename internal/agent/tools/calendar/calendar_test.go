@@ -41,8 +41,8 @@ func TestWhatTheWindowRefuses(t *testing.T) {
 	if _, _, _, err := window(windowArguments{From: "2026-09-14", Until: "2026-09-13"}, ""); err == nil {
 		t.Fatal("a window that ends before it begins")
 	}
-	if _, _, _, err := window(windowArguments{From: "2026-01-01", Until: "2030-01-01"}, ""); err == nil {
-		t.Fatal("more than a year at once")
+	if _, _, _, err := window(windowArguments{From: "2026-01-01", Until: "2030-01-01"}, ""); err != nil {
+		t.Fatalf("a window of several years is the server's to answer or refuse: %v", err)
 	}
 	// And nothing given is today, for a week.
 	from, until, _, err := window(windowArguments{}, "")
@@ -210,5 +210,42 @@ func TestTheDiaryIsOnlyReadWhenItHasBeenGiven(t *testing.T) {
 	}
 	if len(granted.asked) != 1 || !strings.Contains(granted.asked[0], "agentGranted") {
 		t.Fatalf("and the switch is what it asked for: %v", granted.asked)
+	}
+}
+
+type smallRun struct{ tools.Run }
+
+func (self smallRun) ResultCharacters() int { return 1000 }
+
+// A long agenda is answered a page at a time, and each page says where the
+// next begins; the last says nothing more.
+func TestALongAgendaIsPaged(t *testing.T) {
+	var rows []map[string]any
+	for number := 0; number < 30; number++ {
+		rows = append(rows, map[string]any{"event": "event-" + strings.Repeat("x", 40), "what": "Standup", "starts": "2026-09-14 10:00"})
+	}
+	from := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
+	seen, offset := 0, 0
+	for page := 0; page < 30; page++ {
+		answer := agendaPage(smallRun{}, time.UTC, from, from.AddDate(1, 0, 0), rows, offset)
+		events := answer["events"].([]map[string]any)
+		if len(events) == 0 {
+			t.Fatal("a page with nothing on it")
+		}
+		seen += len(events)
+		next, more := answer["next_offset"].(int)
+		if !more {
+			if _, said := answer["more_events"]; said {
+				t.Fatal("the last page says there is more")
+			}
+			break
+		}
+		if answer["more_events"] != len(rows)-next {
+			t.Fatalf("more_events %v, next_offset %d", answer["more_events"], next)
+		}
+		offset = next
+	}
+	if seen != len(rows) {
+		t.Fatalf("the pages showed %d of %d entries", seen, len(rows))
 	}
 }
