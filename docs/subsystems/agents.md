@@ -230,7 +230,7 @@ mentions; GitHub new notifications. A watch's first look only takes note of
 what is there. Every look is recorded, and the next starts shortly before
 it (longer for a source whose items turn up late with an earlier date),
 judge each item new in its id and version (a thread with a new reply is
-judged again), newest first and at most 25 a look, noting without judging
+judged again), newest first, every one of them, noting without judging
 what is older than an alert could be news for, and make a `watched` candidate of what is marked `soon` or
 `now`, carrying the item as it was judged (`agent_alert_candidate.watched_*`),
 since it is not stored here. `agent_watched_item` records what each watch
@@ -319,8 +319,8 @@ and the mute offered on an alert about a follow-up is its kind.
 looks, every ten minutes, for an active agent with alerts on whose
 `agent.follow_up_backfilled_at` is empty (`follow_up_backfill.go`). It claims
 that column with one conditional update, so it runs once per agent, and
-queues ordinary `extract` jobs, 20 seconds apart, for at most 150 messages of
-the last 45 days that triage already stored an insight for, newest first, in
+queues ordinary `extract` jobs, 20 seconds apart, for every message that
+triage already stored an insight for, newest first, in
 mailboxes the agent reads: those with the extract flag, plus those whose
 category or subject has a bill, shipment, form, RSVP or notice word (a net
 for this alone, no model), never junk, phishing, promotions or anything in
