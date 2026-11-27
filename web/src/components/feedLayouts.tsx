@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { AgentReference } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { mailPath, memoryPath } from './dashboardPath'
+import { feedClockTextOf } from './feedClock'
 import { FeedRowEmptyThumbnail, FeedRowThumbnail } from './feedMedia'
 import { webAddressOf, type FeedMedia } from './feedMediaLayout'
 import { WeatherIcon } from './icons'
@@ -239,9 +240,7 @@ function FeedWeather({ weather }: { weather: WeatherContent }) {
         <ul className="feed-weather-hours">
           {weather.hourlyForecast.map((hour) => (
             <li key={hour.forecastHour}>
-              <span className="muted">
-                {new Date(hour.forecastHour).toLocaleTimeString(undefined, { hour: 'numeric' })}
-              </span>
+              <span className="muted">{hourOf(hour.forecastHour)}</span>
               <WeatherIcon kind={weatherKindOf(hour.forecastSymbol)} size={20} />
               <span>{degrees(hour.forecastTemperature)}</span>
               {hour.precipitationChancePercent > 0 && (
@@ -255,9 +254,14 @@ function FeedWeather({ weather }: { weather: WeatherContent }) {
   )
 }
 
+// clockOf and hourOf say a written time in the zone it was written in, and
+// name that zone when it is not the viewer's.
 function clockOf(written: string): string {
-  const date = new Date(written)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return feedClockTextOf(written)
+}
+
+function hourOf(written: string): string {
+  return feedClockTextOf(written, { isHourOnly: true })
 }
 
 function FeedAgenda({ entries }: { entries: AgendaEntry[] }) {

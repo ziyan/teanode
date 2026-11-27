@@ -15,7 +15,9 @@
             choices: [(String, String, String)] = [], urgency: String = "whenever", isLiked: Bool = false, isRead: Bool = false,
             daysAgo: Int = 0, hour: Int, minute: Int, stackKey: String = "", stackCount: Int = 1, stackUnread: Int = 0,
             stackTitle: String = "", stackPosition: Int? = nil, layout: String = "text", layoutContent: Any? = nil,
-            media: [[String: Any]] = [], dismissedHour: Int? = nil
+            media: [[String: Any]] = [], dismissedHour: Int? = nil, chosenKey: String? = nil, outcome: String = "",
+            resolvedHour: Int? = nil, resolvedMinute: Int = 0, resolutionNote: String = "", resolvedByKind: String = "",
+            charts: [[String: Any]] = []
         ) -> [String: Any] {
             let postedAt = DemoServer.demoTime(daysAgo: daysAgo, hour: hour, minute: minute)
             return [
@@ -25,7 +27,12 @@
                 "factRows": facts.map { ["factLabel": $0.0, "factValue": $0.1] },
                 "sourceLinks": links.map { ["sourceTitle": $0.0, "sourceUrl": $0.1] },
                 "choices": choices.map { ["choiceKey": $0.0, "choiceLabel": $0.1, "choiceRole": $0.2] },
-                "chosenChoiceKey": NSNull(), "chosenAt": NSNull(), "outcomeText": "", "isOutcomePending": false,
+                "chosenChoiceKey": chosenKey.map { $0 as Any } ?? NSNull(),
+                "chosenAt": chosenKey.map { _ in DemoServer.demoTime(daysAgo: daysAgo, hour: hour + 1, minute: minute) as Any } ?? NSNull(),
+                "outcomeText": outcome, "isOutcomePending": false,
+                "isResolved": resolvedHour != nil,
+                "resolvedAt": resolvedHour.map { DemoServer.demoTime(daysAgo: daysAgo, hour: $0, minute: resolvedMinute) as Any } ?? NSNull(),
+                "resolutionNote": resolutionNote, "resolvedByKind": resolvedByKind, "chartBlocks": charts,
                 "feedUrgency": urgency, "isLiked": isLiked, "isRead": isRead, "isDismissed": dismissedHour != nil,
                 "dismissedAt": dismissedHour.map { DemoServer.demoTime(daysAgo: 0, hour: $0, minute: 20) as Any } ?? NSNull(), "postedAt": postedAt,
                 "updatedAt": postedAt, "feedStackKey": stackKey, "stackItemCount": stackCount, "stackUnreadCount": stackUnread,
@@ -38,19 +45,33 @@
         /// demo (`feedMediaPicture`), a photo or video by the demo photo library.
         private static func feedMedia(
             _ feedItemId: String, _ mediaKey: String, kind: String = "picture", photoId: String = "", linkUrl: String = "", siteName: String = "",
-            caption: String = "", widthPixels: Int = 1200, heightPixels: Int = 630, row: Int? = nil
+            caption: String = "", widthPixels: Int = 1200, heightPixels: Int = 630, row: Int? = nil, cameraName: String = "",
+            capturedAt: String = "", stillReason: String = "", playbackUrl: String = "", liveUrl: String = ""
         ) -> [String: Any] {
             let imageUrl = photoId.isEmpty ? "/api/v1/feed/items/\(feedItemId)/media/\(mediaKey)" : "/api/v1/photos/\(photoId)/previews/large"
             return [
                 "mediaKey": mediaKey, "feedMediaKind": kind, "imageUrl": imageUrl,
                 "videoUrl": kind == "video" ? "/api/v1/photos/\(photoId)/previews/video" : "", "linkUrl": linkUrl, "siteName": siteName,
                 "mediaCaption": caption, "widthPixels": widthPixels, "heightPixels": heightPixels, "listRowIndex": row.map { $0 as Any } ?? NSNull(),
+                "cameraName": cameraName, "capturedAt": capturedAt, "stillReason": stillReason, "playbackUrl": playbackUrl, "liveUrl": liveUrl,
             ]
         }
 
         /// The card the media screenshots scroll to, and the top card of the
         /// brief the open-stack screenshot scrolls to.
         static let demoMediaTopId = "feed-picture"
+        /// The cards the screens `feed-resolved`, `feed-answered`, `feed-series`,
+        /// `feed-bars` and `feed-camera` scroll to.
+        static let demoResolvedId = "feed-resolved"
+        static let demoAnsweredId = "feed-answered"
+        static let demoSeriesId = "feed-series"
+        static let demoBarsId = "feed-bars"
+        static let demoCameraId = "feed-camera"
+        /// The screen names that scroll the feed to one of those cards.
+        static let cardRuleScreenTargets: [String: String] = [
+            "feed-resolved": demoResolvedId, "feed-answered": demoAnsweredId, "feed-series": demoSeriesId, "feed-bars": demoBarsId,
+            "feed-camera": demoCameraId,
+        ]
         static let demoBriefTopId = "brief-0"
 
         /// A picture for `/api/v1/feed/items/<card>/media/<key>`: a sky, hills and a
@@ -161,6 +182,66 @@
                     body: "Groceries went up a little; eating out went down. Nothing unusual.", pictureSymbol: "chart.line.uptrend.xyaxis",
                     facts: [("This week", "$412"), ("Last week", "$448"), ("Biggest category", "Groceries")], isRead: true, daysAgo: 2,
                     hour: 9, minute: 0),
+            ] + feedCardsOfTheCardRules
+        }
+
+        /// A card of each thing the card rules added: a problem that cleared,
+        /// an answered card folded to a line, a series chart with a reference
+        /// line, a projection and a marker, a bars chart, and a camera still.
+        /// All are read, so the unread counts of the other screens hold.
+        private static var feedCardsOfTheCardRules: [[String: Any]] {
+            let gap = NSNull()
+            let levelValues: [Any] = [4, 5, 4, 9, 12, 8, gap]
+            let averageValues: [Any] = [5, 5, 5, 5, 5, 5, 5]
+            let expectedValues: [Any] = [gap, gap, gap, gap, gap, 8, 6]
+            let seriesLines: [[String: Any]] = [
+                ["seriesName": "Level", "seriesRole": "measured", "values": levelValues],
+                ["seriesName": "Average", "seriesRole": "reference", "values": averageValues],
+                ["seriesName": "Expected", "seriesRole": "projection", "values": expectedValues],
+            ]
+            let seriesChart: [String: Any] = [
+                "chartKind": "series", "chartTitle": "Cellar water level", "unit": "cm", "provenance": "Read from the sensor at 09:40",
+                "xLabels": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], "series": seriesLines,
+                "markers": [["markerAt": "Thu", "markerLabel": "Pump stopped"]],
+            ]
+            let barLines: [[String: Any]] = [
+                ["barLabel": "Groceries", "barValue": 212.5], ["barLabel": "Fuel", "barValue": 96], ["barLabel": "Eating out", "barValue": 58],
+                ["barLabel": "Coffee", "barValue": 31],
+            ]
+            let barsChart: [String: Any] = [
+                "chartKind": "bars", "chartTitle": "Spending by category this week", "unit": "USD",
+                "provenance": "Read from the bank at 09:40 EST", "bars": barLines,
+            ]
+            return [
+                feedCard(
+                    DemoServer.demoResolvedId, kind: "alert", sourceKind: "alert", sourceId: "alert-cellar", title: "Water in the cellar",
+                    body: "The sensor read 9 cm at 06:10, over the 5 cm alarm line. The pump has been switched on.", pictureSymbol: "drop.fill",
+                    isRead: true, daysAgo: 3, hour: 6, minute: 12, resolvedHour: 6, resolvedMinute: 41, resolutionNote: "The pump is running again.",
+                    resolvedByKind: "person"),
+                feedCard(
+                    DemoServer.demoAnsweredId, kind: "decision", sourceKind: "alert", sourceId: "alert-signin", title: "New sign-in on a phone",
+                    body: "A phone signed in to your account at 18:12 from a city you have not used before.", pictureSymbol: "lock.shield",
+                    choices: [("mine", "That's me", "dismiss"), ("secure", "Secure my account", "action")], isRead: true, daysAgo: 3, hour: 18,
+                    minute: 13, chosenKey: "secure", outcome: "Signed out the other session."),
+                feedCard(
+                    DemoServer.demoSeriesId, kind: "report", sourceKind: "goal", sourceId: "goal-cellar", sourceTitle: "Cellar watch",
+                    title: "Cellar water peaked on Friday", body: "The level stayed over the average from Thursday and is dropping again.",
+                    pictureSymbol: "chart.xyaxis.line", isRead: true, daysAgo: 3, hour: 9, minute: 45, charts: [seriesChart]),
+                feedCard(
+                    DemoServer.demoBarsId, kind: "report", sourceKind: "goal", sourceId: "goal-spending", sourceTitle: "Weekly spending report",
+                    title: "Groceries are most of this week's spending", body: "Fuel and eating out follow far behind.",
+                    pictureSymbol: "chart.bar", isRead: true, daysAgo: 3, hour: 9, minute: 40, charts: [barsChart]),
+                feedCard(
+                    DemoServer.demoCameraId, kind: "alert", sourceKind: "alert", sourceId: "alert-parcel", title: "A parcel was left at the door",
+                    body: "A courier left a box on the step.", pictureSymbol: "shippingbox", isRead: true, daysAgo: 3, hour: 14, minute: 3,
+                    media: [
+                        feedMedia(
+                            DemoServer.demoCameraId, "m1", kind: "camera_still", caption: "A box on the front step",
+                            cameraName: "Front door",
+                            capturedAt: String(DemoServer.demoTime(daysAgo: 3, hour: 14, minute: 2).prefix(10)) + "T14:02:11+02:00",
+                            stillReason: "The camera at the front door, where the parcel was left",
+                            playbackUrl: "https://cameras.example.com/play/front-door", liveUrl: "https://cameras.example.com/live/front-door")
+                    ]),
             ]
         }
 
@@ -319,6 +400,18 @@
                 return #"{"data":{"MarkAgentFeedRead":\#((variables["feedItemIds"] as? [String] ?? []).count)}}"#
             } else if query.contains("DiscussAgentFeedItem") {
                 return #"{"data":{"DiscussAgentFeedItem":"conversation-main"}}"#
+            } else if query.contains("ResolveAgentFeedItem") && !query.contains("UnresolveAgentFeedItem") {
+                card["isResolved"] = true
+                card["resolvedAt"] = DemoServer.demoTime(daysAgo: 0, hour: 8, minute: 0)
+                card["resolutionNote"] = variables["resolutionNote"] as? String ?? ""
+                card["resolvedByKind"] = "person"
+                return #"{"data":{"ResolveAgentFeedItem":\#(feedJSON(card))}}"#
+            } else if query.contains("UnresolveAgentFeedItem") {
+                card["isResolved"] = false
+                card["resolvedAt"] = NSNull()
+                card["resolutionNote"] = ""
+                card["resolvedByKind"] = ""
+                return #"{"data":{"UnresolveAgentFeedItem":\#(feedJSON(card))}}"#
             } else if query.contains("ChooseAgentFeedItem") {
                 let choiceKey = variables["choiceKey"] as? String ?? ""
                 let choices = card["choices"] as? [[String: Any]] ?? []

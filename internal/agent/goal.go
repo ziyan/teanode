@@ -442,7 +442,15 @@ func goalCheckIn(conversation *models.AgentConversation, agent *models.Agent, ow
 // about news or updates keeps its findings there, one card each, rather than
 // in its own conversation, which nobody reads.
 const goalFeedLines = "A goal about news, updates or things to watch posts each finding to the person's feed with the feed tool (find it with tool_search if you do not have it), one card per story: feed_item_kind news, a picture_symbol such as newspaper or a symbol that fits, source_links with the article's address, and a coalesce_key naming the story so that an update to it replaces its card. " +
-	"Before choosing what to post, read what they liked and asked to see less of: memory page self/feed. Do not post a page you already posted; the feed refuses an address that is in a card from the last 30 days. Post only what is new and worth their time, and nothing when there is nothing."
+	"Before choosing what to post, read what they liked and asked to see less of: memory page self/feed. Do not post a page you already posted; the feed refuses an address that is in a card from the last 30 days. Post only what is new and worth their time, and nothing when there is nothing. " + feedCardRules
+
+// feedCardRules is what every turn that may post a card is told about a good
+// one, the same words the feed tool's description gives.
+const feedCardRules = "A card says what happened, why it matters to them, and one or two next steps. " +
+	"Numbers come only from this turn's tool results, and a chart says where and when they were read, in its provenance. " +
+	"One card per subject: call feed list first so that nothing is said twice, change a card with update or a coalesce_key when its subject changes, and never rewrite a card into a different subject. " +
+	"When the problem a card is about clears, resolve that card with a short note instead of posting an all clear; post a new card only for a new problem, or one that got materially worse. " +
+	"Use plain words, no ids or tool names, and let the title say what the body says. Silence is the default: when nothing needs them, post nothing."
 
 // ordinal is 1st, 2nd, 3rd, 4th for the check-in's number.
 func ordinal(number int) string {

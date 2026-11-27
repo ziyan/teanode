@@ -58,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -108,6 +109,13 @@ fun feedPageColor(): Color = if (isFeedDark()) MaterialTheme.colorScheme.backgro
 @Composable
 fun feedCardColor(): Color = if (isFeedDark()) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLowest
 
+/** The surface of a resolved card: quieter than a live one, between the card's and the page's. */
+@Composable
+private fun feedMutedCardColor(): Color = if (isFeedDark()) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surfaceContainerLow
+
+/** How much of its colors a resolved card's words and pictures keep. */
+private const val RESOLVED_CONTENT_ALPHA = 0.78f
+
 /** The hairline at a card's edge. */
 @Composable
 private fun feedCardEdgeColor(): Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
@@ -137,7 +145,8 @@ fun FeedCard(
     val isStackShown = onOpenStack != null && item.isStack
     val cardColor = feedCardColor()
     val edgeBorder = feedCardEdgeColor()
-    val shadowColor = if (isFeedDark()) Color.Transparent else Color.Black.copy(alpha = 0.10f)
+    // A resolved card is muted and sits flat on the page: no shadow, a quieter surface, and its words a little lighter.
+    val shadowColor = if (isFeedDark() || item.isResolved) Color.Transparent else Color.Black.copy(alpha = 0.10f)
     val isLargeText = LocalDensity.current.fontScale >= LARGE_TEXT_SCALE
     val uriHandler = remember(actions) { object : UriHandler { override fun openUri(uri: String) = actions.followLink(uri) } }
     CompositionLocalProvider(LocalUriHandler provides uriHandler, LocalLinkOpener provides { address -> actions.followLink(address) }) {
@@ -178,15 +187,22 @@ fun FeedCard(
                         .pointerInput(item.feedItemId) { detectTapGestures(onLongPress = { isMenuOpen = true }) }
                         .semantics { customActions = listOf(CustomAccessibilityAction(dismissText) { actions.model.swipeAway(item); true }) },
                     shape = CARD_SHAPE,
-                    color = cardColor,
+                    color = if (item.isResolved) feedMutedCardColor() else cardColor,
                     border = BorderStroke(0.5.dp, edgeBorder),
                 ) {
-                    Column {
-                        // The pictures sit at the card's top edge, edge to edge; the card's own shape rounds their corners.
-                        if (item.cardMedia.isNotEmpty()) FeedMediaBlock(item.cardMedia, actions)
-                        // The footer's buttons are 48 tall, room enough under the last line.
-                        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            FeedCardContent(item, actions, isStackShown, isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
+                    // An answered card starts folded to its title and one line when it comes on screen already answered.
+                    var isFolded by remember(item.feedItemId) { mutableStateOf(item.isAnswerFoldable) }
+                    Column(if (item.isResolved) Modifier.alpha(RESOLVED_CONTENT_ALPHA) else Modifier) {
+                        if (isFolded && item.isAnswerFoldable) {
+                            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)) { FeedFoldedAnswer(item) { isFolded = false } }
+                        } else {
+                            // The pictures sit at the card's top edge, edge to edge; the card's own shape rounds their corners.
+                            if (item.plainCardMedia.isNotEmpty()) FeedMediaBlock(item.plainCardMedia, actions)
+                            for (still in item.cameraStills) FeedCameraStill(still, actions)
+                            // The footer's buttons are 48 tall, room enough under the last line.
+                            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                FeedCardContent(item, actions, isStackShown, isDeckOpen, isLargeText, onShowInfo) { onOpenStack?.invoke(item) }
+                            }
                         }
                     }
                 }
@@ -218,6 +234,8 @@ private fun FeedCardContent(item: AgentFeedItemView, actions: FeedActions, isSta
     FeedCardHeader(item, isLargeText)
     Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     FeedLayoutBody(item, actions)
+    FeedResolutionNote(item)
+    FeedCharts(item.drawableCharts)
     FeedAnswerArea(item, actions)
     if (isStackShown) StackRow(item, isDeckOpen, onOpenStack)
     FeedFooter(item, actions, onShowInfo)
@@ -405,7 +423,10 @@ private fun FeedCardHeader(item: AgentFeedItemView, isLargeText: Boolean) {
         }
     }
     val date: @Composable () -> Unit = {
-        if (dateText.isNotEmpty()) Text(dateText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (item.isResolved) FeedResolvedChip(item)
+            if (dateText.isNotEmpty()) Text(dateText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+        }
     }
     if (isLargeText) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

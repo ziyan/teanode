@@ -1,7 +1,8 @@
 import { useState } from 'react'
 
 import { useTranslation } from '../i18n/i18n'
-import { mediaArrangementOf, mediaAspectOf, webAddressOf, type FeedMedia } from './feedMediaLayout'
+import { feedClockTextOf } from './feedClock'
+import { mediaArrangementOf, mediaAspectOf, openableAddressOf, webAddressOf, type FeedMedia } from './feedMediaLayout'
 import { GlobeIcon, PlayIcon } from './icons'
 
 // Pictures and videos of a feed card. The server sends paths that work for the
@@ -15,7 +16,10 @@ function MediaTile({ media, isSingle }: { media: FeedMedia; isSingle: boolean })
   const [isBroken, setIsBroken] = useState(false)
   if (isBroken) return null
   const aspect = isSingle ? mediaAspectOf(media) : 'wide'
-  const description = media.mediaCaption || media.siteName
+  const description = media.mediaCaption || media.siteName || media.cameraName || ''
+  const isCameraStill = media.feedMediaKind === 'camera_still'
+  const playbackAddress = isCameraStill ? openableAddressOf(media.playbackUrl ?? '') : ''
+  const liveAddress = isCameraStill ? openableAddressOf(media.liveUrl ?? '') : ''
   const pageAddress = media.feedMediaKind === 'picture' ? webAddressOf(media.linkUrl) : ''
   const hasSize = media.widthPixels !== null && media.heightPixels !== null
   const image = (
@@ -55,6 +59,18 @@ function MediaTile({ media, isSingle }: { media: FeedMedia; isSingle: boolean })
         </span>
       </button>
     )
+  } else if (playbackAddress) {
+    frame = (
+      <a
+        className="feed-media-link"
+        href={playbackAddress}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={t('feed.openPlayback', { camera: media.cameraName || description })}
+      >
+        {image}
+      </a>
+    )
   } else if (pageAddress) {
     frame = (
       <a
@@ -73,9 +89,31 @@ function MediaTile({ media, isSingle }: { media: FeedMedia; isSingle: boolean })
   return (
     <figure className={`feed-media-tile is-${aspect}`}>
       <div className="feed-media-frame">{frame}</div>
-      {media.mediaCaption && <figcaption className="muted feed-media-caption">{media.mediaCaption}</figcaption>}
+      {isCameraStill ? (
+        <figcaption className="feed-still-caption">
+          {media.mediaCaption && <span className="feed-still-words">{media.mediaCaption}</span>}
+          <CameraStillLine media={media} />
+          {media.stillReason && <span className="muted feed-still-reason">{media.stillReason}</span>}
+          {liveAddress && (
+            <a className="button feed-still-live" href={liveAddress} target="_blank" rel="noopener noreferrer">
+              {t('feed.watchLive')}
+            </a>
+          )}
+        </figcaption>
+      ) : (
+        media.mediaCaption && <figcaption className="muted feed-media-caption">{media.mediaCaption}</figcaption>
+      )}
     </figure>
   )
+}
+
+// CameraStillLine is "<camera> · 14:02:11": the camera's name and the time on
+// the camera's own clock, naming its zone when that is not the viewer's.
+function CameraStillLine({ media }: { media: FeedMedia }) {
+  const time = media.capturedAt ? feedClockTextOf(media.capturedAt, { isSecondShown: true, isHourPadded: true }) : ''
+  const line = [media.cameraName, time].filter(Boolean).join(' · ')
+  if (!line) return null
+  return <span className="muted feed-still-line">{line}</span>
 }
 
 // FeedMediaGallery draws the media of a whole card: one item full width, two to

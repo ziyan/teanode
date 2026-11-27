@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,8 +59,9 @@ type FeedPost struct {
 // NormalizeFeedItem trims and bounds a card as posted, fills in what a post
 // may leave out, and refuses what cannot be shown.
 func NormalizeFeedItem(item *models.AgentFeedItem) error {
-	item.Title = cutMarked(strings.TrimSpace(item.Title), feedTitleCharacters)
-	item.Body = cutMarked(strings.TrimSpace(item.Body), feedBodyCharacters)
+	item.PostNotes = nil
+	item.Title = feedLine(item, "title", item.Title, feedTitleCharacters)
+	item.Body = feedText(item, "body", item.Body, feedBodyCharacters)
 	item.PictureSymbol = strings.TrimSpace(item.PictureSymbol)
 	item.CoalesceKey = strings.TrimSpace(item.CoalesceKey)
 	if item.Title == "" {
@@ -69,20 +71,24 @@ func NormalizeFeedItem(item *models.AgentFeedItem) error {
 		return feedRefusal("a card has at most %d fact rows, and this one has %d", models.FeedFactRowsMost, len(item.FactRows))
 	}
 	rows := make([]models.FeedFactRow, 0, len(item.FactRows))
-	for _, row := range item.FactRows {
-		row.FactLabel, row.FactValue = cutMarked(strings.TrimSpace(row.FactLabel), feedFactCharacters), cutMarked(strings.TrimSpace(row.FactValue), feedFactCharacters)
+	for index, row := range item.FactRows {
+		row.FactLabel = feedLine(item, fmt.Sprintf("factRows[%d].factLabel", index), row.FactLabel, feedFactCharacters)
+		row.FactValue = feedLine(item, fmt.Sprintf("factRows[%d].factValue", index), row.FactValue, feedFactCharacters)
 		if row.FactLabel == "" && row.FactValue == "" {
 			continue
 		}
 		rows = append(rows, row)
 	}
 	item.FactRows = rows
+	if err := refuseFeedFactSeries(item.FactRows); err != nil {
+		return err
+	}
 	if len(item.SourceLinks) > feedLinksMost {
 		return feedRefusal("a card has at most %d source links", feedLinksMost)
 	}
 	links := make([]models.FeedSourceLink, 0, len(item.SourceLinks))
-	for _, link := range item.SourceLinks {
-		link.SourceURL, link.SourceTitle = strings.TrimSpace(link.SourceURL), cutMarked(strings.TrimSpace(link.SourceTitle), feedFactCharacters)
+	for index, link := range item.SourceLinks {
+		link.SourceURL, link.SourceTitle = strings.TrimSpace(link.SourceURL), feedLine(item, fmt.Sprintf("sourceLinks[%d].sourceTitle", index), link.SourceTitle, feedFactCharacters)
 		parsed, err := url.Parse(link.SourceURL)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 			return feedRefusal("%q is not a link to a page; a source link is an http or https address", link.SourceURL)
@@ -99,7 +105,7 @@ func NormalizeFeedItem(item *models.AgentFeedItem) error {
 	seenKeys := map[string]bool{}
 	for index := range item.Choices {
 		choice := &item.Choices[index]
-		choice.ChoiceKey, choice.ChoiceLabel = strings.TrimSpace(choice.ChoiceKey), cutMarked(strings.TrimSpace(choice.ChoiceLabel), feedLabelCharacters)
+		choice.ChoiceKey, choice.ChoiceLabel = strings.TrimSpace(choice.ChoiceKey), feedLine(item, fmt.Sprintf("choices[%d].choiceLabel", index), choice.ChoiceLabel, feedLabelCharacters)
 		if choice.ChoiceRole == "" {
 			choice.ChoiceRole = models.FeedChoiceAction
 		}
@@ -138,7 +144,10 @@ func NormalizeFeedItem(item *models.AgentFeedItem) error {
 	if err := normalizeFeedMedia(item); err != nil {
 		return err
 	}
-	item.FeedStackTitle = cutMarked(strings.TrimSpace(item.FeedStackTitle), feedTitleCharacters)
+	if err := normalizeFeedCharts(item); err != nil {
+		return err
+	}
+	item.FeedStackTitle = feedLine(item, "stackTitle", item.FeedStackTitle, feedTitleCharacters)
 	item.FeedStackKey = strings.TrimSpace(item.FeedStackKey)
 	switch {
 	case !item.CanStack():
@@ -184,8 +193,16 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 	var change models.FeedChange
 	var found *models.Agent
 	var readyGoal *models.AgentConversation
-	var removedPictures []string
+	var removedPictures, keptStills []string
+	// What the card said before any attempt changed it, to start each attempt
+	// from.
+	postedMedia, postedNotes := slices.Clone(item.FeedMedia), slices.Clone(item.PostNotes)
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		// An attempt that is repeated begins again: the stills a failed
+		// attempt kept are deleted, and the card goes back to what it said.
+		self.deleteFeedPictures(keptStills)
+		keptStills, removedPictures = nil, nil
+		item.FeedMedia, item.PostNotes = slices.Clone(postedMedia), slices.Clone(postedNotes)
 		var err error
 		if found, err = tx.GetAgent(post.AgentID); err != nil {
 			return err
@@ -250,7 +267,13 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 			}
 			item.InteractionID = interaction.ID
 		}
+		if previous != nil {
+			carryFeedStills(previous.FeedMedia, item)
+		}
 		if err := resolveFeedPhotos(tx, found.UserID, item); err != nil {
+			return err
+		}
+		if keptStills, err = self.keepFeedStills(ctx, tx, found.ID, postingConversationId, item); err != nil {
 			return err
 		}
 		if previous != nil {
@@ -267,8 +290,10 @@ func (self *Agent) PostFeedItem(ctx context.Context, post *FeedPost) (*models.Ag
 		}
 		return self.announceFeedChange(tx, stored, change)
 	}); err != nil {
+		self.deleteFeedPictures(keptStills)
 		return nil, "", err
 	}
+	stored.PostNotes = item.PostNotes
 	self.deleteFeedPictures(removedPictures)
 	self.startFeedPictures(stored, postingConversationId)
 	self.notifyFeedPhones(found, stored)
@@ -286,16 +311,32 @@ func newFeedCallID() string {
 // announceFeedChange tells the screens that have the feed open, once the
 // change is stored, with the person's unread count as it is then.
 func (self *Agent) announceFeedChange(tx db.Transaction, item *models.AgentFeedItem, change models.FeedChange) error {
-	unreadCount, err := tx.CountUnreadAgentFeedItems(item.UserID, time.Now())
-	if err != nil {
-		return err
-	}
-	event := &models.FeedEvent{UserID: item.UserID, FeedItemID: item.ID, FeedChange: change, UnreadCount: unreadCount}
-	tx.AfterCommit(func() {
-		if err := self.settings.Database.NotifyFeedEvent(event); err != nil {
-			log.Warningf("cannot tell the open feeds of a change: %s", err)
+	return self.announceFeedChanges(tx, []*models.AgentFeedItem{item}, change)
+}
+
+// announceFeedChanges tells the open feeds of one change to each of the
+// cards, one event per card. The unread count is read once for each person,
+// whatever the number of their cards.
+func (self *Agent) announceFeedChanges(tx db.Transaction, items []*models.AgentFeedItem, change models.FeedChange) error {
+	now := time.Now()
+	unreadCounts := map[string]int{}
+	for _, item := range items {
+		unreadCount, isCounted := unreadCounts[item.UserID]
+		if !isCounted {
+			var err error
+			unreadCount, err = tx.CountUnreadAgentFeedItems(item.UserID, now)
+			if err != nil {
+				return err
+			}
+			unreadCounts[item.UserID] = unreadCount
 		}
-	})
+		event := &models.FeedEvent{UserID: item.UserID, FeedItemID: item.ID, FeedChange: change, UnreadCount: unreadCount}
+		tx.AfterCommit(func() {
+			if err := self.settings.Database.NotifyFeedEvent(event); err != nil {
+				log.Warningf("cannot tell the open feeds of a change: %s", err)
+			}
+		})
+	}
 	return nil
 }
 
@@ -343,8 +384,12 @@ func wantsFeed(found *models.Agent) bool {
 // own change: it keeps the choice made on it, and tells the open feeds.
 func (self *Agent) UpdateFeedItem(ctx context.Context, agentId, feedItemId, postingConversationId string, modify func(*models.AgentFeedItem) error) (*models.AgentFeedItem, error) {
 	var updated *models.AgentFeedItem
-	var removedPictures []string
+	var removedPictures, keptStills []string
+	var postNotes []string
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		// An attempt that is repeated begins again.
+		self.deleteFeedPictures(keptStills)
+		keptStills, removedPictures = nil, nil
 		existing, err := tx.GetAgentFeedItem(feedItemId)
 		if err != nil {
 			return err
@@ -359,18 +404,25 @@ func (self *Agent) UpdateFeedItem(ctx context.Context, agentId, feedItemId, post
 			if err := NormalizeFeedItem(item); err != nil {
 				return err
 			}
+			carryFeedStills(existing.FeedMedia, item)
 			if err := resolveFeedPhotos(tx, existing.UserID, item); err != nil {
 				return err
 			}
+			if keptStills, err = self.keepFeedStills(ctx, tx, existing.AgentID, postingConversationId, item); err != nil {
+				return err
+			}
 			removedPictures = carryFeedPictures(existing.FeedMedia, item)
+			postNotes = item.PostNotes
 			return nil
 		}, time.Now()); err != nil {
 			return err
 		}
 		return self.announceFeedChange(tx, updated, models.FeedChangeReplaced)
 	}); err != nil {
+		self.deleteFeedPictures(keptStills)
 		return nil, err
 	}
+	updated.PostNotes = postNotes
 	self.deleteFeedPictures(removedPictures)
 	self.startFeedPictures(updated, postingConversationId)
 	return updated, nil

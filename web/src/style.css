@@ -25940,10 +25940,6 @@ button.voice-bubble-transcribe {
     width: 34px;
     height: 34px;
   }
-  /* The choices fill the width, so each is easy to hit with a thumb. */
-  .feed-choices button {
-    flex: 1 1 auto;
-  }
 }
 
 /* A stack of cards from one source is a deck: the top card with the stack's
@@ -26349,4 +26345,257 @@ a.feed-agenda-body:hover .feed-agenda-title {
 }
 .feed-agenda-entry:last-child .feed-agenda-marker::after {
   display: none;
+}
+
+/* A resolved card: its problem cleared. Drawn muted, with no shadow, and a
+   chip beside the time says when. */
+.feed-card.is-resolved {
+  box-shadow: none;
+  background: color-mix(in srgb, var(--surface) 55%, var(--background, var(--surface)));
+}
+.feed-card.is-resolved .feed-title,
+.feed-card.is-resolved .feed-body {
+  color: var(--muted);
+}
+.feed-resolved-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--good) 35%, transparent);
+  border-radius: var(--radius-round);
+  background: color-mix(in srgb, var(--good) 10%, transparent);
+  color: var(--good);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.feed-resolution-note {
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
+}
+
+/* An answered card folded to its title and one line. */
+.feed-folded {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+.feed-folded-part + .feed-folded-part::before {
+  content: ' \00b7 ';
+}
+.feed-folded-line {
+  flex: 1 1 12em;
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Choices share the width equally when they fit on one line, and wrap when
+   they do not. */
+.feed-choices button {
+  flex: 1 1 0;
+  min-width: max-content;
+}
+
+/* A camera still: the picture, then the caption, the camera and its time, the
+   reason and the way to watch live. */
+.feed-still-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3) 0;
+  font-size: 13px;
+}
+.feed-still-line,
+.feed-still-reason {
+  font-size: 12px;
+}
+.feed-still-live {
+  margin-top: var(--space-2);
+}
+
+/* Charts. The measured line has a color of its own because the dashboard's
+   accent is its ink, which the reference line already is. */
+.feed-charts {
+  --feed-chart-measured: #2563eb;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .feed-charts {
+    --feed-chart-measured: #7aa7ff;
+  }
+}
+:root[data-theme='dark'] .feed-charts {
+  --feed-chart-measured: #7aa7ff;
+}
+.feed-chart {
+  margin: 0;
+  min-width: 0;
+}
+.feed-chart-title {
+  font-size: 13px;
+  font-weight: 650;
+  margin-bottom: var(--space-1);
+}
+.feed-chart-provenance {
+  margin: var(--space-1) 0 0;
+  font-size: 12px;
+}
+.feed-chart-plot {
+  position: relative;
+}
+.feed-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+}
+.feed-chart-axis {
+  fill: var(--muted);
+  font-size: 10px;
+}
+.feed-chart-baseline {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.feed-chart-line path {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.feed-chart-line.is-reference path {
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+.feed-chart-line.is-projection path {
+  stroke: var(--feed-chart-measured);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+.feed-chart-line.is-measured path {
+  stroke: var(--feed-chart-measured);
+  stroke-width: 2.25;
+}
+.feed-chart-line.is-reference circle {
+  fill: var(--text);
+}
+.feed-chart-line.is-projection circle,
+.feed-chart-line.is-measured circle {
+  fill: var(--feed-chart-measured);
+}
+.feed-chart-marker line {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+.feed-chart-marker text {
+  fill: var(--muted);
+  font-size: 10px;
+}
+.feed-chart-hover line {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.feed-chart-hover circle {
+  fill: var(--surface);
+  stroke-width: 2;
+  stroke: var(--feed-chart-measured);
+}
+.feed-chart-hover circle.is-reference {
+  stroke: var(--text);
+}
+.feed-chart-hit {
+  fill: transparent;
+  outline: none;
+  cursor: crosshair;
+}
+.feed-chart-tooltip {
+  position: absolute;
+  top: 0;
+  transform: translateX(8px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 70%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-2, 8px);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 1;
+}
+.feed-chart-tooltip.is-left {
+  transform: translateX(calc(-100% - 8px));
+}
+.feed-chart-tooltip-row,
+.feed-chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.feed-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.feed-chart-swatch {
+  flex: none;
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--feed-chart-measured);
+}
+.feed-chart-swatch.is-reference {
+  border-top-color: var(--text);
+}
+.feed-chart-swatch.is-projection {
+  border-top-style: dashed;
+}
+.feed-chart-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.feed-chart-bars li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'label value' 'track track';
+  gap: 2px var(--space-2);
+  font-size: 13px;
+}
+.feed-chart-bar-label {
+  grid-area: label;
+  overflow-wrap: anywhere;
+}
+.feed-chart-bar-value {
+  grid-area: value;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.feed-chart-bar-track {
+  grid-area: track;
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.feed-chart-bar-rail {
+  fill: var(--border);
+}
+.feed-chart-bar-fill {
+  fill: var(--feed-chart-measured);
 }

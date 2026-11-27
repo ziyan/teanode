@@ -67,4 +67,21 @@
     <plurals name="feed_dismissed_count">
         <item quantity="other">%1$d 件のカードを閉じました</item>
     </plurals>
+    <string name="feed_resolved_chip">解決済み %1$s</string>
+    <string name="feed_resolved">解決済み</string>
+    <string name="feed_resolve">解決済みにする</string>
+    <string name="feed_unresolve">解決済みを取り消す</string>
+    <string name="feed_resolve_title">このカードを解決済みにする</string>
+    <string name="feed_resolve_message">問題が解消したことを記録します。カードはそのままの位置に残ります。</string>
+    <string name="feed_resolve_note_label">メモ(任意)</string>
+    <string name="feed_resolve_note_hint">どのように解消したかを一行で</string>
+    <string name="feed_resolve_cancel">キャンセル</string>
+    <string name="feed_resolve_done">カードを解決済みにしました</string>
+    <string name="feed_unresolve_done">カードの解決済みを取り消しました</string>
+    <string name="feed_show_card">カードを表示</string>
+    <string name="feed_media_camera_still">カメラの静止画</string>
+    <string name="feed_still_opens_recording">録画を開きます</string>
+    <string name="feed_watch_live">ライブを見る</string>
+    <string name="feed_camera_line">%1$s · %2$s</string>
+    <string name="feed_chart_unit_value">%1$s %2$s</string>
 </resources>

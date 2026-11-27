@@ -33,6 +33,8 @@ import {
   WarningIcon,
   WeatherIcon,
 } from '../components/icons'
+import { feedClockTextOf } from '../components/feedClock'
+import { chartBlocksOf, FeedChartBlocks, type FeedChartBlockData } from '../components/feedChart'
 import { FeedLayoutContent, parseFeedLayout, webAddressOf } from '../components/feedLayouts'
 import { FeedMediaGallery } from '../components/feedMedia'
 import {
@@ -138,6 +140,13 @@ export interface FeedItem {
   feedCardLayout: string
   layoutContent: string
   feedMedia: FeedMedia[]
+  // A card whose problem cleared is marked resolved, with a one-line note.
+  isResolved?: boolean
+  resolvedAt?: string | null
+  resolutionNote?: string
+  resolvedByKind?: string
+  // Charts as the server sends them; read with chartBlocksOf.
+  chartBlocks?: FeedChartBlockData[]
 }
 
 interface FeedPageAnswer {
@@ -151,7 +160,9 @@ const ITEM_FIELDS = `feedItemId feedItemKind feedSourceKind feedSourceId feedSou
   recordReferences { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description }
   choices { choiceKey choiceLabel choiceRole } chosenChoiceKey chosenAt outcomeText isOutcomePending
   feedUrgency isLiked isRead isDismissed dismissedAt postedAt updatedAt feedStackKey stackItemCount stackUnreadCount feedStackTitle stackPosition feedCardLayout layoutContent
-  feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }`
+  feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex cameraName capturedAt stillReason playbackUrl liveUrl }
+  isResolved resolvedAt resolutionNote resolvedByKind
+  chartBlocks { chartKind chartTitle unit provenance xLabels series { seriesName seriesRole values } markers { markerAt markerLabel } bars { barLabel barValue } }`
 
 const LIST_FEED = `query ($first: Int, $after: String, $isDismissedOnly: Boolean) {
   ListAgentFeed(first: $first, after: $after, isDismissedOnly: $isDismissedOnly) { feedItems { ${ITEM_FIELDS} } nextCursor unreadCount }
@@ -178,6 +189,12 @@ const RESTORE_ITEMS = `mutation ($feedItemIds: [String!]!) {
 // Which cards a dismissal closes: the ones named, a stack's, or every read one.
 // Exactly one is given, as the operation wants.
 type DismissSelection = { feedItemIds: string[] } | { feedStackKey: string } | { isEveryReadCard: true }
+const RESOLVE_ITEM = `mutation ($feedItemId: String!, $resolutionNote: String) {
+  ResolveAgentFeedItem(feedItemId: $feedItemId, resolutionNote: $resolutionNote) { ${ITEM_FIELDS} }
+}`
+const UNRESOLVE_ITEM = `mutation ($feedItemId: String!) {
+  UnresolveAgentFeedItem(feedItemId: $feedItemId) { ${ITEM_FIELDS} }
+}`
 const MARK_READ = `mutation ($feedItemIds: [String!]!) { MarkAgentFeedRead(feedItemIds: $feedItemIds) }`
 const DISCUSS_ITEM = `mutation ($feedItemId: String!) { DiscussAgentFeedItem(feedItemId: $feedItemId) }`
 
@@ -790,6 +807,9 @@ function FeedCard({
   const cardRef = useRef<HTMLElement>(null)
   const [isBusy, setIsBusy] = useState(false)
   const [isInfoOpen, setIsInfoOpen] = useState(false)
+  const [isResolveOpen, setIsResolveOpen] = useState(false)
+  // An answered card is folded to its title and one line; this opens it again.
+  const [isUnfolded, setIsUnfolded] = useState(false)
   // Where a finger came down and how far across a swipe has taken the card.
   const touchRef = useRef<{ pointerId: number; startX: number; startY: number; isSwiping: boolean } | null>(null)
   const [swipeAcrossPx, setSwipeAcrossPx] = useState(0)
@@ -935,6 +955,27 @@ function FeedCard({
       }
     : {}
 
+  const resolve = (resolutionNote: string) =>
+    run(async () => {
+      const answer = await graphql<{ ResolveAgentFeedItem: FeedItem }>(RESOLVE_ITEM, {
+        feedItemId: item.feedItemId,
+        resolutionNote: resolutionNote.trim(),
+      })
+      onChanged(answer.ResolveAgentFeedItem)
+      setIsResolveOpen(false)
+      toast.done(t('feed.resolvedDone'))
+    })
+
+  const unresolve = () =>
+    run(async () => {
+      const answer = await graphql<{ UnresolveAgentFeedItem: FeedItem }>(UNRESOLVE_ITEM, {
+        feedItemId: item.feedItemId,
+      })
+      onChanged(answer.UnresolveAgentFeedItem)
+      setIsInfoOpen(false)
+      toast.done(t('feed.unresolvedDone'))
+    })
+
   const showLess = () =>
     run(async () => {
       await graphql(SHOW_LESS_ITEM, { feedItemId: item.feedItemId })
@@ -956,10 +997,15 @@ function FeedCard({
     isFresh ? 'is-fresh' : '',
     onRestore ? 'is-swipeable' : '',
     weatherGradient ? `is-weather is-${weatherGradient}` : '',
+    item.isResolved ? 'is-resolved' : '',
   ]
     .filter(Boolean)
     .join(' ')
   const isChosen = item.chosenChoiceKey !== null && item.chosenChoiceKey !== ''
+  const isFolded = isChosen && !isUnfolded
+  const chartBlocks = useMemo(() => chartBlocksOf(item.chartBlocks), [item.chartBlocks])
+  const resolvedClock =
+    item.isResolved && item.resolvedAt ? feedClockTextOf(item.resolvedAt, { isHourPadded: true }) : ''
 
   return (
     <article
@@ -969,17 +1015,17 @@ function FeedCard({
       {...swipeHandlers}
     >
       {isFresh && <span className="feed-fresh-dot" role="img" aria-label={t('feed.unread')} />}
-      {hasCardMedia && <FeedMediaGallery cardMedia={cardMedia} />}
+      {hasCardMedia && !isFolded && <FeedMediaGallery cardMedia={cardMedia} />}
       {/* With pictures on top the symbol moves into the header line. */}
-      {!hasCardMedia && (
+      {(!hasCardMedia || isFolded) && (
         <div className="feed-picture">
           <FeedPicture pictureSymbol={item.pictureSymbol} />
         </div>
       )}
       <div className="feed-content">
-        {(headerLabel || hasCardMedia) && (
+        {(headerLabel || (hasCardMedia && !isFolded)) && (
           <p className="feed-kicker muted">
-            {hasCardMedia && (
+            {hasCardMedia && !isFolded && (
               <span className="feed-kicker-symbol" aria-hidden="true">
                 <FeedPicture pictureSymbol={item.pictureSymbol} />
               </span>
@@ -1003,56 +1049,85 @@ function FeedCard({
             </Tooltip>
           )}
         </div>
-        {layout ? (
-          <FeedLayoutContent layout={layout} rowMediaByIndex={rowMediaByIndex} />
-        ) : (
-          item.body && (
-            <div className="feed-body">
-              <Markdown text={item.body} />
-            </div>
-          )
-        )}
-        {item.factRows.length > 0 && (
-          <table className="feed-facts">
-            <tbody>
-              {item.factRows.map((row, index) => (
-                <tr key={`${row.factLabel}-${index}`}>
-                  <th scope="row">{row.factLabel}</th>
-                  <td>{row.factValue}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {isChosen ? (
-          <div className="feed-outcome" aria-live="polite">
-            <p className="feed-chosen">
-              {t('feed.chose', { choice: chosen?.choiceLabel ?? item.chosenChoiceKey ?? '' })}
+        {isFolded ? (
+          <div className="feed-folded">
+            <p className="muted feed-folded-line">
+              <span className="feed-folded-part">
+                {t('feed.chose', { choice: chosen?.choiceLabel ?? item.chosenChoiceKey ?? '' })}
+              </span>
+              {item.isOutcomePending ? (
+                <span className="feed-folded-part">
+                  <span className="agent-spinner" aria-hidden="true" /> {t('feed.working')}
+                </span>
+              ) : (
+                item.outcomeText && <span className="feed-folded-part">{item.outcomeText}</span>
+              )}
             </p>
-            {item.isOutcomePending ? (
-              <p className="muted feed-working">
-                <span className="agent-spinner" aria-hidden="true" /> {t('feed.working')}
-              </p>
-            ) : (
-              item.outcomeText && <p className="muted">{item.outcomeText}</p>
-            )}
+            <button type="button" className="feed-unfold" onClick={() => setIsUnfolded(true)}>
+              {t('feed.showCard')}
+            </button>
           </div>
         ) : (
-          item.choices.length > 0 && (
-            <div className="feed-choices">
-              {item.choices.map((choice) => (
-                <button
-                  key={choice.choiceKey}
-                  type="button"
-                  className={choice.choiceRole === 'action' ? 'primary' : undefined}
-                  disabled={isBusy}
-                  onClick={() => choose(choice)}
-                >
-                  {choice.choiceLabel}
+          <>
+            {layout ? (
+              <FeedLayoutContent layout={layout} rowMediaByIndex={rowMediaByIndex} />
+            ) : (
+              item.body && (
+                <div className="feed-body">
+                  <Markdown text={item.body} />
+                </div>
+              )
+            )}
+            {item.isResolved && item.resolutionNote && (
+              <p className="muted feed-resolution-note">{item.resolutionNote}</p>
+            )}
+            <FeedChartBlocks blocks={chartBlocks} />
+            {item.factRows.length > 0 && (
+              <table className="feed-facts">
+                <tbody>
+                  {item.factRows.map((row, index) => (
+                    <tr key={`${row.factLabel}-${index}`}>
+                      <th scope="row">{row.factLabel}</th>
+                      <td>{row.factValue}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {isChosen ? (
+              <div className="feed-outcome" aria-live="polite">
+                <p className="feed-chosen">
+                  {t('feed.chose', { choice: chosen?.choiceLabel ?? item.chosenChoiceKey ?? '' })}
+                </p>
+                {item.isOutcomePending ? (
+                  <p className="muted feed-working">
+                    <span className="agent-spinner" aria-hidden="true" /> {t('feed.working')}
+                  </p>
+                ) : (
+                  item.outcomeText && <p className="muted">{item.outcomeText}</p>
+                )}
+                <button type="button" className="feed-unfold" onClick={() => setIsUnfolded(false)}>
+                  {t('feed.foldCard')}
                 </button>
-              ))}
-            </div>
-          )
+              </div>
+            ) : (
+              item.choices.length > 0 && (
+                <div className="feed-choices">
+                  {item.choices.map((choice) => (
+                    <button
+                      key={choice.choiceKey}
+                      type="button"
+                      className={choice.choiceRole === 'action' ? 'primary' : undefined}
+                      disabled={isBusy}
+                      onClick={() => choose(choice)}
+                    >
+                      {choice.choiceLabel}
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
+          </>
         )}
         <div className="feed-footer">
           <Tooltip label={item.isLiked ? t('feed.unlike') : t('feed.like')}>
@@ -1070,6 +1145,11 @@ function FeedCard({
             <ChatIcon size={14} /> {t('feed.discuss')}
           </button>
           <span className="feed-footer-end">
+            {item.isResolved && (
+              <span className="feed-resolved-chip">
+                {resolvedClock ? t('feed.resolvedAt', { time: resolvedClock }) : t('feed.resolved')}
+              </span>
+            )}
             <span className="muted feed-date">
               <RelativeTime value={item.updatedAt} />
             </span>
@@ -1127,13 +1207,63 @@ function FeedCard({
         <FeedInfoDialog
           item={item}
           isBusy={isBusy}
+          onResolve={() => {
+            setIsInfoOpen(false)
+            setIsResolveOpen(true)
+          }}
+          onUnresolve={() => void unresolve()}
           onShowLess={() => void showLess()}
           onDismiss={() => void dismiss()}
           onRestore={onRestore ? () => void restore() : undefined}
           onClose={() => setIsInfoOpen(false)}
         />
       )}
+      {isResolveOpen && (
+        <FeedResolveDialog
+          isBusy={isBusy}
+          onResolve={(note) => void resolve(note)}
+          onClose={() => setIsResolveOpen(false)}
+        />
+      )}
     </article>
+  )
+}
+
+// FeedResolveDialog asks for the optional note a resolution carries: one line,
+// the length the server keeps.
+const RESOLUTION_NOTE_LIMIT = 160
+
+function FeedResolveDialog({
+  isBusy,
+  onResolve,
+  onClose,
+}: {
+  isBusy: boolean
+  onResolve: (resolutionNote: string) => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const [resolutionNote, setResolutionNote] = useState('')
+  return (
+    <FormDialog
+      title={t('feed.resolveTitle')}
+      submitLabel={t('feed.resolve')}
+      busy={isBusy}
+      onSubmit={() => onResolve(resolutionNote)}
+      onClose={onClose}
+    >
+      <p className="muted">{t('feed.resolveHint')}</p>
+      <label>
+        <span>{t('feed.resolutionNoteLabel')}</span>
+        <input
+          type="text"
+          value={resolutionNote}
+          maxLength={RESOLUTION_NOTE_LIMIT}
+          placeholder={t('feed.resolutionNotePlaceholder')}
+          onChange={(event) => setResolutionNote(event.target.value)}
+        />
+      </label>
+    </FormDialog>
   )
 }
 
@@ -1143,6 +1273,8 @@ function FeedCard({
 function FeedInfoDialog({
   item,
   isBusy,
+  onResolve,
+  onUnresolve,
   onShowLess,
   onDismiss,
   onRestore,
@@ -1150,6 +1282,9 @@ function FeedInfoDialog({
 }: {
   item: FeedItem
   isBusy: boolean
+  // Resolve opens a small dialog for the note; Unresolve takes the mark off.
+  onResolve: () => void
+  onUnresolve: () => void
   onShowLess: () => void
   onDismiss: () => void
   // Given for a dismissed card: Restore is the one way out, in place of
@@ -1232,6 +1367,17 @@ function FeedInfoDialog({
           <ReferenceChips references={item.recordReferences} />
         </>
       )}
+      <p>
+        {item.isResolved ? (
+          <button type="button" disabled={isBusy} onClick={onUnresolve}>
+            {t('feed.unresolve')}
+          </button>
+        ) : (
+          <button type="button" disabled={isBusy} onClick={onResolve}>
+            {t('feed.resolve')}
+          </button>
+        )}
+      </p>
       {item.runConversationId && (
         <p>
           <button

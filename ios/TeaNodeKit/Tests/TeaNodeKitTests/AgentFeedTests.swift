@@ -57,6 +57,7 @@ final class AgentFeedTests: XCTestCase {
             "agentFeed": "ListAgentFeed", "agentFeedStack": "ListAgentFeedStack", "chooseAgentFeedItem": "ChooseAgentFeedItem", "likeAgentFeedItem": "LikeAgentFeedItem",
             "showLessLikeAgentFeedItem": "ShowLessLikeAgentFeedItem", "dismissAgentFeedItems": "DismissAgentFeedItems", "restoreAgentFeedItems": "RestoreAgentFeedItems",
             "markAgentFeedRead": "MarkAgentFeedRead", "discussAgentFeedItem": "DiscussAgentFeedItem", "agentFeedEvents": "AgentFeedChanged",
+            "resolveAgentFeedItem": "ResolveAgentFeedItem", "unresolveAgentFeedItem": "UnresolveAgentFeedItem",
         ]
         XCTAssertEqual(Set(Documents.agentFeedDocuments.keys), Set(operations.keys))
         for (name, operation) in operations {
@@ -313,7 +314,9 @@ final class AgentFeedTests: XCTestCase {
     }
 
     func testTheDocumentAsksForTheMedia() {
-        XCTAssertTrue(Documents.agentFeed.contains("feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }"))
+        for field in ["mediaKey", "feedMediaKind", "imageUrl", "videoUrl", "linkUrl", "siteName", "mediaCaption", "widthPixels", "heightPixels", "listRowIndex", "cameraName", "capturedAt", "stillReason", "playbackUrl", "liveUrl"] {
+            XCTAssertTrue(Documents.agentFeed.contains(field), field)
+        }
         XCTAssertTrue(Documents.agentFeedStack.contains("feedMedia {"))
         XCTAssertTrue(Documents.chooseAgentFeedItem.contains("feedMedia {"))
     }
@@ -448,5 +451,132 @@ final class AgentFeedTests: XCTestCase {
         let conversationId = try await connection.discussAgentFeedItem("card-1")
         XCTAssertEqual(conversationId, "conversation-main")
         XCTAssertEqual(try sentVariables(fake.sent[0])["feedItemId"], .string("card-1"))
+    }
+
+    // MARK: Resolved, charts and camera stills
+
+    private let richCardJSON = #"""
+        {"feedItemId":"card-9","title":"Water in the cellar","isResolved":true,"resolvedAt":"2030-03-01T06:41:00Z",
+         "resolutionNote":"The pump is running again.","resolvedByKind":"person",
+         "chartBlocks":[
+           {"chartKind":"series","chartTitle":"Cellar water level","unit":"cm","provenance":"Read from the sensor at 09:40",
+            "xLabels":["Mon","Tue","Wed"],
+            "series":[{"seriesName":"Level","seriesRole":"measured","values":[4,null,9.5]},
+                      {"seriesName":"Average","seriesRole":"reference","values":[3,3,3]},
+                      {"seriesName":"Guess","seriesRole":"somethingnew","values":[5,6,7]}],
+            "markers":[{"markerAt":"Tue","markerLabel":"Pump stopped"}],"bars":null},
+           {"chartKind":"bars","chartTitle":"Spending","unit":"USD","provenance":"Read from the bank at 09:40",
+            "bars":[{"barLabel":"Groceries","barValue":212.5},{"barLabel":"Fuel","barValue":60}]},
+           null
+         ],
+         "feedMedia":[{"mediaKey":"m1","feedMediaKind":"camera_still","imageUrl":"/api/v1/feed/items/card-9/media/m1",
+           "mediaCaption":"A parcel by the door","cameraName":"Front door","capturedAt":"2030-03-01T14:02:11+02:00",
+           "stillReason":"The camera where the parcel was left","playbackUrl":"https://cameras.example.com/play/1","liveUrl":"javascript:alert(1)"}]}
+        """#
+
+    private func richCard() async throws -> AgentFeedItem {
+        let (connection, _) = connection(answering: #"{"data":{"ResolveAgentFeedItem":\#(richCardJSON)}}"#)
+        return try await connection.resolveAgentFeedItem("card-9", resolutionNote: "The pump is running again.")
+    }
+
+    func testAResolvedCardKeepsWhoResolvedItAndWhen() async throws {
+        let card = try await richCard()
+        XCTAssertTrue(card.isResolved)
+        XCTAssertEqual(card.resolvedDate, ServerTime.date("2030-03-01T06:41:00Z"))
+        XCTAssertEqual(card.resolutionNote, "The pump is running again.")
+        XCTAssertEqual(card.resolvedByKind, "person")
+    }
+
+    func testACardFromAnOlderServerIsNotResolvedAndHasNoCharts() async throws {
+        let (connection, _) = connection(answering: pageJSON)
+        let card = try await connection.agentFeed().feedItems[0]
+        XCTAssertFalse(card.isResolved)
+        XCTAssertNil(card.resolvedDate)
+        XCTAssertEqual(card.resolutionNote, "")
+        XCTAssertEqual(card.chartBlocks, [])
+        XCTAssertEqual(card.cameraStills, [])
+    }
+
+    func testChartsDecodeWithNullsAndUnknownRoles() async throws {
+        let card = try await richCard()
+        // The null chart is left out.
+        XCTAssertEqual(card.chartBlocks.count, 2)
+        let series = card.chartBlocks[0]
+        XCTAssertEqual(series.chartKind, .series)
+        XCTAssertEqual(series.chartUnit, "cm")
+        XCTAssertEqual(series.provenance, "Read from the sensor at 09:40")
+        XCTAssertEqual(series.xLabels, ["Mon", "Tue", "Wed"])
+        XCTAssertEqual(series.series[0].values, [4, nil, 9.5])
+        XCTAssertEqual(series.series.map(\.seriesRole), [.measured, .reference, .measured])
+        XCTAssertEqual(series.markers, [AgentFeedChartMarker(markerAt: "Tue", markerLabel: "Pump stopped")])
+        XCTAssertTrue(series.isDrawable)
+        let bars = card.chartBlocks[1]
+        XCTAssertEqual(bars.chartKind, .bars)
+        XCTAssertEqual(bars.bars.map(\.barLabel), ["Groceries", "Fuel"])
+        // The number follows the phone's locale; the unit comes after it.
+        XCTAssertTrue(bars.valueText(60).hasPrefix("60"))
+        XCTAssertTrue(bars.valueText(60).hasSuffix(" USD"))
+        XCTAssertEqual(card.drawableCharts.count, 2)
+    }
+
+    func testAChartWithNothingToDrawIsLeftOut() {
+        XCTAssertFalse(AgentFeedChart(chartKindName: "bars").isDrawable)
+        let empty = AgentFeedChart(
+            xLabels: ["Mon", "Tue"], series: [AgentFeedChartSeries(seriesName: "Level", values: [nil, nil])])
+        XCTAssertFalse(empty.isDrawable)
+    }
+
+    func testACameraStillKeepsTheCamerasOwnClock() async throws {
+        let card = try await richCard()
+        XCTAssertEqual(card.cameraStills.count, 1)
+        XCTAssertTrue(card.pictureMedia.isEmpty)
+        let still = card.cameraStills[0]
+        XCTAssertEqual(still.mediaKind, .cameraStill)
+        XCTAssertEqual(still.cameraName, "Front door")
+        // The time of day is read as written, not converted to the phone's zone.
+        XCTAssertEqual(still.capturedClockText, "14:02:11")
+        XCTAssertEqual(still.stillReason, "The camera where the parcel was left")
+        XCTAssertEqual(still.playbackAddress?.absoluteString, "https://cameras.example.com/play/1")
+        // Only https and the app's own scheme are followed.
+        XCTAssertNil(still.liveAddress)
+        XCTAssertNil(AgentFeedMedia(mediaKey: "m", liveUrl: "http://cameras.example.com/live").liveAddress)
+        XCTAssertEqual(AgentFeedMedia(mediaKey: "m", liveUrl: "teanode://camera/1").liveAddress?.scheme, "teanode")
+        XCTAssertEqual(AgentFeedMedia(mediaKey: "m", capturedAt: "not a time").capturedClockText, "")
+    }
+
+    func testAZoneIsNamedOnlyWhenItIsNotThePhones() throws {
+        XCTAssertEqual(AgentFeedZone.offsetSeconds(in: "2030-03-01T14:02:11+02:00"), 7200)
+        XCTAssertEqual(AgentFeedZone.offsetSeconds(in: "2030-03-01T14:02:11-03:30"), -12600)
+        XCTAssertEqual(AgentFeedZone.offsetSeconds(in: "2030-03-01T14:02:11Z"), 0)
+        XCTAssertNil(AgentFeedZone.offsetSeconds(in: "2030-03-01"))
+        XCTAssertEqual(AgentFeedZone.name(offsetSeconds: 7200), "UTC+2")
+        XCTAssertEqual(AgentFeedZone.name(offsetSeconds: -12600), "UTC-3:30")
+        XCTAssertEqual(AgentFeedZone.name(offsetSeconds: 0), "UTC")
+        let tokyo = try XCTUnwrap(TimeZone(secondsFromGMT: 9 * 3600))
+        let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        XCTAssertNil(AgentFeedZone.foreignName(of: "2030-03-01T14:02:11+09:00", deviceZone: tokyo))
+        XCTAssertEqual(AgentFeedZone.foreignName(of: "2030-03-01T14:02:11+09:00", deviceZone: utc), "UTC+9")
+        XCTAssertNil(AgentFeedZone.foreignName(of: "", deviceZone: utc))
+    }
+
+    func testResolvingSendsTheCardAndATrimmedNoteOnlyWhenThereIsOne() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"ResolveAgentFeedItem":{"feedItemId":"card-9","title":"Water","isResolved":true}}}"#)
+        _ = try await connection.resolveAgentFeedItem("card-9", resolutionNote: "  Pump fixed.  ")
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["feedItemId": .string("card-9"), "resolutionNote": .string("Pump fixed.")])
+        _ = try await connection.resolveAgentFeedItem("card-9", resolutionNote: "   ")
+        XCTAssertEqual(try sentVariables(fake.sent[1]), ["feedItemId": .string("card-9")])
+    }
+
+    func testUnresolvingSendsTheCardAndReturnsItOpenAgain() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"UnresolveAgentFeedItem":{"feedItemId":"card-9","title":"Water","isResolved":false}}}"#)
+        let card = try await connection.unresolveAgentFeedItem("card-9")
+        XCTAssertFalse(card.isResolved)
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["feedItemId": .string("card-9")])
+    }
+
+    func testTheFeedDocumentAsksForTheNewFields() {
+        for field in ["isResolved", "resolvedAt", "resolutionNote", "resolvedByKind", "chartBlocks", "markerAt", "barValue", "cameraName", "capturedAt", "stillReason", "playbackUrl", "liveUrl"] {
+            XCTAssertTrue(Documents.agentFeedItemFields.contains(field), "the card document leaves out \(field)")
+        }
     }
 }

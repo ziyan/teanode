@@ -73,6 +73,8 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ShowLessLikeAgentFeedItem": client.DocumentShowLessLikeAgentFeedItem,
 		"DismissAgentFeedItems":     client.DocumentDismissAgentFeedItems,
 		"RestoreAgentFeedItems":     client.DocumentRestoreAgentFeedItems,
+		"ResolveAgentFeedItem":      client.DocumentResolveAgentFeedItem,
+		"UnresolveAgentFeedItem":    client.DocumentUnresolveAgentFeedItem,
 		"MarkAgentFeedRead":         client.DocumentMarkAgentFeedRead,
 		"DiscussAgentFeedItem":      client.DocumentDiscussAgentFeedItem,
 		"PostAgentFeedItem":         client.DocumentPostAgentFeedItem,

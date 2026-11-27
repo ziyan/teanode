@@ -41,6 +41,9 @@ final class FeedModel {
 
     /// The stacks of the feed that are open in place, by stack key, and the
     /// cards each holds, newest first (or in the order the agent gave).
+    /// The answered cards the person opened again; every other answered card
+    /// is folded to its title and one line.
+    private(set) var shownAnsweredFeedItemIds: Set<String> = []
     private(set) var openStackKeys: Set<String> = []
     private(set) var stackItemsByKey: [String: [AgentFeedItem]] = [:]
 
@@ -226,6 +229,33 @@ final class FeedModel {
         defer { busyFeedItemIds.remove(item.feedItemId) }
         do {
             replace(try await connection.chooseAgentFeedItem(item.feedItemId, choiceKey: choice.choiceKey))
+        } catch is CancellationError {
+        } catch {
+            problemText = error.loadProblemText
+        }
+    }
+
+    /// Opens an answered card that was folded.
+    func showAnsweredCard(_ item: AgentFeedItem) {
+        shownAnsweredFeedItemIds.insert(item.feedItemId)
+    }
+
+    /// Marks a card resolved, with the person's line on how when they gave one.
+    func resolve(_ item: AgentFeedItem, resolutionNote: String) async {
+        do {
+            replace(try await connection.resolveAgentFeedItem(item.feedItemId, resolutionNote: resolutionNote))
+            doneText = String(localized: "Card resolved.")
+        } catch is CancellationError {
+        } catch {
+            problemText = error.loadProblemText
+        }
+    }
+
+    /// Takes the resolution off a card.
+    func unresolve(_ item: AgentFeedItem) async {
+        do {
+            replace(try await connection.unresolveAgentFeedItem(item.feedItemId))
+            doneText = String(localized: "Card reopened.")
         } catch is CancellationError {
         } catch {
             problemText = error.loadProblemText
@@ -566,7 +596,8 @@ struct FeedList: View {
             .background(Color(.systemGroupedBackground))
             #if DEBUG
                 // `-TeaNodeScreen feed-stack-open`: the morning brief opened in place, scrolled to;
-                // `feed-media`: the feed scrolled to its first card with a picture.
+                // `feed-media`: the feed scrolled to its first card with a picture; `feed-resolved`, `feed-answered`,
+                // `feed-series`, `feed-bars` and `feed-camera`: the card of that name.
                 .task {
                     guard DemoServer.isRequested, model.feedStackKey == nil else { return }
                     let target: String
@@ -582,6 +613,9 @@ struct FeedList: View {
                     } else if DemoServer.screen == "feed-media" {
                         await model.loadFirstIfNeeded()
                         target = DemoServer.demoMediaTopId
+                    } else if let cardId = DemoServer.cardRuleScreenTargets[DemoServer.screen ?? ""] {
+                        await model.loadFirstIfNeeded()
+                        target = cardId
                     } else {
                         return
                     }
@@ -612,6 +646,8 @@ struct FeedList: View {
                 case .showLess: Task { await model.showLessLike(item) }
                 case .dismiss: Task { await model.dismiss(item) }
                 case .restore: Task { await model.restoreDismissed(item) }
+                case .resolve(let resolutionNote): Task { await model.resolve(item, resolutionNote: resolutionNote) }
+                case .unresolve: Task { await model.unresolve(item) }
                 case .openGoals: app.openedSection = .goals
                 }
             }
@@ -638,6 +674,8 @@ struct FeedList: View {
             item: item, isLiked: model.isLiked(item), isBusy: model.busyFeedItemIds.contains(item.feedItemId),
             isStackShown: isStackShown,
             isStackOpen: isStackOpen,
+            isAnsweredCardShown: model.shownAnsweredFeedItemIds.contains(item.feedItemId),
+            onShowAnsweredCard: { model.showAnsweredCard(item) },
             onChoose: { choice in choose(item, choice) },
             onToggleLike: { Task { await model.toggleLike(item) } },
             onDiscuss: { discuss(item) },
@@ -650,6 +688,8 @@ struct FeedList: View {
                 Button("Dismiss All (\(item.stackItemCount))", systemImage: "xmark.circle.fill") { Task { await model.dismissStack(item) } }
             }
         }
+        // A swipe either way dismisses the card, as the long press does.
+        .modifier(FeedSwipeToDismiss(isEnabled: true) { Task { await model.dismiss(item) } })
     }
 
     /// Whether the entry is a stack of the feed that is open in place.
@@ -838,6 +878,11 @@ struct FeedCard: View {
     /// Whether the stack this card tops is open: its edges are gone and its
     /// row says "Show Less", in the same place and at the same height.
     var isStackOpen = false
+    /// Whether an answered card is drawn whole; false folds it to its title
+    /// and one line, with a button that opens it again.
+    var isAnsweredCardShown = true
+    /// Opens a folded card; nil where cards are never folded.
+    var onShowAnsweredCard: (() -> Void)?
     let onChoose: (AgentFeedChoice) -> Void
     let onToggleLike: () -> Void
     let onDiscuss: () -> Void
@@ -849,7 +894,12 @@ struct FeedCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            FeedCardMedia(mediaItems: item.cardMedia)
+            if !isFolded {
+                FeedCardMedia(mediaItems: item.pictureMedia)
+                ForEach(item.cameraStills) { still in
+                    FeedCameraStill(media: still)
+                }
+            }
             content
                 .padding(.horizontal, 16)
                 .padding(.top, 14)
@@ -858,13 +908,14 @@ struct FeedCard: View {
                 .padding(.bottom, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(FeedCard.surface, in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
+        .background(item.isResolved ? FeedCard.resolvedSurface : FeedCard.surface, in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
         // The picture at the top of the card is cut to the card's corners.
         .clipShape(.rect(cornerRadius: Self.cornerRadius, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous).strokeBorder(Color(.separator).opacity(0.6), lineWidth: 0.5) }
         // A soft shadow lifts a card off the page in light mode; in dark mode
         // the lighter surface does it.
-        .shadow(color: Color.primary.opacity(colorScheme == .dark ? 0 : 0.07), radius: 10, y: 3)
+        // A resolved card has none: it is put down.
+        .shadow(color: Color.primary.opacity(colorScheme == .dark || item.isResolved ? 0 : 0.07), radius: 10, y: 3)
         .sensoryFeedback(.success, trigger: item.chosenChoiceKey)
     }
 
@@ -872,6 +923,17 @@ struct FeedCard: View {
     /// A card is the grouped surface on the grouped page: white on light grey
     /// in light mode, dark grey on black in dark mode.
     static let surface = Color(.secondarySystemGroupedBackground)
+    /// A resolved card is the same surface, drawn quieter.
+    static let resolvedSurface = Color(.secondarySystemGroupedBackground).opacity(0.55)
+
+    /// Whether the card is shown as its title and one line: it was answered,
+    /// the agent has said how it went, and the person has not opened it.
+    private var isFolded: Bool {
+        item.isChosen && !item.isOutcomePending && !isAnsweredCardShown
+    }
+
+    /// How much of a resolved card's words show.
+    private var wordsOpacity: Double { item.isResolved ? 0.7 : 1 }
 
     /// The row under a stack's top card that opens the rest of it: in place
     /// when the feed says how, else on the stack's own screen.
@@ -922,15 +984,69 @@ struct FeedCard: View {
             : String(localized: "+\(item.stackMoreCount) more from \(item.stackDisplayTitle)")
     }
 
+    @ViewBuilder
     private var content: some View {
+        if isFolded {
+            foldedContent
+        } else {
+            fullContent
+        }
+    }
+
+    /// The title and one muted line with the choice and what came of it.
+    private var foldedContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            FeedCardHeader(item: item, stackTitle: "")
+            Text(item.title)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(foldedLine)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                onShowAnsweredCard?()
+            } label: {
+                Text("Show the card")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The choice, then what the agent made of it.
+    private var foldedLine: String {
+        let choiceText = item.chosenChoice?.choiceLabel ?? ""
+        if choiceText.isEmpty { return item.outcomeText.isEmpty ? String(localized: "Answered") : item.outcomeText }
+        return item.outcomeText.isEmpty ? choiceText : "\(choiceText): \(item.outcomeText)"
+    }
+
+    private var fullContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             // A stack with a name of its own says it in its top card's header,
             // in place of where the card is from.
             FeedCardHeader(item: item, stackTitle: isStackShown && item.isStack ? item.feedStackTitle : "")
-            Text(item.title)
-                .font(.headline)
-                .fixedSize(horizontal: false, vertical: true)
-            layoutBody
+            // A resolved card's words are drawn quieter; its header and footer are not.
+            VStack(alignment: .leading, spacing: 10) {
+                Text(item.title)
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                layoutBody
+                if !item.resolutionNote.isEmpty {
+                    Text(item.resolutionNote)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(Array(item.drawableCharts.enumerated()), id: \.offset) { _, chart in
+                    FeedChartView(chart: chart)
+                }
+            }
+            .opacity(wordsOpacity)
             answerArea
             stackRow
             footer
@@ -1134,12 +1250,14 @@ struct FeedCardHeader: View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) { badgeAndSource }
+                resolvedChip
                 dateText
             }
         } else {
             HStack(spacing: 8) {
                 badgeAndSource
                 Spacer(minLength: 8)
+                resolvedChip
                 dateText
             }
         }
@@ -1163,6 +1281,13 @@ struct FeedCardHeader: View {
     }
 
     @ViewBuilder
+    private var resolvedChip: some View {
+        if item.isResolved {
+            FeedResolvedChip(resolvedDate: item.resolvedDate)
+        }
+    }
+
+    @ViewBuilder
     private var dateText: some View {
         if let shownAt = item.shownAt {
             Text(shownAt.formatted(.relative(presentation: .named)))
@@ -1170,6 +1295,34 @@ struct FeedCardHeader: View {
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
         }
+    }
+}
+
+/// FeedResolvedChip says a card's problem cleared: a checkmark and "Resolved
+/// 06:41", the time in the person's own zone, in the secondary text color on
+/// a quiet fill. Not green: green is kept for what can be pressed (DESIGN.md).
+struct FeedResolvedChip: View {
+    let resolvedDate: Date?
+
+    var body: some View {
+        Label {
+            Text(chipText)
+        } icon: {
+            Image(systemName: "checkmark.circle.fill")
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .fixedSize()
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Color(.tertiarySystemFill), in: .capsule)
+    }
+
+    private var chipText: String {
+        guard let resolvedDate else { return String(localized: "Resolved") }
+        let timeText = resolvedDate.formatted(date: .omitted, time: .shortened)
+        return String(localized: "Resolved \(timeText)")
     }
 }
 
@@ -1275,6 +1428,9 @@ enum FeedInformationAction {
     case showLess
     case dismiss
     case restore
+    /// Resolves the card, with the person's line on how; empty for none.
+    case resolve(String)
+    case unresolve
     case openGoals
 }
 
@@ -1289,6 +1445,10 @@ struct FeedInformationSheet: View {
     let onAction: (FeedInformationAction) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    /// Whether the alert that asks for a resolution's note is up, and what
+    /// the person has typed in it.
+    @State private var isAskingResolutionNote = false
+    @State private var resolutionNote = ""
 
     var body: some View {
         NavigationStack {
@@ -1314,9 +1474,26 @@ struct FeedInformationSheet: View {
                     if let updatedAt = ServerTime.date(item.updatedAt), updatedAt != ServerTime.date(item.postedAt) {
                         LabeledContent("Updated", value: updatedAt.formatted(date: .abbreviated, time: .shortened))
                     }
+                    if let resolvedDate = item.resolvedDate {
+                        LabeledContent("Resolved", value: resolvedDate.formatted(date: .abbreviated, time: .shortened))
+                    }
                     if let dismissedDate = item.dismissedDate {
                         LabeledContent("Dismissed", value: dismissedDate.formatted(date: .abbreviated, time: .shortened))
                     }
+                }
+                Section {
+                    if item.isResolved {
+                        Button("Unresolve", systemImage: "arrow.uturn.backward.circle") { onAction(.unresolve) }
+                            .actionColor()
+                    } else {
+                        Button("Resolve", systemImage: "checkmark.circle") {
+                            resolutionNote = ""
+                            isAskingResolutionNote = true
+                        }
+                        .actionColor()
+                    }
+                } footer: {
+                    Text("A resolved card stays in your feed, shown quieter, with the time its problem cleared.")
                 }
                 if !item.sourceLinks.isEmpty {
                     Section("Sources") {
@@ -1350,6 +1527,18 @@ struct FeedInformationSheet: View {
             }
             .navigationTitle("About this card")
             .navigationBarTitleDisplayMode(.inline)
+            // The note is asked for by an alert on the list, not on the row that opens it.
+            .alert("Resolve this card?", isPresented: $isAskingResolutionNote) {
+                TextField("Note (optional)", text: $resolutionNote)
+                Button("Resolve") { onAction(.resolve(resolutionNote.trimmingCharacters(in: .whitespacesAndNewlines))) }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Say in a few words how it cleared, or leave this empty.")
+            }
+            .onChange(of: resolutionNote) { _, newNote in
+                // A card's note is one line of at most 160 characters.
+                if newNote.count > 160 { resolutionNote = String(newNote.prefix(160)) }
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
