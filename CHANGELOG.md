@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.236.4] - 2026-11-27
+
+### Fixed
+
+- Phone notifications no longer show Markdown marks such as `#`, `-`, `|` or `_`. (#793)
+
 ## [0.236.3] - 2026-11-27
 
 ### Changed
