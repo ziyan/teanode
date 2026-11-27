@@ -40,7 +40,7 @@ const elsewhereWords = "The journal is read and written only in the person's own
 // schedule, a goal, a dream or a background task is steered by content the
 // person did not write, and the journal is theirs, to read as much as to
 // change.
-const unattendedWords = "The journal is read and changed only in a conversation the person started themselves, or by a program they connected over MCP, not in a run that a mail, a goal or a background task began. They can ask you directly."
+const unattendedWords = "The journal is read and changed only in a conversation the person started themselves, or by a program they connected over MCP, not in a run that a mail, a goal the agent wrote, a dream or a background task began. They can ask you directly."
 
 // scope is what every action needs: the run, the person's zone and now.
 type scope struct {
