@@ -579,7 +579,9 @@ func ConfirmationReasons(tool *Tool, arguments json.RawMessage, policy *config.A
 const ResultCharacters = 24000
 
 // DeferralThreshold is how many definitions go in a request before the
-// rest wait behind tool_search: forty is what a model keeps straight.
+// rest wait behind tool_search: forty is what a model keeps straight, as
+// measured by replaying real tool searches. It is not a cap on what the agent
+// can use: every tool past it is one tool_search away.
 const DeferralThreshold = 40
 
 // Split divides the offered tools into the ones sent this round and the

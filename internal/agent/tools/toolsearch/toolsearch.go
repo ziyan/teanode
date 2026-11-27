@@ -23,7 +23,7 @@ func init() {
 					"Never search for a tool you have already: call it. This finds tools, not facts: to look something up, use web_search.",
 				Parameters: tools.Object(map[string]any{
 					"query": tools.StringProperty("tool names from the list, or a few words: what you want to do, not what you want to know"),
-					"limit": tools.IntegerProperty("the most to load, 5 by default and 10 at most"),
+					"limit": tools.IntegerProperty("how many to load from a search by words, 5 by default; tools you name are all loaded"),
 				}, "query"),
 				Run: runToolSearch,
 			},

@@ -108,8 +108,8 @@ func TestSearchToolsSelectsByName(t *testing.T) {
 	}
 }
 
-// A search loads at most the limit asked, five when none is, and never
-// more than ten.
+// A search loads as many as the model asks for, five when it gives no number,
+// with no ceiling on what it may ask for.
 func TestSearchToolsKeepsToItsLimits(t *testing.T) {
 	held, deferred := rankCatalog()
 	var close []*Tool
@@ -120,8 +120,15 @@ func TestSearchToolsKeepsToItsLimits(t *testing.T) {
 	if found := SearchTools(held, deferred, "zone domain change", 0); len(found.Loadable) != SearchLoadedLimit {
 		t.Errorf("five by default: %d", len(found.Loadable))
 	}
-	if found := SearchTools(held, deferred, "zone domain change", 50); len(found.Loadable) != SearchLoadedMost {
-		t.Errorf("ten at most: %d", len(found.Loadable))
+	if found := SearchTools(held, deferred, "zone domain change", 15); len(found.Loadable) != 15 {
+		t.Errorf("as many as the model asks for, with no ceiling: %d", len(found.Loadable))
+	}
+	var wanted []string
+	for index := 0; index < 12; index++ {
+		wanted = append(wanted, fmt.Sprintf("zone_tool_%d", index))
+	}
+	if found := SearchTools(held, deferred, "select:"+strings.Join(wanted, ","), 0); len(found.Loadable) != 12 {
+		t.Errorf("every tool a select names: %d", len(found.Loadable))
 	}
 }
 
