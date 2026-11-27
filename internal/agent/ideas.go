@@ -681,16 +681,25 @@ var (
 	phraseIdeaNotNow = push.Phrase{English: "Not now", Chinese: "暂不", Japanese: "今はしない"}
 )
 
-// ideaReason is the agent offering one idea to a person who has gone quiet.
-// The idea is the highest ranked one they have not been shown; offering it
-// marks it shown, so each idea is offered once, and it stays on their list of
-// ideas whatever they answer.
+// ideaReason is the agent offering one idea to a person who has gone quiet,
+// one in each quiet stretch. The idea is the highest ranked one they have not
+// been shown; offering it marks it shown, so each idea is offered once, and it
+// stays on their list of ideas whatever they answer.
 func (self *Agent) ideaReason() speakFirstReason {
 	return speakFirstReason{
 		name: SpeakFirstIdea,
 		isDue: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, idle time.Duration, now time.Time) (bool, error) {
 			if !agent.IsSuggestionsEnabled || agent.OnboardedAt == nil || idle < ideaIdle {
 				return false, nil
+			}
+			// One idea in each quiet stretch: the next waits until the person
+			// has been back, so offers never pile up while they are away.
+			offered, err := tx.CountAgentJobs(&db.AgentJobFilter{
+				AgentID: agent.ID, Kinds: []models.AgentJobKind{models.AgentJobSpeakFirst},
+				SubjectID: SpeakFirstIdea, Since: now.Add(-idle),
+			})
+			if err != nil || offered > 0 {
+				return false, err
 			}
 			if err := self.refreshIdeas(ctx, tx, agent, owner, false); err != nil {
 				return false, err

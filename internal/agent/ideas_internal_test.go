@@ -356,15 +356,21 @@ func TestTheAgentOffersTheBestUnseenIdeaOnceEach(t *testing.T) {
 		if isDue, _ := reason.isDue(t.Context(), tx, agent, run.Owner, 10*time.Minute, now); isDue {
 			t.Fatal("nothing unseen is left")
 		}
-		// No gap of a day: an idea unseen is offered at the next quiet moment.
+		// One idea in each quiet stretch, and no gap of a day: another idea
+		// unseen waits while the person stays away, and is offered in the next
+		// quiet stretch once they have been back.
 		if _, err := worker.Enqueue(tx, models.AgentJobSpeakFirst, agent.ID, "", SpeakFirstIdea); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := tx.UpdateAgentIdea(agent.ID, ideas[0].ID, func(idea *models.AgentIdea) error { idea.ShownAt = nil; return nil }); err != nil {
 			t.Fatal(err)
 		}
-		if isDue, err := reason.isDue(t.Context(), tx, agent, run.Owner, 10*time.Minute, now); err != nil || !isDue {
-			t.Fatalf("an idea unseen is offered right after the last: %v %v", isDue, err)
+		if isDue, _ := reason.isDue(t.Context(), tx, agent, run.Owner, 10*time.Minute, now); isDue {
+			t.Fatal("a second idea in the same quiet stretch")
+		}
+		later := now.Add(30 * time.Minute)
+		if isDue, err := reason.isDue(t.Context(), tx, agent, run.Owner, 10*time.Minute, later); err != nil || !isDue {
+			t.Fatalf("an idea unseen in the next quiet stretch: %v %v", isDue, err)
 		}
 	})
 }
