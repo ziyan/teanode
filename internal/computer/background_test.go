@@ -190,14 +190,15 @@ func TestWithoutKeepOnTimeoutACommandPastItsWaitIsStillKilled(t *testing.T) {
 	}
 }
 
-func TestOutputKeepsTheFirstAndTheLast(t *testing.T) {
+func TestOutputKeepsAllOfItReadableByOffset(t *testing.T) {
 	buffer := &outputBuffer{}
+	defer buffer.discard()
 	_, _ = buffer.Write([]byte(strings.Repeat("h", outputHeadBytes)))
 	_, _ = buffer.Write([]byte(strings.Repeat("m", outputTailBytes)))
 	_, _ = buffer.Write([]byte("the end"))
 
 	text, isTruncated := buffer.text()
-	if !isTruncated || !strings.HasPrefix(text, "hhh") || !strings.HasSuffix(text, "mmmthe end") || !strings.Contains(text, "[7 bytes left out here]") {
+	if !isTruncated || !strings.HasPrefix(text, "hhh") || !strings.HasSuffix(text, "mmmthe end") || !strings.Contains(text, "[7 bytes left out here") {
 		t.Fatalf("the head, a line for the middle, and the tail: %d bytes, truncated %v, %q...%q", len(text), isTruncated, text[:10], text[len(text)-40:])
 	}
 	if buffer.byteCount() != int64(outputBytes+7) {
@@ -206,16 +207,23 @@ func TestOutputKeepsTheFirstAndTheLast(t *testing.T) {
 	if tail, isTruncated := buffer.tail(7); tail != "the end" || !isTruncated {
 		t.Fatalf("the tail is the end of the stream: %q", tail)
 	}
+	// What the answer left out is there to read, from any offset.
+	if chunk, next := buffer.readFrom(int64(outputHeadBytes-2), 6); chunk != "hhmmmm" || next != int64(outputHeadBytes+4) {
+		t.Fatalf("a read across the seam: %q, next %d", chunk, next)
+	}
+	if chunk, next := buffer.readFrom(int64(outputBytes), 100); chunk != "the end" || next != int64(outputBytes+7) {
+		t.Fatalf("a read to the end: %q, next %d", chunk, next)
+	}
 
-	// One write far longer than the head and the tail together keeps its
-	// first and its last, and holds no more than the two of them.
+	// One write far longer than the answer holds is kept whole too.
 	long := &outputBuffer{}
+	defer long.discard()
 	_, _ = long.Write([]byte("start" + strings.Repeat("x", 4*outputBytes) + "finish"))
 	if text, isTruncated := long.text(); !isTruncated || !strings.HasPrefix(text, "start") || !strings.HasSuffix(text, "finish") {
 		t.Fatalf("one long write keeps its ends: truncated %v", isTruncated)
 	}
-	if kept := len(long.head) + len(long.tailRing); kept != outputBytes || cap(long.tailRing) > 2*outputTailBytes {
-		t.Fatalf("one long write holds %d bytes in a tail of capacity %d", kept, cap(long.tailRing))
+	if chunk, _ := long.readFrom(int64(2*outputBytes), 3); chunk != "xxx" {
+		t.Fatalf("the middle is kept: %q", chunk)
 	}
 
 	short := &outputBuffer{}
@@ -225,5 +233,45 @@ func TestOutputKeepsTheFirstAndTheLast(t *testing.T) {
 	}
 	if tail, isTruncated := short.tail(100); tail != "one\ntwo\n" || isTruncated {
 		t.Fatalf("all of a short stream: %q", tail)
+	}
+
+	// A read does not end in the middle of a character.
+	accents := &outputBuffer{}
+	_, _ = accents.Write([]byte("aé"))
+	if chunk, next := accents.readFrom(0, 2); chunk != "a" || next != 1 {
+		t.Fatalf("a read stops before a character it cannot finish: %q, next %d", chunk, next)
+	}
+}
+
+// A command that ended inside its call and wrote more than an answer holds
+// is kept, ended, so that all of its output is read by its id; and a
+// background command is never refused, whatever is already kept.
+func TestLongOutputIsReadByIDAndRunningCommandsAreNeverRefused(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the shell here is sh")
+	}
+	background := NewBackgroundCommands()
+	defer background.Close()
+	options := &Options{Home: t.TempDir()}
+	result, err := RunShell(context.Background(), options, background, &ShellArguments{Command: "head -c 300000 /dev/zero | tr '\\0' x; printf END"})
+	if err != nil || result.OutputID == "" || !result.StdoutTruncated || result.BackgroundID != "" {
+		t.Fatalf("a long answer is kept by id: %+v %v", result, err)
+	}
+	read, err := background.read(&BackgroundReadArguments{ID: result.OutputID, Stream: "stdout", Offset: 299999, LengthBytes: 100})
+	if err != nil || read.Stdout != "xEND" || read.IsStdoutTruncated || read.StreamNextOffset != 300003 {
+		t.Fatalf("the end of it is read by offset: %+v %v", read, err)
+	}
+	if listed := background.list(); len(listed) != 1 || !listed[0].IsAcknowledged {
+		t.Fatalf("nobody is told about it: %+v", listed)
+	}
+
+	for range mostBackgroundKept + 5 {
+		started, err := RunShell(context.Background(), options, background, &ShellArguments{Command: "sleep 30", IsBackground: true})
+		if err != nil || started.BackgroundID == "" {
+			t.Fatalf("one more is kept: %+v %v", started, err)
+		}
+	}
+	if listed := background.list(); len(listed) != mostBackgroundKept+5 {
+		t.Fatalf("every running one is kept, and the ended one made room: %d", len(listed))
 	}
 }

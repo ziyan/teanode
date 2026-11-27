@@ -92,11 +92,12 @@ func TestAHerdrSendCarriesOnlyFilesItsCallerMayHand(test *testing.T) {
 	if _, err := HerdrFilesOf(ctx, database, files, person.ID, "", []string{here.ID, large.ID}); err == nil || !strings.Contains(err.Error(), "more than") {
 		test.Errorf("too large together: %v", err)
 	}
-	tooMany := make([]string, HerdrFilesMost+1)
-	for index := range tooMany {
-		tooMany[index] = here.ID
+	// Only their size together bounds a send, not how many there are.
+	many := make([]string, 12)
+	for index := range many {
+		many[index] = here.ID
 	}
-	if _, err := HerdrFilesOf(ctx, database, files, person.ID, "", tooMany); err == nil {
-		test.Error("too many files were sent")
+	if sent, err := HerdrFilesOf(ctx, database, files, person.ID, "", many); err != nil || len(sent) != 12 {
+		test.Errorf("twelve small files: %d %v", len(sent), err)
 	}
 }

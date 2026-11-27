@@ -121,9 +121,12 @@ of it; new readings of that type still arrive while Health is on.
   `health` tool (types, summary, samples, set_up) only after the person turns on
   **Let the agent read Health data**, on the Settings tab of the Health page on
   the dashboard, or in Health in the TeaNode phone app's Settings. Until then every action but set_up says so.
-  It runs only in a conversation the person, or somebody acting as them, is in: a dream, a subagent, a
-  turn woken by a background command or survey, a speak-first run or any other
-  run nobody is watching is refused. So is a turn whose answer others could
+  It runs only in a run the person started: their own turn, a program they
+  connected, or a goal they wrote on times they chose (a run with nobody at the
+  other end, which stays private like any Health turn). A dream, a subagent, a
+  turn woken by a background command or survey, a goal the agent wrote, a run an
+  inbound mail steers, a speak-first run or any other run the person did not
+  start is refused. So is a turn whose answer others could
   read: over Telegram or Discord, or in a chat room with other members. There
   every action but set_up answers in one sentence, that Health is read only in
   the TeaNode app and on the dashboard. An operator with `agent:act` speaking as

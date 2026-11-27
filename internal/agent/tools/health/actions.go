@@ -40,12 +40,12 @@ const notAllowedWords = "The person has not let you read their Health data. " +
 	"You can offer to open it with set_up."
 
 // unattendedWords is the whole answer of every action that reads Health in a
-// run the person did not ask for: a dream, a subagent, a turn woken by a
-// background command or survey, a scheduled run, a goal, a speak-first run,
-// a turn of somebody else in the person's chat. What a run like that reads
-// would be filed away without the person having asked, and Health is kept
-// out of memory.
-const unattendedWords = "Health data is read only in a conversation with the person, not in a dream, a subagent, a background task or any other run nobody is watching, so ask them in a conversation instead."
+// run the person did not start: a dream, a subagent, a turn woken by a
+// background command or survey, a goal the agent wrote, a run an inbound mail
+// steers, a turn of somebody else in the person's chat. What a run like that
+// reads would be filed away or steered by content the person did not write,
+// and Health is kept out of memory.
+const unattendedWords = "Health data is read only in a run the person started (a conversation with them, or a goal they wrote), not in a dream, a subagent, a background task or any other run nobody is watching, so ask them in a conversation instead."
 
 // elsewhereWords is the whole answer of every action that reads Health in a
 // run whose answer would leave the person's own conversation: over Telegram
@@ -152,16 +152,18 @@ func periodCount(firstDay, lastDay time.Time, period string) int {
 	return dayCount
 }
 
-// withGate runs an action only in a run the person is there for, and only
-// when they have let the agent read their Health data, and otherwise answers
-// in one sentence why not.
+// withGate runs an action only in a run the person started (their own turn,
+// a program they connected, a goal they wrote), and only when they have let
+// the agent read their Health data, and otherwise answers in one sentence
+// why not. What a run reads here stays private to it: the private-turn
+// machinery keeps a Health turn out of what other runs read back.
 func withGate(run func(ctx context.Context, call *tools.Call, here *scope) (*tools.Result, error)) func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		here, err := scopeOf(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if here.run.Headless() || !here.run.CanAsk() || here.run.Surface() == backgroundSurface || here.run.Surface() == subagentSurface {
+		if !tools.IsStartedByPersonOrProgram(here.run) || here.run.Surface() == backgroundSurface || here.run.Surface() == subagentSurface {
 			return tools.TextResult("%s", unattendedWords), nil
 		}
 		if isOutsideOwnConversation(here.run) {

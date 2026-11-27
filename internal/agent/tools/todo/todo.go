@@ -25,7 +25,7 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"action": tools.EnumProperty("what to do", "batch", "list", "prune"),
 					"items": map[string]any{
-						"type": "array", "minItems": 1, "maxItems": todoBatchMostChangeCount,
+						"type": "array", "minItems": 1,
 						"description": "for batch: the changes, in order",
 						"items": tools.Object(map[string]any{
 							"op":   tools.EnumProperty("the change", "add", "update", "complete", "reopen", "delete"),
@@ -54,12 +54,6 @@ func init() {
 		}
 	})
 }
-
-// todoBatchMostChangeCount is the most changes one batch makes.
-const todoBatchMostChangeCount = 50
-
-// todoTextMostRuneCount is the longest a step may be: a line, not a paragraph.
-const todoTextMostRuneCount = 200
 
 type todoBatchItem struct {
 	Op   string `json:"op"`
@@ -178,9 +172,6 @@ func runTodo(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		if len(arguments.Items) == 0 {
 			return nil, fmt.Errorf("a batch needs at least one change")
 		}
-		if len(arguments.Items) > todoBatchMostChangeCount {
-			return nil, fmt.Errorf("a batch makes at most %d changes", todoBatchMostChangeCount)
-		}
 		// Each change is its own: one that is refused says why and the
 		// rest still happen, as the result shows item by item.
 		results := make([]map[string]any, 0, len(arguments.Items))
@@ -205,10 +196,6 @@ func runTodo(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 // applyTodo makes one change of a batch, and answers the item it touched.
 func applyTodo(ctx context.Context, database db.Database, conversationId string, item todoBatchItem) (string, error) {
 	text := strings.Join(strings.Fields(item.Text), " ")
-	// Only where the text is used: a leftover on a completion is ignored.
-	if (item.Op == "add" || item.Op == "update") && len([]rune(text)) > todoTextMostRuneCount {
-		return "", fmt.Errorf("a step is a line, at most %d characters", todoTextMostRuneCount)
-	}
 	var touched string
 	err := database.TransactionContext(ctx, func(tx db.Transaction) error {
 		switch item.Op {
@@ -273,7 +260,7 @@ func applyTodo(ctx context.Context, database db.Database, conversationId string,
 	return touched, err
 }
 
-// todoOverlay is the open items, oldest first, capped, with counts.
+// todoOverlay is every open item, oldest first, with counts.
 func todoOverlay(ctx context.Context) string {
 	run, err := tools.RunFrom(ctx)
 	if err != nil || tools.ConversationIDOf(run) == "" {
@@ -293,10 +280,8 @@ func todoOverlay(ctx context.Context) string {
 			done++
 			continue
 		}
-		if len(open) < 10 {
-			// One line each, whatever an older item was written with.
-			open = append(open, fmt.Sprintf("- [ ] %s (%s)", strings.Join(strings.Fields(todo.Text), " "), todo.ID))
-		}
+		// One line each, whatever an older item was written with.
+		open = append(open, fmt.Sprintf("- [ ] %s (%s)", strings.Join(strings.Fields(todo.Text), " "), todo.ID))
 	}
 	if len(open) == 0 && done == 0 {
 		return ""

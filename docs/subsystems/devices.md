@@ -63,7 +63,7 @@ Bounds it applies itself:
 | | |
 | --- | --- |
 | command timeout | 120s, 600s at most |
-| output kept per stream | 256 KiB |
+| output an answer carries per stream | 256 KiB, the first 64 and the last 192; the rest is read by id and offset |
 | largest file read | 4 MiB |
 | largest file fetched whole | 32 MiB |
 
@@ -122,10 +122,15 @@ A command still running when its call's wait runs out is not killed: it goes
 on in the background, and the answer says so with its id and what it printed
 so far. The agent can also start one there on purpose (a build, a server, a
 loop that waits for something), and `shell` reads one's progress, lists them
-and stops one. Any number may run; the program remembers sixty-four,
-forgetting the oldest that ended first. Each is stopped after twenty-four
-hours, and an ended one can be read for a day. The person sees them, with their output, in the drawer and on
-the agent page, and can stop one there too.
+and stops one. Any number may run, and one runs until it ends or is
+stopped. The program remembers sixty-four, forgetting the oldest that ended
+first; a running one is never refused. An ended one can be read for a day. All
+of a command's output is kept (in memory up to 256 KiB a stream, then in a
+temporary file the program removes when it forgets the command), and read with
+`shell` action read, stream and an offset in bytes. A foreground command that
+printed more than an answer carries is kept the same way, and its answer
+names an `outputId` to read the rest by. The person sees them, with their
+output, in the drawer and on the agent page, and can stop one there too.
 
 The program holds them, not the connection: a network that drops or a server
 that restarts does not end a build, and stopping the program does. When one
@@ -274,7 +279,7 @@ is refused when the question on screen is no longer that one.
 
 `send` can carry files: attachment ids on every surface (the tool takes this
 conversation's, the dashboard and `--attach` upload first). The server reads
-them out of storage, at most ten and 32 MiB together, and only a program that
+them out of storage, 32 MiB together, and only a program that
 names the `herdr_files` feature is sent them. The program writes each into a
 directory of its own send under `~/.cache/teanode/herdr-files/`, its name kept
 to letters, digits, dots, dashes and underscores, clears out sends older than

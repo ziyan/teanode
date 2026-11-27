@@ -156,7 +156,7 @@ func TestTheAgentsOfARequestAreATreeWithStatesModelsAndTools(t *testing.T) {
 		subagentReplyLine("a0000000000000006", 20, "example-model-main", "tool_use", "Bash"),
 	)
 
-	result, err := readSubagents(path, HerdrSessionStateWorking, subagentsNow)
+	result, err := readSubagents(path, HerdrSessionStateWorking, subagentsNow, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestAnAgentWithoutAFinishedMarkIsJudgedByItsHistory(t *testing.T) {
 		subagentUserLine("a0000000000000014", 20))
 
 	states := func(sessionState string) map[string]string {
-		result, err := readSubagents(path, sessionState, subagentsNow)
+		result, err := readSubagents(path, sessionState, subagentsNow, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -276,7 +276,7 @@ func TestALineStillBeingWrittenIsPassedOver(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(files.folder, "agent-a0000000000000023.meta.json"), []byte(`{"agentType":"Explore"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
+	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,34 +291,41 @@ func TestALineStillBeingWrittenIsPassedOver(t *testing.T) {
 
 func TestOnlyTheNewestHundredAgentsAreGiven(t *testing.T) {
 	path, files := writeSubagentSession(t, t.TempDir(), "session-dddd")
-	for index := 0; index < subagentsMostReturned+5; index++ {
+	for index := 0; index < subagentsPageCount+5; index++ {
 		subagentId := fmt.Sprintf("a%016d", index)
 		// One second apart, the first of them oldest.
 		files.writeSubagent(subagentId, map[string]any{"agentType": "Explore", "description": fmt.Sprintf("task %d", index), "spawnDepth": 1, "finished": true},
 			subagentUserLine(subagentId, 500-index), subagentReplyLine(subagentId, 400-index, "example-model-main", "end_turn"))
 	}
-	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
+	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.IsTruncated || len(result.Subagents) != subagentsMostReturned {
+	if !result.IsTruncated || len(result.Subagents) != subagentsPageCount {
 		t.Fatalf("truncated %v, %d agents", result.IsTruncated, len(result.Subagents))
 	}
 	if first, last := result.Subagents[0].TaskText, result.Subagents[len(result.Subagents)-1].TaskText; first != "task 5" || last != "task 104" {
 		t.Errorf("from %q to %q", first, last)
 	}
+	if result.LeftCount != 5 || result.NextOffset != subagentsPageCount {
+		t.Errorf("five are left, and an offset reads them: %d left, next offset %d", result.LeftCount, result.NextOffset)
+	}
+	older, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow, result.NextOffset)
+	if err != nil || older.IsTruncated || len(older.Subagents) != 5 || older.Subagents[0].TaskText != "task 0" {
+		t.Fatalf("the older five: %+v %v", older, err)
+	}
 }
 
 func TestASessionWithNoAgentsFolderHasNoAgents(t *testing.T) {
 	path, _ := writeSubagentSession(t, t.TempDir(), "session-eeee")
-	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
+	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.Subagents == nil || len(result.Subagents) != 0 || result.SessionModelName != "example-model-main" {
 		t.Errorf("%+v", result)
 	}
-	if _, err := readSubagents(filepath.Join(t.TempDir(), "missing.jsonl"), HerdrSessionStateIdle, subagentsNow); err == nil {
+	if _, err := readSubagents(filepath.Join(t.TempDir(), "missing.jsonl"), HerdrSessionStateIdle, subagentsNow, 0); err == nil {
 		t.Error("a history that is not there was read")
 	}
 }
@@ -372,7 +379,7 @@ func TestASecondReadSeesWhatWasAddedSinceTheFirst(t *testing.T) {
 	path, files := writeSubagentSession(t, t.TempDir(), "session-cccc")
 	files.writeSubagent("a0000000000000041", map[string]any{"agentType": "Explore", "description": "first", "spawnDepth": 1, "finished": true},
 		subagentUserLine("a0000000000000041", 570), subagentReplyLine("a0000000000000041", 560, "example-model-small", "end_turn", "Read"))
-	first, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
+	first, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +403,7 @@ func TestASecondReadSeesWhatWasAddedSinceTheFirst(t *testing.T) {
 	files.writeSubagent("a0000000000000042", map[string]any{"agentType": "general-purpose", "description": "second", "spawnDepth": 1, "finished": true},
 		subagentUserLine("a0000000000000042", 90), subagentReplyLine("a0000000000000042", 80, "example-model-small", "end_turn"))
 
-	second, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
+	second, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +429,7 @@ func TestAnAgentWaitingOnAToolStaysWhenThePersonSpeaksAgain(t *testing.T) {
 	// not answered.
 	files.writeSubagent("a0000000000000051", map[string]any{"agentType": "general-purpose", "description": "run the long tests", "spawnDepth": 1},
 		subagentUserLine("a0000000000000051", 1000), subagentReplyLine("a0000000000000051", 900, "example-model-main", "tool_use", "Bash"))
-	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
+	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +445,7 @@ func TestAnAgentsLongLastLineIsReadWhole(t *testing.T) {
 		subagentStamp(400), strings.Repeat("x", 600<<10))
 	files.writeSubagent("a0000000000000061", map[string]any{"agentType": "general-purpose", "description": "write a big file", "spawnDepth": 1},
 		subagentUserLine("a0000000000000061", 500), longReply)
-	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow)
+	result, err := readSubagents(path, HerdrSessionStateIdle, subagentsNow, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +493,7 @@ func TestAnUnfinishedAgentOfAnEarlierRequestIsNotTakenAsRunning(t *testing.T) {
 	files.writeSubagent("a0000000000000072", map[string]any{"agentType": "general-purpose", "description": "long gone", "spawnDepth": 1},
 		subagentUserLine("a0000000000000072", 2600), subagentReplyLine("a0000000000000072", 2500, "example-model-main", "tool_use", "Bash"))
 	for _, sessionState := range []string{HerdrSessionStateIdle, HerdrSessionStateWorking} {
-		result, err := readSubagents(path, sessionState, subagentsNow)
+		result, err := readSubagents(path, sessionState, subagentsNow, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -509,7 +516,7 @@ func TestAgentsOfTheCurrentRequestRunWhileTheSessionWorks(t *testing.T) {
 	if err := os.Chtimes(filepath.Join(files.folder, "agent-a0000000000000082.jsonl"), writtenAt, writtenAt); err != nil {
 		t.Fatal(err)
 	}
-	result, err := readSubagents(path, HerdrSessionStateWorking, subagentsNow)
+	result, err := readSubagents(path, HerdrSessionStateWorking, subagentsNow, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +538,7 @@ func TestALongLastReplyFollowedByAShortLineIsStillFound(t *testing.T) {
 	note := fmt.Sprintf(`{"type":"system","timestamp":%q,"agentId":"a0000000000000091","isSidechain":true}`, subagentStamp(399))
 	files.writeSubagent("a0000000000000091", map[string]any{"agentType": "general-purpose", "description": "said a lot", "spawnDepth": 1},
 		subagentUserLine("a0000000000000091", 500), longReply, note)
-	result, err := readSubagents(path, HerdrSessionStateWorking, subagentsNow)
+	result, err := readSubagents(path, HerdrSessionStateWorking, subagentsNow, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

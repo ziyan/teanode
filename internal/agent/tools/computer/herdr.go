@@ -77,14 +77,14 @@ func init() {
 				// asks, or an answer to a question that changed, is refused
 				// whoever calls.
 				Annotations: tools.LocalReadOnly(),
-				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is the sessions on every computer (or the one named), those asking first, then those working, a page at a time with totalCount and nextOffset, each with the state it is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history; subagents is the agents a Claude Code session started for its current request, as a tree: each with its kind, one-line task, model, whether it runs, is done or was stopped, how long it ran and the tools it used, an agent started by another listed under it (a Codex session has none), at most 100, the newest; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person, and files (attachment ids of this conversation: a picture, a document) are written on that computer and named before the text so the session opens them; a session at work reads it as a message in its turn, and one that asks a question refuses it until the question is answered; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; open starts a new Claude Code or Codex session in a directory, in a herdr pane of its own (a new tab of the workspace named after the directory, or a new workspace), or, given pane, beside that pane (a new tab in that pane's workspace, in its directory with its coding agent unless directory and coding_agent say otherwise); focus brings the session's tab forward in herdr on that computer, so whoever sits there sees it, only when the person asks; and close ends one and its pane, refused while it works; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together; call it by its paneName when you talk to the person, since its id means nothing to them.",
+				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is the sessions on every computer (or the one named), those asking first, then those working, a page at a time with totalCount and nextOffset, each with the state it is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history, whole, with offset for the older ones; subagents is the agents a Claude Code session started for its current request, as a tree: each with its kind, one-line task, model, whether it runs, is done or was stopped, how long it ran and the tools it used, an agent started by another listed under it (a Codex session has none), the newest 100 to a page, older ones with offset; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person, and files (attachment ids of this conversation: a picture, a document) are written on that computer and named before the text so the session opens them; a session at work reads it as a message in its turn, and one that asks a question refuses it until the question is answered; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; open starts a new Claude Code or Codex session in a directory, in a herdr pane of its own (a new tab of the workspace named after the directory, or a new workspace), or, given pane, beside that pane (a new tab in that pane's workspace, in its directory with its coding agent unless directory and coding_agent say otherwise); focus brings the session's tab forward in herdr on that computer, so whoever sits there sees it, only when the person asks; and close ends one and its pane, refused while it works; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together; call it by its paneName when you talk to the person, since its id means nothing to them.",
 				Parameters: tools.Object(map[string]any{
 					"action":                     tools.EnumProperty("what to do", herdrToolActions()...),
 					"computer":                   tools.StringProperty("which computer, by name; list covers every one, and the others need it when more than one runs herdr"),
 					"pane":                       tools.StringProperty("the pane, by its paneName as list gives it (workspace, tab and agent) or its paneId; every action but list and setup needs it; open takes it to open beside that pane"),
 					"limit":                      tools.IntegerProperty("list: how many sessions a page gives, 20 by default, 50 at most"),
-					"offset":                     tools.IntegerProperty("list: how many to skip, for the next page (the nextOffset the page before gave)"),
-					"turn_count":                 tools.IntegerProperty("read: how many of the last turns, 10 by default, 100 at most"),
+					"offset":                     tools.IntegerProperty("list: how many to skip, for the next page; read: how many of the newest turns to skip; subagents: how many of the newest agents to skip; each answer's nextOffset is the next page"),
+					"turn_count":                 tools.IntegerProperty("read: how many turns, 10 by default; the answer gives fewer when they would not fit one answer, and says where to read on"),
 					"should_include_tool_detail": tools.BooleanProperty("read: give each tool call its whole input and what the tool answered, when the one-line summary is not enough"),
 					"line_count":                 tools.IntegerProperty("screen: the last this many lines rather than the screen as it stands"),
 					"text":                       tools.StringProperty("send: what to type; enter is pressed after it"),
@@ -263,12 +263,17 @@ func runHerdr(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	switch action {
 	case "read":
 		asked.TurnCount = arguments.TurnCount
+		asked.Offset = arguments.Offset
 		asked.ShouldIncludeToolDetail = arguments.ShouldIncludeToolDetail
 		note = "read the coding session in " + asked.PaneID
+		return carryReshaped(ctx, attached, "herdr_"+action, asked, wait, note, func(data json.RawMessage) json.RawMessage {
+			return fitTurns(data, resultCharactersIn(ctx), asked.Offset)
+		})
 	case "subagents":
 		if holder, ok := attached.(tools.FeatureHolder); !ok || !holder.HasFeature(deviceComputer.FeatureHerdrSubagents) {
 			return nil, fmt.Errorf("the program on %s is too old to show a session's agents; ask the person to update teanode there and restart it", attached.Name())
 		}
+		asked.Offset = arguments.Offset
 		note = "looked at the agents of the coding session in " + asked.PaneID
 	case "screen":
 		asked.LineCount = arguments.LineCount
@@ -479,4 +484,44 @@ func listHerdr(ctx context.Context, run tools.Run, name string, limit, offset in
 	result.Untrusted = true
 	result.Note = "listed the herdr sessions"
 	return result, nil
+}
+
+// fitTurns gives a read of a coding session as many of its newest turns as
+// one answer holds, whole, rather than cutting any of them: the older ones
+// are left for the next read, and nextOffset says where it starts. A single
+// turn longer than the answer is cut by the answer's own fitting, which says
+// so.
+func fitTurns(data json.RawMessage, budget, offset int) json.RawMessage {
+	if len(data) <= budget {
+		return data
+	}
+	var answer map[string]json.RawMessage
+	if json.Unmarshal(data, &answer) != nil {
+		return data
+	}
+	var turns []json.RawMessage
+	if json.Unmarshal(answer["turns"], &turns) != nil || len(turns) < 2 {
+		return data
+	}
+	encodedWith := func(kept int) []byte {
+		page := make(map[string]any, len(answer)+2)
+		for key, value := range answer {
+			page[key] = value
+		}
+		page["turns"] = turns[len(turns)-kept:]
+		page["isTruncated"] = true
+		page["nextOffset"] = offset + kept
+		page["pageNote"] = fmt.Sprintf("the newest %d of the %d turns asked for are shown, to fit one answer; read on with offset %d", kept, len(turns), offset+kept)
+		return []byte(tools.EncodeJSON(page))
+	}
+	fewest, most := 1, len(turns)-1
+	for fewest < most {
+		middle := (fewest + most + 1) / 2
+		if len(encodedWith(middle)) <= budget {
+			fewest = middle
+		} else {
+			most = middle - 1
+		}
+	}
+	return encodedWith(fewest)
 }

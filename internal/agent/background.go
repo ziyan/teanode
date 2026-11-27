@@ -493,8 +493,6 @@ func backgroundOutcome(status *computer.BackgroundStatus) string {
 	// acknowledged as they are made, and never wake it.
 	case computer.BackgroundStopReasonStopped:
 		return "stopped by the person before it ended"
-	case computer.BackgroundStopReasonLifetime:
-		return "stopped after running 24 hours, as long as a background command may"
 	case computer.BackgroundStopReasonShutdown:
 		return "stopped because teanode computer was stopped on that machine"
 	}
@@ -600,13 +598,13 @@ func (self *Agent) BackgroundCommands(ctx context.Context, agentId string) ([]*B
 }
 
 // ReadBackgroundCommand is one of this agent's, with the last tailBytes of
-// each stream.
-func (self *Agent) ReadBackgroundCommand(ctx context.Context, agentId, computerName, id string, tailBytes int) (*BackgroundCommand, error) {
+// each stream, or with the part of one stream the arguments name.
+func (self *Agent) ReadBackgroundCommand(ctx context.Context, agentId, computerName string, arguments *computer.BackgroundReadArguments) (*BackgroundCommand, error) {
 	attached, err := self.backgroundComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
-	return readBackground(ctx, attached, agentId, id, tailBytes)
+	return readBackground(ctx, attached, agentId, arguments)
 }
 
 // StopBackgroundCommand stops one of this agent's for the person. The
@@ -618,7 +616,7 @@ func (self *Agent) StopBackgroundCommand(ctx context.Context, agentId, computerN
 	}
 	// Read first, for whose it is: the list shows only this agent's, and
 	// stopping must not reach further than seeing does.
-	if _, err := readBackground(ctx, attached, agentId, id, 1); err != nil {
+	if _, err := readBackground(ctx, attached, agentId, &computer.BackgroundReadArguments{ID: id, TailBytes: 1}); err != nil {
 		return nil, err
 	}
 	answer, err := attached.Ask(ctx, "background_stop", &computer.BackgroundStopArguments{ID: id}, deviceAnswerWait)
@@ -634,8 +632,9 @@ func (self *Agent) StopBackgroundCommand(ctx context.Context, agentId, computerN
 
 // readBackground reads one, and says there is no such command when it is
 // not this agent's.
-func readBackground(ctx context.Context, attached *attachedComputer, agentId, id string, tailBytes int) (*BackgroundCommand, error) {
-	answer, err := attached.Ask(ctx, "background_read", &computer.BackgroundReadArguments{ID: id, TailBytes: tailBytes}, deviceAnswerWait)
+func readBackground(ctx context.Context, attached *attachedComputer, agentId string, arguments *computer.BackgroundReadArguments) (*BackgroundCommand, error) {
+	id := arguments.ID
+	answer, err := attached.Ask(ctx, "background_read", arguments, deviceAnswerWait)
 	if err != nil {
 		return nil, err
 	}

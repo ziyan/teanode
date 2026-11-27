@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/passwords"
 	"github.com/ziyan/teanode/internal/util/security"
@@ -39,11 +40,6 @@ const (
 	// oldest that ended is forgotten first.
 	mostBackgroundKept = 64
 
-	// backgroundLifetime is how long one may run before it is stopped. A
-	// loop that watches for something that never comes should not outlive
-	// the day it was started in.
-	backgroundLifetime = 24 * time.Hour
-
 	// backgroundKeptAfterEnd is how long an ended one can still be read.
 	backgroundKeptAfterEnd = 24 * time.Hour
 
@@ -55,19 +51,19 @@ const (
 	// which is what the agent is woken with.
 	endedTailBytes = 4 << 10
 
-	// Output kept per stream: the first part, which says what the command
-	// set out to do, and the last, which says how it is doing or how it
-	// ended.
+	// What an answer carries of a stream that wrote more than outputBytes:
+	// the first part, which says what the command set out to do, and the
+	// last, which says how it is doing or how it ended. The rest is read by
+	// offset.
 	outputHeadBytes = 64 << 10
 	outputTailBytes = outputBytes - outputHeadBytes
 )
 
 // Why a background command was ended by somebody other than itself:
 // stopped when asked (by the person, or by the agent, which then needs no
-// word of it), out of lifetime, or with this program as it shut down.
+// word of it), or with this program as it shut down.
 const (
 	BackgroundStopReasonStopped  = "stopped"
-	BackgroundStopReasonLifetime = "lifetime"
 	BackgroundStopReasonShutdown = "shutdown"
 )
 
@@ -82,8 +78,8 @@ type BackgroundStatus struct {
 	IsRunning bool            `json:"isRunning"`
 	ExitCode  int             `json:"exitCode"`
 
-	// StopReason says it did not end on its own: stopped, or out of
-	// lifetime. Empty when it ended by itself or is still running.
+	// StopReason says it did not end on its own: stopped, or ended with the
+	// program. Empty when it ended by itself or is still running.
 	StopReason string `json:"stopReason,omitempty"`
 
 	// IsAcknowledged says the server has heard that it ended.
@@ -97,14 +93,32 @@ type BackgroundStatus struct {
 	IsStderrTruncated bool   `json:"isStderrTruncated,omitempty"`
 	StdoutByteCount   int64  `json:"stdoutByteCount"`
 	StderrByteCount   int64  `json:"stderrByteCount"`
+
+	// When one stream was read by offset (BackgroundReadArguments.Stream):
+	// which, where this read began, and where the next begins. Stdout or
+	// Stderr then holds just that part; IsStdoutTruncated and
+	// IsStderrTruncated say whether more follows it.
+	Stream           string `json:"stream,omitempty"`
+	StreamOffset     int64  `json:"streamOffset,omitempty"`
+	StreamNextOffset int64  `json:"streamNextOffset,omitempty"`
 }
 
 // BackgroundReadArguments ask for one background command with its output:
-// the last tailBytes of each stream, or all that is kept when that is zero.
+// the last tailBytes of each stream, or what text gives when that is zero.
+// With Stream (stdout or stderr), the bytes of that stream from Offset
+// instead, LengthBytes of them or readBytesDefault when that is zero; the
+// whole output is there to be read this way.
 type BackgroundReadArguments struct {
-	ID        string `json:"id"`
-	TailBytes int    `json:"tailBytes,omitempty"`
+	ID          string `json:"id"`
+	TailBytes   int    `json:"tailBytes,omitempty"`
+	Stream      string `json:"stream,omitempty"`
+	Offset      int64  `json:"offset,omitempty"`
+	LengthBytes int    `json:"lengthBytes,omitempty"`
 }
+
+// readBytesDefault is how much of a stream one read by offset gives when it
+// does not say.
+const readBytesDefault = 32 << 10
 
 // BackgroundStopArguments stop one. IsAcknowledged says whoever stopped it
 // needs no notice that it ended: the agent stopping its own command knows.
@@ -140,14 +154,13 @@ type backgroundCommand struct {
 	stdout    *outputBuffer
 	stderr    *outputBuffer
 
-	// stop ends the lifetime context, which kills the whole group.
+	// stop ends the command's context, which kills the whole group.
 	stop context.CancelFunc
 	done chan struct{}
 
 	// Set when it ends, before done closes.
-	endedAt         time.Time
-	exitCode        int
-	isOutOfLifetime bool
+	endedAt  time.Time
+	exitCode int
 
 	// Set under the registry's lock.
 	stopReason     string
@@ -187,8 +200,9 @@ func (self *BackgroundCommands) listen(notify func(*BackgroundStatus)) func() {
 }
 
 // adopt takes a started process into the registry: from here on it runs
-// until it ends, is stopped, or its lifetime is up.
-func (self *BackgroundCommands) adopt(held *backgroundCommand) error {
+// until it ends or is stopped. A running one is never refused; room is made
+// by forgetting an ended one.
+func (self *BackgroundCommands) adopt(held *backgroundCommand) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	self.forgetLocked()
@@ -197,7 +211,17 @@ func (self *BackgroundCommands) adopt(held *backgroundCommand) error {
 		<-held.done
 		self.ended(held)
 	}()
-	return nil
+}
+
+// keepEnded takes one that has already ended into the registry, so that its
+// output can be read by id; nobody is told about it, since the call that
+// ran it has its ending.
+func (self *BackgroundCommands) keepEnded(held *backgroundCommand) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.forgetLocked()
+	held.isAcknowledged = true
+	self.commands[held.id] = held
 }
 
 // forgetLocked drops what has ended long ago, and the oldest ended ones
@@ -207,6 +231,7 @@ func (self *BackgroundCommands) forgetLocked() {
 	for id, held := range self.commands {
 		if held.hasEnded() && now.Sub(held.endedAt) > backgroundKeptAfterEnd {
 			delete(self.commands, id)
+			held.discard()
 		}
 	}
 	if len(self.commands) < mostBackgroundKept {
@@ -231,6 +256,7 @@ func (self *BackgroundCommands) forgetLocked() {
 			break
 		}
 		delete(self.commands, held.id)
+		held.discard()
 	}
 }
 
@@ -272,7 +298,32 @@ func (self *BackgroundCommands) read(arguments *BackgroundReadArguments) (*Backg
 	if err != nil {
 		return nil, err
 	}
-	return held.statusLocked(max(arguments.TailBytes, 0)), nil
+	stream := strings.ToLower(strings.TrimSpace(arguments.Stream))
+	if stream == "" {
+		return held.statusLocked(max(arguments.TailBytes, 0)), nil
+	}
+	if stream != "stdout" && stream != "stderr" {
+		return nil, fmt.Errorf("%q is not stdout or stderr", arguments.Stream)
+	}
+	status := held.statusLocked(-1)
+	buffer := held.stdout
+	if stream == "stderr" {
+		buffer = held.stderr
+	}
+	length := arguments.LengthBytes
+	if length <= 0 {
+		length = readBytesDefault
+	}
+	// The buffer has its own lock, taken inside the registry's.
+	chunk, next := buffer.readFrom(arguments.Offset, length)
+	isMore := next < buffer.byteCount()
+	status.Stream, status.StreamOffset, status.StreamNextOffset = stream, min(max(arguments.Offset, 0), buffer.byteCount()), next
+	if stream == "stdout" {
+		status.Stdout, status.IsStdoutTruncated = chunk, isMore
+	} else {
+		status.Stderr, status.IsStderrTruncated = chunk, isMore
+	}
+	return status, nil
 }
 
 // stopOne asks one to end, and kills its group when it will not.
@@ -338,6 +389,11 @@ func (self *BackgroundCommands) Close() {
 		case <-time.After(backgroundStopWait):
 		}
 	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	for _, held := range self.commands {
+		held.discard()
+	}
 }
 
 // sortedLocked is every one, newest first. Called with the lock held.
@@ -348,6 +404,12 @@ func (self *BackgroundCommands) sortedLocked() []*backgroundCommand {
 	}
 	sort.Slice(sorted, func(left, right int) bool { return sorted[left].startedAt.After(sorted[right].startedAt) })
 	return sorted
+}
+
+// discard lets go of the output held on disk.
+func (self *backgroundCommand) discard() {
+	self.stdout.discard()
+	self.stderr.discard()
 }
 
 func (self *backgroundCommand) hasEnded() bool {
@@ -372,9 +434,6 @@ func (self *backgroundCommand) statusLocked(tailBytes int) *BackgroundStatus {
 	if !status.IsRunning {
 		endedAt := self.endedAt
 		status.EndedAt, status.ExitCode = &endedAt, self.exitCode
-		if status.StopReason == "" && self.isOutOfLifetime {
-			status.StopReason = BackgroundStopReasonLifetime
-		}
 	}
 	if tailBytes >= 0 {
 		status.Stdout, status.IsStdoutTruncated = self.stdout.tail(tailBytes)
@@ -391,7 +450,7 @@ func startCommand(options *Options, arguments *ShellArguments) (*backgroundComma
 	if arguments.Directory != "" {
 		directory = resolve(options.Home, arguments.Directory)
 	}
-	lifetime, stop := context.WithTimeout(context.Background(), backgroundLifetime)
+	lifetime, stop := context.WithCancel(context.Background())
 	var command *exec.Cmd
 	if runtime.GOOS == "windows" {
 		command = exec.CommandContext(lifetime, "cmd", "/C", arguments.Command)
@@ -429,47 +488,46 @@ func startCommand(options *Options, arguments *ShellArguments) (*backgroundComma
 		// Written before done closes, and read only after: that is what
 		// makes them safe to read without a lock.
 		held.endedAt, held.exitCode = time.Now(), code
-		held.isOutOfLifetime = errors.Is(lifetime.Err(), context.DeadlineExceeded)
 		stop()
 		close(held.done)
 	}()
 	return held, nil
 }
 
-// outputBuffer keeps the first and the last of what a stream wrote, and how
-// much it wrote in all. Safe to read while the command writes.
+// outputBuffer keeps everything a stream wrote, so that all of it can be
+// read back by offset. It holds the first outputBytes in memory, which is all
+// a command that prints little ever needs, and moves to a temporary file when
+// there is more. Safe to read while the command writes.
 type outputBuffer struct {
-	mutex    sync.Mutex
-	head     []byte
-	tailRing []byte
-	written  int64
+	mutex   sync.Mutex
+	memory  []byte
+	file    *os.File
+	written int64
 }
 
 func (self *outputBuffer) Write(data []byte) (int, error) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
+	if self.file == nil && len(self.memory)+len(data) > outputBytes {
+		// Without a file to spill to, it stays in memory: losing output is
+		// the worse of the two.
+		if file, err := os.CreateTemp("", "teanode-output-*"); err == nil {
+			if _, err := file.Write(self.memory); err == nil {
+				self.file, self.memory = file, nil
+			} else {
+				_ = file.Close()
+				_ = os.Remove(file.Name())
+			}
+		}
+	}
+	if self.file != nil {
+		if _, err := self.file.Write(data); err != nil {
+			return 0, err
+		}
+	} else {
+		self.memory = append(self.memory, data...)
+	}
 	self.written += int64(len(data))
-	rest := data
-	if room := outputHeadBytes - len(self.head); room > 0 {
-		taken := min(room, len(rest))
-		self.head = append(self.head, rest[:taken]...)
-		rest = rest[taken:]
-	}
-	if len(rest) == 0 {
-		return len(data), nil
-	}
-	// Only the last of one long write can survive it, so a write of any
-	// size costs at most twice the tail.
-	if len(rest) > outputTailBytes {
-		rest = rest[len(rest)-outputTailBytes:]
-	}
-	self.tailRing = append(self.tailRing, rest...)
-	if excess := len(self.tailRing) - outputTailBytes; excess > 0 {
-		// Copied rather than resliced, so the dropped bytes are let go.
-		kept := make([]byte, outputTailBytes, 2*outputTailBytes)
-		copy(kept, self.tailRing[excess:])
-		self.tailRing = kept
-	}
 	return len(data), nil
 }
 
@@ -479,38 +537,75 @@ func (self *outputBuffer) byteCount() int64 {
 	return self.written
 }
 
-// text is all that is kept, with a line where the middle was left out, and
-// whether anything was.
+// readLocked is up to length bytes from offset. Called with the lock held.
+func (self *outputBuffer) readLocked(offset int64, length int) []byte {
+	offset = min(max(offset, 0), self.written)
+	length = int(min(int64(max(length, 0)), self.written-offset))
+	if self.file == nil {
+		return append([]byte{}, self.memory[offset:offset+int64(length)]...)
+	}
+	read := make([]byte, length)
+	count, _ := self.file.ReadAt(read, offset)
+	return read[:count]
+}
+
+// readFrom is up to length bytes from offset, ending on a character
+// boundary, and the offset to read on from.
+func (self *outputBuffer) readFrom(offset int64, length int) (string, int64) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	offset = min(max(offset, 0), self.written)
+	read := self.readLocked(offset, length)
+	if offset+int64(len(read)) < self.written {
+		// Not at the end: do not end in the middle of a character.
+		for cut := len(read) - 1; cut >= 0 && cut >= len(read)-utf8.UTFMax; cut-- {
+			if utf8.RuneStart(read[cut]) {
+				if !utf8.FullRune(read[cut:]) {
+					read = read[:cut]
+				}
+				break
+			}
+		}
+	}
+	return strings.ToValidUTF8(string(read), "\uFFFD"), offset + int64(len(read))
+}
+
+// text is what an answer carries: all of it when it is short, and else the
+// first part and the last, with a line saying how many bytes lie between
+// (readable by offset), and whether anything was left out.
 func (self *outputBuffer) text() (string, bool) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	kept := int64(len(self.head) + len(self.tailRing))
-	if kept == self.written {
-		return string(self.head) + string(self.tailRing), false
+	if self.written <= outputBytes {
+		return string(self.readLocked(0, int(self.written))), false
 	}
-	return fmt.Sprintf("%s\n[%d bytes left out here]\n%s", self.head, self.written-kept, self.tailRing), true
+	head := self.readLocked(0, outputHeadBytes)
+	tail := self.readLocked(self.written-outputTailBytes, outputTailBytes)
+	return fmt.Sprintf("%s\n[%d bytes left out here, from byte %d; the command can be read by its id with an offset]\n%s",
+		head, self.written-int64(len(head))-int64(len(tail)), len(head), tail), true
 }
 
-// tail is the last most bytes written, or all that is kept when most is
-// zero, and whether that is less than everything.
+// tail is the last most bytes written, or what text gives when most is zero,
+// and whether that is less than everything.
 func (self *outputBuffer) tail(most int) (string, bool) {
 	if most == 0 {
 		return self.text()
 	}
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	joined := append(append([]byte{}, self.head...), self.tailRing...)
-	isTruncated := int64(len(joined)) < self.written
-	if len(self.tailRing) > 0 && int64(len(joined)) < self.written {
-		// The head and the tail are not contiguous; only the tail is the
-		// end of the stream.
-		joined = self.tailRing
+	start := max(self.written-int64(most), 0)
+	return string(self.readLocked(start, most)), start > 0
+}
+
+// discard lets go of the file the output moved to.
+func (self *outputBuffer) discard() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.file != nil {
+		_ = self.file.Close()
+		_ = os.Remove(self.file.Name())
+		self.file = nil
 	}
-	if len(joined) > most {
-		joined = joined[len(joined)-most:]
-		isTruncated = true
-	}
-	return string(joined), isTruncated
 }
 
 // agentEnvironment is the environment of a command the agent runs: this
