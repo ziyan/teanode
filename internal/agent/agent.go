@@ -283,6 +283,13 @@ func (self *Agent) PlanUsage(provider string) *llm.PlanUsage {
 	return self.settings.Registry.PlanUsage(provider)
 }
 
+// ReportedContextLengths is the window each model of the named provider was
+// last listed with, from what the registry kept; see
+// llm.Registry.ReportedContextLengths.
+func (self *Agent) ReportedContextLengths(provider string) map[string]int {
+	return self.settings.Registry.ReportedContextLengths(provider)
+}
+
 // Handler runs one kind of job. It returns nil when the job is done, a
 // Deferral to wait for a budget, or an error to retry.
 type Handler func(ctx context.Context, run *Run) error

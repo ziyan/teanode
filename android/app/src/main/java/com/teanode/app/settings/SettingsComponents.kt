@@ -215,6 +215,7 @@ fun FormDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     isWorking: Boolean = false,
+    isConfirmShown: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     if (LocalDialogsInline.current) {
@@ -228,7 +229,7 @@ fun FormDialog(
                     Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
                     androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
-                        TextButton(onClick = onConfirm, enabled = isConfirmEnabled && !isWorking) { Text(confirmLabel) }
+                        if (isConfirmShown) TextButton(onClick = onConfirm, enabled = isConfirmEnabled && !isWorking) { Text(confirmLabel) }
                     }
                 }
             }
@@ -239,7 +240,7 @@ fun FormDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { content() } },
-        confirmButton = { TextButton(onClick = onConfirm, enabled = isConfirmEnabled && !isWorking) { Text(confirmLabel) } },
+        confirmButton = { if (isConfirmShown) TextButton(onClick = onConfirm, enabled = isConfirmEnabled && !isWorking) { Text(confirmLabel) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }

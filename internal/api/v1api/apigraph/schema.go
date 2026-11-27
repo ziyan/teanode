@@ -171,6 +171,7 @@ type Mutation interface {
 	AgentSkillMutation
 	AgentSkillShareMutation
 	AgentProviderSignInMutation
+	AgentModelEntryMutation
 	AgentBillingMutation
 	AgentSourceTypeMutation
 	AgentSourceSecretMutation

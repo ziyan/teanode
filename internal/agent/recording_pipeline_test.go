@@ -36,7 +36,7 @@ func TestRecordingUploadDecodeAndWorkerEvidencePipeline(test *testing.T) {
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
 	configuration.Agent.Models.Transcription = "fixture:speaker-model"
-	configuration.Agent.Providers = []config.AgentProvider{{Name: "fixture", Kind: "openai"}}
+	configuration.Agent.Providers = []config.AgentProvider{{Name: "fixture", Kind: "openai", ModelEntries: []config.AgentModelEntry{{Model: "speaker-model"}}}}
 	userId := dbtest.CreateUser(test, database, "pipeline-owner")
 	var owner *models.User
 	var assistant *models.Agent

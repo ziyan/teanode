@@ -161,9 +161,7 @@ func (self *Agent) recordingAuthority(transaction db.Transaction, run *Run, prov
 	if currentAgent == nil || !currentAgent.Active() || owner == nil || owner.Disabled() || !permissions.Has(models.PermissionAgentUse) || !configuration.Agent.Enabled || configuration.Agent.Models.Transcription == "" {
 		return &Deferral{Until: time.Now().Add(time.Minute), Reason: "recording transcription is paused until its account, agent and provider are available"}
 	}
-	providerName, modelName, hasProvider := strings.Cut(providerModelName, ":")
-	provider := configuration.Agent.Provider(providerName)
-	if !hasProvider || provider == nil || !provider.IsEnabled() || !provider.Models.Admits(modelName) {
+	if !configuration.Agent.OffersModel(providerModelName) {
 		return &Deferral{Until: time.Now().Add(time.Minute), Reason: "recording transcription is paused until its account, agent and provider are available"}
 	}
 	if shouldCheckBudget {

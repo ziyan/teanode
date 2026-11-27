@@ -376,12 +376,12 @@ func TestRegistryIsNilWhenDisabled(t *testing.T) {
 	}
 }
 
-func TestRegistryResolvesWorkAndFilters(t *testing.T) {
+func TestRegistryResolvesWorkAndOffersEntries(t *testing.T) {
 	off := false
 	configuration := &config.Agent{
 		Enabled: true,
 		Providers: []config.AgentProvider{
-			{Name: "local", Kind: "openai", BaseURL: "http://127.0.0.1:1", Models: config.AgentProviderModels{Allow: []string{"qwen*"}}},
+			{Name: "local", Kind: "openai", BaseURL: "http://127.0.0.1:1", ModelEntries: []config.AgentModelEntry{{Model: "qwen2.5:14b"}, {Model: "qwen2.5:7b"}}},
 			{Name: "cloud", Kind: "anthropic", APIKey: "k", Enabled: &off},
 		},
 		Models: config.AgentModels{Default: "local:qwen2.5:14b", Fast: "local:qwen2.5:7b", Reply: "local:qwen2.5:14b"},
@@ -400,7 +400,7 @@ func TestRegistryResolvesWorkAndFilters(t *testing.T) {
 		t.Fatalf("ask should resolve to default: %q %v", model, err)
 	}
 	if _, _, err := registry.ForModel("local:llama3"); err == nil {
-		t.Fatal("a model outside the allow filter must be refused")
+		t.Fatal("a model that is not an entry must be refused")
 	}
 	if _, _, err := registry.ForModel("cloud:claude"); err == nil {
 		t.Fatal("a disabled provider must be refused")
@@ -408,9 +408,9 @@ func TestRegistryResolvesWorkAndFilters(t *testing.T) {
 	if _, err := registry.Embedding(); err == nil {
 		t.Fatal("no embedding model is configured")
 	}
-	filtered := FilterModels("local", &configuration.Providers[0].Models, []ModelInformation{{ID: "qwen2.5:7b"}, {ID: "llama3"}})
-	if len(filtered) != 1 || filtered[0].Name != "local:qwen2.5:7b" {
-		t.Fatalf("filtered %+v", filtered)
+	named := NameModels("local", []ModelInformation{{ID: "qwen2.5:7b", ContextLength: 32000}, {ID: "llama3"}})
+	if len(named) != 2 || named[0].Name != "local:qwen2.5:7b" || named[0].ContextLength != 32000 || named[1].Name != "local:llama3" {
+		t.Fatalf("named %+v", named)
 	}
 }
 
@@ -575,5 +575,82 @@ func TestAnEmptyAccountIsNotARateLimit(t *testing.T) {
 	}
 	if IsOutOfCreditError(nil) {
 		t.Error("no error is not an empty account")
+	}
+}
+
+// A model is offered when it is an enabled entry of an enabled provider, and
+// its window is the entry's own figure when it has one, else the provider's.
+func TestRegistryOffersEnabledEntriesAndPrefersTheEntryWindow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = writer.Write([]byte(`{"data":[{"id":"alpha-large","context_length":200000},{"id":"alpha-small","context_length":32000},{"id":"alpha-unlisted-in-entries","context_length":8000}]}`))
+	}))
+	defer server.Close()
+	off := false
+	configuration := &config.Agent{
+		Enabled: true,
+		Providers: []config.AgentProvider{{
+			Name: "alpha", Kind: "openai", BaseURL: server.URL,
+			ModelEntries: []config.AgentModelEntry{
+				{Model: "alpha-large", ContextWindow: 150000},
+				{Model: "alpha-small"},
+				{Model: "alpha-off", Enabled: &off},
+			},
+		}},
+		Models: config.AgentModels{Default: "alpha:alpha-large"},
+		Voice:  config.AgentVoice{Provider: "elsewhere"},
+		Limits: config.AgentLimits{RequestTimeout: config.Duration(time.Second)},
+	}
+	registry, err := Open(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := registry.ForModel("alpha:alpha-off"); err == nil {
+		t.Fatal("an entry that is switched off must be refused")
+	}
+	if _, _, err := registry.ForModel("alpha:alpha-unlisted-in-entries"); err == nil {
+		t.Fatal("a model the provider lists but has no entry must be refused")
+	}
+	if _, _, err := registry.ForModel("alpha:alpha-small"); err != nil {
+		t.Fatalf("an enabled entry must be offered: %v", err)
+	}
+	if length := registry.ContextLength(context.Background(), "alpha:alpha-large"); length != 150000 {
+		t.Fatalf("the entry's window must win over the provider's 200000, got %d", length)
+	}
+	if length := registry.ContextLength(context.Background(), "alpha:alpha-small"); length != 32000 {
+		t.Fatalf("an entry with no window takes the provider's, got %d", length)
+	}
+	listed := registry.ListModels(context.Background())
+	if len(listed) != 2 || listed[0].Name != "alpha:alpha-large" || listed[0].ContextLength != 150000 || listed[1].Name != "alpha:alpha-small" || listed[1].ContextLength != 32000 {
+		t.Fatalf("the list is the enabled entries with their windows: %+v", listed)
+	}
+	reported := registry.ReportedContextLengths("alpha")
+	if reported["alpha-large"] != 200000 || reported["alpha-small"] != 32000 {
+		t.Fatalf("the provider's own figures are kept apart from the override: %+v", reported)
+	}
+}
+
+// The model that hears voice messages is on no role, and the provider offers
+// it all the same, so a server set up with the defaults can transcribe; and
+// the registry's offer does not write into the configuration it was given.
+func TestRegistryOffersTheVoiceTranscriptionModel(t *testing.T) {
+	configuration := &config.Agent{
+		Enabled:   true,
+		Providers: []config.AgentProvider{{Name: "alpha", Kind: "openai", BaseURL: "http://127.0.0.1:1", ModelEntries: []config.AgentModelEntry{{Model: "alpha-large"}}}},
+		Models:    config.AgentModels{Default: "alpha:alpha-large"},
+		Voice:     config.AgentVoice{Enabled: true, TranscriptionModel: "alpha-hear"},
+		Limits:    config.AgentLimits{RequestTimeout: config.Duration(time.Second)},
+	}
+	registry, err := Open(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := registry.ForModel("alpha:alpha-hear"); err != nil {
+		t.Fatalf("the voice transcription model is offered: %v", err)
+	}
+	if _, _, err := registry.ForModel("alpha:alpha-other"); err == nil {
+		t.Fatal("a model nobody uses is not")
+	}
+	if len(configuration.Providers[0].ModelEntries) != 1 {
+		t.Fatalf("Open wrote into the configuration it was given: %+v", configuration.Providers[0].ModelEntries)
 	}
 }

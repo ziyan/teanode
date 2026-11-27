@@ -84,15 +84,69 @@ data class AgentPlanWindow(val usedPercent: Int = 0, val windowMinutes: Int = 0,
 @Serializable
 data class AgentPlanUsage(val planName: String = "", val observedAt: String = "", val windows: List<AgentPlanWindow> = emptyList())
 
-/** The price of the models matching one pattern, per million tokens. */
+/** What a model costs per million tokens; a zero is a price not known. */
 @Serializable
-data class AgentModelPrice(
-    val model: String = "", val input: Double = 0.0, val output: Double = 0.0, val cacheRead: Double = 0.0, val cacheWrite: Double = 0.0, val audioInput: Double = 0.0,
+data class AgentModelPricing(
+    val input: Double = 0.0, val output: Double = 0.0, val cacheRead: Double = 0.0, val cacheWrite: Double = 0.0, val audioInput: Double = 0.0,
 ) {
     fun toJson(): JsonObject = objectOf(
-        "model" to model, "input" to SettingsList.numberValue(input), "output" to SettingsList.numberValue(output),
+        "input" to SettingsList.numberValue(input), "output" to SettingsList.numberValue(output),
         "cacheRead" to SettingsList.numberValue(cacheRead), "cacheWrite" to SettingsList.numberValue(cacheWrite), "audioInput" to SettingsList.numberValue(audioInput),
     )
+}
+
+/** One model a provider offers, with the settings of its own. [model] is the id the service knows it by, and what a role stores after provider and a colon. */
+@Serializable
+data class AgentModelEntry(
+    val model: String = "",
+    val name: String = "",
+    /** The window the operator set, in tokens; zero takes the provider's own figure. */
+    val contextWindow: Int = 0,
+    /** The provider's own figure, read-only; zero when it reports none. */
+    val reportedContextWindow: Int = 0,
+    val pricing: AgentModelPricing = AgentModelPricing(),
+    val isEnabled: Boolean = true,
+    /** The roles that point at it: default, quick, embedding, and so on. */
+    val usedFor: List<String> = emptyList(),
+) {
+    /** What people read: the name, or the id when it has none. */
+    val displayName: String get() = name.ifEmpty { model }
+
+    /** As the server takes it: what is read-only (the reported window, the roles) is left out. */
+    fun toJson(): JsonObject = objectOf(
+        "model" to model, "name" to name, "contextWindow" to contextWindow, "pricing" to pricing.toJson(), "isEnabled" to isEnabled,
+    )
+}
+
+/** A model entry as its screen holds it: the numbers as typed. The id is fixed once the entry exists. */
+data class AgentModelEntryDraft(
+    val model: String, val name: String = "", val contextWindowText: String = "", val inputText: String = "", val outputText: String = "", val cacheReadText: String = "",
+    val cacheWriteText: String = "", val audioInputText: String = "", val isEnabled: Boolean = true,
+) {
+    private val contextWindow: Int get() = contextWindowText.toIntOrNull() ?: 0
+
+    /** The server refuses a window under a thousand tokens, other than none at all. */
+    val canSave: Boolean get() = model.trim().isNotEmpty() && (contextWindow == 0 || contextWindow >= AgentModelEntryDraft.MINIMUM_CONTEXT_WINDOW)
+
+    val entry: AgentModelEntry
+        get() = AgentModelEntry(
+            model = model.trim(), name = name.trim(), contextWindow = contextWindow,
+            pricing = AgentModelPricing(
+                SettingsList.number(inputText), SettingsList.number(outputText), SettingsList.number(cacheReadText), SettingsList.number(cacheWriteText),
+                SettingsList.number(audioInputText),
+            ),
+            isEnabled = isEnabled,
+        )
+
+    companion object {
+        const val MINIMUM_CONTEXT_WINDOW = 1000
+
+        fun of(entry: AgentModelEntry) = AgentModelEntryDraft(
+            model = entry.model, name = entry.name, contextWindowText = if (entry.contextWindow > 0) entry.contextWindow.toString() else "",
+            inputText = SettingsList.text(entry.pricing.input), outputText = SettingsList.text(entry.pricing.output), cacheReadText = SettingsList.text(entry.pricing.cacheRead),
+            cacheWriteText = SettingsList.text(entry.pricing.cacheWrite), audioInputText = SettingsList.text(entry.pricing.audioInput), isEnabled = entry.isEnabled,
+        )
+    }
 }
 
 /** A model service, as the operator's list shows it. Its key is never read back. */
@@ -107,14 +161,14 @@ data class AgentProviderSettings(
     val hasRefreshToken: Boolean = false,
     val account: String = "",
     @SerialName("enabled") val isEnabled: Boolean = true,
-    val allow: List<String> = emptyList(),
-    val deny: List<String> = emptyList(),
+    /** What the provider offers: the models it has entries for. */
+    val models: List<AgentModelEntry> = emptyList(),
+    /** What a model without a price of its own costs. */
     val pricingInput: Double = 0.0,
     val pricingOutput: Double = 0.0,
     val pricingCacheRead: Double = 0.0,
     val pricingCacheWrite: Double = 0.0,
     val pricingAudioInput: Double = 0.0,
-    val modelPricing: List<AgentModelPrice>? = null,
     val planUsage: AgentPlanUsage? = null,
 ) {
     val isSignedInKind: Boolean get() = providerKind == SIGNED_IN_KIND
@@ -126,9 +180,9 @@ data class AgentProviderSettings(
     val storedParameters: JsonObject
         get() = objectOf(
             "name" to name, "kind" to providerKind, "baseUrl" to baseUrl, "apiKey" to "", "billingApiKey" to "", "enabled" to isEnabled,
-            "allow" to allow, "deny" to deny, "pricingInput" to SettingsList.numberValue(pricingInput), "pricingOutput" to SettingsList.numberValue(pricingOutput),
+            "pricingInput" to SettingsList.numberValue(pricingInput), "pricingOutput" to SettingsList.numberValue(pricingOutput),
             "pricingCacheRead" to SettingsList.numberValue(pricingCacheRead), "pricingCacheWrite" to SettingsList.numberValue(pricingCacheWrite),
-            "pricingAudioInput" to SettingsList.numberValue(pricingAudioInput), "modelPricing" to (modelPricing ?: emptyList()).map { price -> price.toJson() },
+            "pricingAudioInput" to SettingsList.numberValue(pricingAudioInput),
         )
 
     companion object {
@@ -199,17 +253,44 @@ object AgentFeatureSwitches {
     fun agentParameters(features: Map<String, Boolean>): JsonObject = objectOf("features" to JsonObject(features.mapValues { entry -> JsonPrimitive(entry.value) }))
 }
 
+/** A model a role may name: the provider's name and the model's, which a role stores as [value], provider:model. */
+data class AgentModelOption(val value: String, val providerName: String, val modelName: String) {
+    /** As a picker reads it: Provider · Model. */
+    val label: String get() = "$providerName · $modelName"
+}
+
 /** The models the providers offer, split the way the models form offers them: a deciding provider (kind typesafe) answers only the decide and categorize slots. */
-data class AgentModelChoices(val forWork: List<String>, val forDeciding: List<String>) {
+data class AgentModelChoices(val forWork: List<AgentModelOption>, val forDeciding: List<AgentModelOption>) {
     companion object {
-        fun of(knownModels: List<String>, providers: List<AgentProviderSettings>): AgentModelChoices {
+        /** What a role may name: every model that is on, of every provider that is on, in the providers' order. */
+        fun offered(providers: List<AgentProviderSettings>): List<AgentModelOption> = providers.filter { provider -> provider.isEnabled }.flatMap { provider ->
+            provider.models.filter { entry -> entry.isEnabled }.map { entry -> AgentModelOption("${provider.name}:${entry.model}", provider.name, entry.displayName) }
+        }
+
+        /** A stored provider:model as a picker names it: by the entry's name when the providers have it, else as stored. */
+        fun optionFor(value: String, providers: List<AgentProviderSettings>): AgentModelOption {
+            val providerName = value.substringBefore(':')
+            val modelId = value.substringAfter(':', "")
+            val entry = providers.firstOrNull { provider -> provider.name == providerName }?.models?.firstOrNull { candidate -> candidate.model == modelId }
+            return AgentModelOption(value, providerName, entry?.displayName ?: modelId.ifEmpty { value })
+        }
+
+        fun of(options: List<AgentModelOption>, providers: List<AgentProviderSettings>): AgentModelChoices {
             val deciderNames = providers.filter { provider -> provider.providerKind == "typesafe" }.map { provider -> provider.name }.toSet()
-            fun isDecider(model: String): Boolean = deciderNames.contains(model.substringBefore(':'))
-            return AgentModelChoices(knownModels.filter { model -> !isDecider(model) }, knownModels.filter { model -> isDecider(model) })
+            fun isDecider(option: AgentModelOption): Boolean = deciderNames.contains(option.providerName)
+            return AgentModelChoices(options.filter { option -> !isDecider(option) }, options.filter { option -> isDecider(option) })
         }
 
         /** What a picker lists: the known models, with the one chosen first when the list does not know it. */
-        fun listed(known: List<String>, chosen: String): List<String> = if (chosen.isEmpty() || known.contains(chosen)) known else listOf(chosen) + known
+        fun listed(known: List<AgentModelOption>, chosen: String, providers: List<AgentProviderSettings>): List<AgentModelOption> =
+            if (chosen.isEmpty() || known.any { option -> option.value == chosen }) known else listOf(optionFor(chosen, providers)) + known
+
+        /** The ids a provider's live list offers that are not yet entries: the list names models provider:model, and the provider is the part before the first colon. */
+        fun idsToAdd(liveNames: List<String>, provider: AgentProviderSettings): List<String> {
+            val taken = provider.models.map { entry -> entry.model }.toSet()
+            return liveNames.filter { name -> name.startsWith("${provider.name}:") }.map { name -> name.substring(provider.name.length + 1) }
+                .filter { modelId -> modelId.isNotEmpty() && !taken.contains(modelId) }.distinct()
+        }
     }
 }
 
@@ -337,25 +418,14 @@ data class AgentGeneralDraft(val isEnabled: Boolean, val instructions: String, v
     }
 }
 
-/** One row of per-model prices as typed. */
-data class ModelPriceDraft(
-    val rowId: Int = 0, val model: String = "", val inputText: String = "", val outputText: String = "", val cacheReadText: String = "", val cacheWriteText: String = "",
-    val audioInputText: String = "",
-) {
-    companion object {
-        fun of(rowId: Int, price: AgentModelPrice) = ModelPriceDraft(
-            rowId, price.model, SettingsList.text(price.input), SettingsList.text(price.output), SettingsList.text(price.cacheRead), SettingsList.text(price.cacheWrite),
-            SettingsList.text(price.audioInput),
-        )
-    }
-}
-
 /** A provider as its editor holds it. The key is never read back: blank keeps the stored one. */
 data class AgentProviderDraft(
     val name: String = "", val providerKind: String = "openai", val baseUrl: String = "", val apiKey: String = "", val hasApiKey: Boolean = false,
     val billingApiKey: String = "", val hasBillingApiKey: Boolean = false, val hasRefreshToken: Boolean = false, val isEnabled: Boolean = true,
-    val allowText: String = "", val denyText: String = "", val pricingInputText: String = "", val pricingOutputText: String = "", val pricingCacheReadText: String = "",
-    val pricingCacheWriteText: String = "", val pricingAudioInputText: String = "", val modelPrices: List<ModelPriceDraft> = emptyList(),
+    val pricingInputText: String = "", val pricingOutputText: String = "", val pricingCacheReadText: String = "", val pricingCacheWriteText: String = "",
+    val pricingAudioInputText: String = "",
+    /** The models the provider offers, as read. The settings save does not send them: the server keeps the entries, and they change only through their own calls. */
+    val models: List<AgentModelEntry> = emptyList(),
 ) {
     val isSignedInKind: Boolean get() = providerKind == AgentProviderSettings.SIGNED_IN_KIND
 
@@ -363,22 +433,13 @@ data class AgentProviderDraft(
     val canSave: Boolean get() = name.trim().isNotEmpty() && (!isSignedInKind || hasRefreshToken)
 
     val parameters: JsonObject
-        get() {
-            val prices = modelPrices.filter { row -> row.model.trim().isNotEmpty() }.map { row ->
-                AgentModelPrice(
-                    row.model.trim(), SettingsList.number(row.inputText), SettingsList.number(row.outputText), SettingsList.number(row.cacheReadText),
-                    SettingsList.number(row.cacheWriteText), SettingsList.number(row.audioInputText),
-                )
-            }
-            return objectOf(
-                "name" to name.trim(), "kind" to providerKind, "baseUrl" to baseUrl.trim(), "apiKey" to apiKey, "billingApiKey" to billingApiKey, "enabled" to isEnabled,
-                "allow" to SettingsList.lineItems(allowText), "deny" to SettingsList.lineItems(denyText),
-                "pricingInput" to SettingsList.numberValue(SettingsList.number(pricingInputText)), "pricingOutput" to SettingsList.numberValue(SettingsList.number(pricingOutputText)),
-                "pricingCacheRead" to SettingsList.numberValue(SettingsList.number(pricingCacheReadText)),
-                "pricingCacheWrite" to SettingsList.numberValue(SettingsList.number(pricingCacheWriteText)),
-                "pricingAudioInput" to SettingsList.numberValue(SettingsList.number(pricingAudioInputText)), "modelPricing" to prices.map { price -> price.toJson() },
-            )
-        }
+        get() = objectOf(
+            "name" to name.trim(), "kind" to providerKind, "baseUrl" to baseUrl.trim(), "apiKey" to apiKey, "billingApiKey" to billingApiKey, "enabled" to isEnabled,
+            "pricingInput" to SettingsList.numberValue(SettingsList.number(pricingInputText)), "pricingOutput" to SettingsList.numberValue(SettingsList.number(pricingOutputText)),
+            "pricingCacheRead" to SettingsList.numberValue(SettingsList.number(pricingCacheReadText)),
+            "pricingCacheWrite" to SettingsList.numberValue(SettingsList.number(pricingCacheWriteText)),
+            "pricingAudioInput" to SettingsList.numberValue(SettingsList.number(pricingAudioInputText)),
+        )
 
     /**
      * The agent section that saves the provider list with this draft added, or put in place of the provider at the index given. The list
@@ -403,10 +464,10 @@ data class AgentProviderDraft(
         fun of(provider: AgentProviderSettings) = AgentProviderDraft(
             name = provider.name, providerKind = provider.providerKind, baseUrl = provider.baseUrl, hasApiKey = provider.hasApiKey,
             hasBillingApiKey = provider.hasBillingApiKey ?: false, hasRefreshToken = provider.hasRefreshToken, isEnabled = provider.isEnabled,
-            allowText = SettingsList.text(provider.allow), denyText = SettingsList.text(provider.deny), pricingInputText = SettingsList.text(provider.pricingInput),
+            pricingInputText = SettingsList.text(provider.pricingInput),
             pricingOutputText = SettingsList.text(provider.pricingOutput), pricingCacheReadText = SettingsList.text(provider.pricingCacheRead),
             pricingCacheWriteText = SettingsList.text(provider.pricingCacheWrite), pricingAudioInputText = SettingsList.text(provider.pricingAudioInput),
-            modelPrices = (provider.modelPricing ?: emptyList()).mapIndexed { index, price -> ModelPriceDraft.of(index, price) },
+            models = provider.models,
         )
 
         /** The agent section that saves the provider list without the provider at the index given. */
@@ -681,6 +742,20 @@ suspend fun Connection.agentServerSettings(): AgentServerSettings = execute<Agen
 /** Changes part of the operator's agent settings, a section at a time, and answers with what is now stored. */
 suspend fun Connection.updateAgentServerSettings(agentParameters: JsonObject): AgentServerSettings =
     execute<UpdateAgentSettingsAnswer>(ManageServerDocuments.MANAGE_UPDATE_AGENT_SETTINGS, mapOf("agent" to agentParameters)).UpdateSettings.agent
+
+@Serializable private class SaveAgentModelEntryAnswer(val SaveAgentModelEntry: AgentModelEntry)
+
+@Serializable private class DeleteAgentModelEntryAnswer(val DeleteAgentModelEntry: Boolean = true)
+
+/** Adds a model to a provider, or changes the one with the same id. Settings read afterwards show it. */
+suspend fun Connection.saveAgentModelEntry(providerName: String, entry: AgentModelEntry) {
+    execute<SaveAgentModelEntryAnswer>(ManageServerDocuments.MANAGE_SAVE_AGENT_MODEL_ENTRY, variablesOf("providerName" to providerName, "entry" to entry.toJson()))
+}
+
+/** Takes a model off a provider. The server refuses while a role uses it, and says which. */
+suspend fun Connection.deleteAgentModelEntry(providerName: String, model: String) {
+    execute<DeleteAgentModelEntryAnswer>(ManageServerDocuments.MANAGE_DELETE_AGENT_MODEL_ENTRY, variablesOf("providerName" to providerName, "model" to model))
+}
 
 /** The models the enabled providers offer, written provider:model. A provider that cannot be reached contributes nothing. */
 suspend fun Connection.agentModelNames(): List<String> = execute<ListAgentModelsAnswer>(ManageServerDocuments.MANAGE_AGENT_MODELS).ListAgentModels.mapNotNull { model -> model?.name }

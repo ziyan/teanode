@@ -200,87 +200,25 @@ type AgentProvider struct {
 	// on.
 	Enabled *bool `yaml:"enabled,omitempty"`
 
-	// Models filters what the service offers: patterns matched against
-	// model names, the way a shell matches file names. Empty allow means
-	// everything; deny is applied after allow.
-	Models AgentProviderModels `yaml:"models"`
+	// ModelEntries are the models this provider offers, each with its own
+	// name, context window, prices and switch. A role names one of them as
+	// "provider:model"; a model that is not an entry is not offered.
+	ModelEntries []AgentModelEntry `yaml:"models,omitempty"`
 
 	// Pricing, per million tokens, lets the usage view show money beside
 	// tokens. Optional; zero means unknown. It is what a model of this
-	// provider costs unless ModelPricing names it.
+	// provider costs unless its entry has prices of its own.
 	Pricing AgentPricing `yaml:"pricing"`
 
-	// ModelPricing prices particular models, since one provider's models
-	// rarely cost the same: a small model and a large one behind the same
-	// key are priced apart. Each entry's model is matched the way the
-	// allow and deny lists are, so "gpt-5*" prices a family, and the
-	// first entry that matches a model is the one used.
-	ModelPricing []AgentModelPricing `yaml:"modelPricing,omitempty"`
-}
-
-// AgentModelPricing is what one model, or one family of them, costs.
-type AgentModelPricing struct {
-	// Model is the name after the provider's, or a pattern for it.
-	Model string `yaml:"model"`
-
-	// Input, Output, CacheRead, CacheWrite and AudioInput, per million
-	// tokens, as on a provider.
-	Input      float64 `yaml:"input,omitempty"`
-	Output     float64 `yaml:"output,omitempty"`
-	CacheRead  float64 `yaml:"cacheRead,omitempty"`
-	CacheWrite float64 `yaml:"cacheWrite,omitempty"`
-	AudioInput float64 `yaml:"audioInput,omitempty"`
-}
-
-// PricingFor is what a model of this provider costs: the first entry
-// that names it, or the provider's own prices.
-func (self *AgentProvider) PricingFor(model string) AgentPricing {
-	if index := self.PricingEntryIndexFor(model); index >= 0 {
-		priced := &self.ModelPricing[index]
-		return AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite, AudioInput: priced.AudioInput}
-	}
-	return self.Pricing
-}
-
-// PricingEntryIndexFor is the position in ModelPricing of the entry that
-// PricingFor would use for a model, or -1 when none names it and the
-// provider's own prices apply.
-func (self *AgentProvider) PricingEntryIndexFor(model string) int {
-	// "text-embedding-3-small@512" is text-embedding-3-small at a width,
-	// which this program names that way to keep vectors of different
-	// widths apart. It is the same model at the same price, and matching
-	// the whole name against the price list missed it -- so every
-	// embedding was charged at the provider's default rate for chat
-	// input, seven and a half times what it cost, and the dashboard said
-	// forty-seven dollars on a day the provider billed six.
-	if name, _, found := strings.Cut(model, "@"); found {
-		model = name
-	}
-	for index := range self.ModelPricing {
-		if matchesAny([]string{self.ModelPricing[index].Model}, model) {
-			return index
-		}
-	}
-	return -1
+	// deprecated is what an older release stored under models and
+	// modelPricing, held between decoding the provider and converting it
+	// to ModelEntries, which needs the roles (see agent_model.go).
+	deprecated *deprecatedProvider
 }
 
 // IsEnabled resolves the unset Enabled to on.
 func (self *AgentProvider) IsEnabled() bool {
 	return self.Enabled == nil || *self.Enabled
-}
-
-// AgentProviderModels is the allow and deny filter over a provider's models.
-type AgentProviderModels struct {
-	Allow []string `yaml:"allow,omitempty"`
-	Deny  []string `yaml:"deny,omitempty"`
-}
-
-// Admits says whether the filter lets a model name through.
-func (self *AgentProviderModels) Admits(model string) bool {
-	if len(self.Allow) > 0 && !matchesAny(self.Allow, model) {
-		return false
-	}
-	return !matchesAny(self.Deny, model)
 }
 
 func matchesAny(patterns []string, value string) bool {
@@ -1514,8 +1452,10 @@ func (self *Configuration) validateAgent(validator *validator) {
 			validator.add(field, "%q names a provider that is disabled", value)
 			return
 		}
-		if !provider.Models.Admits(model) {
-			validator.add(field, "%q names a model the provider's filter does not admit", value)
+		if entry := provider.ModelEntryFor(model); entry == nil {
+			validator.add(field, "%q names a model that is not one of provider %q's models; add it to the provider first", value, providerName)
+		} else if !entry.IsEnabled() {
+			validator.add(field, "%q names a model that is switched off on provider %q", value, providerName)
 		}
 		// A decider writes nothing and a writer cannot say how sure it is,
 		// so neither stands in for the other. Caught here rather than at
@@ -1597,17 +1537,7 @@ func (self *Configuration) validateAgent(validator *validator) {
 			validator.add("agent.limits."+field.name, "must not be negative; zero is the default")
 		}
 	}
-	for index, provider := range agent.Providers {
-		for position, priced := range provider.ModelPricing {
-			path := fmt.Sprintf("agent.providers[%d].modelPricing[%d]", index, position)
-			if strings.TrimSpace(priced.Model) == "" {
-				validator.add(path+".model", "required: the model this prices, or a pattern such as gpt-5*")
-			}
-			if priced.Input < 0 || priced.Output < 0 || priced.CacheRead < 0 {
-				validator.add(path, "prices cannot be negative")
-			}
-		}
-	}
+	validateModelEntries(agent, validator)
 	for _, field := range []struct {
 		name  string
 		value float64

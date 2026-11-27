@@ -37,7 +37,7 @@ var billedModels = []billedModel{
 	{name: "beta-model", inputRate: 1, outputRate: 8, hasUsedHere: true},
 	// The report names a snapshot; the agent uses the name without it.
 	{name: "gamma-model-2026-03-17", outputRate: 10, hasUsedHere: false},
-	// Covered by a pattern entry.
+	// An entry of its own, priced low.
 	{name: "delta-one", outputRate: 3, hasUsedHere: true},
 	// Billed to the account, never used by the agent.
 	{name: "never-used-model", outputRate: 5},
@@ -125,10 +125,11 @@ func newBillingFixture(test *testing.T) *billingFixture {
 		Name: "openai-test", Kind: config.AgentProviderKindOpenAI, APIKey: "model-key",
 		BillingAPIKey: billingTestKey, BaseURL: fixture.server.URL + "/v1",
 		Pricing: config.AgentPricing{Input: 1, Output: 4, CacheRead: 0.1},
-		ModelPricing: []config.AgentModelPricing{
-			{Model: "alpha-model", Input: 0.2, Output: 1.25, CacheRead: 0.02},
-			{Model: "gamma-model", Output: 5},
-			{Model: "delta-*", Output: 1},
+		ModelEntries: []config.AgentModelEntry{
+			{Model: "alpha-model", Pricing: config.AgentPricing{Input: 0.2, Output: 1.25, CacheRead: 0.02}},
+			{Model: "beta-model"},
+			{Model: "gamma-model", Pricing: config.AgentPricing{Output: 5}},
+			{Model: "delta-one", Pricing: config.AgentPricing{Output: 1}},
 		},
 	}}
 	fixture.store = config.NewMemoryStore(configuration)
@@ -201,13 +202,11 @@ func (self *billingFixture) provider() config.AgentProvider {
 	return self.store.Current().Agent.Providers[0]
 }
 
-func (self *billingFixture) entry(test *testing.T, model string) *config.AgentModelPricing {
+func (self *billingFixture) entry(test *testing.T, model string) *config.AgentPricing {
 	test.Helper()
 	provider := self.provider()
-	for index := range provider.ModelPricing {
-		if provider.ModelPricing[index].Model == model {
-			return &provider.ModelPricing[index]
-		}
+	if entry := provider.ModelEntryFor(model); entry != nil {
+		return &entry.Pricing
 	}
 	return nil
 }
@@ -269,8 +268,9 @@ func TestCheckProviderPricesFollowsTheBill(test *testing.T) {
 	if alpha != nil && alpha.Output != 1.25 {
 		test.Errorf("alpha-model output changed to %v, within five percent", alpha.Output)
 	}
-	// A model with no entry gets one, seeded with the prices it was
-	// charged at, so the kinds the bill did not speak about keep them.
+	// An entry with no prices of its own is seeded with the prices the
+	// model was charged at, so the kinds the bill did not speak about keep
+	// them.
 	beta := fixture.entry(test, "beta-model")
 	if beta == nil || beta.Output != 8 || beta.Input != 1 || beta.CacheRead != 0.1 || beta.CacheWrite != 0 {
 		test.Errorf("beta-model entry %+v: output should be 8, the rest the provider's own", beta)
@@ -283,23 +283,9 @@ func TestCheckProviderPricesFollowsTheBill(test *testing.T) {
 	if fixture.entry(test, "gamma-model-2026-03-17") != nil {
 		test.Errorf("an entry was written under the dated name")
 	}
-	// A pattern is reported and not changed.
-	if delta := fixture.entry(test, "delta-*"); delta == nil || delta.Output != 1 {
-		test.Errorf("delta-* entry %+v changed", delta)
-	}
-	isPatternReported := false
-	for _, compared := range checks[0].Compared {
-		if compared.Model == "delta-one" && compared.TokenKind == "output" && compared.IsPattern && compared.ConfiguredPerMillion == 1 && compared.BilledPerMillion == 3 {
-			isPatternReported = true
-		}
-	}
-	if !isPatternReported {
-		test.Errorf("the pattern's difference is not in what was compared: %+v", checks[0].Compared)
-	}
-	for _, change := range checks[0].Changed {
-		if change.Model == "delta-one" {
-			test.Errorf("a model under a pattern was changed: %+v", change)
-		}
+	// A model that has its own entry is changed like any other.
+	if delta := fixture.entry(test, "delta-one"); delta == nil || delta.Output != 3 {
+		test.Errorf("delta-one entry %+v: output should be 3", delta)
 	}
 	// A model the agent never used is left alone, and not even compared.
 	if fixture.entry(test, "never-used-model") != nil {
@@ -310,9 +296,10 @@ func TestCheckProviderPricesFollowsTheBill(test *testing.T) {
 			test.Errorf("a model the agent never used was compared: %+v", compared)
 		}
 	}
-	// alpha cache writes, beta output, gamma output; beta input matches.
-	if len(checks[0].Changed) != 3 {
-		test.Errorf("expected 3 changes, got %+v", checks[0].Changed)
+	// alpha cache writes, beta output, gamma output, delta output; beta
+	// input matches.
+	if len(checks[0].Changed) != 4 {
+		test.Errorf("expected 4 changes, got %+v", checks[0].Changed)
 	}
 
 	// One audit event per changed model, holding the old and new price.
@@ -321,8 +308,8 @@ func TestCheckProviderPricesFollowsTheBill(test *testing.T) {
 	for _, event := range events {
 		resourceIds[event.ResourceID] = event
 	}
-	if len(events) != 3 {
-		test.Fatalf("expected 3 audit events, got %d", len(events))
+	if len(events) != 4 {
+		test.Fatalf("expected 4 audit events, got %d", len(events))
 	}
 	event := resourceIds["agent.providers/openai-test/alpha-model"]
 	if event == nil || event.Action != models.AuditActionUpdate {
@@ -338,7 +325,7 @@ func TestCheckProviderPricesFollowsTheBill(test *testing.T) {
 	if len(beforePrices) != 1 || beforePrices["cacheWrite"] != 0 || len(afterPrices) != 1 || afterPrices["cacheWrite"] != 0.25 {
 		test.Errorf("alpha-model audit event holds %v then %v", beforePrices, afterPrices)
 	}
-	for _, resourceId := range []string{"agent.providers/openai-test/beta-model", "agent.providers/openai-test/gamma-model"} {
+	for _, resourceId := range []string{"agent.providers/openai-test/beta-model", "agent.providers/openai-test/gamma-model", "agent.providers/openai-test/delta-one"} {
 		if resourceIds[resourceId] == nil {
 			test.Errorf("no audit event for %s", resourceId)
 		}
@@ -354,6 +341,7 @@ func TestCheckProviderPricesFollowsTheBill(test *testing.T) {
 		"alpha-model cache writes: 0 USD → 0.25 USD per million tokens",
 		"beta-model output: 4 USD → 8 USD per million tokens",
 		"gamma-model output: 5 USD → 10 USD per million tokens",
+		"delta-one output: 1 USD → 3 USD per million tokens",
 	} {
 		if !strings.Contains(messages[1].Content, want) {
 			test.Errorf("the telling lacks %q:\n%s", want, messages[1].Content)
@@ -366,7 +354,7 @@ func TestCheckProviderPricesFollowsTheBill(test *testing.T) {
 	// The check is kept for the dashboard.
 	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
 		stored, err := tx.GetAgentBillingCheck("openai-test")
-		if err != nil || stored == nil || len(stored.Changed) != 3 || len(stored.Compared) != len(checks[0].Compared) {
+		if err != nil || stored == nil || len(stored.Changed) != 4 || len(stored.Compared) != len(checks[0].Compared) {
 			test.Errorf("stored check %+v, %v", stored, err)
 		}
 		if missing, err := tx.GetAgentBillingCheck("no-such-provider"); err != nil || missing != nil {
@@ -415,7 +403,7 @@ func TestCheckProviderPricesFollowsTheBill(test *testing.T) {
 	if fixture.requestCount.Load() == requestsBefore {
 		test.Errorf("a forced check did not read the bill")
 	}
-	if len(fixture.auditedPrices(test)) != 3 || len(fixture.told(test, fixture.operatorAgentID)) != 2 {
+	if len(fixture.auditedPrices(test)) != 4 || len(fixture.told(test, fixture.operatorAgentID)) != 2 {
 		test.Errorf("a check that changed nothing wrote an audit event or told an operator")
 	}
 }
@@ -433,8 +421,8 @@ func TestCheckProviderPricesRefusedKey(test *testing.T) {
 		test.Fatalf("expected the refusal as the check's error, got %+v", checks)
 	}
 	after := fixture.provider()
-	if len(after.ModelPricing) != len(before.ModelPricing) || fixture.entry(test, "alpha-model").CacheWrite != 0 {
-		test.Errorf("a refused key changed the prices: %+v", after.ModelPricing)
+	if len(after.ModelEntries) != len(before.ModelEntries) || fixture.entry(test, "alpha-model").CacheWrite != 0 {
+		test.Errorf("a refused key changed the prices: %+v", after.ModelEntries)
 	}
 	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
 		stored, err := tx.GetAgentBillingCheck("openai-test")

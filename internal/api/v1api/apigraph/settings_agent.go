@@ -23,8 +23,8 @@ type AgentSettingsQuery interface {
 	// the settings page's Test button does. Needs server:manage.
 	TestAgentProvider(ctx context.Context, arguments TestAgentProviderArguments) ([]*AgentModel, error)
 
-	// Every enabled provider's models through its filter, named
-	// provider:model, for the model pickers. A provider that cannot be
+	// Every enabled provider's own list of models, named
+	// provider:model, to offer when a model is added to it. A provider that cannot be
 	// reached contributes nothing; Test says why. Needs server:manage.
 	ListAgentModels(ctx context.Context) ([]*AgentModel, error)
 }
@@ -34,7 +34,7 @@ type TestAgentProviderArguments struct {
 	Name string `json:"name"`
 }
 
-// AgentModel is one model a provider offers, named the way the
+// AgentModel is one model a provider lists, named the way the
 // configuration names it.
 type AgentModel struct {
 	CanTranscribe                bool   `json:"canTranscribe"`
@@ -102,9 +102,11 @@ type AgentProviderSettings struct {
 	HasBillingAPIKey bool `json:"hasBillingApiKey"`
 	// HasRefreshToken says a provider that is signed in to rather than
 	// keyed has been, and Account is the account it bills to.
-	HasRefreshToken   bool     `json:"hasRefreshToken"`
-	Account           string   `json:"account"`
-	Enabled           bool     `json:"enabled"`
+	HasRefreshToken bool   `json:"hasRefreshToken"`
+	Account         string `json:"account"`
+	Enabled         bool   `json:"enabled"`
+	// Allow and Deny are deprecated and answer empty: a provider offers
+	// the models in Models, and no pattern says which.
 	Allow             []string `json:"allow"`
 	Deny              []string `json:"deny"`
 	PricingInput      float64  `json:"pricingInput"`
@@ -117,9 +119,89 @@ type AgentProviderSettings struct {
 	// its allowance; absent for one paid by the token, and until the plan
 	// has answered once since the server started.
 	PlanUsage *AgentPlanUsageSettings `json:"planUsage" graphapi:"nullable"`
-	// ModelPricing prices particular models of this provider, in order:
-	// the first entry that matches a model is the one used.
+	// ModelPricing is deprecated and answers empty: a model's prices are
+	// on its entry in Models.
 	ModelPricing []*AgentModelPricingSettings `json:"modelPricing"`
+
+	// Models are the models this provider offers, each with its own
+	// settings. The model pickers list these.
+	Models []*AgentModelEntry `json:"models"`
+}
+
+// AgentModelEntry is one model a provider offers. It is what the provider
+// settings list, and what SaveAgentModelEntry takes.
+type AgentModelEntry struct {
+	// Model is the id the service knows it by, and what a role stores
+	// after the provider's name and a colon.
+	Model string `json:"model"`
+
+	// Name is what people read; empty reads as the id.
+	Name string `json:"name" graphapi:"nullable"`
+
+	// ContextWindow corrects the window the provider reports, in tokens;
+	// zero takes the provider's figure.
+	ContextWindow int `json:"contextWindow" graphapi:"nullable"`
+
+	// ReportedContextWindow is the provider's own figure, 0 when it has
+	// not said. Read only.
+	ReportedContextWindow int `json:"reportedContextWindow" graphapi:"outputonly"`
+
+	// Pricing is what it costs per million tokens; zero fields are
+	// unknown, and an entry with none takes the provider's prices.
+	Pricing AgentPricing `json:"pricing" graphapi:"nullable"`
+
+	// IsEnabled keeps the entry while switching it off.
+	IsEnabled *bool `json:"isEnabled" graphapi:"nullable"`
+
+	// UsedFor is the roles that point at the model: default, quick,
+	// embedding, and so on. Read only.
+	UsedFor []string `json:"usedFor" graphapi:"outputonly"`
+}
+
+// AgentPricing is what a model costs per million tokens; a zero is unknown.
+type AgentPricing struct {
+	Input      float64 `json:"input" graphapi:"nullable"`
+	Output     float64 `json:"output" graphapi:"nullable"`
+	CacheRead  float64 `json:"cacheRead" graphapi:"nullable"`
+	CacheWrite float64 `json:"cacheWrite" graphapi:"nullable"`
+	AudioInput float64 `json:"audioInput" graphapi:"nullable"`
+}
+
+// modelEntrySettings is a provider's entries as they are read back, never
+// nil so a client can count them, with the roles that use each.
+func modelEntrySettings(agent *config.Agent, provider *config.AgentProvider) []*AgentModelEntry {
+	settings := []*AgentModelEntry{}
+	for index := range provider.ModelEntries {
+		entry := &provider.ModelEntries[index]
+		isEnabled := entry.IsEnabled()
+		settings = append(settings, &AgentModelEntry{
+			Model:         entry.Model,
+			Name:          entry.Name,
+			ContextWindow: entry.ContextWindow,
+			Pricing: AgentPricing{
+				Input: entry.Pricing.Input, Output: entry.Pricing.Output, CacheRead: entry.Pricing.CacheRead,
+				CacheWrite: entry.Pricing.CacheWrite, AudioInput: entry.Pricing.AudioInput,
+			},
+			IsEnabled: &isEnabled,
+			UsedFor:   agent.RolesUsing(provider.Name, entry.Model),
+		})
+	}
+	return settings
+}
+
+// configEntry is an entry as the configuration holds it.
+func (self *AgentModelEntry) configEntry() config.AgentModelEntry {
+	isEnabled := self.IsEnabled == nil || *self.IsEnabled
+	return config.AgentModelEntry{
+		Model:         strings.TrimSpace(self.Model),
+		Name:          strings.TrimSpace(self.Name),
+		ContextWindow: self.ContextWindow,
+		Pricing: config.AgentPricing{
+			Input: self.Pricing.Input, Output: self.Pricing.Output, CacheRead: self.Pricing.CacheRead,
+			CacheWrite: self.Pricing.CacheWrite, AudioInput: self.Pricing.AudioInput,
+		},
+		Enabled: &isEnabled,
+	}
 }
 
 // AgentModelPricingSettings is one model's prices, per million tokens.
@@ -130,16 +212,6 @@ type AgentModelPricingSettings struct {
 	CacheRead  float64 `json:"cacheRead"`
 	CacheWrite float64 `json:"cacheWrite"`
 	AudioInput float64 `json:"audioInput"`
-}
-
-// modelPricingSettings is a provider's per-model prices as they are read
-// back, never nil so a client can count them.
-func modelPricingSettings(priced []config.AgentModelPricing) []*AgentModelPricingSettings {
-	settings := []*AgentModelPricingSettings{}
-	for _, entry := range priced {
-		settings = append(settings, &AgentModelPricingSettings{Model: entry.Model, Input: entry.Input, Output: entry.Output, CacheRead: entry.CacheRead, CacheWrite: entry.CacheWrite, AudioInput: entry.AudioInput})
-	}
-	return settings
 }
 
 // AgentModelsSettings assigns work to models.
@@ -511,14 +583,15 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			HasRefreshToken:   provider.RefreshToken != "",
 			Account:           provider.Account,
 			Enabled:           provider.IsEnabled(),
-			Allow:             nonNil(provider.Models.Allow),
-			Deny:              nonNil(provider.Models.Deny),
+			Allow:             []string{},
+			Deny:              []string{},
 			PricingInput:      provider.Pricing.Input,
 			PricingOutput:     provider.Pricing.Output,
 			PricingCacheRead:  provider.Pricing.CacheRead,
 			PricingCacheWrite: provider.Pricing.CacheWrite,
 			PricingAudioInput: provider.Pricing.AudioInput,
-			ModelPricing:      modelPricingSettings(provider.ModelPricing),
+			ModelPricing:      []*AgentModelPricingSettings{},
+			Models:            modelEntrySettings(agent, &provider),
 		})
 	}
 	for _, server := range agent.MCP.Servers {
@@ -616,7 +689,10 @@ type AgentProviderParameters struct {
 	// rename carries its stored key along.
 	PreviousName string `json:"previousName" graphapi:"nullable"`
 
-	Enabled           bool                         `json:"enabled"`
+	Enabled bool `json:"enabled"`
+
+	// Allow, Deny and ModelPricing are deprecated and ignored: the models
+	// are Models, each with its own prices.
 	Allow             []string                     `json:"allow" graphapi:"nullable"`
 	Deny              []string                     `json:"deny" graphapi:"nullable"`
 	PricingInput      float64                      `json:"pricingInput" graphapi:"nullable"`
@@ -625,6 +701,11 @@ type AgentProviderParameters struct {
 	PricingCacheWrite float64                      `json:"pricingCacheWrite" graphapi:"nullable"`
 	PricingAudioInput float64                      `json:"pricingAudioInput" graphapi:"nullable"`
 	ModelPricing      []*AgentModelPricingSettings `json:"modelPricing" graphapi:"nullable"`
+
+	// Models replaces the provider's entries when given. Left out, the
+	// provider keeps the ones it has, so a save that only changes a key or
+	// a price does not take its models away.
+	Models []*AgentModelEntry `json:"models" graphapi:"nullable"`
 }
 
 // AgentModelsParameters assign work to models; each given field replaces
@@ -870,16 +951,16 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 				RefreshToken:  kept.RefreshToken,
 				Account:       kept.Account,
 				Enabled:       &enabled,
-				Models:        config.AgentProviderModels{Allow: trimmed(given.Allow), Deny: trimmed(given.Deny)},
+				ModelEntries:  kept.ModelEntries,
 				Pricing:       config.AgentPricing{Input: given.PricingInput, Output: given.PricingOutput, CacheRead: given.PricingCacheRead, CacheWrite: given.PricingCacheWrite, AudioInput: given.PricingAudioInput},
 			}
-			for _, priced := range given.ModelPricing {
-				if priced == nil || strings.TrimSpace(priced.Model) == "" {
-					continue
+			if given.Models != nil {
+				provider.ModelEntries = nil
+				for _, entry := range given.Models {
+					if entry != nil {
+						provider.ModelEntries = append(provider.ModelEntries, entry.configEntry())
+					}
 				}
-				provider.ModelPricing = append(provider.ModelPricing, config.AgentModelPricing{
-					Model: strings.TrimSpace(priced.Model), Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite, AudioInput: priced.AudioInput,
-				})
 			}
 			if key := strings.TrimSpace(given.APIKey); key != "" && key != config.Redacted {
 				provider.APIKey = key
@@ -1251,7 +1332,7 @@ func listProviderModels(ctx context.Context, declared *config.AgentProvider, tim
 		return nil, err
 	}
 	result := []*AgentModel{}
-	for _, model := range llm.FilterModels(declared.Name, &declared.Models, listed) {
+	for _, model := range llm.NameModels(declared.Name, listed) {
 		described := &AgentModel{Provider: model.Provider, Model: model.Model, Name: model.Name, ContextLength: model.ContextLength}
 		if transcriber, isTranscriber := provider.(llm.Transcriber); isTranscriber {
 			capabilities := transcriber.TranscriptionCapabilities(model.Model)
