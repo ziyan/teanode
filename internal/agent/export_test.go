@@ -35,3 +35,15 @@ func SetStopGrace(grace time.Duration) time.Duration {
 	stopGrace = grace
 	return previous
 }
+
+// SetIdleCompactionDelay is how long a conversation is quiet before it is
+// compacted, and returns what it was.
+func SetIdleCompactionDelay(delay time.Duration) time.Duration {
+	previous := idleCompactionDelay
+	idleCompactionDelay = delay
+	return previous
+}
+
+// SoftHistoryLimit and HardHistoryLimit are the two limits for a window.
+func SoftHistoryLimit(contextLength int) int { return softHistoryLimit(contextLength) }
+func HardHistoryLimit(contextLength int) int { return hardHistoryLimit(contextLength) }
