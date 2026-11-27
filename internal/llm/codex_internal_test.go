@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -676,5 +677,25 @@ func TestASecondMessageAfterALineBreakIsOneBlankLineDown(test *testing.T) {
 	}
 	if answer.Message.Content != "Checking.\n\nDone." {
 		test.Errorf("it said %q", answer.Message.Content)
+	}
+}
+
+// A policy flag in the stream is told apart from the service being down: it
+// is a refusal of the request, which IsPolicyRefusal names.
+func TestAPolicyFlagIsARefusalNotAnOutage(test *testing.T) {
+	test.Parallel()
+
+	made, server := signedIn(test, func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(writer, "data: "+`{"type":"response.failed","response":{"error":{"message":"Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt."}}}`+"\n\n")
+	})
+	defer server.Close()
+
+	_, err := made.Chat(context.Background(), &ChatRequest{Model: "gpt-5.5", Messages: []ChatMessage{{Role: RoleUser, Content: "Match these receipt lines."}}})
+	var apiError *APIError
+	if !IsPolicyRefusal(err) || !errors.As(err, &apiError) || apiError.Status != http.StatusBadRequest {
+		test.Fatalf("a policy flag came back as %#v", err)
+	}
+	if IsPolicyRefusal(errors.New("llm: the answer stopped: context deadline exceeded")) {
+		test.Error("a timeout was taken for a policy flag")
 	}
 }
