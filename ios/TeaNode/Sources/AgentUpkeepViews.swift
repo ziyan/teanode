@@ -57,6 +57,18 @@ struct UpkeepTag: View {
 /// UpkeepWords is how these screens say the server's times, amounts and
 /// fixed words, as the dashboard says them.
 enum UpkeepWords {
+    /// A time of day kept as "HH:MM", as a date today for a time picker.
+    static func clockDate(_ text: String) -> Date {
+        let parts = UpkeepClock.hourAndMinute(text) ?? (hour: 0, minute: 0)
+        return Calendar.current.date(bySettingHour: parts.hour, minute: parts.minute, second: 0, of: .now) ?? .now
+    }
+
+    /// A time picker's date as the "HH:MM" the server keeps.
+    static func clockText(_ date: Date) -> String {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return UpkeepClock.text(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
+    }
+
     static func when(_ text: String?) -> String {
         ServerTime.date(text)?.formatted(date: .abbreviated, time: .shortened) ?? ""
     }
