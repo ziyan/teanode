@@ -159,6 +159,12 @@ type AgentFeedItemArguments struct {
 type ChooseAgentFeedItemArguments struct {
 	FeedItemID string `json:"feedItemId"`
 	ChoiceKey  string `json:"choiceKey"`
+
+	// RunConversationID is the conversation of the turn that answers for
+	// the person, who asked it to in words; the feed tool sends it, and a
+	// screen leaves it out. That turn carries an action out itself, so the
+	// answer is recorded and no turn of its own starts.
+	RunConversationID *string `json:"runConversationId" graphapi:"nullable"`
 }
 
 // LikeAgentFeedItemArguments name a card and say whether it is liked.
@@ -187,9 +193,6 @@ type RestoreAgentFeedItemsArguments struct {
 // WithdrawAgentFeedItemArguments name a card.
 type WithdrawAgentFeedItemArguments struct {
 	FeedItemID string `json:"feedItemId"`
-
-	// RunConversationID is as for ResolveAgentFeedItem.
-	RunConversationID *string `json:"runConversationId" graphapi:"nullable"`
 }
 
 // ResolveAgentFeedItemArguments name a card and say what cleared.
@@ -201,7 +204,7 @@ type ResolveAgentFeedItemArguments struct {
 	ResolutionNote *string `json:"resolutionNote" graphapi:"nullable"`
 
 	// RunConversationID is the goal's conversation when the goal's own turn
-	// resolves, which limits it to the cards it posted; the feed tool sends
+	// resolves, so the card says which goal resolved it; the feed tool sends
 	// it, and a screen leaves it out.
 	RunConversationID *string `json:"runConversationId" graphapi:"nullable"`
 }
@@ -732,11 +735,20 @@ func (self *graph) ChooseAgentFeedItem(ctx context.Context, arguments ChooseAgen
 	if err != nil {
 		return nil, err
 	}
+	answeringConversationId := ""
+	if arguments.RunConversationID != nil && strings.TrimSpace(*arguments.RunConversationID) != "" {
+		conversation, err := self.ownConversation(tx, found, *arguments.RunConversationID, true)
+		if err != nil {
+			return nil, err
+		}
+		answeringConversationId = conversation.ID
+	}
 	chosen, err := worker.ChooseFeedItem(ctx, &agent.FeedChoiceSettings{
 		Agent: found, Owner: principal.User,
 		Operations:   &agentOperations{graph: self, user: principal.User, permissions: principal.Permissions, impersonator: principal.Impersonator},
 		IsPersonsTap: principal.IsPersonsTap(), IsOperatorActingAsPerson: principal.IsImpersonation(),
 		Item: item, ChoiceKey: strings.TrimSpace(arguments.ChoiceKey),
+		AnsweringConversationID: answeringConversationId,
 	})
 	if err != nil {
 		return nil, translateError(err)
@@ -843,9 +855,6 @@ func (self *graph) RestoreAgentFeedItems(ctx context.Context, arguments RestoreA
 	if err != nil {
 		return nil, err
 	}
-	if err := requireNotFeedAgentCommand(ctx, "restoring a card"); err != nil {
-		return nil, err
-	}
 	if len(arguments.FeedItemIDs) > feedChangeMost {
 		return nil, fmt.Errorf("%w: at most %d cards at once", api.ErrInvalidArguments, feedChangeMost)
 	}
@@ -873,11 +882,8 @@ func (self *graph) RestoreAgentFeedItems(ctx context.Context, arguments RestoreA
 }
 
 func (self *graph) WithdrawAgentFeedItem(ctx context.Context, arguments WithdrawAgentFeedItemArguments) (bool, error) {
-	principal, found, err := self.requireAgentPerson(ctx)
+	_, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
-		return false, err
-	}
-	if err := requireNotFeedAgentCommand(ctx, "withdrawing a card"); err != nil {
 		return false, err
 	}
 	tx := self.transaction(ctx)
@@ -885,11 +891,7 @@ func (self *graph) WithdrawAgentFeedItem(ctx context.Context, arguments Withdraw
 	if err != nil {
 		return false, err
 	}
-	resolver, err := self.feedResolver(ctx, tx, principal, found, arguments.RunConversationID)
-	if err != nil {
-		return false, err
-	}
-	if err := agent.CheckFeedWithdrawal(resolver, item); err != nil {
+	if err := agent.CheckFeedWithdrawal(item); err != nil {
 		return false, translateError(err)
 	}
 	if item.InteractionID != "" && !item.IsChosen() {
@@ -914,17 +916,6 @@ func (self *graph) WithdrawAgentFeedItem(ctx context.Context, arguments Withdraw
 		return false, err
 	}
 	return true, nil
-}
-
-// requireNotFeedAgentCommand refuses what the agent's own shell command asks
-// of the feed on its own account. Such a command reaches the API with the
-// person's token and says so in api.AgentCommandHeader. These operations are
-// the person's, and the agent's feed tool's, which carries no request.
-func requireNotFeedAgentCommand(ctx context.Context, doing string) error {
-	if request := api.ContextRequest(ctx); request != nil && request.Header.Get(api.AgentCommandHeader) != "" {
-		return fmt.Errorf("%w: %s is for the person, and for the feed tool inside a turn; a command the agent runs does not do it", api.ErrPermissionDenied, doing)
-	}
-	return nil
 }
 
 // announceFeedChange tells the open feeds once the request commits.
@@ -966,9 +957,6 @@ func (self *graph) ResolveAgentFeedItem(ctx context.Context, arguments ResolveAg
 	if err != nil {
 		return nil, err
 	}
-	if err := requireNotFeedAgentCommand(ctx, "resolving a card"); err != nil {
-		return nil, err
-	}
 	tx := self.transaction(ctx)
 	item, err := self.ownFeedItem(tx, found, arguments.FeedItemID)
 	if err != nil {
@@ -995,9 +983,6 @@ func (self *graph) ResolveAgentFeedItem(ctx context.Context, arguments ResolveAg
 func (self *graph) UnresolveAgentFeedItem(ctx context.Context, arguments UnresolveAgentFeedItemArguments) (*AgentFeedItemView, error) {
 	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
-		return nil, err
-	}
-	if err := requireNotFeedAgentCommand(ctx, "taking the resolved mark off a card"); err != nil {
 		return nil, err
 	}
 	tx := self.transaction(ctx)

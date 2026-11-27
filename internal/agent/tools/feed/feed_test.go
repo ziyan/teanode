@@ -29,7 +29,7 @@ func (self *recordedOperations) Execute(_ context.Context, document string, vari
 	self.documents = append(self.documents, document)
 	self.variables = append(self.variables, variables)
 	card := `{"feedItemId":"card-1","feedSourceKind":"goal","feedSourceId":"` + self.cardSourceID + `"}`
-	return json.Unmarshal([]byte(`{"GetAgentFeedItem":`+card+`,"PostAgentFeedItem":{"feedItemId":"card-1"},"DismissAgentFeedItems":["card-1"],"RestoreAgentFeedItems":["card-1"],"WithdrawAgentFeedItem":true,"ResolveAgentFeedItem":{"feedItemId":"card-1","isResolved":true},"UnresolveAgentFeedItem":{"feedItemId":"card-1"},"ListAgentFeed":{"feedItems":[],"unreadCount":0}}`), response)
+	return json.Unmarshal([]byte(`{"GetAgentFeedItem":`+card+`,"PostAgentFeedItem":{"feedItemId":"card-1"},"DismissAgentFeedItems":["card-1"],"RestoreAgentFeedItems":["card-1"],"WithdrawAgentFeedItem":true,"ResolveAgentFeedItem":{"feedItemId":"card-1","isResolved":true},"UnresolveAgentFeedItem":{"feedItemId":"card-1"},"ListAgentFeed":{"feedItems":[],"unreadCount":0},"ListAgentFeedStack":{"feedItems":[],"unreadCount":0},"ChooseAgentFeedItem":{"feedItemId":"card-1"},"LikeAgentFeedItem":{"feedItemId":"card-1"},"ShowLessLikeAgentFeedItem":{"feedItemId":"card-1"},"MarkAgentFeedRead":1}`), response)
 }
 
 type feedRun struct {
@@ -152,9 +152,8 @@ func TestTheFeedToolUpdatesWithdrawsAndLists(t *testing.T) {
 	}
 }
 
-// The dismissed cards are listed on their own, and a goal's own turn cannot
-// bring back what the person dismissed, though the person's conversation can.
-func TestTheFeedToolListsTheDismissedAndAGoalTurnCannotRestore(t *testing.T) {
+// The dismissed cards are listed on their own.
+func TestTheFeedToolListsTheDismissed(t *testing.T) {
 	operations := &recordedOperations{}
 	ctx := tools.WithRun(context.Background(), &feedRun{operations: operations})
 	if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"list","dismissed_only":true}`)}); err != nil {
@@ -162,15 +161,6 @@ func TestTheFeedToolListsTheDismissedAndAGoalTurnCannotRestore(t *testing.T) {
 	}
 	if operations.variables[0]["isDismissedOnly"] != true {
 		t.Fatalf("the dismissed cards were not asked for: %+v", operations.variables[0])
-	}
-	goal := &models.AgentConversation{ID: "goal-conversation-1", Kind: models.AgentConversationGoal, Goal: "Watch the parcels"}
-	goalTurn := tools.WithRun(context.Background(), &feedRun{operations: operations, conversation: goal, isHeadless: true})
-	if _, err := feedTool(t).Run(goalTurn, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"restore","feed_item_ids":["card-1"]}`)}); err == nil || !strings.Contains(err.Error(), "cannot restore") {
-		t.Fatalf("a goal's own turn restored a card: %v", err)
-	}
-	personInGoal := tools.WithRun(context.Background(), &feedRun{operations: operations, conversation: goal})
-	if _, err := feedTool(t).Run(personInGoal, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"restore","feed_item_ids":["card-1"]}`)}); err != nil {
-		t.Fatalf("the person in a goal's conversation could not restore: %v", err)
 	}
 }
 
@@ -263,40 +253,71 @@ func TestTheFeedToolDescriptionSaysTheRulesOfACard(t *testing.T) {
 	}
 }
 
-// A goal's own turn withdraws only a card whose source is that goal: the tool
-// reads the card first, and sends the goal's conversation so that the server
-// checks it again. The person's turn is not held to it.
-func TestAGoalTurnWithdrawsOnlyItsOwnCards(t *testing.T) {
-	goal := &models.AgentConversation{ID: "goal-conversation-1", Kind: models.AgentConversationGoal, Goal: "Watch the parcels"}
-	arguments := []byte(`{"action":"withdraw","feed_item_id":"card-1"}`)
-
-	foreign := &recordedOperations{cardSourceID: "goal-conversation-2"}
-	goalTurn := tools.WithRun(context.Background(), &feedRun{operations: foreign, conversation: goal, isHeadless: true})
-	if _, err := feedTool(t).Run(goalTurn, &tools.Call{ID: "c1", Arguments: arguments}); err == nil || !strings.Contains(err.Error(), "only a card it posted") {
-		t.Fatalf("a goal withdrew another goal's card: %v", err)
+// What the person's buttons do, the tool does when they ask in words: each
+// action sends the operation the apps send, a choice names this turn's
+// conversation so that no second turn starts, and the pages go on from the
+// cursor the page before gave.
+func TestTheFeedToolDoesWhatThePersonsButtonsDo(t *testing.T) {
+	operations := &recordedOperations{}
+	main := &models.AgentConversation{ID: "main-conversation-1", Kind: models.AgentConversationMain}
+	ctx := tools.WithRun(context.Background(), &feedRun{operations: operations, conversation: main})
+	calls := []struct {
+		arguments string
+		operation string
+		variables map[string]any
+	}{
+		{`{"action":"list","after":"cursor-2"}`, "ListAgentFeed(", map[string]any{"after": "cursor-2"}},
+		{`{"action":"stack","stack_key":"brief-1"}`, "ListAgentFeedStack(", map[string]any{"feedStackKey": "brief-1"}},
+		{`{"action":"show","feed_item_id":"card-1"}`, "GetAgentFeedItem(", map[string]any{"feedItemId": "card-1"}},
+		{`{"action":"choose","feed_item_id":"card-1","choice_key":"unsubscribe"}`, "ChooseAgentFeedItem(", map[string]any{"feedItemId": "card-1", "choiceKey": "unsubscribe", "runConversationId": "main-conversation-1"}},
+		{`{"action":"like","feed_item_id":"card-1"}`, "LikeAgentFeedItem(", map[string]any{"feedItemId": "card-1", "isLiked": true}},
+		{`{"action":"unlike","feed_item_id":"card-1"}`, "LikeAgentFeedItem(", map[string]any{"feedItemId": "card-1", "isLiked": false}},
+		{`{"action":"less","feed_item_id":"card-1"}`, "ShowLessLikeAgentFeedItem(", map[string]any{"feedItemId": "card-1"}},
+		{`{"action":"read","feed_item_ids":["card-1","card-2"]}`, "MarkAgentFeedRead(", nil},
 	}
-	for _, document := range foreign.documents {
-		if strings.Contains(document, "WithdrawAgentFeedItem") {
-			t.Fatalf("the withdrawal was sent: %+v", foreign.documents)
+	for index, call := range calls {
+		if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(call.arguments)}); err != nil {
+			t.Fatalf("%s: %v", call.arguments, err)
+		}
+		if !strings.Contains(operations.documents[index], call.operation) {
+			t.Fatalf("%s sent %s", call.arguments, operations.documents[index])
+		}
+		for name, value := range call.variables {
+			if operations.variables[index][name] != value {
+				t.Fatalf("%s: %s is %v, want %v", call.arguments, name, operations.variables[index][name], value)
+			}
 		}
 	}
+	if ids, _ := operations.variables[len(calls)-1]["feedItemIds"].([]string); len(ids) != 2 {
+		t.Fatalf("read did not name both cards: %+v", operations.variables[len(calls)-1])
+	}
+	for _, arguments := range []string{`{"action":"choose","feed_item_id":"card-1"}`, `{"action":"stack"}`, `{"action":"read"}`, `{"action":"like"}`} {
+		if _, err := feedTool(t).Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(arguments)}); err == nil {
+			t.Fatalf("%s ran without what it needs", arguments)
+		}
+	}
+}
 
-	own := &recordedOperations{cardSourceID: "goal-conversation-1"}
-	goalTurn = tools.WithRun(context.Background(), &feedRun{operations: own, conversation: goal, isHeadless: true})
-	if _, err := feedTool(t).Run(goalTurn, &tools.Call{ID: "c1", Arguments: arguments}); err != nil {
-		t.Fatal(err)
+// A goal's own turn presses the person's buttons as a conversation with them
+// does, when its instructions say to: nothing here is held back for it.
+func TestAGoalTurnPressesThePersonsButtons(t *testing.T) {
+	operations := &recordedOperations{}
+	goal := &models.AgentConversation{ID: "goal-conversation-1", Kind: models.AgentConversationGoal, Goal: "Watch the parcels"}
+	goalTurn := tools.WithRun(context.Background(), &feedRun{operations: operations, conversation: goal, isHeadless: true})
+	for _, arguments := range []string{
+		`{"action":"choose","feed_item_id":"card-1","choice_key":"yes"}`,
+		`{"action":"like","feed_item_id":"card-1"}`,
+		`{"action":"unlike","feed_item_id":"card-1"}`,
+		`{"action":"less","feed_item_id":"card-1"}`,
+		`{"action":"read","feed_item_ids":["card-1"]}`,
+		`{"action":"restore","feed_item_ids":["card-1"]}`,
+		`{"action":"withdraw","feed_item_id":"card-1"}`,
+	} {
+		if _, err := feedTool(t).Run(goalTurn, &tools.Call{ID: "c1", Arguments: []byte(arguments)}); err != nil {
+			t.Fatalf("a goal's own turn could not run %s: %v", arguments, err)
+		}
 	}
-	last := len(own.documents) - 1
-	if !strings.Contains(own.documents[last], "WithdrawAgentFeedItem") || own.variables[last]["runConversationId"] != "goal-conversation-1" {
-		t.Fatalf("the withdrawal does not name the goal's conversation: %+v %+v", own.documents, own.variables)
-	}
-
-	person := &recordedOperations{cardSourceID: "goal-conversation-2"}
-	personTurn := tools.WithRun(context.Background(), &feedRun{operations: person, conversation: goal})
-	if _, err := feedTool(t).Run(personTurn, &tools.Call{ID: "c1", Arguments: arguments}); err != nil {
-		t.Fatalf("the person in a goal's conversation could not withdraw: %v", err)
-	}
-	if _, isNamed := person.variables[len(person.variables)-1]["runConversationId"]; isNamed {
-		t.Fatalf("the person's withdrawal is held to a goal: %+v", person.variables)
+	if len(operations.documents) != 7 {
+		t.Fatalf("the goal's own turn sent %d documents, not 7", len(operations.documents))
 	}
 }

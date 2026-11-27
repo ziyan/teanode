@@ -34,10 +34,9 @@ func feedRefusal(format string, arguments ...any) error {
 	return &feedRefused{message: fmt.Sprintf(format, arguments...)}
 }
 
-// The lengths a card is kept to, so that one post cannot fill a screen.
+// The lengths a card's short fields are kept to. Its title and body are kept
+// whole: the screens wrap them, and a cut headline reads as a broken one.
 const (
-	feedTitleCharacters = 200
-	feedBodyCharacters  = 4000
 	feedLabelCharacters = 80
 	feedFactCharacters  = 200
 	feedLinksMost       = 12
@@ -60,8 +59,8 @@ type FeedPost struct {
 // may leave out, and refuses what cannot be shown.
 func NormalizeFeedItem(item *models.AgentFeedItem) error {
 	item.PostNotes = nil
-	item.Title = feedLine(item, "title", item.Title, feedTitleCharacters)
-	item.Body = feedText(item, "body", item.Body, feedBodyCharacters)
+	item.Title = feedWhole(strings.Join(strings.Fields(item.Title), " "))
+	item.Body = feedWhole(item.Body)
 	item.PictureSymbol = strings.TrimSpace(item.PictureSymbol)
 	item.CoalesceKey = strings.TrimSpace(item.CoalesceKey)
 	if item.Title == "" {
@@ -147,7 +146,7 @@ func NormalizeFeedItem(item *models.AgentFeedItem) error {
 	if err := normalizeFeedCharts(item); err != nil {
 		return err
 	}
-	item.FeedStackTitle = feedLine(item, "stackTitle", item.FeedStackTitle, feedTitleCharacters)
+	item.FeedStackTitle = feedWhole(strings.Join(strings.Fields(item.FeedStackTitle), " "))
 	item.FeedStackKey = strings.TrimSpace(item.FeedStackKey)
 	switch {
 	case !item.CanStack():

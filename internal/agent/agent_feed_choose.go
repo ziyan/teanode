@@ -38,6 +38,13 @@ type FeedChoiceSettings struct {
 
 	Item      *models.AgentFeedItem
 	ChoiceKey string
+
+	// AnsweringConversationID is the conversation of the turn that answers
+	// for the person, when they asked it to in words (the feed tool sends
+	// it). That turn carries an action out itself, so the answer is only
+	// recorded, with that conversation as where it was carried out, and no
+	// turn of its own starts.
+	AnsweringConversationID string
 }
 
 // ChooseFeedItem carries out what a button of a card says, once. A dismiss
@@ -47,7 +54,8 @@ type FeedChoiceSettings struct {
 // then shows that turn's first line as its outcome. A coding session's
 // option answers the session directly with no message. A discuss or open
 // button changes nothing here: the screen opens the conversation or the
-// session.
+// session. A turn answering for the person (AnsweringConversationID) records
+// an action's answer and carries it out itself.
 func (self *Agent) ChooseFeedItem(ctx context.Context, settings *FeedChoiceSettings) (*models.AgentFeedItem, error) {
 	item := settings.Item
 	if item.AgentID != settings.Agent.ID {
@@ -70,6 +78,9 @@ func (self *Agent) ChooseFeedItem(ctx context.Context, settings *FeedChoiceSetti
 	}
 	if item.FeedSourceKind == models.FeedSourceCodingSession {
 		return self.chooseCodingOption(ctx, settings, choice)
+	}
+	if settings.AnsweringConversationID != "" {
+		return self.settleFeedItem(ctx, item, choice, &models.FeedSettlement{ChoiceKey: choice.ChoiceKey, ConversationID: settings.AnsweringConversationID})
 	}
 	return self.chooseAction(ctx, settings, choice)
 }

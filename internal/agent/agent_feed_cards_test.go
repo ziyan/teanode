@@ -87,41 +87,38 @@ func TestAResolvedCardKeepsItsPlaceAndTheFirstResolutionStands(t *testing.T) {
 	}
 }
 
-// A goal's own turn resolves only a card it posted, and never replaces or
-// takes off what the person resolved.
-func TestAGoalResolvesOnlyItsOwnCardAndNeverThePersonsResolution(t *testing.T) {
+// A goal resolves any card, the card saying which goal did, and the first
+// resolution stands until somebody takes it off, a goal included.
+func TestAGoalResolvesAnyCardAndTheFirstResolutionStands(t *testing.T) {
 	world := newSpeakFirstWorld(t)
 	goalCard := world.post(t, &models.AgentFeedItem{Title: "A parcel is due", FeedSourceKind: models.FeedSourceGoal, FeedSourceID: "goal-parcels"})
 	otherCard := world.post(t, &models.AgentFeedItem{Title: "A different goal's card", FeedSourceKind: models.FeedSourceGoal, FeedSourceID: "goal-weather"})
-	ownCard := world.post(t, &models.AgentFeedItem{Title: "The agent's own card"})
 	goal := &agent.FeedResolver{Kind: models.FeedResolverGoal, ID: "goal-parcels"}
 
-	for _, feedItemId := range []string{otherCard.ID, ownCard.ID} {
-		if _, err := world.resolveFeed(t, goal, feedItemId, "Done"); err == nil || !strings.Contains(err.Error(), "only a card it posted") {
-			t.Fatalf("a goal resolved a card it did not post: %v", err)
+	for _, feedItemId := range []string{goalCard.ID, otherCard.ID} {
+		resolved, err := world.resolveFeed(t, goal, feedItemId, "The parcel arrived")
+		if err != nil || resolved.ResolvedByKind != models.FeedResolverGoal || resolved.ResolvedByID != "goal-parcels" {
+			t.Fatalf("a goal resolving a card: %+v %v", resolved, err)
 		}
 	}
-	resolved, err := world.resolveFeed(t, goal, goalCard.ID, "The parcel arrived")
-	if err != nil || resolved.ResolvedByKind != models.FeedResolverGoal || resolved.ResolvedByID != "goal-parcels" {
-		t.Fatalf("a goal resolving its own card: %+v %v", resolved, err)
-	}
 
-	// The person's resolution wins: the goal cannot replace it or take it off.
+	// The person's resolution stands until it is taken off, which a goal may do.
 	person := &agent.FeedResolver{Kind: models.FeedResolverPerson, ID: world.owner.ID}
 	if _, err := world.unresolveFeed(t, person, goalCard.ID); err != nil {
 		t.Fatal(err)
 	}
-	if resolved, err = world.resolveFeed(t, person, goalCard.ID, "Handled it myself"); err != nil || resolved.ResolvedByKind != models.FeedResolverPerson || resolved.ResolvedByID != world.owner.ID {
+	resolved, err := world.resolveFeed(t, person, goalCard.ID, "Handled it myself")
+	if err != nil || resolved.ResolvedByKind != models.FeedResolverPerson || resolved.ResolvedByID != world.owner.ID {
 		t.Fatalf("the person resolving: %+v %v", resolved, err)
 	}
 	if _, err := world.resolveFeed(t, goal, goalCard.ID, "The parcel arrived"); err == nil || !strings.Contains(err.Error(), "already resolved") {
 		t.Fatalf("a goal resolved over the person: %v", err)
 	}
-	if _, err := world.unresolveFeed(t, goal, goalCard.ID); err == nil || !strings.Contains(err.Error(), "only they take that off") {
-		t.Fatalf("a goal took off the person's resolution: %v", err)
-	}
 	if stored := readFeedItem(t, world, goalCard.ID); stored.ResolutionNote != "Handled it myself" {
 		t.Fatalf("the person's resolution did not stand: %+v", stored)
+	}
+	if _, err := world.unresolveFeed(t, goal, goalCard.ID); err != nil {
+		t.Fatalf("a goal taking off the person's resolution: %v", err)
 	}
 }
 
@@ -338,9 +335,10 @@ func TestDashesAreRewrittenInEveryText(t *testing.T) {
 	}
 }
 
-// A title, label or caption a little too long is cut with an ellipsis and
-// listed in the post's notes instead of refusing the card; a card that is
-// changed does not list again what an earlier post cut.
+// A card's title is kept whole however long; a label or caption a little too
+// long is cut with an ellipsis and listed in the post's notes instead of
+// refusing the card; a card that is changed does not list again what an
+// earlier post cut.
 func TestATextThatIsTooLongIsCutAndListedNotRefused(t *testing.T) {
 	world := newSpeakFirstWorld(t)
 	long := func(characters int) string { return strings.Repeat("w", characters) }
@@ -354,11 +352,14 @@ func TestATextThatIsTooLongIsCutAndListedNotRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len([]rune(posted.Title)) != 201 || !strings.HasSuffix(posted.Title, "…") || len([]rune(posted.ChartBlocks[0].Provenance)) != 121 {
-		t.Fatalf("the title and provenance were not cut: %d %d", len([]rune(posted.Title)), len([]rune(posted.ChartBlocks[0].Provenance)))
+	if posted.Title != long(230) || len([]rune(posted.ChartBlocks[0].Provenance)) != 121 {
+		t.Fatalf("the title was not kept whole, or the provenance was not cut: %d %d", len([]rune(posted.Title)), len([]rune(posted.ChartBlocks[0].Provenance)))
 	}
 	notes := strings.Join(posted.PostNotes, "; ")
-	for _, expected := range []string{"title was cut to 200", "factRows[0].factLabel was cut to 200", "choices[0].choiceLabel was cut to 80", "chartBlocks[0].chartTitle was cut to 80", "chartBlocks[0].provenance was cut to 120"} {
+	if strings.Contains(strings.Join(posted.PostNotes, "; "), "title was cut") {
+		t.Errorf("the notes say the title was cut: %v", posted.PostNotes)
+	}
+	for _, expected := range []string{"factRows[0].factLabel was cut to 200", "choices[0].choiceLabel was cut to 80", "chartBlocks[0].chartTitle was cut to 80", "chartBlocks[0].provenance was cut to 120"} {
 		if !strings.Contains(notes, expected) {
 			t.Errorf("the notes %q do not say %q", notes, expected)
 		}
