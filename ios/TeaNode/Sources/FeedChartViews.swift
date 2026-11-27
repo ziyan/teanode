@@ -199,9 +199,11 @@ private struct FeedSeriesChart: View {
 
 /// FeedBarsChart draws horizontal bars, the largest first, each with its
 /// value and unit at the end.
+/// FeedBarsChart draws bars as rows rather than a Chart: each category's name
+/// on a line of its own, then its bar with the value at its end. Swift Charts
+/// set the names over the bars of a short horizontal chart.
 private struct FeedBarsChart: View {
     let chart: AgentFeedChart
-    @ScaledMetric(relativeTo: .body) private var barRowHeight: CGFloat = 34
 
     /// Largest first whatever order the card gave.
     private var sortedBars: [AgentFeedChartBar] {
@@ -210,34 +212,39 @@ private struct FeedBarsChart: View {
 
     var body: some View {
         let bars = sortedBars
-        let largestValue = bars.first?.barValue ?? 0
-        Chart {
+        let largestValue = max(bars.first?.barValue ?? 0, 0.000_001)
+        VStack(alignment: .leading, spacing: 10) {
             ForEach(bars, id: \.barLabel) { bar in
-                BarMark(x: .value("Amount", bar.barValue), y: .value("Name", bar.barLabel))
-                    .foregroundStyle(ChartPalette.seriesColor(at: 0))
-                    .cornerRadius(4)
-                    .annotation(position: .trailing, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                        Text(verbatim: chart.valueText(bar.barValue))
-                            .font(.caption)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    .accessibilityLabel(Text(verbatim: bar.barLabel))
-                    .accessibilityValue(Text(verbatim: chart.valueText(bar.barValue)))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(verbatim: bar.barLabel)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    // The bar takes the share of the width its value is of the
+                    // largest, leaving room at the end for the value.
+                    barRow(bar, share: bar.barValue / largestValue)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: bar.barLabel))
+                .accessibilityValue(Text(verbatim: chart.valueText(bar.barValue)))
             }
         }
-        // The first label is the top row, and room is left at the end of the
-        // longest bar for its value.
-        .chartYScale(domain: bars.map(\.barLabel))
-        .chartXScale(domain: 0...max(largestValue * 1.6, 1))
-        .chartXAxis(.hidden)
-        .chartYAxis {
-            AxisMarks { _ in
-                AxisValueLabel()
+    }
+
+    private func barRow(_ bar: AgentFeedChartBar, share: Double) -> some View {
+        GeometryReader { geometry in
+            HStack(spacing: 6) {
+                Capsule()
+                    .fill(ChartPalette.seriesColor(at: 0))
+                    .frame(width: max(geometry.size.width * 0.7 * share, 4), height: 10)
+                Text(verbatim: chart.valueText(bar.barValue))
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
             }
         }
-        .frame(height: barRowHeight * CGFloat(max(bars.count, 1)) + 8)
+        .frame(height: 16)
     }
 }
 
