@@ -314,7 +314,9 @@ final class AgentFeedTests: XCTestCase {
     }
 
     func testTheDocumentAsksForTheMedia() {
-        XCTAssertTrue(Documents.agentFeed.contains("feedMedia { mediaKey feedMediaKind imageUrl videoUrl linkUrl siteName mediaCaption widthPixels heightPixels listRowIndex }"))
+        for field in ["mediaKey", "feedMediaKind", "imageUrl", "videoUrl", "linkUrl", "siteName", "mediaCaption", "widthPixels", "heightPixels", "listRowIndex", "cameraName", "capturedAt", "stillReason", "playbackUrl", "liveUrl"] {
+            XCTAssertTrue(Documents.agentFeed.contains(field), field)
+        }
         XCTAssertTrue(Documents.agentFeedStack.contains("feedMedia {"))
         XCTAssertTrue(Documents.chooseAgentFeedItem.contains("feedMedia {"))
     }
