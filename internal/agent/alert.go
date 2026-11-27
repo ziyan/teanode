@@ -1015,7 +1015,6 @@ func (self *Agent) deliverAlert(ctx context.Context, run *Run, conversationId st
 	return nil
 }
 
-
 // deliverAlertToFeed says one alert as a card in the feed and records it, so
 // that the bounds on how often a subject is told, and the mutes, work as they
 // do for an alert said in the conversation. The candidates are taken first, in
