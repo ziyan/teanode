@@ -92,7 +92,7 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"mailbox": mailbox.MailboxProperty,
 					"folder":  tools.StringProperty("the folder; Inbox by default"),
-					"limit":   tools.IntegerProperty("how many newest messages, 200 by default"),
+					"limit":   tools.IntegerProperty("only the newest this many messages; every message of the folder when not given"),
 				}),
 				Preview: tools.PreviewOf(func(call struct {
 					Mailbox string `json:"mailbox"`
@@ -583,16 +583,49 @@ func runRuleApply(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 		}
 		variables["folderId"] = folder.ID
 	}
-	if arguments.Limit > 0 {
-		variables["first"] = arguments.Limit
+	// One call looks at the newest messages up to this many: how much one
+	// request does, which the server bounds. A folder with more is covered
+	// by calling again, skipping what the calls before left in it, until a
+	// call reads fewer than it was given. A limit from the caller is one
+	// call over the newest messages.
+	const batchSize = 500
+	isWholeFolder := arguments.Limit <= 0
+	first := arguments.Limit
+	if isWholeFolder {
+		first = batchSize
 	}
-	var result struct {
-		ApplyMailboxRules map[string]any `json:"ApplyMailboxRules"`
+	total := map[string]any{}
+	offset := 0
+	for {
+		variables["first"] = first
+		if offset > 0 {
+			variables["offset"] = offset
+		}
+		var result struct {
+			ApplyMailboxRules map[string]any `json:"ApplyMailboxRules"`
+		}
+		if err := operations.Execute(ctx, `mutation ($mailboxId: String!, $folderId: String, $first: Int, $offset: Int) { ApplyMailboxRules(mailboxId: $mailboxId, folderId: $folderId, first: $first, offset: $offset) { listed considered matched moved marked flagged deleted skipped failed remaining } }`, variables, &result); err != nil {
+			if offset > 0 || len(total) > 0 {
+				return nil, fmt.Errorf("the rules were applied to part of the folder (%v) and then failed: %w", total, err)
+			}
+			return nil, err
+		}
+		for key, value := range result.ApplyMailboxRules {
+			if count, ok := value.(float64); ok {
+				previous, _ := total[key].(float64)
+				total[key] = previous + count
+			}
+		}
+		remaining, _ := result.ApplyMailboxRules["remaining"].(float64)
+		listed, _ := result.ApplyMailboxRules["listed"].(float64)
+		offset += int(remaining)
+		if !isWholeFolder || int(listed) < first {
+			break
+		}
 	}
-	if err := operations.Execute(ctx, `mutation ($mailboxId: String!, $folderId: String, $first: Int) { ApplyMailboxRules(mailboxId: $mailboxId, folderId: $folderId, first: $first) { considered matched moved marked flagged deleted skipped failed } }`, variables, &result); err != nil {
-		return nil, err
-	}
-	answer, err := tools.JSONResult(result.ApplyMailboxRules)
+	delete(total, "listed")
+	delete(total, "remaining")
+	answer, err := tools.JSONResult(total)
 	if err != nil {
 		return nil, err
 	}

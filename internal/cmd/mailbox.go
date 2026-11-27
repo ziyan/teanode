@@ -687,7 +687,7 @@ func newRuleCommand() *cli.Command {
 				Flags: []cli.Flag{
 					JSONFlag(), mailboxFlag(), ForceFlag(),
 					&cli.StringFlag{Name: "folder", Usage: "which folder to run over; the Inbox by default"},
-					&cli.IntFlag{Name: "first", Value: 200, Usage: "how many of the newest messages, at most 500"},
+					&cli.IntFlag{Name: "first", Usage: "only the newest this many messages, at most 500; every message of the folder when not given"},
 				},
 				Action: runRuleApply,
 			},
@@ -1131,7 +1131,12 @@ func runRuleApply(ctx context.Context, command *cli.Command) error {
 		enabled, folderName, view.Mailbox.Name, what)); err != nil {
 		return err
 	}
-	applied, err := client.ApplyMailboxRules(ctx, connection, view.Mailbox.ID, folderId, int(command.Int("first")))
+	var applied *client.MailboxRuleApplication
+	if first := int(command.Int("first")); first > 0 {
+		applied, err = client.ApplyMailboxRules(ctx, connection, view.Mailbox.ID, folderId, first, 0)
+	} else {
+		applied, err = client.ApplyMailboxRulesToFolder(ctx, connection, view.Mailbox.ID, folderId)
+	}
 	if err != nil {
 		return describeError(command, err)
 	}
