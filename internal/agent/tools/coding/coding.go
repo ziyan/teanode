@@ -59,10 +59,10 @@ func define(name, label, description string) *tools.Tool {
 			"system_prompt": tools.StringProperty("standing instructions for how to work, added to its own"),
 			"model":         tools.StringProperty("a model to use, its own default otherwise"),
 			"timeout":       tools.IntegerProperty(fmt.Sprintf("seconds to wait for it, %d by default, %d at most; work still going then carries on in the background", defaultSeconds, longestSeconds)),
-			"isBackground":  tools.BooleanProperty("start it in the background and answer at once, for work that takes long; you are woken when it ends, and the shell tool's read with the id gives its output"),
+			"is_background": tools.BooleanProperty("start it in the background and answer at once, for work that takes long; you are woken when it ends, and the shell tool's read with the id gives its output"),
 			"computer":      tools.StringProperty("which attached computer, when several are"),
 		}, "prompt"),
-		Guidance: label + ": it works on its own and answers once, so the brief is the whole of what it knows -- name the files or the directory, say what done looks like, and say what not to touch. It costs the person money at their own account with " + label + ", not through this server, so one considered call beats several tries. Read what it answers before telling them it is done. Long work -- a big refactor, a migration -- goes in the background with isBackground, so it is not cut off: end your turn, and you are woken with how it ended and the end of what it printed (its last line is its answer; the shell tool's read with the id and stream stdout reads all of it).",
+		Guidance: label + ": it works on its own and answers once, so the brief is the whole of what it knows -- name the files or the directory, say what done looks like, and say what not to touch. It costs the person money at their own account with " + label + ", not through this server, so one considered call beats several tries. Read what it answers before telling them it is done. Long work -- a big refactor, a migration -- goes in the background with is_background, so it is not cut off: end your turn, and you are woken with how it ended and the end of what it printed (its last line is its answer; the shell tool's read with the id and stream stdout reads all of it).",
 		Preview: func(arguments json.RawMessage) string {
 			var call request
 			if err := json.Unmarshal(arguments, &call); err != nil {
@@ -86,7 +86,7 @@ type request struct {
 	SystemPrompt string `json:"system_prompt"`
 	Model        string `json:"model"`
 	Timeout      int    `json:"timeout"`
-	IsBackground bool   `json:"isBackground"`
+	IsBackground bool   `json:"is_background"`
 	Computer     string `json:"computer"`
 }
 
@@ -132,7 +132,7 @@ func run(ctx context.Context, call *tools.Call, name, label string) (*tools.Resu
 			wait = 60 * time.Second
 		}
 	} else if arguments.IsBackground {
-		return nil, fmt.Errorf("%s cannot be left running here: the computer keeps no background commands, or this run has no conversation to wake when it ends; run it without isBackground", label)
+		return nil, fmt.Errorf("%s cannot be left running here: the computer keeps no background commands, or this run has no conversation to wake when it ends; run it without is_background", label)
 	}
 	answer, err := attached.Ask(ctx, "shell", shellArguments, wait)
 	if err != nil {
@@ -214,7 +214,7 @@ func describe(answer json.RawMessage, name, label, on string) (*tools.Result, er
 	}
 	if shell.TimedOut {
 		described["timed_out"] = true
-		described["do_this_next"] = fmt.Sprintf("%s was stopped at the timeout. Call again with isBackground, telling it to write its progress to a file in the working directory and to read that file first.", label)
+		described["do_this_next"] = fmt.Sprintf("%s was stopped at the timeout. Call again with is_background, telling it to write its progress to a file in the working directory and to read that file first.", label)
 	}
 	// 127 is the shell saying it could not find the program. The words
 	// alone are not enough: a coding agent forwards what its own children
