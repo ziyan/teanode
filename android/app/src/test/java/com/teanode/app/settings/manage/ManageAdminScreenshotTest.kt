@@ -116,9 +116,17 @@ class ManageAdminScreenshotTest {
     @Test fun `source types dark`() = shoot("manage-source-types-dark", AppearanceChoice.Dark) { AgentSourceTypesScreen(onBack = {}) }
     @Test fun `source type guide`() = shoot("manage-source-type-guide-light", before = { click("A folder of notes.") }) { AgentSourceTypesScreen(onBack = {}) }
 
-    @Test fun `runs light`() = shoot("manage-runs-light") { AgentRunsAdminScreen(onBack = {}, onOpenConversation = {}) }
-    @Test fun `runs dark`() = shoot("manage-runs-dark", AppearanceChoice.Dark) { AgentRunsAdminScreen(onBack = {}, onOpenConversation = {}) }
-    @Test fun `runs largest text`() = shoot("manage-runs-largest-text", fontScale = 2f) { AgentRunsAdminScreen(onBack = {}, onOpenConversation = {}) }
+    private fun waitFor(text: String) {
+        composeRule.waitUntil(15_000) { composeRule.onAllNodesWithText(text, substring = true).fetchSemanticsNodes().isNotEmpty() }
+        composeRule.waitForIdle()
+    }
+
+    @Test fun `oversight recent light`() = shoot("manage-oversight-recent-light", before = { waitFor("Sorted new mail") }) { AgentRunsAdminScreen(onBack = {}, onOpenConversation = {}) }
+    @Test fun `oversight recent dark`() = shoot("manage-oversight-recent-dark", AppearanceChoice.Dark, before = { waitFor("Sorted new mail") }) { AgentRunsAdminScreen(onBack = {}, onOpenConversation = {}) }
+    @Test fun `oversight recent largest text`() = shoot("manage-oversight-recent-largest-text", fontScale = 2f, before = { waitFor("Sorted new mail") }) { AgentRunsAdminScreen(onBack = {}, onOpenConversation = {}) }
+    @Test fun `oversight running light`() = shoot("manage-oversight-running-light", before = { waitFor("Sorted new mail"); click("Running"); waitFor("Running now") }) { AgentRunsAdminScreen(onBack = {}, onOpenConversation = {}) }
+    @Test fun `oversight failed light`() = shoot("manage-oversight-failed-light", before = { waitFor("Sorted new mail"); click("Failed"); waitFor("did not answer") }) { AgentRunsAdminScreen(onBack = {}, onOpenConversation = {}) }
+    @Test fun `oversight failed dark`() = shoot("manage-oversight-failed-dark", AppearanceChoice.Dark, before = { waitFor("Sorted new mail"); click("Failed"); waitFor("did not answer") }) { AgentRunsAdminScreen(onBack = {}, onOpenConversation = {}) }
 
     @Test fun `person light`() = shoot("manage-person-light") { PersonDetailScreen("user-alex", onBack = {}) }
     @Test fun `person dark`() = shoot("manage-person-dark", AppearanceChoice.Dark) { PersonDetailScreen("user-alex", onBack = {}) }

@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
@@ -170,9 +172,12 @@ func newAgentRunCommand() *cli.Command {
 				Name:  "list",
 				Usage: "recent runs, newest first",
 				Flags: []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 50}, &cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page"},
-					&cli.BoolFlag{Name: "all", Usage: "every person's runs, for an operator with agent:act"},
-					&cli.StringFlag{Name: "agent", Usage: "one person's runs by their agent id, for an operator with agent:act"},
-					&cli.StringSliceFlag{Name: "kind", Usage: "one kind of run, such as triage, reply, dream or schedule; repeatable, or comma-separated"},
+					&cli.BoolFlag{Name: "all", Usage: "every person's conversations and runs, read-only and audited, for an operator with agent:observe or agent:act"},
+					&cli.StringFlag{Name: "agent", Usage: "one person's by their agent id, for an operator with agent:observe or agent:act"},
+					&cli.StringSliceFlag{Name: "kind", Usage: "one kind of run, such as triage, reply, dream or schedule; with --all also main or named; repeatable, or comma-separated"},
+					&cli.StringFlag{Name: "since", Usage: "with --all, only conversations active since then: a duration such as 24h or 7d, or a date such as 2026-09-01"},
+					&cli.StringFlag{Name: "until", Usage: "with --all, only conversations active before then, in the same forms as --since"},
+					&cli.BoolFlag{Name: "running", Usage: "with --all, only conversations with a turn in flight now"},
 					&cli.StringFlag{Name: "query", Usage: "find runs by words in what they were about"}},
 				Action: runAgentRunList,
 			},
@@ -714,6 +719,9 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 	if view.Conversation.Kind == "main" {
 		title = "the main conversation"
 	}
+	if view.IsObserved {
+		_, _ = fmt.Fprintf(command.Writer, "observed, read-only: this is %s's conversation; your reading it is in the audit log\n", view.ActingAs)
+	}
 	_, _ = fmt.Fprintf(command.Writer, "%s (%s), %d message(s)\n", title, view.Conversation.ID, view.Total)
 	if view.Conversation.Kind == "goal" && view.Conversation.Goal != "" {
 		_, _ = fmt.Fprintf(command.Writer, "%s\n", goalLine(view.Conversation))
@@ -955,8 +963,18 @@ func runAgentRunList(ctx context.Context, command *cli.Command) error {
 	filter := &client.AgentRunFilter{Kinds: flagList(command, "kind"), Query: command.String("query")}
 	var runs []*client.AgentRunSummary
 	var total int64
-	if command.Bool("all") || command.String("agent") != "" {
+	isEveryone := command.Bool("all") || command.String("agent") != ""
+	if isEveryone {
+		if filter.Since, err = parseOversightTime("since", command.String("since")); err != nil {
+			return err
+		}
+		if filter.Until, err = parseOversightTime("until", command.String("until")); err != nil {
+			return err
+		}
+		filter.IsRunningOnly = command.Bool("running")
 		runs, total, err = client.SearchAllAgentRuns(ctx, connection, first, offset, command.String("agent"), filter)
+	} else if command.String("since") != "" || command.String("until") != "" || command.Bool("running") {
+		return fmt.Errorf("--since, --until and --running narrow everybody's runs: add --all")
 	} else {
 		runs, total, err = client.SearchAgentRuns(ctx, connection, first, offset, filter)
 	}
@@ -968,10 +986,28 @@ func runAgentRunList(ctx context.Context, command *cli.Command) error {
 	}
 	rows := make([][]string, 0, len(runs))
 	for _, run := range runs {
-		rows = append(rows, []string{run.ID, run.JobKind, run.LastAt.Local().Format("2006-01-02 15:04"),
-			fmt.Sprintf("%d/%d", run.Usage.PromptTokens+run.Usage.CacheReadTokens, run.Usage.CompletionTokens), fmt.Sprintf("%.4f", run.Usage.Cost), run.Title})
+		row := []string{run.ID, run.JobKind, run.LastAt.Local().Format("2006-01-02 15:04"),
+			fmt.Sprintf("%d/%d", run.Usage.PromptTokens+run.Usage.CacheReadTokens, run.Usage.CompletionTokens), fmt.Sprintf("%.4f", run.Usage.Cost), run.Title}
+		if isEveryone {
+			// A main or named conversation has no job kind: its kind is the
+			// kind. The owner leads, and a turn in flight is marked.
+			kind := run.JobKind
+			if kind == "" {
+				kind = run.Kind
+			}
+			running := ""
+			if run.IsRunning {
+				running = "running"
+			}
+			row = append([]string{run.ID, run.OwnerUsername, kind, running}, row[2:]...)
+		}
+		rows = append(rows, row)
 	}
-	if err := printTable([]string{"id", "kind", "when", "tokens in/out", "cost", "what"}, rows); err != nil {
+	header := []string{"id", "kind", "when", "tokens in/out", "cost", "what"}
+	if isEveryone {
+		header = []string{"id", "owner", "kind", "", "when", "tokens in/out", "cost", "what"}
+	}
+	if err := printTable(header, rows); err != nil {
 		return err
 	}
 	if int64(offset+len(runs)) < total {
@@ -1095,4 +1131,63 @@ func toolCallWords(tool, intention string) string {
 		return intention + " (" + tool + ")"
 	}
 	return tool
+}
+
+// parseOversightTime reads a time flag as a duration back from now, in
+// seconds, minutes, hours or days (7d), or as a date or timestamp.
+func parseOversightTime(flagName, value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if days, isDays := strings.CutSuffix(value, "d"); isDays {
+		if count, err := strconv.Atoi(days); err == nil && count >= 0 {
+			since := time.Now().AddDate(0, 0, -count)
+			return &since, nil
+		}
+	}
+	parsed, err := parseSince(value)
+	if err != nil {
+		return nil, fmt.Errorf("--%s: %w", flagName, err)
+	}
+	return parsed, nil
+}
+
+func newAgentFailedTurnsCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "failed-turns",
+		Usage: "the turns of every person's agent that ended in a failure, newest first, for an operator with agent:observe or agent:act",
+		Flags: []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 50}, &cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page"},
+			&cli.StringFlag{Name: "since", Usage: "only failures since then: a duration such as 24h or 7d, or a date such as 2026-09-01"},
+			&cli.StringFlag{Name: "agent", Usage: "one person's by their agent id"}},
+		Action: runAgentFailedTurns,
+	}
+}
+
+func runAgentFailedTurns(ctx context.Context, command *cli.Command) error {
+	since, err := parseOversightTime("since", command.String("since"))
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	first, offset := int(command.Int("first")), int(command.Int("offset"))
+	turns, total, err := client.ListFailedAgentTurns(ctx, connection, first, offset, since, command.String("agent"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"totalCount": total, "failedTurns": turns})
+	}
+	rows := make([][]string, 0, len(turns))
+	for _, turn := range turns {
+		rows = append(rows, []string{turn.ConversationID, turn.OwnerUsername, turn.ConversationKind, turn.FailedAt.Local().Format("2006-01-02 15:04"),
+			forTerminal(turn.ConversationTitle), forTerminal(turn.ErrorText)})
+	}
+	if err := printTable([]string{"conversation", "owner", "kind", "failed", "title", "error"}, rows); err != nil {
+		return err
+	}
+	if int64(offset+len(turns)) < total {
+		_, _ = fmt.Fprintf(command.Writer, "%d of %d; --offset %d for the next\n", offset+len(turns), total, offset+len(turns))
+	}
+	return nil
 }

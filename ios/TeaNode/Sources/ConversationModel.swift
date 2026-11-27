@@ -42,6 +42,9 @@ final class ConversationModel {
     /// an operator looks at somebody else's.
     private(set) var todos: [AgentTodo] = []
     private(set) var actingAs: String?
+    /// Whether the reader is not the owner: the transcript is read-only here,
+    /// and a note takes the composer's place.
+    private(set) var isObserved = false
 
     /// Ideas to start an empty conversation with.
     private(set) var ideas: [AgentIdea] = []
@@ -238,6 +241,7 @@ final class ConversationModel {
         total = page.total
         todos = page.todos
         actingAs = page.actingAs
+        isObserved = page.isObserved
         let earlier = transcript
         transcript = Transcript(messages: messages, interactions: interactions, isChat: isChat)
         if isFeedReplaying {
@@ -440,6 +444,7 @@ final class ConversationModel {
     /// have left, or a direct chat with somebody they no longer share a
     /// circle with, which they can read and not write to.
     var canWrite: Bool {
+        if isObserved { return false }
         guard isChat, let chat else { return true }
         return !chat.isRemoved && !(chat.chatKind == ChatKind.direct.rawValue && chat.otherMembers(ownUserId: ownUserId).contains(where: \.isRemoved))
     }

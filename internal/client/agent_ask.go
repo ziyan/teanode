@@ -44,6 +44,7 @@ type AgentConversation struct {
 type AgentRunSummary struct {
 	ID        string    `json:"id"`
 	AgentID   string    `json:"agentId"`
+	Kind      string    `json:"kind"`
 	Title     string    `json:"title"`
 	JobID     string    `json:"jobId"`
 	JobKind   string    `json:"jobKind"`
@@ -55,9 +56,34 @@ type AgentRunSummary struct {
 		CompletionTokens int     `json:"completionTokens"`
 		Cost             float64 `json:"cost"`
 	} `json:"usage"`
+
+	// OwnerUsername, OwnerName and IsRunning are told only in the operator's
+	// listing: whose agent it is, and whether a turn is in flight in it.
+	OwnerUsername string `json:"ownerUsername"`
+	OwnerName     string `json:"ownerName"`
+	IsRunning     bool   `json:"isRunning"`
+}
+
+// AgentFailedTurn is a turn that ended in a failed note, in the operator's
+// list of failed turns.
+type AgentFailedTurn struct {
+	ConversationID    string    `json:"conversationId"`
+	ConversationKind  string    `json:"conversationKind"`
+	ConversationTitle string    `json:"conversationTitle"`
+	OwnerUsername     string    `json:"ownerUsername"`
+	OwnerName         string    `json:"ownerName"`
+	FailedAt          time.Time `json:"failedAt"`
+	ErrorText         string    `json:"errorText"`
+	AgentID           string    `json:"agentId"`
 }
 
 const runFields = `{ id agentId title jobId jobKind subjectId lastAt usage { promptTokens cacheReadTokens completionTokens cost } }`
+
+// oversightRunFields are a run's fields as the operator's listing tells them:
+// the kind of conversation, whose it is, and whether a turn is in flight.
+const oversightRunFields = `{ id agentId kind title jobId jobKind subjectId lastAt isRunning ownerUsername ownerName usage { promptTokens cacheReadTokens completionTokens cost } }`
+
+const failedTurnFields = `{ conversationId conversationKind conversationTitle ownerUsername ownerName failedAt errorText agentId }`
 
 // AgentMessage is one turn, tool call or result of a conversation.
 type AgentMessage struct {
@@ -202,6 +228,11 @@ type AgentConversationView struct {
 	Messages     []*AgentMessage    `json:"messages"`
 	Total        int                `json:"total"`
 	Todos        []*AgentTodo       `json:"todos"`
+
+	// ActingAs is whose conversation it is when it is not yours, and
+	// IsObserved is true then: you are reading it, read-only.
+	ActingAs   string `json:"actingAs"`
+	IsObserved bool   `json:"isObserved"`
 }
 
 // AgentTodo is one item of a conversation's task list.
@@ -271,12 +302,15 @@ const (
 	DocumentListAgentConversations  = `query ($archived: Boolean, $query: String, $kind: String) { ListAgentConversations(archived: $archived, query: $query, kind: $kind) ` + conversationFields + ` }`
 	DocumentDeleteAgentConversation = `mutation ($conversationId: String!) { DeleteAgentConversation(conversationId: $conversationId) }`
 	DocumentListAgentRuns           = `query ($first: Int, $offset: Int, $jobId: String, $kinds: [String!], $query: String) { ListAgentRuns(first: $first, offset: $offset, jobId: $jobId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
-	DocumentListAllAgentRuns        = `query ($first: Int, $offset: Int, $agentId: String, $kinds: [String!], $query: String) { ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
+	DocumentListAllAgentRuns        = `query ($first: Int, $offset: Int, $agentId: String, $kinds: [String!], $query: String, $since: String, $until: String, $isRunningOnly: Boolean) { ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, kinds: $kinds, query: $query, since: $since, until: $until, isRunningOnly: $isRunningOnly) { total totalCount runs ` + oversightRunFields + ` } }`
+	DocumentListFailedAgentTurns    = `query ($first: Int, $offset: Int, $since: String, $agentId: String) { ListFailedAgentTurns(first: $first, offset: $offset, since: $since, agentId: $agentId) { totalCount failedTurns ` + failedTurnFields + ` } }`
 	DocumentReadAgentConversation   = `query ($conversationId: String, $first: Int, $offset: Int) {
 		ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
 			conversation ` + conversationFields + `
 			messages { id createdAt role content name toolCallId toolCalls { id name arguments intention } usage { model kind promptTokens completionTokens } attachments { id name contentType size audioDurationMS audioWaveform } references { itemId threadId subject from recordingId recordingTitle agentMessageId quotedRole quotedText } reactions { emoji reactorKind reactedAt reactorUserId reactorName } authorKind authorUserId authorName authorOwnerName authorAgentId isMine isAgentWork editedAt isDeleted isVoiceMessage transcriptText transcriptState }
 			total
+			actingAs
+			isObserved
 			todos ` + todoFields + `
 		}
 	}`
@@ -455,11 +489,16 @@ func ListAgentConversationsOfKind(ctx context.Context, connection *Client, archi
 }
 
 // AgentRunFilter narrows a listing of runs: to the runs one job made, to
-// some kinds of run, or to the titles carrying some words.
+// some kinds of run, or to the titles carrying some words. Since, Until and
+// IsRunningOnly are for the operator's listing only, which also takes the
+// kinds main and named.
 type AgentRunFilter struct {
-	JobID string
-	Kinds []string
-	Query string
+	JobID         string
+	Kinds         []string
+	Query         string
+	Since         *time.Time
+	Until         *time.Time
+	IsRunningOnly bool
 }
 
 // apply puts the filter's variables on a listing, leaving out what was
@@ -476,6 +515,15 @@ func (self *AgentRunFilter) apply(variables map[string]any) {
 	}
 	if self.Query != "" {
 		variables["query"] = self.Query
+	}
+	if self.Since != nil {
+		variables["since"] = self.Since.Format(time.RFC3339)
+	}
+	if self.Until != nil {
+		variables["until"] = self.Until.Format(time.RFC3339)
+	}
+	if self.IsRunningOnly {
+		variables["isRunningOnly"] = true
 	}
 }
 
@@ -501,8 +549,8 @@ func SearchAgentRuns(ctx context.Context, connection *Client, first, offset int,
 	return result.ListAgentRuns.Runs, result.ListAgentRuns.Total, nil
 }
 
-// ListAllAgentRuns is every person's runs, for an operator with agent:act;
-// an agent narrows it to one person's.
+// ListAllAgentRuns is every person's conversations and runs, for an operator
+// with agent:observe or agent:act; an agent narrows it to one person's.
 func ListAllAgentRuns(ctx context.Context, connection *Client, first, offset int, agentId string) ([]*AgentRunSummary, int64, error) {
 	return SearchAllAgentRuns(ctx, connection, first, offset, agentId, nil)
 }
@@ -524,6 +572,29 @@ func SearchAllAgentRuns(ctx context.Context, connection *Client, first, offset i
 		return nil, 0, err
 	}
 	return result.ListAllAgentRuns.Runs, result.ListAllAgentRuns.Total, nil
+}
+
+// ListFailedAgentTurns is a page of the turns of every person's agent that
+// ended in a failed note, newest first, and how many there are in all; for an
+// operator with agent:observe or agent:act.
+func ListFailedAgentTurns(ctx context.Context, connection *Client, first, offset int, since *time.Time, agentId string) ([]*AgentFailedTurn, int64, error) {
+	var result struct {
+		ListFailedAgentTurns struct {
+			TotalCount  int64              `json:"totalCount"`
+			FailedTurns []*AgentFailedTurn `json:"failedTurns"`
+		} `json:"ListFailedAgentTurns"`
+	}
+	variables := map[string]any{"first": first, "offset": offset}
+	if since != nil {
+		variables["since"] = since.Format(time.RFC3339)
+	}
+	if agentId != "" {
+		variables["agentId"] = agentId
+	}
+	if err := connection.Execute(ctx, DocumentListFailedAgentTurns, variables, &result); err != nil {
+		return nil, 0, err
+	}
+	return result.ListFailedAgentTurns.FailedTurns, result.ListFailedAgentTurns.TotalCount, nil
 }
 
 // ReadAgentConversation is a conversation and its newest messages.

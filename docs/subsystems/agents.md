@@ -127,13 +127,32 @@ A feature has to pass all three:
    mailbox and talk to it; it is on the Member role by default. `agent:audit`
    is the operator's view of everybody's agents — state, usage, limits, the
    switch-off — and never their content. It is on the Operator role.
-   `agent:act` is content: every person's runs and conversations, openable,
-   and a word with their agent as them — the same tools, the same
-   permissions, logged each time as the operator speaking as that person.
-   It is on the Administrator role only, for the operator of a private
-   server debugging what an agent did. The `/manage/agent` page in the
-   management rail has the tabs: agents, use and cost, every run, jobs
-   given up on. (`/chat` is the person's chats with their agent and with
+   `agent:observe` is content, read-only: every person's main and named
+   conversations, goal conversations and runs, listed with a time range, a
+   kind, "running now" (a turn in flight on any instance, from `agent_turn`)
+   and a list of the turns that ended in a failed note, and openable with the
+   composer replaced by a note ("You are observing it and cannot write
+   here"). Chats between people are never listed or opened. Every read of
+   another person's conversation writes an `audit_log` row, action
+   `agent.conversation.observe`, folded to one per reader and conversation per
+   ten minutes (`TakeThrottleWait`, which waits for a parallel read of the
+   same conversation rather than skipping the row); the server-log line stays.
+   Reading it, following its events and asking for the previews of its links
+   each write the row; the lists (`ListAllAgentRuns`, `ListFailedAgentTurns`)
+   do not. `agent:act` implies observing, and adds a word with their agent as
+   them: the same tools, the same permissions, logged each time as the
+   operator speaking as that person. A send or a reaction with `agent:observe`
+   alone is refused. Opening another person's conversation in the apps is
+   always read-only, `isObserved` is true even for a holder of `agent:act`, so
+   nobody types as someone else by accident from a screen; speaking as the
+   person stays possible for `agent:act` through the API and CLI, which say
+   whose conversation it is.
+   Both are on the Administrator role only (migration 0283 gives the
+   Administrator `agent:observe`), for the operator of a private server
+   debugging what an agent did. The `/manage/agent` page in the management
+   rail has the tabs: agents, use and cost, Oversight (running now, recent,
+   failed turns; the range, the kind and the pages are in the address),
+   jobs given up on. (`/chat` is the person's chats with their agent and with
    people, a row at the top of the mailbox's rail; `/agent` forwards there.)
 3. **The person.** Their agent's own switch, and the policy on each source.
 

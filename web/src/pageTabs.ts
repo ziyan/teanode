@@ -60,13 +60,13 @@ export const SERVER_TABS: PageTab[] = [
   ...INTEGRATION_TABS,
 ]
 
-// Runs are content, and so are behind agent:act rather than the audit
-// permission the rest of the page needs. The settings are the operator's,
+// Oversight is content, and so is behind agent:observe (which agent:act
+// implies) rather than the audit permission the rest of the page needs. The settings are the operator's,
 // behind server:manage as the rest of the server's are.
 export const AGENT_ADMIN_TABS: PageTab[] = [
   { id: 'general', label: 'agentAdmin.tabGeneral', anyOf: ['server:manage'] },
   { id: 'usage', label: 'agentAdmin.tabUsage' },
-  { id: 'runs', label: 'agentAdmin.tabRuns', anyOf: ['agent:act'] },
+  { id: 'oversight', label: 'agentAdmin.tabOversight', anyOf: ['agent:observe', 'agent:act'] },
   { id: 'models', label: 'agentAdmin.tabModels', anyOf: ['server:manage'] },
   { id: 'tools', label: 'agentAdmin.tabTools', anyOf: ['server:manage'] },
   { id: 'skills', label: 'agentAdmin.tabSkills', anyOf: ['server:manage'] },

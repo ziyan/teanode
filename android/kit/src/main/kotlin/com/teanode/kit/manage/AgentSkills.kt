@@ -3,6 +3,7 @@ package com.teanode.kit.manage
 import com.teanode.kit.Connection
 import com.teanode.kit.chats.AgentUsage
 import com.teanode.kit.settings.variablesOf
+import java.time.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -105,28 +106,75 @@ data class InstalledSourceType(
     val hasGuide: Boolean get() = guide.trim().isNotEmpty()
 }
 
-/** One run any agent made: whose, what it was about, its kind, when it last spoke and what it used. Its id opens its transcript. */
+/**
+ * One conversation of any person's agent, as the oversight lists show it: whose, what it was about, its kind (a run kind, or main or named
+ * for a person's own conversations), when it last spoke, whether a turn is in flight now and what it used. Its id opens its transcript.
+ */
 @Serializable
 data class ServerAgentRun(
     val id: String, val agentId: String = "", val title: String = "", val jobKind: String? = null, val lastAt: String = "", val usage: AgentUsage = AgentUsage(),
+    val ownerUsername: String = "", val ownerName: String = "", val isRunning: Boolean = false,
 ) {
     /** Every token it used: read fresh, read from the cache, and written. */
     val tokenCount: Int get() = usage.promptTokens + (usage.cacheReadTokens ?: 0) + usage.completionTokens
+
+    /** Whose it is, as a person reads it: their name, or their username when they have no name. */
+    val ownerLabel: String get() = ownerName.ifEmpty { ownerUsername }
 }
 
-/** One page of every agent's runs, and how many match in all. */
+/** One page of every agent's runs, and how many match in all: `totalCount` where the server sends it, else the older `total`. */
 @Serializable
-data class ServerAgentRunPage(val total: Int = 0, val runs: List<ServerAgentRun> = emptyList())
+data class ServerAgentRunPage(val total: Int = 0, val runs: List<ServerAgentRun> = emptyList(), val totalCount: Int? = null) {
+    val matchCount: Int get() = totalCount ?: total
+}
 
-/** What every agent's runs are narrowed by, on the server: to one agent, one job given up on, a kind of run, and words in the title. */
-data class ServerAgentRunFilter(val agentId: String? = null, val jobId: String? = null, val jobKind: String? = null, val query: String = "") {
+/** The kinds the oversight lists add to the run kinds: a person's main conversation, and their named ones. */
+object OversightKinds {
+    const val MAIN = "main"
+    const val NAMED = "named"
+}
+
+/** Which part of the oversight page is shown: turns in flight now, the recent ones in a range, or the turns that failed. */
+enum class OversightTab { Running, Recent, Failed }
+
+/** How far back the Recent and Failed lists reach, by the conversation's last activity. */
+enum class OversightRange(val dayCount: Long) {
+    Day(1), Week(7), Month(30);
+
+    /** The RFC 3339 start of the range, counted back from [now]. */
+    fun since(now: Instant): String = now.minus(java.time.Duration.ofDays(dayCount)).toString()
+}
+
+/**
+ * What every agent's runs are narrowed by, on the server: to one agent, one job given up on, a kind, words in the title, a time range on the
+ * last activity (RFC 3339), and only the conversations with a turn in flight now.
+ */
+data class ServerAgentRunFilter(
+    val agentId: String? = null, val jobId: String? = null, val jobKind: String? = null, val query: String = "",
+    val since: String? = null, val until: String? = null, val isRunningOnly: Boolean = false,
+) {
     fun variables(first: Int, offset: Int): Map<String, JsonElement> {
         val trimmedQuery = query.trim()
         return variablesOf(
             "first" to first, "offset" to offset, "agentId" to agentId, "jobId" to jobId, "kinds" to jobKind?.let { kind -> listOf(kind) }, "query" to trimmedQuery.ifEmpty { null },
+            "since" to since, "until" to until, "isRunningOnly" to isRunningOnly.takeIf { isOnly -> isOnly },
         )
     }
 }
+
+/** One turn that ended in a failed note: whose conversation, which, when, and what the error said. */
+@Serializable
+data class AgentFailedTurn(
+    val conversationId: String, val conversationKind: String = "", val conversationTitle: String? = null,
+    val ownerUsername: String = "", val ownerName: String = "", val failedAt: String = "", val errorText: String = "", val agentId: String = "",
+) {
+    /** Whose it is, as a person reads it: their name, or their username when they have no name. */
+    val ownerLabel: String get() = ownerName.ifEmpty { ownerUsername }
+}
+
+/** One page of failed turns, newest first, and how many there are in all. */
+@Serializable
+data class AgentFailedTurnPage(val failedTurns: List<AgentFailedTurn> = emptyList(), val totalCount: Int = 0)
 
 /** One price the check set beside the bill, per million tokens. */
 @Serializable
@@ -177,6 +225,8 @@ changed { model tokenKind beforePerMillion afterPerMillion }"""
 
 @Serializable private class RunsAnswer(val ListAllAgentRuns: ServerAgentRunPage)
 
+@Serializable private class FailedTurnsAnswer(val ListFailedAgentTurns: AgentFailedTurnPage)
+
 @Serializable private class InstalledSkillsAnswer(val ListAgentSkills: List<InstalledSkill?> = emptyList())
 
 @Serializable private class SkillRegistryAnswer(val SearchAgentSkills: List<RegistryOffer?> = emptyList())
@@ -207,6 +257,10 @@ suspend fun Connection.retryAgentJob(jobId: String) {
 /** One page of every run any agent made, newest first, filtered on the server. */
 suspend fun Connection.serverAgentRuns(filter: ServerAgentRunFilter, first: Int = 50, offset: Int = 0): ServerAgentRunPage =
     execute<RunsAnswer>(ManageServerDocuments.MANAGE_ALL_AGENT_RUNS, filter.variables(first, offset)).ListAllAgentRuns
+
+/** One page of the turns that ended in a failure, newest first, since a time (RFC 3339) and for one agent when given. */
+suspend fun Connection.failedAgentTurns(since: String? = null, agentId: String? = null, first: Int = 50, offset: Int = 0): AgentFailedTurnPage =
+    execute<FailedTurnsAnswer>(ManageServerDocuments.MANAGE_FAILED_AGENT_TURNS, variablesOf("first" to first, "offset" to offset, "since" to since, "agentId" to agentId)).ListFailedAgentTurns
 
 /** The conversation that shows what a job given up on tried: its latest run, or, for a remember job that never ran, the conversation it was about. Null when there is neither. */
 suspend fun Connection.deadJobConversationId(job: AgentDeadJob): String? {

@@ -403,6 +403,7 @@
     <string name="settings_people_set_password_for">%1$s のパスワードを設定</string>
     <string name="settings_people_title">ユーザー</string>
     <string name="settings_permission_agent_act">全員のエージェントの会話と実行を読み、本人としてエージェントに話しかける</string>
+    <string name="settings_permission_agent_observe">全員のエージェントの会話と実行を読み取り専用で読む。読むたびに記録が残る</string>
     <string name="settings_permission_agent_audit">全員のエージェントを見る：使える範囲、使用量、上限（内容は見ない）</string>
     <string name="settings_permission_agent_use">エージェントを持ち、自分のメールボックスを任せ、話しかける</string>
     <string name="settings_permission_audit_read">監査ログを読む</string>

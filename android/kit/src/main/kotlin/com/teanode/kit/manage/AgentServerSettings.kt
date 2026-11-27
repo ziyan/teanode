@@ -25,11 +25,11 @@ enum class AgentAdminTab {
     val isOperatorSettings: Boolean get() = this != Usage && this != Runs
 }
 
-/** The agents page's tabs this person may open, in the dashboard's order: the runs need agent:act, the settings server:manage. */
+/** The agents page's tabs this person may open, in the dashboard's order: the oversight lists need agent:observe or agent:act, the settings server:manage. */
 val OperatorAccess.agentAdminTabs: List<AgentAdminTab>
     get() = AgentAdminTab.entries.filter { tab ->
         when {
-            tab == AgentAdminTab.Runs -> canActAsAgents
+            tab == AgentAdminTab.Runs -> canObserveAgents
             tab.isOperatorSettings -> canManageServer
             else -> true
         }

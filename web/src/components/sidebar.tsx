@@ -159,7 +159,12 @@ const GROUPS: Group[] = [
         icon: SERVER_ICONS[surface.segment],
         anyOf: ['server:manage'],
       })),
-      { label: 'nav.agentAdmin', to: '/manage/agent', icon: <SparkIcon />, anyOf: ['agent:audit', 'agent:act'] },
+      {
+        label: 'nav.agentAdmin',
+        to: '/manage/agent',
+        icon: <SparkIcon />,
+        anyOf: ['agent:audit', 'agent:observe', 'agent:act'],
+      },
     ],
   },
 ]

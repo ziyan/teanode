@@ -38,7 +38,7 @@ import com.teanode.kit.manage.AgentAdminTab
 import com.teanode.kit.manage.agentAdminTabs
 
 /**
- * The dashboard's agents page: everybody's agents with their limits and switches, what they cost, every run they made, and the
+ * The dashboard's agents page: everybody's agents with their limits and switches, what they cost, what they are doing and have done (oversight), and the
  * operator's agent settings, skills and source types. Each tab is offered only to whoever holds the permission it needs.
  */
 @Composable
@@ -61,7 +61,7 @@ private fun LazyListScope.tabSection(tab: AgentAdminTab, onOpen: (String) -> Uni
             item { TeaNodeNavigationRow(stringResource(R.string.manage_personal_agents), { onOpen(ManageRoutes.AGENT_PERSONAL) }, leadingIcon = Icons.Outlined.AutoAwesome) }
         }
         AgentAdminTab.Usage -> item { TeaNodeNavigationRow(stringResource(R.string.manage_use_and_cost), { onOpen(SettingsRoutes.MANAGE_USAGE) }, leadingIcon = Icons.Outlined.BarChart) }
-        AgentAdminTab.Runs -> item { TeaNodeNavigationRow(stringResource(R.string.manage_runs), { onOpen(ManageRoutes.AGENT_RUNS) }, leadingIcon = Icons.Outlined.ViewList) }
+        AgentAdminTab.Runs -> item { TeaNodeNavigationRow(stringResource(R.string.manage_oversight), { onOpen(ManageRoutes.AGENT_RUNS) }, leadingIcon = Icons.Outlined.ViewList) }
         AgentAdminTab.Models -> {
             item { TeaNodeSectionHeader(stringResource(R.string.manage_tab_models)) }
             item { TeaNodeNavigationRow(stringResource(R.string.manage_providers), { onOpen(ManageRoutes.AGENT_PROVIDERS) }, leadingIcon = Icons.Outlined.Memory) }

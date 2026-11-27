@@ -33,6 +33,7 @@ func NewAgentCommand() *cli.Command {
 			newAgentSendFileCommand(),
 			newAgentConversationCommand(),
 			newAgentRunCommand(),
+			newAgentFailedTurnsCommand(),
 			newAgentToolsCommand(),
 			newAgentMemoryCommand(),
 			newAgentSurveyCommand(),

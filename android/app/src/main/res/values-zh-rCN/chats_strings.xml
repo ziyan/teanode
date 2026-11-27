@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="chats_acting_as">这是 %1$s 的助手。你在这里说的话会以 %2$s 的身份到达它，服务器日志会记录这一点。</string>
+    <string name="chats_observed_note">这是 %1$s 的对话。你正在旁观，不能在这里发言。</string>
     <string name="chats_add">添加</string>
     <string name="chats_add_files">添加文件</string>
     <string name="chats_add_people">添加成员</string>

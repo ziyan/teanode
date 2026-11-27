@@ -22,6 +22,7 @@ public enum Documents {
           ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
             conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote chat { \(chatFields) } }
             actingAs
+            isObserved
             messages {
               \(messageFields)
               toolCalls { id name arguments intention }
@@ -254,6 +255,9 @@ public struct ConversationPage: Sendable {
     public let todos: [AgentTodo]
     /// Whose agent this is, when an operator is looking at somebody else's.
     public let actingAs: String?
+    /// Whether the reader is not the owner, so the conversation is read-only
+    /// here: the screen shows a note in place of the composer.
+    public let isObserved: Bool
 }
 
 /// AgentIdea is something the agent suggests starting with.
@@ -306,6 +310,7 @@ extension Connection {
             struct Read: Decodable, Sendable {
                 let conversation: AgentConversation?
                 let actingAs: String?
+                let isObserved: Bool?
                 let messages: [AgentMessage]
                 let total: Int?
                 let todos: [AgentTodo]?
@@ -320,7 +325,7 @@ extension Connection {
         return ConversationPage(
             conversation: read.conversation, messages: read.messages, interactions: answer.ListAgentInteractions ?? [],
             total: read.total ?? read.messages.count, todos: read.todos ?? [],
-            actingAs: (read.actingAs ?? "").isEmpty ? nil : read.actingAs)
+            actingAs: (read.actingAs ?? "").isEmpty ? nil : read.actingAs, isObserved: read.isObserved ?? false)
     }
 
     /// Renames a conversation, or puts it away or back.

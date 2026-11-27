@@ -62,7 +62,12 @@ type codexItem struct {
 	CallID    string `json:"call_id,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
-	Output    string `json:"output,omitempty"`
+
+	// Output is a call's answer. A pointer, so that an empty answer is still
+	// sent: the service refuses a call's answer with no output field
+	// ("Missing required parameter: 'input[10].output'"), and a tool that
+	// answered nothing is still an answer.
+	Output *string `json:"output,omitempty"`
 }
 
 type codexContent struct {
@@ -180,7 +185,7 @@ func (self *codex) encodeMessages(request *ChatRequest, messages []ChatMessage) 
 
 		case RoleTool:
 			body.Input = append(body.Input, codexItem{
-				Type: "function_call_output", CallID: message.ToolCallID, Output: message.Content,
+				Type: "function_call_output", CallID: message.ToolCallID, Output: &message.Content,
 			})
 
 		case RoleAssistant:
@@ -194,9 +199,15 @@ func (self *codex) encodeMessages(request *ChatRequest, messages []ChatMessage) 
 				})
 			}
 			for _, call := range message.ToolCalls {
+				// A call with no arguments still sends an object: the field
+				// is required, and an empty one would be left out.
+				arguments := call.Arguments
+				if strings.TrimSpace(arguments) == "" {
+					arguments = "{}"
+				}
 				body.Input = append(body.Input, codexItem{
 					Type: "function_call", CallID: call.ID,
-					Name: call.Name, Arguments: call.Arguments,
+					Name: call.Name, Arguments: arguments,
 				})
 			}
 
@@ -370,7 +381,13 @@ func (self *codex) read(response *http.Response, model string, events chan<- Str
 			if message == "" {
 				message = "the service ended the answer without saying why"
 			}
-			events <- StreamEvent{Kind: StreamError, Err: &APIError{Status: http.StatusBadGateway, Message: message, Param: param}}
+			// A refusal of the request is the request's, not an outage:
+			// told apart, so that it is not taken for the service being down.
+			status := http.StatusBadGateway
+			if IsPolicyRefusal(&APIError{Message: message}) {
+				status = http.StatusBadRequest
+			}
+			events <- StreamEvent{Kind: StreamError, Err: &APIError{Status: status, Message: message, Param: param}}
 			return
 		}
 	}
