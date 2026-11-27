@@ -28,12 +28,6 @@ import (
 // turns or budget. See background.go.
 
 const (
-	// backgroundWorkLongest is how long one piece of work may run: a
-	// survey's quarter of an hour and some room. The job's own bound is a
-	// little longer, so that the work reaching this one is recorded as
-	// failed rather than put back in the queue to run again.
-	backgroundWorkLongest = surveyLongest + 5*time.Minute
-
 	// backgroundWorkStopCheck is how often running work looks at its row
 	// for a stop made on another instance, which cannot reach this one's
 	// cancel.
@@ -43,17 +37,15 @@ const (
 	// work whose job vanished, and finished work whose wake was lost.
 	backgroundWorkSweepEvery = time.Minute
 
-	// backgroundWorkStaleAfter is how old queued or running work is
-	// before it is taken to have lost its job and is failed.
-	backgroundWorkStaleAfter = 24 * time.Hour
+	// backgroundWorkLostAfter is how old queued or running work with no job
+	// left to run it is before it is failed: long enough that a job being
+	// handed over is never taken for a lost one.
+	backgroundWorkLostAfter = 10 * time.Minute
 
 	// Finished work whose conversation was not woken is woken by the
 	// sweep once it has been finished backgroundWorkWakeAfter, which
-	// leaves the wake the job itself hands over its time, and until it
-	// has been finished backgroundWorkWakeWithin, after which it is too
-	// late to be news.
-	backgroundWorkWakeAfter  = time.Minute
-	backgroundWorkWakeWithin = time.Hour
+	// leaves the wake the job itself hands over its time.
+	backgroundWorkWakeAfter = time.Minute
 
 	// backgroundWorkWakeClaimExpiry is how long a claim on waking the
 	// conversation for finished work holds. Longer than a woken turn
@@ -187,8 +179,8 @@ func (self *Agent) runBackgroundWork(ctx context.Context, run *Run) error {
 
 	stopContext, cancelWork := context.WithCancelCause(ctx)
 	defer cancelWork(nil)
-	workContext, cancelDeadline := context.WithTimeout(stopContext, backgroundWorkLongest)
-	defer cancelDeadline()
+	workContext, cancelWatching := context.WithCancel(stopContext)
+	defer cancelWatching()
 	release := self.holdRunningWork(work.ID, cancelWork)
 	defer release()
 	watched := make(chan struct{})
@@ -198,7 +190,7 @@ func (self *Agent) runBackgroundWork(ctx context.Context, run *Run) error {
 	}()
 
 	resultText, runIds, err := self.carryOutBackgroundWork(workContext, run, work)
-	cancelDeadline()
+	cancelWatching()
 	<-watched
 
 	isStopped := errors.Is(context.Cause(stopContext), errBackgroundWorkStopped)
@@ -212,9 +204,6 @@ func (self *Agent) runBackgroundWork(ctx context.Context, run *Run) error {
 	switch {
 	case isStopped:
 		work.WorkStatus = models.BackgroundWorkStopped
-	case err != nil && errors.Is(err, context.DeadlineExceeded):
-		work.WorkStatus = models.BackgroundWorkFailed
-		work.ErrorMessage = "it ran out of time and was stopped"
 	case err != nil:
 		work.WorkStatus, work.ErrorMessage = models.BackgroundWorkFailed, err.Error()
 	default:
@@ -329,7 +318,7 @@ func (self *Agent) backgroundSubagent(ctx context.Context, run *Run, work *model
 	if err != nil {
 		return "", runIds, err
 	}
-	answer, _, _, err := followSubagent(ctx, turn, conversation.ID, backgroundWorkLongest)
+	answer, _, _, err := followSubagent(ctx, turn, conversation.ID)
 	return answer, runIds, err
 }
 
@@ -360,12 +349,12 @@ func (self *Agent) sweepBackgroundWork(ctx context.Context, now time.Time) {
 	self.lastBackgroundSweep = now
 	var lost []*models.AgentBackgroundWork
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if failed, err := tx.FailStaleAgentBackgroundWork(now.Add(-backgroundWorkStaleAfter), "its job was lost before it finished"); err != nil {
+		if failed, err := tx.FailStaleAgentBackgroundWork(now.Add(-backgroundWorkLostAfter), "its job was lost before it finished"); err != nil {
 			return err
 		} else if failed > 0 {
 			log.Noticef("failed %d piece(s) of background work whose job was lost", failed)
 		}
-		lost, err = tx.ListAgentBackgroundWorkToWake(now.Add(-backgroundWorkWakeWithin), now.Add(-backgroundWorkWakeAfter), now.Add(-backgroundWorkWakeClaimExpiry), 0)
+		lost, err = tx.ListAgentBackgroundWorkToWake(time.Time{}, now.Add(-backgroundWorkWakeAfter), now.Add(-backgroundWorkWakeClaimExpiry), 0)
 		return err
 	}); err != nil {
 		log.Warningf("cannot sweep the background work: %s", err)

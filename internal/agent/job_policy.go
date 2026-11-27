@@ -25,15 +25,6 @@ func jobTimeout(jobKind models.AgentJobKind) time.Duration {
 		return recordingLongest
 	case models.AgentJobEvaluate:
 		return evaluationLongest
-	case models.AgentJobBackground:
-		// A little past the work's own bound, so that work reaching
-		// that bound is recorded as failed rather than put back in the
-		// queue, as a job cut off by its deadline is.
-		return backgroundWorkLongest + 2*time.Minute
-	case models.AgentJobSpeakFirst:
-		// A memory check is a conversation held in one turn, a question
-		// card at a time, each waited on for as long as a confirmation.
-		return speakFirstLongest
 	case models.AgentJobCategorize:
 		return categorizeLongest
 	case models.AgentJobRecordingSummary:
@@ -45,7 +36,27 @@ func jobTimeout(jobKind models.AgentJobKind) time.Duration {
 	}
 }
 
+// jobHasNoDeadline says a kind of job is not stopped at a time: background
+// work, which goes on until it is done or somebody stops it, and a turn that
+// speaks first, which is a conversation held at the person's pace. Such a job
+// renews its claim while it runs (see keepJobClaimed) and is taken for lost
+// only when it stops doing so.
+func jobHasNoDeadline(jobKind models.AgentJobKind) bool {
+	return jobKind == models.AgentJobBackground || jobKind == models.AgentJobSpeakFirst
+}
+
+const (
+	// jobClaimRenewedEvery is how often a job with no deadline says it is
+	// still running, and jobClaimLapsesAfter how long after the last time
+	// it did one is put back in the queue as lost.
+	jobClaimRenewedEvery = time.Minute
+	jobClaimLapsesAfter  = 5 * time.Minute
+)
+
 func jobClaimLifetime(jobKind models.AgentJobKind) time.Duration {
+	if jobHasNoDeadline(jobKind) {
+		return jobClaimLapsesAfter
+	}
 	return jobTimeout(jobKind) + 5*time.Minute
 }
 
