@@ -13,7 +13,10 @@ import (
 	"io"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // What a notification says, encrypted for the one phone it goes to.
@@ -83,6 +86,40 @@ type Content struct {
 	// that phone by ForLanguage. Title and Body are then what it leaves them
 	// as. It is never sent.
 	Wording func(content *Content, language string) `json:"-"`
+}
+
+// titleRunesMost and labelRunesMost are how much of a title or a button label
+// a notification shows: one short line each.
+const (
+	titleRunesMost = 120
+	labelRunesMost = 40
+)
+
+// Plain is a copy of the content whose Title, Body and button labels are
+// plain text, with no Markdown mark in them. A title and a label are one
+// line, cut short after they are converted, so a cut never lands inside
+// syntax. The body keeps its line breaks.
+func (self *Content) Plain() *Content {
+	plain := *self
+	plain.Title = plainLine(self.Title, titleRunesMost)
+	plain.Body = models.PlainText(self.Body)
+	if self.Buttons != nil {
+		plain.Buttons = make([]Button, len(self.Buttons))
+		for index, button := range self.Buttons {
+			button.Label = plainLine(button.Label, labelRunesMost)
+			plain.Buttons[index] = button
+		}
+	}
+	return &plain
+}
+
+// plainLine is text as one plain line of at most runesMost characters.
+func plainLine(text string, runesMost int) string {
+	text = strings.Join(strings.Fields(models.PlainText(text)), " ")
+	if runes := []rune(text); len(runes) > runesMost {
+		return string(runes[:runesMost-1]) + "…"
+	}
+	return text
 }
 
 // Button is one action on a notification.
@@ -365,10 +402,16 @@ func envelopeId(key []byte, label, value string) string {
 
 // EncryptContent seals content for the phone holding key, shortening the body
 // when the payload the relay will make of it would be over what APNs takes.
+//
+// It is the one place every notification passes, after any Wording has
+// rewritten it for a language, so it is where Title, Body and the button
+// labels are made plain text (Content.Plain): a notification never shows a
+// Markdown mark, whoever composed it.
 func EncryptContent(key []byte, content *Content) (*Delivery, error) {
 	if len(key) != PhoneKeyBytes {
 		return nil, fmt.Errorf("push: a phone's key is %d bytes, not %d", len(key), PhoneKeyBytes)
 	}
+	content = content.Plain()
 	threadId := envelopeId(key, "thread", content.ThreadID)
 	collapseId := envelopeId(key, "card", content.CallID)
 	// Base64 makes the ciphertext a third larger, and the "aps" dictionary
