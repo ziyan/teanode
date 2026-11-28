@@ -14,7 +14,7 @@ How to read it:
 - syncedFinanceAccountId is the id of one of the accounts synced from banks, listed below, when the statement is of it; leave it out otherwise.
 - One entry in transactionRows per transaction, in the order shown. postedOn is the day it posted, written 2026-09-30 (26.09.30 is 2026-09-30); where the list shows both the day of use and the day it posted, use the posted one. description exactly as shown. amount is signed, money out negative, with no thousands separators and no currency sign. transactionKind is one of {{.TransactionKinds}}, or left out.
 - runningBalanceAmount on every row that shows a balance after it.
-- monthlyTotals exactly as a card's list shows them per month, and only for a month whose every row the statement shows: a month cut off at the top or the bottom of a picture has no total, since its rows shown do not come to it. totalMonth on a row only when the list groups rows under a statement month rather than the month they posted.
+- monthlyTotals exactly as the list shows them per month. When the list shows monthly totals, give only whole months: a month cut off at the top or the bottom of a picture is left out, its rows and its total, since its rows shown do not come to its total. totalMonth on a row only when the list groups rows under a statement month rather than the month they posted.
 - ledgerBalanceAmount is the account's balance as the statement shows it, with ledgerBalanceOn its day.
 - Never guess a row that is cut off: leave out a row, or a month, that the statement does not show whole.
 - Never invent a field, a row or a number the statement does not show.

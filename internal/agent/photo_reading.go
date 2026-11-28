@@ -322,7 +322,7 @@ func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 		return err
 	}
 	thinking, err := self.thinkAbout(ctx, run, "Reading the statement "+attachment.Name, prompt, source.pictures, noTools, 1,
-		models.AgentJobStatementPhoto, config.AgentWorkScan)
+		models.AgentJobStatementPhoto, config.AgentWorkResearch)
 	if err != nil {
 		return err
 	}
@@ -340,9 +340,11 @@ func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 	answer := readModelAnswer[statementPhotoAnswer](thinking.Text, "isStatement")
 	today := time.Now().In(Location(run.Owner)).Format(time.DateOnly)
 	// A reading whose rows do not add up (to a month's total, to the
-	// running balances) is shown why and read once more: a quick model
-	// often copies the total of a month the picture cuts off, or puts a row
-	// under the wrong month, and sees it when told.
+	// running balances) is shown why and read once more: a model often
+	// copies the total of a month the picture cuts off, or puts a row under
+	// the wrong month, and sees it when told. Statements are read by the
+	// research model, not the fast one: a row misread is a wrong record in
+	// the person's finances.
 	if answer.IsValid && answer.Value.IsStatement && len(answer.Value.TransactionRows) > 0 {
 		// Only the rows are checked here: the account is chosen after, and an
 		// account named stands in so a screenshot showing no number is not
@@ -352,10 +354,10 @@ func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 		if _, checkErr := finance.CheckTransactionRows(rowsOnly, today); errors.Is(checkErr, finance.ErrTransactionRowsRefused) {
 			why := strings.TrimPrefix(checkErr.Error(), finance.ErrTransactionRowsRefused.Error()+": ")
 			again := prompt + "\n\nYou read it once already, and answered:\n" + thinking.Text + "\n\nThat reading does not add up: " + why +
-				". Look at the statement again. A month cut off at the top or the bottom of a picture has no total: leave its total out. " +
+				". Look at the statement again. A month cut off at the top or the bottom of a picture is left out whole, its rows and its total, when the list shows totals. " +
 				"Otherwise read that month's rows, their days and their amounts again. Answer with the whole JSON object again."
 			second, err := self.thinkAbout(ctx, run, "Reading the statement "+attachment.Name+" again", again, source.pictures, noTools, 1,
-				models.AgentJobStatementPhoto, config.AgentWorkScan)
+				models.AgentJobStatementPhoto, config.AgentWorkResearch)
 			if err != nil {
 				return err
 			}
