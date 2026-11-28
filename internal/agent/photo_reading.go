@@ -373,6 +373,17 @@ func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 		return whyNothing("it shows no transactions of one account")
 	}
 	input := answer.Value.transactionRowsInput()
+	// A balance shown with no day: a screenshot of an app shows the balance
+	// as it is now, so a picture handed in has it as of the day it arrived;
+	// anything else leaves it out rather than guess, and the rows still go
+	// in.
+	if strings.TrimSpace(input.LedgerBalanceAmount) != "" && input.LedgerBalanceOn == "" {
+		if isHandedIn && len(source.pictures) > 0 && source.documentText == "" && IsImageAttachment(attachment.ContentType) {
+			input.LedgerBalanceOn = attachment.CreatedAt.In(Location(run.Owner)).Format(time.DateOnly)
+		} else {
+			input.LedgerBalanceAmount = ""
+		}
+	}
 	if synced := accountOf(providerAccounts, answer.Value.SyncedFinanceAccountID); synced != nil {
 		return whyNothing(syncedAccountWhy([]*finance.ExistingStatementAccount{synced}))
 	}

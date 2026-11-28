@@ -216,3 +216,17 @@ func TestAReadingThatDoesNotAddUpIsReadOnceMore(test *testing.T) {
 		test.Fatalf("the second reading is imported: %q", cards)
 	}
 }
+
+// A screenshot shows the balance as it is now, with no day: a picture handed
+// in has it as of the day it arrived, rather than being refused for it.
+func TestAScreenshotsBalanceWithNoDayIsAsOfTheDayItArrived(test *testing.T) {
+	withBalance := strings.Replace(inventedCardScreenshotAnswer, `"transactionRows"`, `"ledgerBalanceAmount": "-16.50", "transactionRows"`, 1)
+	fixture, _ := receiptJobFixture(test, withBalance)
+	upload := fixture.statementUpload(test, "picture-1.jpg", "image/jpeg", []byte("\xff\xd8\xffan invented screenshot"))
+	if err := fixture.worker.runReadStatementPhoto(test.Context(), fixture.statementJobRun(upload.ID)); err != nil {
+		test.Fatalf("runReadStatementPhoto: %s", err)
+	}
+	if cards := fixture.feedCards(test); len(cards) != 1 || !strings.HasPrefix(cards[0], "Imported 2 transactions into ") {
+		test.Fatalf("the screenshot is imported with its balance: %q", cards)
+	}
+}
