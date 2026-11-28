@@ -191,6 +191,7 @@
     <string name="finance_import_source_upload">已上传</string>
     <string name="finance_import_source_photo">来自已备份的照片</string>
     <string name="finance_import_source_mail">来自邮件</string>
+    <string name="finance_import_open_file">打开文件</string>
     <string name="finance_import_status_queued">等待中</string>
     <string name="finance_import_status_running">读取中</string>
     <string name="finance_import_status_done">已完成</string>

@@ -4410,7 +4410,6 @@ export const ja: Catalog = {
   'finance.importState.done': '完了',
   'finance.importState.dead': '失敗',
   'finance.importState.cancelled': 'キャンセル',
-  'finance.importQueuedAt': '{time} に待機開始',
   'finance.importOpenRun': '実行を開く',
   'finance.importOpenRunOf': '{name} を読み取った実行を開く',
   'finance.importOpenFile': 'ファイルを開く',

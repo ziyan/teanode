@@ -1,6 +1,24 @@
 package com.teanode.app.finance
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import com.teanode.app.chats.PictureLightbox
+import com.teanode.app.chats.openServerFile
+import com.teanode.app.mail.MailRoutes
+import com.teanode.app.ui.components.rememberServerPicture
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -102,8 +120,39 @@ internal fun FinanceImportRow(financeImport: FinanceImport) {
     val kindAndSource = listOf(kindText, sourceText).filter { text -> text.isNotEmpty() }.joinToString(" · ")
     val statusAndDate = listOf(statusText, dateText).filter { text -> text.isNotEmpty() }.joinToString(" · ")
     val outcomeText = financeImport.outcomeText.orEmpty().trim()
+    val connection = LocalConnection.current
+    val navigator = LocalAppNavigator.current
+    val snackbar = LocalSnackbar.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val attachmentId = financeImport.agentAttachmentId.orEmpty()
+    val mailboxItemId = financeImport.mailboxItemId.orEmpty()
+    val isPicture = attachmentId.isNotEmpty() && financeImport.attachmentContentType.orEmpty().startsWith("image/")
+    val isFile = attachmentId.isNotEmpty() && !isPicture
+    val fileName = financeImport.fileName.orEmpty().ifEmpty { stringResource(R.string.finance_import_unnamed) }
+    var isPictureOpen by remember { mutableStateOf(false) }
     ListItem(
-        headlineContent = { Text(financeImport.fileName.orEmpty().ifEmpty { stringResource(R.string.finance_import_unnamed) }) },
+        modifier = if (mailboxItemId.isNotEmpty()) Modifier.clickable(role = Role.Button) { navigator.navigate(MailRoutes.thread(mailboxItemId, null)) } else Modifier,
+        leadingContent = if (isPicture) {
+            {
+                val path = "/api/v1/agent/attachments/$attachmentId"
+                val picture = rememberServerPicture(path)
+                Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button) { isPictureOpen = true }) {
+                    if (picture != null) Image(picture, contentDescription = fileName, contentScale = ContentScale.Crop, modifier = Modifier.size(56.dp))
+                }
+                if (isPictureOpen && picture != null) PictureLightbox(path, fileName, path, onClose = { isPictureOpen = false })
+            }
+        } else null,
+        trailingContent = if (isFile) {
+            {
+                IconButton(onClick = {
+                    scope.launch {
+                        try { openServerFile(context, connection, attachmentId) } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { snackbar.showError(failure) }
+                    }
+                }) { Icon(Icons.Outlined.Description, contentDescription = stringResource(R.string.finance_import_open_file)) }
+            }
+        } else null,
+        headlineContent = { Text(fileName) },
         supportingContent = {
             Column {
                 if (kindAndSource.isNotEmpty()) Text(kindAndSource)

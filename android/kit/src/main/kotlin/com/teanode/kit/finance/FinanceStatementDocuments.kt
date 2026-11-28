@@ -31,7 +31,7 @@ object FinanceStatementDocuments {
 
     const val FINANCE_IMPORTS = $$"""query ($limit: Int, $offset: Int) {
           FinanceImports(limit: $limit, offset: $offset) {
-            financeImports { agentJobId financeImportKind financeImportSource agentJobStatus fileName queuedAt finishedAt outcomeText runConversationId }
+            financeImports { agentJobId financeImportKind financeImportSource agentJobStatus fileName agentAttachmentId attachmentContentType mailboxItemId queuedAt finishedAt outcomeText runConversationId }
             hasMore totalCount
           }
         }"""

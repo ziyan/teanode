@@ -4459,7 +4459,6 @@ export const en = {
   'finance.importState.done': 'Done',
   'finance.importState.dead': 'Failed',
   'finance.importState.cancelled': 'Cancelled',
-  'finance.importQueuedAt': 'Queued {time}',
   'finance.importOpenRun': 'Open the run',
   'finance.importOpenRunOf': 'Open the run that read {name}',
   'finance.importOpenFile': 'Open file',

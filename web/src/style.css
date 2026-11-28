@@ -26610,8 +26610,25 @@ a.feed-agenda-body:hover .feed-agenda-title {
   padding-bottom: 10px;
 }
 
-.finance-imports-table .table-surface td:last-child {
-  min-width: 12rem;
+/* Fixed columns, the outcome a wrapping one (td.wrap, so a phone does not
+   size the table to the sentence on one line): the file and its status take
+   what they need and the outcome the rest; below 480px the table scrolls
+   sideways a little rather than squeezing the status to a word a line. */
+.finance-imports-table .table-surface table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 480px;
+}
+.finance-imports-table .table-surface th:nth-child(1),
+.finance-imports-table .table-surface td:nth-child(1) {
+  width: 24%;
+}
+.finance-imports-table .table-surface th:nth-child(2),
+.finance-imports-table .table-surface td:nth-child(2) {
+  width: 20%;
+}
+.finance-imports-table .table-surface td {
+  overflow-wrap: anywhere;
 }
 
 .finance-imports-table .table-surface td:last-child .button {

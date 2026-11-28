@@ -191,6 +191,7 @@
     <string name="finance_import_source_upload">アップロード</string>
     <string name="finance_import_source_photo">バックアップした写真から</string>
     <string name="finance_import_source_mail">メールから</string>
+    <string name="finance_import_open_file">ファイルを開く</string>
     <string name="finance_import_status_queued">待機中</string>
     <string name="finance_import_status_running">読み取り中</string>
     <string name="finance_import_status_done">完了</string>

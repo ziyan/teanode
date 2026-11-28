@@ -4243,7 +4243,6 @@ export const zh: Catalog = {
   'finance.importState.done': '已完成',
   'finance.importState.dead': '失败',
   'finance.importState.cancelled': '已取消',
-  'finance.importQueuedAt': '排队于 {time}',
   'finance.importOpenRun': '打开这次运行',
   'finance.importOpenRunOf': '打开读取 {name} 的那次运行',
   'finance.importOpenFile': '打开文件',

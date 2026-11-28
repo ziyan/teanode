@@ -2,10 +2,11 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { graphql, openAgentConversation } from '../../api'
-import { ErrorMessage, formatTime } from '../../components/common'
+import { ErrorMessage } from '../../components/common'
 import { Column, DataTable, Range } from '../../components/dataTable'
 import { ZoomablePicture } from '../../components/lightbox'
 import { usePageInAddress } from '../../components/pager'
+import { RelativeTime } from '../../components/relativeTime'
 import { SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
 import { useQuery } from '../../components/useQuery'
@@ -132,13 +133,16 @@ export function FinanceImportsSection() {
       render: (financeImport) => (
         <>
           <div>{t(`finance.importState.${financeImport.agentJobStatus}`)}</div>
-          <div className="muted">{t('finance.importQueuedAt', { time: formatTime(financeImport.queuedAt) })}</div>
+          <div className="muted">
+            <RelativeTime value={financeImport.queuedAt} />
+          </div>
         </>
       ),
     },
     {
       key: 'outcome',
       header: t('finance.importOutcome'),
+      wrap: true,
       render: (financeImport) => (
         <>
           <div>{financeImport.outcomeText || t('finance.importNoOutcome')}</div>

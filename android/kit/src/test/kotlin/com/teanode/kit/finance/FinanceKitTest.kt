@@ -81,12 +81,15 @@ class FinanceStatementTest {
     @Test
     fun theFilesReadInTheBackgroundArePagedNewestFirst() = runBlocking {
         val (connection, fake) = connectionAnswering(
-            """{"data":{"FinanceImports":{"financeImports":[{"agentJobId":"job-2","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"picture-1.jpg","queuedAt":"2026-10-14T12:00:00Z","finishedAt":"2026-10-14T12:02:00Z","outcomeText":"Added 4 transactions to Example Bank.","runConversationId":"run-1"},{"agentJobId":"job-1","financeImportKind":"receipt","financeImportSource":"mail","agentJobStatus":"queued","fileName":"scan-1.pdf","queuedAt":"2026-10-13T12:00:00Z","finishedAt":"","outcomeText":"","runConversationId":""}],"hasMore":true,"totalCount":3}}}""",
+            """{"data":{"FinanceImports":{"financeImports":[{"agentJobId":"job-2","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"picture-1.jpg","agentAttachmentId":"att-9","attachmentContentType":"image/jpeg","mailboxItemId":"","queuedAt":"2026-10-14T12:00:00Z","finishedAt":"2026-10-14T12:02:00Z","outcomeText":"Added 4 transactions to Example Bank.","runConversationId":"run-1"},{"agentJobId":"job-1","financeImportKind":"receipt","financeImportSource":"mail","agentJobStatus":"queued","fileName":"scan-1.pdf","agentAttachmentId":"","attachmentContentType":"application/pdf","mailboxItemId":"item-3","queuedAt":"2026-10-13T12:00:00Z","finishedAt":"","outcomeText":"","runConversationId":""}],"hasMore":true,"totalCount":3}}}""",
         )
         val page = connection.financeImports(limit = 2, offset = 4)
         assertEquals(listOf("job-2", "job-1"), page.financeImports.filterNotNull().map { each -> each.agentJobId })
         assertEquals("Added 4 transactions to Example Bank.", page.financeImports.first()?.outcomeText)
         assertEquals("queued", page.financeImports.last()?.agentJobStatus)
+        assertEquals("att-9", page.financeImports.first()?.agentAttachmentId)
+        assertEquals("image/jpeg", page.financeImports.first()?.attachmentContentType)
+        assertEquals("item-3", page.financeImports.last()?.mailboxItemId)
         assertEquals(true, page.hasMore)
         assertEquals(3, page.totalCount)
         assertEquals(2, variablesOf(fake.sent.last())["limit"]?.let { (it as JsonPrimitive).content.toInt() })
