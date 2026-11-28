@@ -502,6 +502,13 @@ jobs:
           shoot finance-sharing-all-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-sharing-all
           shoot finance-person-all-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-person-all
           shoot finance-person-all-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-person-all
+          # The files read into finance in the background, one of each status.
+          shoot finance-imports-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-imports
+          shoot finance-imports-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-imports
+          shoot finance-imports-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-imports
+          shoot finance-import-detail-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-import-detail
+          shoot finance-import-detail-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-import-detail
+          shoot finance-import-detail-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-import-detail
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
           shoot goals-dark dark large -TeaNodeDemo -TeaNodeTab goals

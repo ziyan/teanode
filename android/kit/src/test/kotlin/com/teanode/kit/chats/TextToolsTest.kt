@@ -461,6 +461,10 @@ class SharedFilesTest {
         assertTrue(SharedFiles.isStatement("export.QFX", ByteArray(0)))
         assertTrue(SharedFiles.isStatement("export.txt", "OFXHEADER:100\nDATA:OFXSGML".toByteArray()))
         assertFalse(SharedFiles.isStatement("notes.txt", "hello".toByteArray()))
+        assertTrue(SharedFiles.isStatementOrPicture("picture-1.jpg", "image/jpeg", ByteArray(0)))
+        assertTrue(SharedFiles.isStatementOrPicture("statement-1.pdf", "application/pdf", ByteArray(0)))
+        assertTrue(SharedFiles.isStatementOrPicture("export.ofx", "application/octet-stream", ByteArray(0)))
+        assertFalse(SharedFiles.isStatementOrPicture("notes.txt", "text/plain", "hello".toByteArray()))
     }
 
     @Test
@@ -469,7 +473,7 @@ class SharedFilesTest {
         val statement = Triple("a.ofx", "application/octet-stream", ByteArray(1))
         val song = Triple("a.m4a", "audio/mp4", ByteArray(1))
         assertEquals(listOf(ShareDestination.Agent), SharedFiles.destinations(emptyList(), true))
-        assertEquals(listOf(ShareDestination.Agent, ShareDestination.TaxDocuments), SharedFiles.destinations(listOf(picture), true))
+        assertEquals(listOf(ShareDestination.Agent, ShareDestination.TaxDocuments, ShareDestination.Statements), SharedFiles.destinations(listOf(picture), true))
         assertEquals(listOf(ShareDestination.Agent, ShareDestination.Statements), SharedFiles.destinations(listOf(statement), true))
         assertEquals(listOf(ShareDestination.Agent, ShareDestination.Recording), SharedFiles.destinations(listOf(song), true))
         // A person with no recordings is not offered one.

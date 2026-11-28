@@ -52,6 +52,52 @@ type ImportStatementArguments struct {
 	MailboxItemID     string `json:"mailboxItemId" graphapi:"nullable"`
 }
 
+// ReadStatementArguments name the picture or the PDF to read the
+// transactions of: an upload to the agent's attachments.
+type ReadStatementArguments struct {
+	AgentAttachmentID string `json:"agentAttachmentId"`
+}
+
+// StatementReadingView is the upload queued to be read and the job that
+// reads it, whose run says what was read.
+type StatementReadingView struct {
+	AgentAttachmentID string `json:"agentAttachmentId"`
+	AgentJobID        string `json:"agentJobId"`
+}
+
+func (self *graph) ReadStatement(ctx context.Context, arguments ReadStatementArguments) (*StatementReadingView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.requireFinanceOffered(); err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	attachment, err := self.transaction(ctx).GetAgentAttachment(strings.TrimSpace(arguments.AgentAttachmentID))
+	if err != nil {
+		return nil, err
+	}
+	if attachment == nil || attachment.AgentID != found.ID {
+		return nil, api.ErrNotFound
+	}
+	isPDF := agent.IsPDFAttachment(attachment)
+	if !isPDF && !agent.IsImageAttachment(attachment.ContentType) {
+		return nil, fmt.Errorf("%w: %s is not a picture or a PDF; an OFX file is imported with importStatement", api.ErrInvalidArguments, attachment.Name)
+	}
+	if isPDF && !agent.CanReadPDFs() {
+		return nil, fmt.Errorf("%w: this server cannot read PDFs, so upload a screenshot or a photo of %s", api.ErrInvalidArguments, attachment.Name)
+	}
+	job, err := worker.QueueStatementReading(self.transaction(ctx), found.ID, attachment.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &StatementReadingView{AgentAttachmentID: attachment.ID, AgentJobID: job.ID}, nil
+}
+
 // statementSourceOf is the person's statement source: made, with its
 // address, the first time it is asked for on a server that offers finance;
 // only read on one that no longer does.

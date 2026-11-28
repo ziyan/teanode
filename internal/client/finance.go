@@ -947,6 +947,15 @@ const (
 
 	DocumentStatementImport = `query { StatementImport ` + statementImportFields + ` }`
 
+	DocumentReadStatement = `mutation ($agentAttachmentId: String!) { ReadStatement(agentAttachmentId: $agentAttachmentId) { agentAttachmentId agentJobId } }`
+
+	DocumentFinanceImports = `query ($limit: Int, $offset: Int) {
+  FinanceImports(limit: $limit, offset: $offset) {
+    financeImports { agentJobId financeImportKind financeImportSource agentJobStatus fileName agentAttachmentId attachmentContentType mailboxItemId queuedAt finishedAt outcomeText runConversationId }
+    hasMore totalCount
+  }
+}`
+
 	DocumentImportStatement = `mutation ($agentAttachmentId: String, $mailboxItemId: String) {
   ImportStatement(agentAttachmentId: $agentAttachmentId, mailboxItemId: $mailboxItemId) ` + financeStatementImportFields + `
 }`
@@ -1149,6 +1158,7 @@ var FinanceDocuments = map[string]string{
 	"SavingSummary": DocumentSavingSummary, "SpendingByDay": DocumentSpendingByDay, "CashFlow": DocumentCashFlow, "SavingsTargets": DocumentSavingsTargets,
 	"ReportingCurrency": DocumentReportingCurrency,
 	"StatementImport":   DocumentStatementImport, "ImportStatement": DocumentImportStatement,
+	"ReadStatement": DocumentReadStatement, "FinanceImports": DocumentFinanceImports,
 	"RegenerateStatementImportAddress": DocumentRegenerateStatementImportAddress,
 	"ImportTransactions":               DocumentImportTransactions, "PreviewImportTransactions": DocumentPreviewImportTransactions,
 	"RenameStatementAccount": DocumentRenameStatementAccount,
@@ -1205,6 +1215,36 @@ type TaxFormPage struct {
 type TaxDocumentReading struct {
 	AgentAttachmentIDs []string `json:"agentAttachmentIds"`
 	AgentJobIDs        []string `json:"agentJobIds"`
+}
+
+// StatementReading is the upload queued to be read as a statement, and the
+// job reading it.
+type StatementReading struct {
+	AgentAttachmentID string `json:"agentAttachmentId"`
+	AgentJobID        string `json:"agentJobId"`
+}
+
+// FinanceImport is one file read into finance in the background.
+type FinanceImport struct {
+	AgentJobID            string     `json:"agentJobId"`
+	FinanceImportKind     string     `json:"financeImportKind"`
+	FinanceImportSource   string     `json:"financeImportSource"`
+	AgentJobStatus        string     `json:"agentJobStatus"`
+	FileName              string     `json:"fileName"`
+	AgentAttachmentID     string     `json:"agentAttachmentId"`
+	AttachmentContentType string     `json:"attachmentContentType"`
+	MailboxItemID         string     `json:"mailboxItemId"`
+	QueuedAt              time.Time  `json:"queuedAt"`
+	FinishedAt            *time.Time `json:"finishedAt"`
+	OutcomeText           string     `json:"outcomeText"`
+	RunConversationID     string     `json:"runConversationId"`
+}
+
+// FinanceImportPage is one page of imports.
+type FinanceImportPage struct {
+	FinanceImports []*FinanceImport `json:"financeImports"`
+	HasMore        bool             `json:"hasMore"`
+	TotalCount     int64            `json:"totalCount"`
 }
 
 // Executor runs a document: a Client, or the agent's operations as the

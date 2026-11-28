@@ -21751,6 +21751,198 @@
         }
       }
     },
+    "Statement": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明細"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对账单"
+          }
+        }
+      }
+    },
+    "Tax document": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税務書類"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税务文件"
+          }
+        }
+      }
+    },
+    "Backed-up photo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップ済みの写真"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已备份的照片"
+          }
+        }
+      }
+    },
+    "Reading": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み取り中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取中"
+          }
+        }
+      }
+    },
+    "Waiting to be read": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み取り待ち"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待读取"
+          }
+        }
+      }
+    },
+    "Imports": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り込み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入"
+          }
+        }
+      }
+    },
+    "Nothing imported yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り込みはまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有导入"
+          }
+        }
+      }
+    },
+    "Share a screenshot, a photo or a PDF of a statement to TeaNode and choose Import transactions. What came of each shows here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明細のスクリーンショット、写真、PDF を TeaNode に共有して「取引を取り込む」を選ぶと、それぞれの結果がここに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把对账单的截图、照片或 PDF 分享给 TeaNode，并选择“导入交易”，每份文件的结果会显示在这里。"
+          }
+        }
+      }
+    },
+    "Reading 1 picture or PDF. What came of it shows in your feed and under Finance, Imports.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像または PDF を 1 件読み取っています。結果はフィードと「家計」の「取り込み」に表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取 1 张图片或 PDF，结果会显示在动态和“财务”的“导入”中。"
+          }
+        }
+      }
+    },
+    "Reading %lld pictures and PDFs. What came of each shows in your feed and under Finance, Imports.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像と PDF を %lld 件読み取っています。それぞれの結果はフィードと「家計」の「取り込み」に表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取 %lld 张图片和 PDF，每份的结果会显示在动态和“财务”的“导入”中。"
+          }
+        }
+      }
+    },
+    "Files that are not OFX statements, pictures or PDFs were left out.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OFX の明細、画像、PDF のいずれでもないファイルは除きました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是 OFX 对账单、图片或 PDF 的文件已略过。"
+          }
+        }
+      }
+    },
+    "Each OFX, QFX or QBO file is imported into your accounts at once; a transaction imported twice is kept once. Each picture or PDF of a statement or a bank app is read in the background, and what came of it shows in your feed and under Finance, Imports. No note goes with them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OFX、QFX、QBO ファイルは口座にすぐ取り込まれ、2 回取り込まれた取引は 1 件として残ります。明細やバンクアプリの画像と PDF はバックグラウンドで読み取られ、結果はフィードと「家計」の「取り込み」に表示されます。メモは付きません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个 OFX、QFX 或 QBO 文件会立即导入你的账户，重复导入的交易只保留一条。对账单或银行 App 的图片和 PDF 会在后台读取，结果会显示在动态和“财务”的“导入”中。不附带备注。"
+          }
+        }
+      }
+    },
     "Import as statements": {
       "localizations": {
         "ja": {
@@ -99399,6 +99591,150 @@
           "stringUnit": {
             "state": "translated",
             "value": "已登录为 %@"
+          }
+        }
+      }
+    },
+    "Imported": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り込み済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入"
+          }
+        }
+      }
+    },
+    "Imported nothing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何も取り込まれませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未导入任何内容"
+          }
+        }
+      }
+    },
+    "What came of it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結果"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结果"
+          }
+        }
+      }
+    },
+    "Read as": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み取り種別"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "识别为"
+          }
+        }
+      }
+    },
+    "Open file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开文件"
+          }
+        }
+      }
+    },
+    "Open message": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开邮件"
+          }
+        }
+      }
+    },
+    "Read again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度読み取る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新读取"
+          }
+        }
+      }
+    },
+    "Reading again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度読み取っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在重新读取"
+          }
+        }
+      }
+    },
+    "Shared or uploaded": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有またはアップロード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享或上传"
           }
         }
       }

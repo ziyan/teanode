@@ -493,6 +493,50 @@ export const IMPORT_STATEMENT = `mutation ($agentAttachmentId: String) {
   ImportStatement(agentAttachmentId: $agentAttachmentId) { ${STATEMENT_IMPORT_RESULT_FIELDS} }
 }`
 
+// A picture or PDF of an account's transactions is uploaded the same way,
+// then read in the background; what came of it is posted to the feed and
+// listed by FINANCE_IMPORTS.
+export const READ_STATEMENT = `mutation ($agentAttachmentId: String!) {
+  ReadStatement(agentAttachmentId: $agentAttachmentId) { agentAttachmentId agentJobId }
+}`
+
+export type ReadStatementQueued = { agentAttachmentId: string; agentJobId: string }
+
+export type FinanceImportKind = 'tax_document' | 'statement' | 'receipt'
+export type FinanceImportSource = 'upload' | 'photo' | 'mail'
+export type FinanceImportJobStatus = 'queued' | 'running' | 'done' | 'dead' | 'cancelled'
+
+// One file read into finance in the background. outcomeText is empty while
+// the file is queued, and runConversationId until a run has read it.
+export type FinanceImport = {
+  agentJobId: string
+  financeImportKind: FinanceImportKind
+  financeImportSource: FinanceImportSource
+  agentJobStatus: FinanceImportJobStatus
+  fileName: string
+  queuedAt: string
+  finishedAt: string
+  outcomeText: string
+  runConversationId: string
+  // The uploaded file, empty for mail or once it is gone, its type, and the
+  // message a mailed file came in (empty otherwise).
+  agentAttachmentId: string
+  attachmentContentType: string
+  mailboxItemId: string
+}
+
+export type FinanceImportPage = { financeImports: FinanceImport[]; hasMore: boolean; totalCount: number }
+
+// The files read into finance in the background, newest first. At most 200
+// a page, 50 when no limit is given.
+export const FINANCE_IMPORTS = `query ($limit: Int, $offset: Int) {
+  FinanceImports(limit: $limit, offset: $offset) {
+    financeImports { agentJobId financeImportKind financeImportSource agentJobStatus fileName queuedAt finishedAt outcomeText runConversationId agentAttachmentId attachmentContentType mailboxItemId }
+    hasMore
+    totalCount
+  }
+}`
+
 export const REGENERATE_STATEMENT_IMPORT_ADDRESS = `mutation { RegenerateStatementImportAddress { ${STATEMENT_IMPORT_FIELDS} } }`
 
 export const AGENT_ATTACHMENTS_PATH = '/api/v1/agent/attachments'

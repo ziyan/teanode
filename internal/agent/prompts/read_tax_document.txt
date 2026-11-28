@@ -1,6 +1,6 @@
 Read the document below for {{.PersonName}} and answer with one JSON object and nothing else.
 
-First say what it is: a paystub, a W-2, a 1099 or a 1098. A paystub (a pay statement, an earnings statement) is one paycheck's record: what was earned, the taxes withheld and the deductions, this period and year to date. A W-2 (Form W-2, Wage and Tax Statement, or a corrected W-2c) is an employer's statement of a year's wages and taxes. Anything else, or a document you cannot read, is neither: answer {"documentKind": "none", "why": "…"} and nothing more.
+First say what it is: a paystub, a W-2, a 1099 or a 1098. A paystub (a pay statement, an earnings statement) is one paycheck's record: what was earned, the taxes withheld and the deductions, this period and year to date. A W-2 (Form W-2, Wage and Tax Statement, or a corrected W-2c) is an employer's statement of a year's wages and taxes. A bank's, a card issuer's or a lender's statement of an account's transactions, or a screenshot of an account's activity in its app, is a statement: answer {"documentKind": "statement"} and nothing more. A tax statement with 1099s or a 1098 in it is one of those, never a statement, whatever transactions it lists. Anything else, or a document you cannot read, is none of these: answer {"documentKind": "none", "why": "…"} and nothing more.
 
 The person's taxpayer number (a Social Security number) is printed on both. Give only its last four digits, and never write more of it anywhere in your answer: not in a name, a description or a box.
 

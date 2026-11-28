@@ -868,6 +868,7 @@ struct MainView: View {
             if DemoServer.screen?.hasPrefix("net-worth") == true { financePart = .netWorth }
             if DemoServer.screen?.hasPrefix("finance-") == true { financePart = .accounts }
             if DemoServer.screen?.hasPrefix("finance-sharing") == true { financePart = .sharing }
+            if DemoServer.screen == "finance-imports" || DemoServer.screen == "finance-import-detail" { financePart = .imports }
             if let screen = DemoServer.screen, ["location-places", "location-place", "location-address"].contains(screen) { locationSegment = .places }
             if DemoServer.screen == "location-sharing" { locationSegment = .sharing }
             if DemoServer.isRequested, DemoServer.tab == "coding" { app.noteCodingComputers() }

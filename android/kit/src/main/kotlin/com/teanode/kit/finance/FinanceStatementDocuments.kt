@@ -25,4 +25,15 @@ object FinanceStatementDocuments {
           }
         }"""
 
+    const val READ_STATEMENT = $$"""mutation ($agentAttachmentId: String!) {
+          ReadStatement(agentAttachmentId: $agentAttachmentId) { agentAttachmentId agentJobId }
+        }"""
+
+    const val FINANCE_IMPORTS = $$"""query ($limit: Int, $offset: Int) {
+          FinanceImports(limit: $limit, offset: $offset) {
+            financeImports { agentJobId financeImportKind financeImportSource agentJobStatus fileName agentAttachmentId attachmentContentType mailboxItemId queuedAt finishedAt outcomeText runConversationId }
+            hasMore totalCount
+          }
+        }"""
+
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -150,19 +151,24 @@ func (self *taxFormAnswer) taxForm() *models.FinanceTaxForm {
 // picture's worth of tokens.
 const taxDocumentPDFPageCount = 4
 
-// taxDocumentSource is what a tax document job reads: the upload, and the
-// masked text or the pictures to show the model, or why it cannot.
-type taxDocumentSource struct {
+// everyPDFPage asks renderPDFPages for every page of a PDF.
+const everyPDFPage = math.MaxInt32
+
+// documentSource is what a job reading an uploaded document reads: the
+// upload, and the text or the pictures to show the model, or why it
+// cannot.
+type documentSource struct {
 	attachment    *models.AgentAttachment
 	documentText  string
 	pictures      []llm.ContentPart
 	unreadableWhy string
 }
 
-// readTaxDocumentSource reads the job's upload out of storage: a picture
-// as it is, a PDF's text (its first pages as pictures when it has none), a
-// text file's text. Nil when the upload is gone or not the agent's.
-func (self *Agent) readTaxDocumentSource(ctx context.Context, run *Run, attachmentId string) (*taxDocumentSource, error) {
+// readDocumentSource reads a job's upload out of storage: a picture as it
+// is, a PDF's text (its first pdfPageCount pages as pictures when it has
+// none), a text file's text. Nil when the upload is gone or not the
+// agent's.
+func (self *Agent) readDocumentSource(ctx context.Context, run *Run, attachmentId string, pdfPageCount int) (*documentSource, error) {
 	var attachment *models.AgentAttachment
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		attachment, err = tx.GetAgentAttachment(attachmentId)
@@ -173,7 +179,7 @@ func (self *Agent) readTaxDocumentSource(ctx context.Context, run *Run, attachme
 	if attachment == nil || attachment.AgentID != run.Agent.ID {
 		return nil, nil
 	}
-	source := &taxDocumentSource{attachment: attachment}
+	source := &documentSource{attachment: attachment}
 	if run.Storage() == nil {
 		return nil, fmt.Errorf("there is no storage to read the document from")
 	}
@@ -202,7 +208,7 @@ func (self *Agent) readTaxDocumentSource(ctx context.Context, run *Run, attachme
 			source.documentText = text
 			return source, nil
 		}
-		pages, err := renderPDFPages(ctx, content, taxDocumentPDFPageCount)
+		pages, err := renderPDFPages(ctx, content, pdfPageCount)
 		if err != nil {
 			source.unreadableWhy = "the PDF has no text and could not be rendered: " + err.Error()
 			return source, nil
@@ -228,7 +234,7 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 	if unreadableWhy := self.receiptModelReady(run.Configuration()); unreadableWhy != "" {
 		return noteTaxDocumentRun(ctx, run, "the document", unreadableWhy)
 	}
-	source, err := self.readTaxDocumentSource(ctx, run, run.Job.SubjectID)
+	source, err := self.readDocumentSource(ctx, run, run.Job.SubjectID, taxDocumentPDFPageCount)
 	if err != nil {
 		return err
 	}
@@ -237,6 +243,9 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 	}
 	sourceName := finance.MaskTaxpayerNumbers(source.attachment.Name)
 	if source.unreadableWhy != "" {
+		if err := self.postTaxReadingNothing(ctx, run, source.attachment, sourceName, source.unreadableWhy); err != nil {
+			return err
+		}
 		return noteTaxDocumentRun(ctx, run, sourceName, source.unreadableWhy)
 	}
 	prompt, err := render("read_tax_document.txt", map[string]any{
@@ -265,10 +274,21 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 	answer := readModelAnswer[taxDocumentAnswer](thinking.Text, "documentKind")
 	if !answer.IsValid {
 		self.retitle(ctx, run, thinking.Conversation, finance.MaskTaxpayerNumbers(fmt.Sprintf("Read %s, and could not tell what the answer said: %s", sourceName, answer.Problem)))
-		return nil
+		return self.postTaxReadingNothing(ctx, run, source.attachment, sourceName, "the reading could not be understood")
 	}
-	var title string
+	// whyNothing is why nothing was recorded, empty when something was.
+	var title, whyNothing string
 	switch documentKind := lowerTrimmed(answer.Value.DocumentKind); {
+	case documentKind == "statement":
+		// A statement of an account's transactions handed in as a tax
+		// document is imported as the statement it is.
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			_, err := self.QueueStatementReading(tx, run.Agent.ID, source.attachment.ID)
+			return err
+		}); err != nil {
+			return err
+		}
+		title = fmt.Sprintf("Read %s: a statement of transactions, not a tax document, so it was handed on to be imported", sourceName)
 	case documentKind == "paystub" && answer.Value.Paystub != nil:
 		paystub := answer.Value.Paystub.paystub()
 		paystub.AgentAttachmentID = source.attachment.ID
@@ -276,7 +296,7 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 		// should be kept, so it is kept, marked for the person to see.
 		recorded, err := self.RecordPaystub(ctx, run.Agent, paystub, true)
 		if isTaxDocumentRefusal(err) {
-			title = fmt.Sprintf("Read %s, and recorded nothing: %s", sourceName, err)
+			title, whyNothing = fmt.Sprintf("Read %s, and recorded nothing: %s", sourceName, err), err.Error()
 			break
 		}
 		if err != nil {
@@ -288,7 +308,7 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 		taxForm.AgentAttachmentID = source.attachment.ID
 		recorded, err := self.RecordTaxForm(ctx, run.Agent, taxForm)
 		if isTaxDocumentRefusal(err) {
-			title = fmt.Sprintf("Read %s, and recorded nothing: %s", sourceName, err)
+			title, whyNothing = fmt.Sprintf("Read %s, and recorded nothing: %s", sourceName, err), err.Error()
 			break
 		}
 		if err != nil {
@@ -345,14 +365,43 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 			}
 		}
 		title = strings.Join(titles, "; ")
+		if len(keptKinds) == 0 {
+			whyNothing = title
+		}
 	default:
 		why := strings.TrimSpace(answer.Value.Why)
 		if why == "" {
 			why = "it is not a paystub, a W-2, a 1099 or a 1098"
 		}
 		title = fmt.Sprintf("Read %s: not a paystub, a W-2, a 1099 or a 1098, so nothing was recorded (%s)", sourceName, finance.MaskTaxpayerNumbers(why))
+		whyNothing = "it is not a paystub, a W-2, a 1099 or a 1098: " + why
 	}
 	self.retitle(ctx, run, thinking.Conversation, finance.MaskTaxpayerNumbers(title))
+	if whyNothing != "" {
+		return self.postTaxReadingNothing(ctx, run, source.attachment, sourceName, whyNothing)
+	}
+	return nil
+}
+
+// postTaxReadingNothing posts to the person's feed that nothing was
+// recorded from a file they handed in as a tax document, and why: they
+// were told it shows under taxes once read, and are waiting to see it. A
+// copy of a backed-up photo was nobody's handing in, and is only noted in
+// its run.
+func (self *Agent) postTaxReadingNothing(ctx context.Context, run *Run, attachment *models.AgentAttachment, sourceName, whyNothing string) error {
+	if attachment.PhotoID != "" {
+		return nil
+	}
+	card := &models.AgentFeedItem{
+		FeedItemKind: models.FeedItemUpdate, FeedSourceKind: models.FeedSourceAgent, FeedUrgency: models.FeedUrgencyNow,
+		PictureSymbol: "doc.text", CoalesceKey: "tax_document:" + attachment.ID,
+		Title: "Nothing was recorded from " + sourceName,
+		Body:  finance.MaskTaxpayerNumbers(upperFirst(strings.TrimSuffix(strings.TrimSpace(whyNothing), ".")) + "."),
+	}
+	if _, _, err := self.PostFeedItem(ctx, &FeedPost{AgentID: run.Agent.ID, Item: card}); err != nil {
+		return err
+	}
+	log.Noticef("agent %q recorded nothing from the tax document %q it was handed, and said so in the feed", run.Agent.ID, attachment.ID)
 	return nil
 }
 

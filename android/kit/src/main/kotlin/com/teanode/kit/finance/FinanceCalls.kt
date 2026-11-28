@@ -545,6 +545,17 @@ suspend fun Connection.importTransactions(variables: Map<String, JsonElement>): 
 suspend fun Connection.importStatement(attachmentId: String): StatementImport.LastImport? =
     graphQLField(FinanceStatementDocuments.IMPORT_STATEMENT, "ImportStatement", mapOf("agentAttachmentId" to text(attachmentId)))
 
+/** Queues a background job that reads one account's transactions out of an uploaded picture or PDF and imports them; what came of it is posted to the feed. */
+suspend fun Connection.readStatement(attachmentId: String): ReadStatementQueued? =
+    graphQLField(FinanceStatementDocuments.READ_STATEMENT, "ReadStatement", mapOf("agentAttachmentId" to text(attachmentId)))
+
+/** The files read into finance in the background, newest first. */
+suspend fun Connection.financeImports(limit: Int = 50, offset: Int = 0): FinanceImportPage =
+    graphQLField<FinanceImportPage>(
+        FinanceStatementDocuments.FINANCE_IMPORTS, "FinanceImports",
+        mapOf("limit" to number(limit), "offset" to number(offset)),
+    ) ?: FinanceImportPage(emptyList())
+
 /** The statement import, its address made the first time it is asked. */
 suspend fun Connection.statementImport(): StatementImport? = graphQLField(FinanceStatementDocuments.STATEMENT_IMPORT, "StatementImport")
 

@@ -7,11 +7,11 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/finance"
-	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -203,6 +203,8 @@ func (self *Agent) recordedPurchaseOf(ctx context.Context, agentId string, recei
 // is one account's transactions, and the rows ImportTransactionRows takes.
 type statementPhotoAnswer struct {
 	IsStatement            bool                      `json:"isStatement"`
+	FinanceAccountID       string                    `json:"financeAccountId"`
+	SyncedFinanceAccountID string                    `json:"syncedFinanceAccountId"`
 	InstitutionName        string                    `json:"institutionName"`
 	AccountName            string                    `json:"accountName"`
 	AccountNumber          string                    `json:"accountNumber"`
@@ -231,11 +233,23 @@ type statementPhotoTotal struct {
 	TotalAmount receiptAmountText `json:"totalAmount"`
 }
 
+// accountOf is the account of the list an id names, or nil: an id the
+// reading gave that is none of them is not taken.
+func accountOf(accounts []finance.ExistingStatementAccount, financeAccountId string) *finance.ExistingStatementAccount {
+	financeAccountId = strings.TrimSpace(financeAccountId)
+	for index := range accounts {
+		if financeAccountId != "" && accounts[index].FinanceAccountID == financeAccountId {
+			return &accounts[index]
+		}
+	}
+	return nil
+}
+
 // transactionRowsInput is the answer as the rows an import checks.
 func (self *statementPhotoAnswer) transactionRowsInput() *finance.TransactionRowsInput {
 	input := &finance.TransactionRowsInput{
 		InstitutionName: self.InstitutionName, AccountName: self.AccountName, AccountNumber: strings.TrimSpace(self.AccountNumber),
-		IsAccountNumberPartial: self.IsAccountNumberPartial, StatementAccountKind: finance.StatementAccountKind(strings.ToLower(strings.TrimSpace(self.StatementAccountKind))),
+		AreEdgeMonthsPartial: true, IsAccountNumberPartial: self.IsAccountNumberPartial, StatementAccountKind: finance.StatementAccountKind(strings.ToLower(strings.TrimSpace(self.StatementAccountKind))),
 		CurrencyCode: strings.ToUpper(strings.TrimSpace(self.CurrencyCode)), LedgerBalanceAmount: string(self.LedgerBalanceAmount), LedgerBalanceOn: strings.TrimSpace(self.LedgerBalanceOn),
 	}
 	for _, row := range self.TransactionRows {
@@ -251,64 +265,151 @@ func (self *statementPhotoAnswer) transactionRowsInput() *finance.TransactionRow
 	return input
 }
 
-// runReadStatementPhoto is the handler for a statement photo job: the
-// picture's rows are read and imported into the account of imported
-// statements they are of. Nobody is there to say which account a picture
-// shows, so rows the server cannot place in an account the person imported
-// before are not imported, and the run says why; the person can send the
-// picture to their agent, which asks.
+// runReadStatementPhoto is the handler for a statement job: the rows of a
+// picture or a PDF are read and imported into the account of imported
+// statements they are of.
+//
+// A copy of a backed-up photo was read because its description said it is
+// a statement, and nobody is there to say which account it shows: rows the
+// server cannot place in an account the person imported before are not
+// imported, and the run says why. A file the person handed in to be
+// imported (QueueStatementReading) is theirs to import: rows of an account
+// not imported before start one, and what came of it is posted to their
+// feed, since they are waiting to hear.
 func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 	if unreadableWhy := self.receiptModelReady(run.Configuration()); unreadableWhy != "" {
 		return noteReceiptRun(ctx, run, "the statement", unreadableWhy)
 	}
-	var attachment *models.AgentAttachment
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		attachment, err = tx.GetAgentAttachment(run.Job.SubjectID)
-		return err
-	}); err != nil {
+	source, err := self.readDocumentSource(ctx, run, run.Job.SubjectID, everyPDFPage)
+	if err != nil {
 		return err
 	}
-	if attachment == nil || attachment.AgentID != run.Agent.ID {
+	if source == nil {
 		return nil // the copy is gone
 	}
-	if !IsImageAttachment(attachment.ContentType) || attachment.Size > attachmentImageBytes {
-		return noteReceiptRun(ctx, run, attachment.Name, "it is not a picture a model can be shown")
+	attachment := source.attachment
+	isHandedIn := attachment.PhotoID == ""
+	if source.unreadableWhy != "" {
+		if isHandedIn {
+			return self.postStatementReading(ctx, run, attachment, nil, source.unreadableWhy)
+		}
+		return noteReceiptRun(ctx, run, attachment.Name, source.unreadableWhy)
 	}
-	if run.Storage() == nil {
-		return fmt.Errorf("there is no storage to read the picture of the statement from")
-	}
-	content, err := run.Storage().GetFile(ctx, attachment.ID)
+	// The person's accounts are shown to the reading, so a statement that
+	// names its bank in another language or shows no number is still known
+	// for the account it is, and one of an account the bank syncs is never
+	// imported beside it.
+	statementAccounts, providerAccounts, err := self.rowAccounts(ctx, run.Agent.ID)
 	if err != nil {
-		return fmt.Errorf("the picture of the statement cannot be read yet: %w", err)
+		return err
+	}
+	accountLines := func(accounts []finance.ExistingStatementAccount) string {
+		lines := make([]string, 0, len(accounts))
+		for index := range accounts {
+			lines = append(lines, "- "+finance.AccountLine(&accounts[index]))
+		}
+		return strings.Join(lines, "\n")
 	}
 	prompt, err := render("read_statement_photo.txt", map[string]any{
-		"PersonName":       personName(run.Owner),
-		"TransactionKinds": strings.Join(finance.TransactionKinds(), ", "),
+		"PersonName":        personName(run.Owner),
+		"TransactionKinds":  strings.Join(finance.TransactionKinds(), ", "),
+		"IsPicture":         len(source.pictures) > 0,
+		"Document":          fenced(source.documentText),
+		"StatementAccounts": accountLines(statementAccounts),
+		"SyncedAccounts":    accountLines(providerAccounts),
 	})
 	if err != nil {
 		return err
 	}
-	thinking, err := self.thinkAbout(ctx, run, "Reading the statement "+attachment.Name, prompt,
-		[]llm.ContentPart{{Type: "image", MediaType: attachment.ContentType, Data: content}}, noTools, 1,
-		models.AgentJobStatementPhoto, config.AgentWorkScan)
+	thinking, err := self.thinkAbout(ctx, run, "Reading the statement "+attachment.Name, prompt, source.pictures, noTools, 1,
+		models.AgentJobStatementPhoto, config.AgentWorkResearch)
 	if err != nil {
 		return err
 	}
-	answer := readModelAnswer[statementPhotoAnswer](thinking.Text, "isStatement")
-	if !answer.IsValid {
-		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s, and could not tell what the answer said: %s", attachment.Name, answer.Problem))
+	// whyNothing is said when nothing was imported: in the run's title, and
+	// to the person when they handed the file in, in words for them
+	// (personWhy) where the run's are the server's.
+	whyNothingFor := func(why, personWhy string) error {
+		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s, and imported nothing: %s", attachment.Name, why))
+		if isHandedIn {
+			return self.postStatementReading(ctx, run, attachment, nil, personWhy)
+		}
 		return nil
+	}
+	whyNothing := func(why string) error { return whyNothingFor(why, why) }
+	answer := readModelAnswer[statementPhotoAnswer](thinking.Text, "isStatement")
+	today := time.Now().In(Location(run.Owner)).Format(time.DateOnly)
+	// A reading whose rows do not add up (to a month's total, to the
+	// running balances) is shown why and read once more: a model often
+	// copies the total of a month the picture cuts off, or puts a row under
+	// the wrong month, and sees it when told. Statements are read by the
+	// research model, not the fast one: a row misread is a wrong record in
+	// the person's finances.
+	if answer.IsValid && answer.Value.IsStatement && len(answer.Value.TransactionRows) > 0 {
+		// Only the rows are checked here: the account is chosen after, and an
+		// account named stands in so a screenshot showing no number is not
+		// refused for it.
+		rowsOnly := answer.Value.transactionRowsInput()
+		rowsOnly.FinanceAccountID, rowsOnly.AccountNumber, rowsOnly.IsNewAccount = "the account chosen after", "", false
+		if _, checkErr := finance.CheckTransactionRows(rowsOnly, today); errors.Is(checkErr, finance.ErrTransactionRowsRefused) {
+			why := strings.TrimPrefix(checkErr.Error(), finance.ErrTransactionRowsRefused.Error()+": ")
+			again := prompt + "\n\nYou read it once already, and answered:\n" + thinking.Text + "\n\nThat reading does not add up: " + why +
+				". Look at the statement again, and read that month's rows, their days and their amounts again: each row under the month it is listed in. " +
+				"Answer with the whole JSON object again."
+			second, err := self.thinkAbout(ctx, run, "Reading the statement "+attachment.Name+" again", again, source.pictures, noTools, 1,
+				models.AgentJobStatementPhoto, config.AgentWorkResearch)
+			if err != nil {
+				return err
+			}
+			if secondAnswer := readModelAnswer[statementPhotoAnswer](second.Text, "isStatement"); secondAnswer.IsValid {
+				thinking, answer = second, secondAnswer
+			}
+		}
+	}
+	if !answer.IsValid {
+		return whyNothing("the reading could not be understood: " + answer.Problem)
 	}
 	if !answer.Value.IsStatement || len(answer.Value.TransactionRows) == 0 {
-		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s: no transactions of an account, so nothing was imported", attachment.Name))
-		return nil
+		return whyNothing("it shows no transactions of one account")
 	}
-	today := time.Now().In(Location(run.Owner)).Format(time.DateOnly)
-	check, err := finance.CheckTransactionRows(answer.Value.transactionRowsInput(), today)
+	input := answer.Value.transactionRowsInput()
+	// A balance shown with no day: a screenshot of an app shows the balance
+	// as it is now, so a picture handed in has it as of the day it arrived;
+	// anything else leaves it out rather than guess, and the rows still go
+	// in.
+	if strings.TrimSpace(input.LedgerBalanceAmount) != "" && input.LedgerBalanceOn == "" {
+		if isHandedIn && len(source.pictures) > 0 && source.documentText == "" && IsImageAttachment(attachment.ContentType) {
+			input.LedgerBalanceOn = attachment.CreatedAt.In(Location(run.Owner)).Format(time.DateOnly)
+		} else {
+			input.LedgerBalanceAmount = ""
+		}
+	}
+	if synced := accountOf(providerAccounts, answer.Value.SyncedFinanceAccountID); synced != nil {
+		return whyNothing(syncedAccountWhy([]*finance.ExistingStatementAccount{synced}))
+	}
+	if chosen := accountOf(statementAccounts, answer.Value.FinanceAccountID); chosen != nil {
+		input.FinanceAccountID = chosen.FinanceAccountID
+	}
+	if isHandedIn && input.FinanceAccountID == "" && strings.IndexFunc(input.AccountNumber, unicode.IsDigit) < 0 {
+		input.AccountNumber = ""
+		personWhy, err := self.chooseHandedInAccount(ctx, run.Agent.ID, input)
+		if err != nil {
+			return err
+		}
+		if personWhy != "" {
+			return whyNothing(personWhy)
+		}
+	}
+	check, err := finance.CheckTransactionRows(input, today)
 	if err == nil {
 		var plan *finance.TransactionRowsPlan
 		if plan, err = self.PreviewTransactionRows(ctx, run.Agent, run.Owner, check); err == nil && plan.FinanceAccountID == "" {
-			err = fmt.Errorf("%w: they are of an account not imported before; send the picture to your assistant to start one", finance.ErrTransactionRowsRefused)
+			switch {
+			case !isHandedIn:
+				err = fmt.Errorf("%w: they are of an account not imported before; send the picture to your assistant to start one", finance.ErrTransactionRowsRefused)
+			default:
+				err = self.refuseRowsOfASyncedAccount(ctx, run.Agent.ID, check)
+			}
 		}
 	}
 	var imported *models.FinanceStatementImport
@@ -316,18 +417,30 @@ func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 		imported, err = self.ImportTransactionRows(ctx, run.Agent, run.Owner, check)
 	}
 	if errors.Is(err, finance.ErrTransactionRowsRefused) {
-		// Reading the picture again would read the same.
-		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s, and imported nothing: %s", attachment.Name, err))
-		return nil
+		// Reading the file again would read the same. A refusal is written
+		// for the agent, which can ask the person; the person is told what
+		// it means for them, except of a synced account, which says so.
+		why := strings.TrimPrefix(err.Error(), finance.ErrTransactionRowsRefused.Error()+": ")
+		personWhy := "it is not clear which of your accounts it shows, or what was read from it does not add up; Finance, Imports says what the reading found"
+		if strings.Contains(why, "already synced from the bank") {
+			personWhy = why
+		}
+		return whyNothingFor(why, personWhy)
 	}
 	if err != nil {
 		return err
 	}
-	if imported.ImportErrorMessage != "" {
-		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s, and imported nothing: %s", attachment.Name, imported.ImportErrorMessage))
-		return nil
+	if imported.ImportErrorMessage != "" && len(imported.FinanceAccountIDs) == 0 {
+		return whyNothing(imported.ImportErrorMessage)
 	}
-	self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s: %s added to %s", attachment.Name,
-		countOf(imported.AddedTransactionCount, "transaction", "transactions"), strings.Join(imported.FinanceAccountNames, ", ")))
+	if imported.AddedTransactionCount == 0 {
+		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s: nothing new; %s has every transaction already", attachment.Name, strings.Join(imported.FinanceAccountNames, ", ")))
+	} else {
+		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s: %s added to %s", attachment.Name,
+			countOf(imported.AddedTransactionCount, "transaction", "transactions"), strings.Join(imported.FinanceAccountNames, ", ")))
+	}
+	if isHandedIn {
+		return self.postStatementReading(ctx, run, attachment, imported, "")
+	}
 	return nil
 }

@@ -157,6 +157,12 @@ type TransactionRowsInput struct {
 	// MonthlyTotals are the totals a card's list shows per month.
 	MonthlyTotals []MonthlyTotal
 
+	// AreEdgeMonthsPartial says the rows were read off screenshots nobody
+	// chose the edges of: the oldest and the newest month of the rows may be
+	// cut off, so neither is held to its total, nor refused for lacking one.
+	// The months between still come to theirs.
+	AreEdgeMonthsPartial bool
+
 	// FinanceAccountID names the existing account of imported statements
 	// the rows go into, whatever number they show. With it the account
 	// number may be left out: a list often shows none, or only a card's
@@ -470,7 +476,7 @@ func CheckTransactionRows(input *TransactionRowsInput, today string) (*Transacti
 	}
 	check.MoneyInAmount, check.MoneyOutAmount = FormatAmount(moneyIn), FormatAmount(moneyOut)
 
-	if check.MatchedTotalMonths, err = matchMonthlyTotals(rows, input.MonthlyTotals, check.CurrencyCode); err != nil {
+	if check.MatchedTotalMonths, err = matchMonthlyTotals(rows, input.MonthlyTotals, check.CurrencyCode, input.AreEdgeMonthsPartial); err != nil {
 		return nil, err
 	}
 
@@ -556,9 +562,27 @@ func chainRunningBalances(rows []*CheckedTransactionRow, currencyCode string) (*
 // the first is rows missing, and the second a month that was not checked,
 // often one cut off at the bottom of a screenshot. It answers the months
 // that matched.
-func matchMonthlyTotals(rows []*CheckedTransactionRow, totals []MonthlyTotal, currencyCode string) ([]string, error) {
+func matchMonthlyTotals(rows []*CheckedTransactionRow, totals []MonthlyTotal, currencyCode string, areEdgeMonthsPartial bool) ([]string, error) {
 	if len(totals) == 0 {
 		return nil, nil
+	}
+	// The months a screenshot may cut off, when the caller says it may.
+	isEdge := map[string]bool{}
+	if areEdgeMonthsPartial && len(rows) > 0 {
+		oldest, newest := "", ""
+		for _, row := range rows {
+			month := row.TotalMonth
+			if month == "" {
+				month = row.PostedOn[:len("2006-01")]
+			}
+			if oldest == "" || month < oldest {
+				oldest = month
+			}
+			if newest == "" || month > newest {
+				newest = month
+			}
+		}
+		isEdge[oldest], isEdge[newest] = true, true
 	}
 	sums := map[string]*big.Rat{}
 	rowCounts := map[string]int{}
@@ -594,6 +618,10 @@ func matchMonthlyTotals(rows []*CheckedTransactionRow, totals []MonthlyTotal, cu
 			return nil, refuseRows("%s shows a total of %s but no row of it was given", month, formatRowAmount(totalValue, currencyCode))
 		}
 		if sum.Cmp(totalValue) != 0 && sum.Cmp(new(big.Rat).Neg(totalValue)) != 0 {
+			if isEdge[month] {
+				// Cut off: its rows shown are some of the month's.
+				continue
+			}
 			difference := new(big.Rat).Sub(new(big.Rat).Abs(totalValue), new(big.Rat).Abs(sum))
 			return nil, refuseRows("the %d rows of %s come to %s, but the month's total shows %s, %s apart: a row of %s is misread or missing",
 				rowCounts[month], month, formatRowAmount(sum, currencyCode), formatRowAmount(totalValue, currencyCode),
@@ -603,7 +631,7 @@ func matchMonthlyTotals(rows []*CheckedTransactionRow, totals []MonthlyTotal, cu
 	}
 	var unchecked []string
 	for month := range sums {
-		if !isTotaled[month] {
+		if !isTotaled[month] && !isEdge[month] {
 			unchecked = append(unchecked, month)
 		}
 	}
@@ -1267,4 +1295,54 @@ func LeaveOutStoredTransactionRows(statementImport *StatementImport, storedTrans
 	}
 	statementImport.SyncResult.Added = kept
 	return nil
+}
+
+// AccountsLikeRows are the accounts rows could be of when nothing else
+// says which: at the institution the rows name, of their kind and
+// currency, and not shown by their digits to be another account. Among the
+// accounts a provider syncs, rows imported beside one of these would count
+// its spending twice; among the accounts of imported statements, one alone
+// is the account rows that show no number are of.
+func AccountsLikeRows(institutionName string, accountKind StatementAccountKind, currencyCode, accountNumber string, accounts []ExistingStatementAccount) []*ExistingStatementAccount {
+	shownMask := StatementAccountMask(accountNumber)
+	var like []*ExistingStatementAccount
+	for index := range accounts {
+		account := &accounts[index]
+		if !strings.EqualFold(account.CurrencyCode, currencyCode) || account.isCardAccount() != (accountKind == StatementAccountKindCard) {
+			continue
+		}
+		if normalizeInstitutionName(account.InstitutionName) == "" || !isSameInstitution(account.InstitutionName, institutionName) {
+			continue
+		}
+		if account.AccountMask != "" && shownMask != "" && !isMaskMatch(account.AccountMask, shownMask) {
+			continue
+		}
+		like = append(like, account)
+	}
+	return like
+}
+
+// AccountLine is an account as a model choosing among them is shown it:
+// its id, name and the end of its identifier, institution, kind and
+// currency.
+func AccountLine(account *ExistingStatementAccount) string {
+	kind := "bank"
+	if account.isCardAccount() {
+		kind = "card"
+	}
+	institution := account.InstitutionName
+	if institution == "" {
+		institution = "institution not known"
+	}
+	return fmt.Sprintf("%s: %s at %s, %s, %s", account.FinanceAccountID, account.displayName(), institution, kind, account.CurrencyCode)
+}
+
+// AccountNames are accounts as a refusal names them, each by its name and
+// the end of its identifier.
+func AccountNames(accounts []*ExistingStatementAccount) []string {
+	names := make([]string, 0, len(accounts))
+	for _, account := range accounts {
+		names = append(names, account.displayName())
+	}
+	return names
 }

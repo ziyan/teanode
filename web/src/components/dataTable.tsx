@@ -73,6 +73,11 @@ export type Column<Row> = {
   // subjects and error messages, which are sentences.
   truncate?: boolean
 
+  // Wrapped whole over as many lines as it takes, for sentences that must
+  // be read in full. On a phone the table then fits the screen's width
+  // rather than growing to lay the sentence out on one line.
+  wrap?: boolean
+
   // Right-aligned in a tabular face, header and cells alike, so amounts
   // read down the column by their decimal places.
   numeric?: boolean
@@ -537,6 +542,7 @@ export function DataTable<Row>({
                       className={[
                         column.optional ? 'optional' : '',
                         column.truncate ? 'truncate' : '',
+                        column.wrap ? 'wrap' : '',
                         column.numeric ? 'numeric' : '',
                       ]
                         .filter(Boolean)

@@ -147,9 +147,23 @@ internal object FinanceDemoData {
         "taxYearInvestment":{"interestAmount":"120.50","taxExemptInterestAmount":"0.00","ordinaryDividendsAmount":"640.00","qualifiedDividendsAmount":"410.00","capitalGainDistributionsAmount":"35.00","shortTermGainAmount":"-80.00","longTermGainAmount":"1250.00","federalIncomeTaxWithheldAmount":"0.00","foreignTaxPaidAmount":"4.10","isCostBasisMissing":false,"taxFormIds":["demo-form-1"]},
         "taxYearEstimate":{"taxFilingStatus":"single","isTaxFilingStatusAssumed":true,"isProjected":true,"payAmount":"96000.00","incomeAmount":"96000.00","totalTaxAmount":"21900.00","paidTaxAmount":"18900.00","upcomingWithheldTaxAmount":"2400.00","owingTaxAmount":"600.00","refundAmount":"0.00","remainingIncomeAmount":"74100.00"}}"""
 
+    /** A time on the local calendar, [daysAgo] days back, so the list always has rows under "Today" and "Yesterday". */
+    private fun importMoment(daysAgo: Long, hour: Int, minute: Int): String =
+        java.time.LocalDate.now().minusDays(daysAgo).atTime(hour, minute).atZone(java.time.ZoneId.systemDefault()).toInstant().toString()
+
+    const val IMPORT_NOTHING_JOB_ID = "demo-import-nothing"
+
+    val financeImports: String get() = """{"financeImports":[
+        {"agentJobId":"demo-import-reading","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"running","fileName":"picture-1.jpg","agentAttachmentId":"att-1","attachmentContentType":"image/jpeg","mailboxItemId":"","queuedAt":"${importMoment(0, 21, 40)}","finishedAt":"","outcomeText":"Reading the statement picture-1.jpg","runConversationId":"demo-run-1"},
+        {"agentJobId":"demo-import-queued","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"queued","fileName":"picture-1.jpg","agentAttachmentId":"att-shot-2","attachmentContentType":"image/jpeg","mailboxItemId":"","queuedAt":"${importMoment(0, 21, 38)}","finishedAt":"","outcomeText":"","runConversationId":""},
+        {"agentJobId":"demo-import-added","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"picture-1.jpg","agentAttachmentId":"att-1","attachmentContentType":"image/jpeg","mailboxItemId":"","queuedAt":"${importMoment(0, 21, 26)}","finishedAt":"${importMoment(0, 21, 27)}","outcomeText":"2 transactions added to Example Bank ··4821","runConversationId":"demo-run-3"},
+        {"agentJobId":"demo-import-nothing-new","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"picture-1.jpg","agentAttachmentId":"att-shot-2","attachmentContentType":"image/jpeg","mailboxItemId":"","queuedAt":"${importMoment(0, 18, 5)}","finishedAt":"${importMoment(0, 18, 6)}","outcomeText":"Nothing new: Example Bank ··4821 has every transaction already","runConversationId":"demo-run-4"},
+        {"agentJobId":"$IMPORT_NOTHING_JOB_ID","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"picture-1.jpg","agentAttachmentId":"att-shot-3","attachmentContentType":"image/jpeg","mailboxItemId":"","queuedAt":"${importMoment(1, 20, 12)}","finishedAt":"${importMoment(1, 20, 13)}","outcomeText":"Imported nothing: it shows no account number, and no account at Example Bank was imported before, so it is not clear which account it is. Share a screenshot that shows the account's number or its last digits","runConversationId":"demo-run-5"},
+        {"agentJobId":"demo-import-tax-mail","financeImportKind":"tax_document","financeImportSource":"mail","agentJobStatus":"done","fileName":"payslip-nov.pdf","agentAttachmentId":"att-pdf","attachmentContentType":"application/pdf","mailboxItemId":"demo-mail-1","queuedAt":"${importMoment(1, 8, 30)}","finishedAt":"${importMoment(1, 8, 32)}","outcomeText":"Read as a paystub from Example Payroll, paid 2030-11-10","runConversationId":"demo-run-6"}
+    ],"hasMore":false,"totalCount":6}"""
+
     val paystub = """{"id":"demo-paystub-1","agentAttachmentId":"att-2","employerName":"Example Payroll","employerTaxId":"","employeeName":"Robin Example","employeeTaxIdMask":"1234","payDate":"2030-11-10","periodStartOn":"2030-10-27","periodEndOn":"2030-11-09","currencyCode":"USD","grossAmount":"4000.00","yearToDateGrossAmount":"88000.00","totalTaxAmount":"900.00","totalDeductionAmount":"500.00","netAmount":"2600.00","paystubCheckState":"balanced","checkDifferenceAmount":"0.00",
         "paystubLines":[{"id":"pl1","lineNumber":1,"paystubLineKind":"earning","description":"Regular pay","hours":"80","rateAmount":"50.00","currentAmount":"4000.00","yearToDateAmount":"88000.00"},{"id":"pl2","lineNumber":2,"paystubLineKind":"tax","description":"Federal income tax","currentAmount":"600.00","yearToDateAmount":"13200.00","paystubTaxKind":"federal_income"},{"id":"pl3","lineNumber":3,"paystubLineKind":"deduction","description":"Retirement","currentAmount":"500.00","yearToDateAmount":"11000.00","paystubDeductionKind":"retirement_traditional"}]}"""
-
     val taxForm = """{"financeTaxForm":{"id":"demo-form-1","agentAttachmentId":"att-3","taxFormKind":"1099_int","taxYear":2030,"isCorrected":false,"payerName":"Sample Bank","payerTaxId":"","recipientName":"Robin Example","recipientTaxIdMask":"4321","taxFormEntries":[{"id":"e1","entryNumber":1,"boxCode":"1","boxQualifier":"","amount":"120.50","textValue":"","isChecked":false}]},"taxFormFindings":[{"taxFormFindingCode":"interest_total","isAgreeing":true,"expectedAmount":"120.50","printedAmount":"120.50","findingText":"The interest adds up."}]}"""
 }
 
@@ -164,7 +178,14 @@ val financeDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("ReportingCurrency", """{"reportingCurrencyCode":"USD","isChosen":false}"""),
     graphQLField("ExchangeRate", """{"fromCurrencyCode":"EUR","toCurrencyCode":"USD","rate":"1.08340000","rateOn":"2030-11-13","rateSource":"central_bank"}"""),
     // The picture a receipt was read from.
-    DemoAnswerer { request -> if (request.path.contains("/api/v1/agent/attachments/att-1")) DemoResponse(PhotosDemoData.pictureBytes(120f, 400)) else null },
+    DemoAnswerer { request ->
+        when {
+            request.path.contains("/api/v1/agent/attachments/att-shot-2") -> DemoResponse(PhotosDemoData.pictureBytes(210f, 400))
+            request.path.contains("/api/v1/agent/attachments/att-shot-3") -> DemoResponse(PhotosDemoData.pictureBytes(30f, 400))
+            request.path.contains("/api/v1/agent/attachments/att-1") -> DemoResponse(PhotosDemoData.pictureBytes(120f, 400))
+            else -> null
+        }
+    },
     graphQLField("FinanceTransactions") { variables ->
         val ids = (variables["financeTransactionIds"] as? kotlinx.serialization.json.JsonArray)?.map { element -> (element as kotlinx.serialization.json.JsonPrimitive).content }
         val rows = when {
@@ -194,6 +215,9 @@ val financeDemoAnswerers: List<DemoAnswerer> = listOf(
     graphQLField("FinancePaystub", FinanceDemoData.paystub),
     graphQLField("FinanceTaxForms", """{"taxForms":[${FinanceDemoData.taxForm}],"hasMore":false,"totalCount":1}"""),
     graphQLField("FinanceTaxForm", FinanceDemoData.taxForm),
+    graphQLField("ReadStatement", """{"agentAttachmentId":"att-4","agentJobId":"demo-import-new"}"""),
+    graphQLField("FinanceImports") { _ -> FinanceDemoData.financeImports },
+    graphQLField("ReadTaxDocument", """{"agentAttachmentIds":["att-shot-3"],"agentJobIds":["demo-import-again"]}"""),
     graphQLField("TaxDocumentAddress", """{"taxDocumentAddress":"robin+taxes-invented0token01@example.com","canReadPdfs":true}"""),
     graphQLField("StatementImport", """{"sourceId":"source-1","importAddress":"robin+statements-invented0token01@example.com","isEnabled":true,"lastStatementImport":{"importedAt":"2030-11-01T12:00:00Z","statementImportOrigin":"mail","addedTransactionCount":3,"updatedTransactionCount":0,"unchangedTransactionCount":1,"financeAccountNames":["Rewards card"],"importErrorMessage":""}}"""),
     graphQLField("FinanceTrades", """{"financeTrades":[{"id":"trade-1","financeAccountId":"demo-account-brokerage","financeSecurityId":"s1","financeSecurity":{"tickerSymbol":"INVX","securityName":"Invented Index Fund"},"providerTradeId":"p1","tradedOn":"2030-10-02","tradeKind":"buy","tradedQuantity":"2","unitPrice":"100","tradeAmount":"-200","feeAmount":"0","currencyCode":"USD","description":"Bought 2"}],"totalCount":1}"""),

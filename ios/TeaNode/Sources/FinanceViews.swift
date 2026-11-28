@@ -130,7 +130,7 @@ final class FinanceModel {
 /// FinancePart is one section of the dashboard's Finance page. The menu under
 /// the screen's title lists them, so each is one tap away.
 enum FinancePart: String, CaseIterable, Identifiable, Hashable {
-    case spending, transactions, accounts, budgets, netWorth, savingsTargets, receipts, taxes, sharing, setup
+    case spending, transactions, accounts, budgets, netWorth, savingsTargets, receipts, taxes, imports, sharing, setup
     var id: String { rawValue }
 
     var title: String {
@@ -143,6 +143,7 @@ enum FinancePart: String, CaseIterable, Identifiable, Hashable {
         case .savingsTargets: String(localized: "Savings targets")
         case .receipts: String(localized: "Receipts")
         case .taxes: String(localized: "Taxes")
+        case .imports: String(localized: "Imports")
         case .sharing: String(localized: "Sharing")
         case .setup: String(localized: "Banks and currency")
         }
@@ -158,6 +159,7 @@ enum FinancePart: String, CaseIterable, Identifiable, Hashable {
         case .savingsTargets: "target"
         case .receipts: "receipt"
         case .taxes: "doc.text"
+        case .imports: "tray.and.arrow.down"
         case .sharing: "person.2"
         case .setup: "link"
         }
@@ -206,6 +208,7 @@ struct FinanceScreen: View {
                     case .savingsTargets: SavingsTargetsView()
                     case .receipts: ReceiptsView()
                     case .taxes: TaxesView()
+                    case .imports: FinanceImportsView()
                     case .sharing: FinanceSharingView()
                     case .setup: FinanceSetupView()
                     }

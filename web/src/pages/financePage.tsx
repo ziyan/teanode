@@ -12,6 +12,7 @@ import { FINANCE_TABS } from '../pageTabs'
 import { FinanceAccountsSection } from './finance/financeAccounts'
 import { FinanceBudgetsSection } from './finance/financeBudgets'
 import { usePersonZone } from './finance/financeCommon'
+import { FinanceImportsSection } from './finance/financeImports'
 import { FinanceNetWorthSection } from './finance/financeNetWorth'
 import { useAgentFinancePresence } from './finance/financePresence'
 import { FinanceReceiptListSection } from './finance/financeReceiptList'
@@ -218,6 +219,7 @@ export function FinancePage() {
       {section === 'receipts' ? <FinanceReceiptListSection /> : null}
       {section === 'taxes' ? <FinanceTaxesSection /> : null}
       {section === 'accounts' ? <FinanceAccountsSection /> : null}
+      {section === 'imports' ? <FinanceImportsSection /> : null}
       {section === 'budgets' ? <FinanceBudgetsSection /> : null}
       {section === 'net-worth' ? <FinanceNetWorthSection /> : null}
       {section === 'savings-targets' ? <FinanceSavingsTargetsSection /> : null}

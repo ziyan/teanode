@@ -163,6 +163,11 @@ class FinanceScreenshotTest {
     @Test fun `taxes no documents`() = shoot("taxes-no-documents") { TaxDocumentsEmptyState(onAdd = {}) }
     @Test fun `paystub detail`() = shoot("paystub-detail") { FinancePaystubDetailScreen("demo-paystub-1") }
     @Test fun `paystub findings`() = shoot("paystub-findings", Look.Dark, scrollTo = "Findings") { FinancePaystubDetailScreen("demo-paystub-1") }
+    @Test fun `imports`() = shoot("imports") { FinanceImportsScreen() }
+    @Test fun `imports dark`() = shoot("imports", Look.Dark) { FinanceImportsScreen() }
+    @Test fun `imports largest text`() = shoot("imports-largest-text", fontScale = 2f) { FinanceImportsScreen() }
+    @Test fun `import detail`() = shoot("import-detail") { FinanceImportDetailScreen(FinanceDemoData.IMPORT_NOTHING_JOB_ID) }
+    @Test fun `import detail dark`() = shoot("import-detail", Look.Dark) { FinanceImportDetailScreen(FinanceDemoData.IMPORT_NOTHING_JOB_ID) }
     @Test fun `taxes dark`() = shoot("taxes", Look.Dark) { FinanceTaxesScreen() }
     @Test fun `paystub`() = shoot("paystub") { FinancePaystubDetailScreen("demo-paystub-1") }
     @Test fun `tax form`() = shoot("tax-form") { FinanceTaxFormDetailScreen("demo-form-1") }

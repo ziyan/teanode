@@ -179,6 +179,7 @@ enum AppPlaces {
         case .savingsTargets: "Savings targets"
         case .receipts: "Receipts"
         case .taxes: "Taxes"
+        case .imports: "Imports"
         case .sharing: "Sharing"
         case .setup: "Banks and currency"
         }
