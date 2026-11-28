@@ -26618,6 +26618,36 @@ a.feed-agenda-body:hover .feed-agenda-title {
   margin-top: 6px;
 }
 
+/* The file of an import: a thumbnail no taller than 56px and no wider than
+   its cell, or buttons, under the name. */
+.finance-import-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.finance-import-thumbnail {
+  display: block;
+  max-height: 56px;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--field);
+  object-fit: contain;
+}
+
+.finance-import-file .picture-opener {
+  max-width: 100%;
+}
+
+.finance-imports-table .table-surface td .finance-import-file .button {
+  margin-top: 0;
+}
+
 @media (max-width: 600px) {
   .finance-imports-table .table-surface th,
   .finance-imports-table .table-surface td {

@@ -47,6 +47,9 @@ const finished: FinanceImport = {
   finishedAt: '2026-06-03T12:01:00Z',
   outcomeText: longOutcome,
   runConversationId: 'conversation-1',
+  agentAttachmentId: '',
+  attachmentContentType: '',
+  mailboxItemId: '',
 }
 const waiting: FinanceImport = {
   agentJobId: 'job-2',
@@ -58,6 +61,9 @@ const waiting: FinanceImport = {
   finishedAt: '',
   outcomeText: '',
   runConversationId: '',
+  agentAttachmentId: '',
+  attachmentContentType: '',
+  mailboxItemId: '',
 }
 
 function answerWith(financeImports: FinanceImport[], totalCount = financeImports.length) {
@@ -105,6 +111,33 @@ describe('the Imports section', () => {
     expect(buttons).toHaveLength(1)
     fireEvent.click(buttons[0])
     expect(vi.mocked(openAgentConversation)).toHaveBeenCalledWith('conversation-1')
+  })
+
+  it('shows a picture, a PDF and a mailed file', async () => {
+    answerWith([
+      {
+        ...finished,
+        agentJobId: 'job-a',
+        fileName: 'one.jpg',
+        agentAttachmentId: 'att-1',
+        attachmentContentType: 'image/jpeg',
+      },
+      {
+        ...finished,
+        agentJobId: 'job-b',
+        fileName: 'two.pdf',
+        agentAttachmentId: 'att-2',
+        attachmentContentType: 'application/pdf',
+      },
+      { ...waiting, agentJobId: 'job-c', fileName: 'three.pdf', financeImportSource: 'mail', mailboxItemId: 'item-3' },
+    ])
+    renderSection()
+    await screen.findByText('one.jpg')
+    const picture = document.querySelector('img.finance-import-thumbnail')
+    expect(picture?.getAttribute('src')).toBe('/api/v1/agent/attachments/att-1')
+    const fileLink = screen.getByRole('link', { name: /finance\.importOpenFileOf/ })
+    expect(fileLink.getAttribute('href')).toBe('/api/v1/agent/attachments/att-2')
+    expect(screen.getByRole('button', { name: /finance\.importOpenMessageOf/ })).toBeTruthy()
   })
 
   it('says so in one line when nothing has been read', async () => {

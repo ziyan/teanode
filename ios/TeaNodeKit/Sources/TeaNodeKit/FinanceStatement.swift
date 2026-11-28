@@ -78,8 +78,17 @@ public struct FinanceImport: Codable, Hashable, Sendable, Identifiable {
     public let finishedAt: String?
     public let outcomeText: String?
     public let runConversationId: String?
+    /// The uploaded file; empty for a mailed file, or when it is gone.
+    public let agentAttachmentId: String?
+    /// The file's MIME type, such as `image/jpeg` or `application/pdf`.
+    public let attachmentContentType: String?
+    /// The message a mailed file came in; empty for an upload.
+    public let mailboxItemId: String?
 
     public var id: String { agentJobId }
+
+    /// Whether the file is a picture, so that it can be shown as one.
+    public var isPicture: Bool { (attachmentContentType ?? "").hasPrefix("image/") }
 
     /// When it was last known to change: when it finished, else when it was queued.
     public var shownAt: Date? { ServerTime.date(finishedAt) ?? ServerTime.date(queuedAt) }
@@ -104,7 +113,7 @@ extension Documents {
     public static let financeImports = """
         query ($limit: Int, $offset: Int) {
           FinanceImports(limit: $limit, offset: $offset) {
-            financeImports { agentJobId financeImportKind financeImportSource agentJobStatus fileName queuedAt finishedAt outcomeText runConversationId }
+            financeImports { agentJobId financeImportKind financeImportSource agentJobStatus fileName queuedAt finishedAt outcomeText runConversationId agentAttachmentId attachmentContentType mailboxItemId }
             hasMore totalCount
           }
         }

@@ -1,6 +1,7 @@
 #if DEBUG
     import Foundation
     import TeaNodeKit
+    import UIKit
 
     // The invented accounts, trades, rule suggestions and rows that the
     // screenshots of the finance management screens photograph
@@ -54,9 +55,40 @@
             return nil
         }
 
+        /// The file of an import, read from its address
+        /// (`/api/v1/agent/attachments/demo-import-picture` or `demo-import-document`):
+        /// an invented sheet drawn here, a picture or a one page PDF, since no
+        /// server is behind the demo. Nil for any other request.
+        static func financeImportFile(for request: URLRequest) -> Data? {
+            guard let path = request.url?.path else { return nil }
+            let bounds = CGRect(x: 0, y: 0, width: 300, height: 400)
+            func drawSheet(_ context: CGContext) {
+                UIColor(white: 0.97, alpha: 1).setFill()
+                context.fill(bounds)
+                UIColor(white: 0.55, alpha: 1).setFill()
+                for row in 0..<9 {
+                    context.fill(CGRect(x: 24, y: 40 + CGFloat(row) * 36, width: row == 0 ? 160 : 252, height: 10))
+                }
+            }
+            if path == "/api/v1/agent/attachments/demo-import-picture" {
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1
+                return UIGraphicsImageRenderer(bounds: bounds, format: format).jpegData(withCompressionQuality: 0.8) { context in
+                    drawSheet(context.cgContext)
+                }
+            }
+            if path == "/api/v1/agent/attachments/demo-import-document" {
+                return UIGraphicsPDFRenderer(bounds: bounds).pdfData { context in
+                    context.beginPage()
+                    drawSheet(context.cgContext)
+                }
+            }
+            return nil
+        }
+
         /// The files read into finance in the background, as the Imports screen
         /// shows them (`-TeaNodeScreen finance-imports`): one of each status.
-        private static let demoFinanceImportsJSON = #"{"data":{"FinanceImports":{"financeImports":[{"agentJobId":"job-1","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"queued","fileName":"picture-1.jpg","queuedAt":"2026-10-14T12:00:00Z","finishedAt":"","outcomeText":"","runConversationId":""},{"agentJobId":"job-2","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"running","fileName":"picture-2.jpg","queuedAt":"2026-10-14T11:50:00Z","finishedAt":"","outcomeText":"","runConversationId":"conversation-2"},{"agentJobId":"job-3","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"statement-october.pdf","queuedAt":"2026-10-13T08:00:00Z","finishedAt":"2026-10-13T08:02:10Z","outcomeText":"Added 14 transactions to Example Bank Checking ending 4321, and skipped 2 that were already there.","runConversationId":"conversation-3"},{"agentJobId":"job-4","financeImportKind":"receipt","financeImportSource":"photo","agentJobStatus":"done","fileName":"","queuedAt":"2026-10-12T17:20:00Z","finishedAt":"2026-10-12T17:21:00Z","outcomeText":"Read a receipt from Corner Market for 24.10 and matched it to a charge.","runConversationId":"conversation-4"},{"agentJobId":"job-5","financeImportKind":"statement","financeImportSource":"mail","agentJobStatus":"dead","fileName":"picture-3.jpg","queuedAt":"2026-10-11T09:00:00Z","finishedAt":"2026-10-11T09:01:00Z","outcomeText":"The picture was too blurry to read the amounts. Send a sharper one.","runConversationId":"conversation-5"},{"agentJobId":"job-6","financeImportKind":"tax_document","financeImportSource":"upload","agentJobStatus":"cancelled","fileName":"paystub.pdf","queuedAt":"2026-10-10T10:00:00Z","finishedAt":"2026-10-10T10:05:00Z","outcomeText":"","runConversationId":""}],"hasMore":false,"totalCount":6}}}"#
+        private static let demoFinanceImportsJSON = #"{"data":{"FinanceImports":{"financeImports":[{"agentJobId":"job-1","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"queued","fileName":"picture-1.jpg","queuedAt":"2026-10-14T12:00:00Z","finishedAt":"","outcomeText":"","runConversationId":"","agentAttachmentId":"demo-import-picture","attachmentContentType":"image/jpeg","mailboxItemId":""},{"agentJobId":"job-2","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"running","fileName":"picture-2.jpg","queuedAt":"2026-10-14T11:50:00Z","finishedAt":"","outcomeText":"","runConversationId":"conversation-2"},{"agentJobId":"job-3","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"statement-october.pdf","queuedAt":"2026-10-13T08:00:00Z","finishedAt":"2026-10-13T08:02:10Z","outcomeText":"Added 14 transactions to Example Bank Checking ending 4321, and skipped 2 that were already there.","runConversationId":"conversation-3","agentAttachmentId":"demo-import-document","attachmentContentType":"application/pdf","mailboxItemId":""},{"agentJobId":"job-4","financeImportKind":"receipt","financeImportSource":"photo","agentJobStatus":"done","fileName":"","queuedAt":"2026-10-12T17:20:00Z","finishedAt":"2026-10-12T17:21:00Z","outcomeText":"Read a receipt from Corner Market for 24.10 and matched it to a charge.","runConversationId":"conversation-4"},{"agentJobId":"job-5","financeImportKind":"statement","financeImportSource":"mail","agentJobStatus":"dead","fileName":"picture-3.jpg","queuedAt":"2026-10-11T09:00:00Z","finishedAt":"2026-10-11T09:01:00Z","outcomeText":"The picture was too blurry to read the amounts. Send a sharper one.","runConversationId":"conversation-5","agentAttachmentId":"","attachmentContentType":"","mailboxItemId":"demo-mail-1"},{"agentJobId":"job-6","financeImportKind":"tax_document","financeImportSource":"upload","agentJobStatus":"cancelled","fileName":"paystub.pdf","queuedAt":"2026-10-10T10:00:00Z","finishedAt":"2026-10-10T10:05:00Z","outcomeText":"","runConversationId":""}],"hasMore":false,"totalCount":6}}}"#
 
         private static func demoAccountJSON(id: String, institution: String, name: String, mask: String, kind: String, provider: String, balance: String) -> String {
             #"{"id":"\#(id)","sourceId":"source-\#(provider)","providerKind":"\#(provider)","institutionName":"\#(institution)","accountName":"\#(name)","accountMask":"\#(mask)","accountKind":"\#(kind)","currencyCode":"USD","currentBalance":"\#(balance)","availableBalance":null,"balanceAt":null,"isSignInRequired":false,"reportingCurrencyCode":"USD","convertedCurrentBalance":"\#(balance)"}"#

@@ -44,7 +44,7 @@ final class FinanceStatementTests: XCTestCase {
     }
 
     func testTheFilesReadIntoFinanceArePagedNewestFirst() async throws {
-        let body = #"{"data":{"FinanceImports":{"financeImports":[{"agentJobId":"job-2","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"picture-1.jpg","queuedAt":"2026-10-14T12:00:00Z","finishedAt":"2026-10-14T12:02:30.123456789Z","outcomeText":"Added 12 transactions to Example Bank Checking.","runConversationId":"conversation-1"},{"agentJobId":"job-1","financeImportKind":"receipt","financeImportSource":"photo","agentJobStatus":"queued","fileName":"","queuedAt":"2026-10-13T08:00:00Z","finishedAt":"","outcomeText":"","runConversationId":""}],"hasMore":true,"totalCount":7}}}"#
+        let body = #"{"data":{"FinanceImports":{"financeImports":[{"agentJobId":"job-2","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"picture-1.jpg","queuedAt":"2026-10-14T12:00:00Z","finishedAt":"2026-10-14T12:02:30.123456789Z","outcomeText":"Added 12 transactions to Example Bank Checking.","runConversationId":"conversation-1","agentAttachmentId":"attachment-1","attachmentContentType":"image/jpeg","mailboxItemId":""},{"agentJobId":"job-1","financeImportKind":"receipt","financeImportSource":"photo","agentJobStatus":"queued","fileName":"","queuedAt":"2026-10-13T08:00:00Z","finishedAt":"","outcomeText":"","runConversationId":"","agentAttachmentId":"","attachmentContentType":"","mailboxItemId":"mail-item-1"}],"hasMore":true,"totalCount":7}}}"#
         let (connection, fake) = try connection(answering: body)
         let page = try await connection.financeImports(limit: 2, offset: 4)
         XCTAssertEqual(page.shownImports.map(\.id), ["job-2", "job-1"])
@@ -54,8 +54,15 @@ final class FinanceStatementTests: XCTestCase {
         XCTAssertEqual(first.financeImportKind, "statement")
         XCTAssertEqual(first.agentJobStatus, "done")
         XCTAssertEqual(first.shownAt, ServerTime.date("2026-10-14T12:02:30Z"))
+        XCTAssertEqual(first.agentAttachmentId, "attachment-1")
+        XCTAssertEqual(first.attachmentContentType, "image/jpeg")
+        XCTAssertEqual(first.mailboxItemId, "")
+        XCTAssertTrue(first.isPicture)
+        XCTAssertEqual(page.shownImports.last?.mailboxItemId, "mail-item-1")
+        XCTAssertFalse(try XCTUnwrap(page.shownImports.last).isPicture)
         XCTAssertEqual(page.shownImports.last?.shownAt, ServerTime.date("2026-10-13T08:00:00Z"))
         let sent = try JSONSerialization.jsonObject(with: try XCTUnwrap(fake.sent.last?.httpBody)) as? [String: Any]
         XCTAssertEqual((sent?["variables"] as? [String: Any])?["offset"] as? Int, 4)
+        XCTAssertTrue((sent?["query"] as? String)?.contains("agentAttachmentId attachmentContentType mailboxItemId") == true)
     }
 }

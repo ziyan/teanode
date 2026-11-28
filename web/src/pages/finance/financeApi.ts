@@ -518,6 +518,11 @@ export type FinanceImport = {
   finishedAt: string
   outcomeText: string
   runConversationId: string
+  // The uploaded file, empty for mail or once it is gone, its type, and the
+  // message a mailed file came in (empty otherwise).
+  agentAttachmentId: string
+  attachmentContentType: string
+  mailboxItemId: string
 }
 
 export type FinanceImportPage = { financeImports: FinanceImport[]; hasMore: boolean; totalCount: number }
@@ -526,7 +531,7 @@ export type FinanceImportPage = { financeImports: FinanceImport[]; hasMore: bool
 // a page, 50 when no limit is given.
 export const FINANCE_IMPORTS = `query ($limit: Int, $offset: Int) {
   FinanceImports(limit: $limit, offset: $offset) {
-    financeImports { agentJobId financeImportKind financeImportSource agentJobStatus fileName queuedAt finishedAt outcomeText runConversationId }
+    financeImports { agentJobId financeImportKind financeImportSource agentJobStatus fileName queuedAt finishedAt outcomeText runConversationId agentAttachmentId attachmentContentType mailboxItemId }
     hasMore
     totalCount
   }

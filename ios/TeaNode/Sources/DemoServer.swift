@@ -23,6 +23,10 @@
             if let photoAnswer = Self.photoAnswer(request) {
                 return (photoAnswer, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
             }
+            // So is the file of an import on the Imports screen.
+            if let importFile = Self.financeImportFile(for: request) {
+                return (importFile, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
             // So is the picture of a shopping item.
             if let picture = Self.shoppingPicture(for: request) {
                 return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)

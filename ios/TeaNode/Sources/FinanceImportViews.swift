@@ -13,13 +13,15 @@ struct FinanceImportsView: View {
     @State private var isLoadingPage = false
     @State private var loadProblemText: String?
     @State private var problemText: String?
+    @State private var previewAddress: URL?
+    @Environment(AppModel.self) private var app
 
     private static let pageSize = 50
 
     var body: some View {
         List {
             ForEach(imports) { financeImport in
-                FinanceImportRow(financeImport: financeImport)
+                FinanceImportRow(financeImport: financeImport) { open(financeImport) }
             }
             if hasMore {
                 Section {
@@ -49,6 +51,29 @@ struct FinanceImportsView: View {
         .refreshable { await load() }
         .task { await load() }
         .toast(done: .constant(nil), problem: $problemText)
+        .quickLookPreview($previewAddress)
+    }
+
+    /// What a tap on a row opens: the file of an upload that is not a
+    /// picture, in Quick Look (a picture opens from its thumbnail), else the
+    /// message a mailed file came in.
+    private func open(_ financeImport: FinanceImport) {
+        let attachmentId = financeImport.agentAttachmentId ?? ""
+        let mailboxItemId = financeImport.mailboxItemId ?? ""
+        if !attachmentId.isEmpty, !financeImport.isPicture {
+            let fileName = financeImport.fileName ?? ""
+            Task {
+                let address = await app.downloadedFile(
+                    "/api/v1/agent/attachments/\(attachmentId)", name: fileName.isEmpty ? String(localized: "File") : fileName)
+                if let address {
+                    previewAddress = address
+                } else {
+                    problemText = app.previewProblemText
+                }
+            }
+        } else if !mailboxItemId.isEmpty {
+            app.openedMailItemId = mailboxItemId
+        }
     }
 
     private func load() async {
@@ -83,6 +108,15 @@ struct FinanceImportsView: View {
 /// whole.
 struct FinanceImportRow: View {
     let financeImport: FinanceImport
+    /// What a tap on the row does, for a file that is not a picture and for a
+    /// mailed file.
+    let onOpen: () -> Void
+
+    private var attachmentId: String { financeImport.agentAttachmentId ?? "" }
+    private var mailboxItemId: String { financeImport.mailboxItemId ?? "" }
+    private var isPictureShown: Bool { !attachmentId.isEmpty && financeImport.isPicture }
+    private var isFileShown: Bool { !attachmentId.isEmpty && !financeImport.isPicture }
+    private var isMessageShown: Bool { attachmentId.isEmpty && !mailboxItemId.isEmpty }
 
     private var kindText: String {
         switch financeImport.financeImportKind {
@@ -141,7 +175,11 @@ struct FinanceImportRow: View {
         (financeImport.outcomeText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    var body: some View {
+    private var openHint: LocalizedStringKey {
+        isFileShown ? "Opens the file" : "Opens the message"
+    }
+
+    private var details: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(verbatim: fileNameText)
                 .font(.body)
@@ -165,5 +203,80 @@ struct FinanceImportRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+
+    /// The text of the row and, after it, the symbol of what a tap opens.
+    private var opensOnTap: some View {
+        HStack(spacing: 12) {
+            details
+            Image(systemName: isFileShown ? "doc" : "envelope")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if isPictureShown {
+                FinanceImportThumbnail(attachmentId: attachmentId, name: fileNameText)
+            }
+            if isFileShown || isMessageShown {
+                Button(action: onOpen) {
+                    opensOnTap
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(openHint)
+            } else {
+                details
+            }
+        }
+    }
+}
+
+/// FinanceImportThumbnail is the picture of an import as a small rounded
+/// square, read the way a picture in a conversation is; a tap opens it full
+/// screen.
+struct FinanceImportThumbnail: View {
+    let attachmentId: String
+    let name: String
+    @Environment(AppModel.self) private var app
+    @State private var picture: UIImage?
+    @State private var isMissing = false
+    @ScaledMetric(relativeTo: .body) private var side: CGFloat = 56
+
+    private var path: String { "/api/v1/agent/attachments/\(attachmentId)" }
+
+    var body: some View {
+        Group {
+            if let picture {
+                Button {
+                    LightboxPresenter.present(picture, name: name) { await app.downloadedFile(path, name: name) }
+                } label: {
+                    Image(uiImage: picture)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: side, height: side)
+                        .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                }
+                // Borderless, not plain: a plain button in a list row takes
+                // the taps of the whole row.
+                .buttonStyle(.borderless)
+                .accessibilityLabel(name)
+                .accessibilityHint("Opens the picture")
+            } else if isMissing {
+                Image(systemName: "photo")
+                    .foregroundStyle(.secondary)
+                    .frame(width: side, height: side)
+                    .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
+                    .accessibilityHidden(true)
+            } else {
+                ProgressView()
+                    .frame(width: side, height: side)
+            }
+        }
+        .task(id: path) {
+            picture = await app.picture(path)
+            isMissing = picture == nil
+        }
     }
 }

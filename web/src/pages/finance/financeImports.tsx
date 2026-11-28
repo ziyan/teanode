@@ -1,13 +1,75 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { graphql, openAgentConversation } from '../../api'
 import { ErrorMessage, formatTime } from '../../components/common'
 import { Column, DataTable, Range } from '../../components/dataTable'
+import { ZoomablePicture } from '../../components/lightbox'
 import { usePageInAddress } from '../../components/pager'
 import { SettingsSection } from '../../components/settingsList'
+import { useToast } from '../../components/toast'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
-import { FINANCE_IMPORTS, FinanceImport, FinanceImportPage } from './financeApi'
+import { AGENT_ATTACHMENTS_PATH, FINANCE_IMPORTS, FinanceImport, FinanceImportPage } from './financeApi'
+
+// ImportFile shows the file an import read: a picture as a small thumbnail
+// that opens large on a tap, any other file as an Open file button, and for
+// a mailed file an Open message button. A message moves between folders, so
+// its folder is asked for when it is opened, as the receipts list does.
+function ImportFile({ financeImport, name }: { financeImport: FinanceImport; name: string }) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const navigate = useNavigate()
+  const source = financeImport.agentAttachmentId
+    ? `${AGENT_ATTACHMENTS_PATH}/${encodeURIComponent(financeImport.agentAttachmentId)}`
+    : ''
+  const isPicture = financeImport.attachmentContentType.startsWith('image/')
+  const openMessage = async () => {
+    try {
+      const answer = await graphql<{ GetMailboxItem: { id: string; folderId: string } }>(
+        'query ($itemId: String!) { GetMailboxItem(itemId: $itemId) { id folderId } }',
+        { itemId: financeImport.mailboxItemId },
+      )
+      navigate(`/mailbox/${answer.GetMailboxItem.folderId}/${answer.GetMailboxItem.id}`)
+    } catch (caught) {
+      toast.failure(caught, t('finance.failed'))
+    }
+  }
+  if (!source && !financeImport.mailboxItemId) return null
+  return (
+    <div className="finance-import-file">
+      {source && isPicture ? (
+        <ZoomablePicture
+          source={source}
+          name={name}
+          imageClassName="finance-import-thumbnail"
+          openTitle={t('finance.importZoomPicture')}
+        />
+      ) : null}
+      {source && !isPicture ? (
+        <a
+          className="button"
+          href={source}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={t('finance.importOpenFileOf', { name })}
+        >
+          {t('finance.importOpenFile')}
+        </a>
+      ) : null}
+      {financeImport.mailboxItemId ? (
+        <button
+          type="button"
+          className="button"
+          aria-label={t('finance.importOpenMessageOf', { name })}
+          onClick={() => void openMessage()}
+        >
+          {t('finance.importOpenMessage')}
+        </button>
+      ) : null}
+    </div>
+  )
+}
 
 // The Imports section: every file read into Finance in the background,
 // newest first, as teanode finance imports lists them. A file is read as a
@@ -60,6 +122,7 @@ export function FinanceImportsSection() {
             {' · '}
             {t(`finance.importSource.${financeImport.financeImportSource}`)}
           </div>
+          <ImportFile financeImport={financeImport} name={importName(financeImport)} />
         </>
       ),
     },
