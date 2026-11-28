@@ -21735,22 +21735,6 @@
         }
       }
     },
-    "From mail": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メールから"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "来自邮件"
-          }
-        }
-      }
-    },
     "Reading": {
       "localizations": {
         "ja": {
@@ -21891,22 +21875,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "每个 OFX、QFX 或 QBO 文件会立即导入你的账户，重复导入的交易只保留一条。对账单或银行 App 的图片和 PDF 会在后台读取，结果会显示在动态和“财务”的“导入”中。不附带备注。"
-          }
-        }
-      }
-    },
-    "From an upload": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アップロードから"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "来自上传"
           }
         }
       }
@@ -99563,12 +99531,76 @@
         }
       }
     },
-    "Opens the file": {
+    "Imported": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ファイルを開きます"
+            "value": "取り込み済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已导入"
+          }
+        }
+      }
+    },
+    "Imported nothing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何も取り込まれませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未导入任何内容"
+          }
+        }
+      }
+    },
+    "What came of it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結果"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结果"
+          }
+        }
+      }
+    },
+    "Read as": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み取り種別"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "识别为"
+          }
+        }
+      }
+    },
+    "Open file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを開く"
           }
         },
         "zh-Hans": {
@@ -99579,12 +99611,12 @@
         }
       }
     },
-    "Opens the message": {
+    "Open message": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "メッセージを開きます"
+            "value": "メッセージを開く"
           }
         },
         "zh-Hans": {
@@ -99595,18 +99627,50 @@
         }
       }
     },
-    "Opens the picture": {
+    "Read again": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "画像を開きます"
+            "value": "もう一度読み取る"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开图片"
+            "value": "重新读取"
+          }
+        }
+      }
+    },
+    "Reading again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度読み取っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在重新读取"
+          }
+        }
+      }
+    },
+    "Shared or uploaded": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有またはアップロード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享或上传"
           }
         }
       }

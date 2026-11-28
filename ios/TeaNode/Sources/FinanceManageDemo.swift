@@ -35,6 +35,9 @@
             if query.contains("ImportFinanceCredential") {
                 return #"{"data":{"ImportFinanceCredential":{"id":"source-imported"}}}"#
             }
+            if query.contains("ReadTaxDocument") {
+                return #"{"data":{"ReadTaxDocument":{"agentAttachmentIds":["attachment-demo"],"agentJobIds":["job-demo"]}}}"#
+            }
             if query.contains("ReadStatement") {
                 return #"{"data":{"ReadStatement":{"agentAttachmentId":"attachment-demo","agentJobId":"job-demo"}}}"#
             }
@@ -87,8 +90,61 @@
         }
 
         /// The files read into finance in the background, as the Imports screen
-        /// shows them (`-TeaNodeScreen finance-imports`): one of each status.
-        private static let demoFinanceImportsJSON = #"{"data":{"FinanceImports":{"financeImports":[{"agentJobId":"job-1","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"queued","fileName":"picture-1.jpg","queuedAt":"2026-10-14T12:00:00Z","finishedAt":"","outcomeText":"","runConversationId":"","agentAttachmentId":"demo-import-picture","attachmentContentType":"image/jpeg","mailboxItemId":""},{"agentJobId":"job-2","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"running","fileName":"picture-2.jpg","queuedAt":"2026-10-14T11:50:00Z","finishedAt":"","outcomeText":"","runConversationId":"conversation-2"},{"agentJobId":"job-3","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"statement-october.pdf","queuedAt":"2026-10-13T08:00:00Z","finishedAt":"2026-10-13T08:02:10Z","outcomeText":"Added 14 transactions to Example Bank Checking ending 4321, and skipped 2 that were already there.","runConversationId":"conversation-3","agentAttachmentId":"demo-import-document","attachmentContentType":"application/pdf","mailboxItemId":""},{"agentJobId":"job-4","financeImportKind":"receipt","financeImportSource":"photo","agentJobStatus":"done","fileName":"","queuedAt":"2026-10-12T17:20:00Z","finishedAt":"2026-10-12T17:21:00Z","outcomeText":"Read a receipt from Corner Market for 24.10 and matched it to a charge.","runConversationId":"conversation-4"},{"agentJobId":"job-5","financeImportKind":"statement","financeImportSource":"mail","agentJobStatus":"dead","fileName":"picture-3.jpg","queuedAt":"2026-10-11T09:00:00Z","finishedAt":"2026-10-11T09:01:00Z","outcomeText":"The picture was too blurry to read the amounts. Send a sharper one.","runConversationId":"conversation-5","agentAttachmentId":"","attachmentContentType":"","mailboxItemId":"demo-mail-1"},{"agentJobId":"job-6","financeImportKind":"tax_document","financeImportSource":"upload","agentJobStatus":"cancelled","fileName":"paystub.pdf","queuedAt":"2026-10-10T10:00:00Z","finishedAt":"2026-10-10T10:05:00Z","outcomeText":"","runConversationId":""}],"hasMore":false,"totalCount":6}}}"#
+        /// shows them (`-TeaNodeScreen finance-imports`, and `finance-import-detail`
+        /// for the page of the one that imported nothing): today one waiting,
+        /// one being read and one done, yesterday five more. The times are
+        /// today's and yesterday's, whenever the screenshot is taken.
+        private static var demoFinanceImportsJSON: String {
+            let calendar = Calendar.current
+            let startOfToday = calendar.startOfDay(for: Date())
+            let startOfYesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday) ?? startOfToday
+            let formatter = ISO8601DateFormatter()
+            func time(_ start: Date, hour: Int, minute: Int) -> String {
+                formatter.string(from: calendar.date(byAdding: .minute, value: hour * 60 + minute, to: start) ?? start)
+            }
+            func row(
+                id: String, kind: String, source: String, status: String, fileName: String, queuedAt: String, finishedAt: String,
+                outcome: String, attachmentId: String, contentType: String, mailboxItemId: String
+            ) -> [String: Any] {
+                [
+                    "agentJobId": id, "financeImportKind": kind, "financeImportSource": source, "agentJobStatus": status,
+                    "fileName": fileName, "queuedAt": queuedAt, "finishedAt": finishedAt, "outcomeText": outcome,
+                    "runConversationId": "", "agentAttachmentId": attachmentId, "attachmentContentType": contentType,
+                    "mailboxItemId": mailboxItemId,
+                ]
+            }
+            let imports: [[String: Any]] = [
+                row(id: "job-queued", kind: "statement", source: "upload", status: "queued", fileName: "picture-1.jpg",
+                    queuedAt: time(startOfToday, hour: 9, minute: 41), finishedAt: "", outcome: "",
+                    attachmentId: "demo-import-picture", contentType: "image/jpeg", mailboxItemId: ""),
+                row(id: "job-running", kind: "statement", source: "upload", status: "running", fileName: "picture-1.jpg",
+                    queuedAt: time(startOfToday, hour: 9, minute: 26), finishedAt: "", outcome: "Reading the statement picture-1.jpg",
+                    attachmentId: "demo-import-picture", contentType: "image/jpeg", mailboxItemId: ""),
+                row(id: "job-added", kind: "statement", source: "upload", status: "done", fileName: "picture-1.jpg",
+                    queuedAt: time(startOfToday, hour: 8, minute: 5), finishedAt: time(startOfToday, hour: 8, minute: 6),
+                    outcome: "2 transactions added to Example Bank ··4821",
+                    attachmentId: "demo-import-picture", contentType: "image/jpeg", mailboxItemId: ""),
+                row(id: "job-nothing", kind: "statement", source: "upload", status: "done", fileName: "picture-1.jpg",
+                    queuedAt: time(startOfYesterday, hour: 21, minute: 15), finishedAt: time(startOfYesterday, hour: 21, minute: 16),
+                    outcome: "Imported nothing: it shows no account number, and no account at Example Bank was imported before, so it is not clear which account it is. Share a screenshot that shows the account's number or its last digits",
+                    attachmentId: "demo-import-picture", contentType: "image/jpeg", mailboxItemId: ""),
+                row(id: "job-known", kind: "statement", source: "upload", status: "done", fileName: "picture-1.jpg",
+                    queuedAt: time(startOfYesterday, hour: 18, minute: 40), finishedAt: time(startOfYesterday, hour: 18, minute: 41),
+                    outcome: "Nothing new in picture-1.jpg: Example Bank ··4821 has it all already",
+                    attachmentId: "demo-import-picture", contentType: "image/jpeg", mailboxItemId: ""),
+                row(id: "job-mailed", kind: "tax_document", source: "mail", status: "done", fileName: "form-1099.pdf",
+                    queuedAt: time(startOfYesterday, hour: 14, minute: 5), finishedAt: time(startOfYesterday, hour: 14, minute: 7),
+                    outcome: "Tax form 1099-INT from Example Bank read: 41.20 of interest",
+                    attachmentId: "", contentType: "", mailboxItemId: "demo-mail-1"),
+                row(id: "job-document", kind: "statement", source: "upload", status: "done", fileName: "statement-october.pdf",
+                    queuedAt: time(startOfYesterday, hour: 9, minute: 12), finishedAt: time(startOfYesterday, hour: 9, minute: 14),
+                    outcome: "14 transactions added to Example Bank ··4821",
+                    attachmentId: "demo-import-document", contentType: "application/pdf", mailboxItemId: ""),
+            ]
+            let body: [String: Any] = ["data": ["FinanceImports": ["financeImports": imports, "hasMore": false, "totalCount": imports.count]]]
+            guard let data = try? JSONSerialization.data(withJSONObject: body), let text = String(data: data, encoding: .utf8) else { return "{}" }
+            return text
+        }
 
         private static func demoAccountJSON(id: String, institution: String, name: String, mask: String, kind: String, provider: String, balance: String) -> String {
             #"{"id":"\#(id)","sourceId":"source-\#(provider)","providerKind":"\#(provider)","institutionName":"\#(institution)","accountName":"\#(name)","accountMask":"\#(mask)","accountKind":"\#(kind)","currencyCode":"USD","currentBalance":"\#(balance)","availableBalance":null,"balanceAt":null,"isSignInRequired":false,"reportingCurrencyCode":"USD","convertedCurrentBalance":"\#(balance)"}"#
