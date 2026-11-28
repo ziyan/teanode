@@ -887,7 +887,7 @@ struct PhotoBackupSettingsRow: View {
     var body: some View {
         HStack {
             Label("Photo backup", systemImage: "icloud.and.arrow.up")
-                .foregroundStyle(.primary)
+                .labelStyle(.pageRow)
             Spacer()
             statusText
                 .foregroundStyle(.secondary)
