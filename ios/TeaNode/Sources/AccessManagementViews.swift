@@ -789,7 +789,7 @@ struct GroupDetailView: View {
                     }
                 }
             } else if directory.isLoaded {
-                ContentUnavailableView("This group is no longer here", systemImage: "person.3")
+                ContentUnavailableView("This group is no longer here", systemImage: "person.2.circle")
             }
         }
         .navigationTitle(group?.name ?? "")

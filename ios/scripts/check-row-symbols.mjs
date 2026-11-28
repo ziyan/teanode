@@ -34,9 +34,8 @@ const wideSymbols = new Map([
   ['externaldrive.connected.to.line.below', 'cylinder.split.1x2'],
   ['mappin.and.ellipse', 'mappin'],
   ['externaldrive', 'cylinder'],
-  ['server.rack', 'server.rack'],
+  ['person.3', 'person.2.circle'],
 ])
-wideSymbols.delete('server.rack')
 
 // callEnd returns where the call that starts at `start` ends: its argument
 // list, then its trailing closures.

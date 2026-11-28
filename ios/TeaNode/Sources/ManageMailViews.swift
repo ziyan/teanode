@@ -78,7 +78,7 @@ struct ManageOverviewView: View {
                         NavigationLink {
                             GroupsView(connection: connection)
                         } label: {
-                            Label("Groups", systemImage: "person.3")
+                            Label("Groups", systemImage: "person.2.circle")
                                 .labelStyle(.pageRow)
                         }
                         NavigationLink {

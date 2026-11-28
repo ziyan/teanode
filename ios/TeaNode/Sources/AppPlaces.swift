@@ -251,7 +251,7 @@ enum AppPlaces {
             }
             if access.isOperator {
                 addManaged("manage-people", "People", "person.2", .managePeople)
-                addManaged("manage-groups", "Groups", "person.3", .manageGroups)
+                addManaged("manage-groups", "Groups", "person.2.circle", .manageGroups)
                 addManaged("manage-roles", "Roles", "checkmark.seal", .manageRoles)
                 addManaged("manage-audit-log", "Audit log", "list.bullet.clipboard", .manageAuditLog)
             }
