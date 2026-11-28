@@ -32,22 +32,10 @@ import (
 // again on demand.
 
 const (
-	// followUpBackfillDays is how far back the look reaches, by when the
-	// message was received.
-	followUpBackfillDays = 45
-
-	// followUpBackfillMost is how many messages one look queues at most,
-	// the newest first.
-	followUpBackfillMost = 150
-
-	// followUpBackfillScanMost is how many insights of one mailbox are read
-	// to choose from.
-	followUpBackfillScanMost = 2000
-
 	// followUpBackfillSpacing is how long after the one before each extract
 	// job is allowed to start. The queue runs jobs in the order they were
-	// made, so without it the look would put 150 jobs in front of whatever
-	// arrives in the next hour.
+	// made, so without it the look would put every one of them in front of
+	// whatever arrives in the next hour.
 	followUpBackfillSpacing = 20 * time.Second
 
 	// followUpBackfillEvery is how often the worker looks for an agent that
@@ -101,15 +89,12 @@ func looksLikeFollowUp(category, subject string) bool {
 // chooseFollowUpBackfill picks, from the sorted messages of an agent's
 // mailboxes, the ones to read for follow-ups: those sorting flagged for an
 // extract, and those whose category or subject looks like one, never from a
-// category left out, newest first, at most limit.
-func chooseFollowUpBackfill(heads []*db.MailInsightHead, limit int) []*db.MailInsightHead {
+// category left out, newest first.
+func chooseFollowUpBackfill(heads []*db.MailInsightHead) []*db.MailInsightHead {
 	sorted := append([]*db.MailInsightHead{}, heads...)
 	sort.SliceStable(sorted, func(first, second int) bool { return sorted[first].ReceivedAt.After(sorted[second].ReceivedAt) })
 	chosen := []*db.MailInsightHead{}
 	for _, head := range sorted {
-		if len(chosen) >= limit {
-			break
-		}
 		category := strings.ToLower(strings.TrimSpace(head.Category))
 		if UnwantedCategory(category) || category == "promotion" {
 			continue
@@ -145,7 +130,6 @@ func BackfillFollowUps(tx db.Transaction, agent *models.Agent, now time.Time, is
 	if err != nil {
 		return 0, err
 	}
-	since := now.AddDate(0, 0, -followUpBackfillDays)
 	heads := []*db.MailInsightHead{}
 	hasMailbox := false
 	for _, mailbox := range mailboxes {
@@ -153,7 +137,7 @@ func BackfillFollowUps(tx db.Transaction, agent *models.Agent, now time.Time, is
 			continue
 		}
 		hasMailbox = true
-		found, err := tx.ListMailInsightHeads(mailbox.ID, since, followUpBackfillLeftOutCategories, followUpBackfillScanMost)
+		found, err := tx.ListMailInsightHeads(mailbox.ID, time.Time{}, followUpBackfillLeftOutCategories, 0)
 		if err != nil {
 			return 0, err
 		}
@@ -169,7 +153,7 @@ func BackfillFollowUps(tx db.Transaction, agent *models.Agent, now time.Time, is
 	} else if claimed, err := tx.ClaimAgentFollowUpBackfill(agent.ID, now); err != nil || !claimed {
 		return 0, err
 	}
-	chosen := chooseFollowUpBackfill(heads, followUpBackfillMost)
+	chosen := chooseFollowUpBackfill(heads)
 	for index, head := range chosen {
 		notBefore := now.Add(time.Duration(index) * followUpBackfillSpacing)
 		if _, err := tx.EnqueueAgentJob(&models.AgentJob{
@@ -209,7 +193,7 @@ func (self *Agent) queueFollowUpBackfills(ctx context.Context, now time.Time) {
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			queued, err := BackfillFollowUps(tx, agent, now, false)
 			if err == nil && queued > 0 {
-				log.Infof("queued %d messages of the last %d days for agent %q to be read for follow-ups", queued, followUpBackfillDays, agent.ID)
+				log.Infof("queued %d messages for agent %q to be read for follow-ups", queued, agent.ID)
 			}
 			return err
 		}); err != nil {

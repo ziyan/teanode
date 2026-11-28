@@ -2,6 +2,7 @@ package location
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -749,9 +750,14 @@ func (self *scope) pausesAmongVisits(ctx context.Context, userId *string, variab
 	return rows, nil
 }
 
-// pathPointsMost is how many positions of a day's path the answer lists; a
-// day holds far more, so the rest are left out evenly.
-const pathPointsMost = 60
+// pathOverviewPoints is how many positions the overview of a day's path
+// lists, evenly spread; a day holds far more. Asking with an offset reads
+// every position, a page at a time.
+const pathOverviewPoints = 60
+
+// pathReserve is the room, in bytes, a page of a day's positions keeps for
+// what is around them.
+const pathReserve = 800
 
 // pathReadHours is how much of a day one reading of its positions covers.
 const pathReadHours = 6
@@ -759,6 +765,10 @@ const pathReadHours = 6
 type pathArguments struct {
 	Day    string `json:"day"`
 	Person string `json:"person"`
+
+	// Offset, when given, reads the day's positions one after another from
+	// this many in, instead of the evenly spread overview.
+	Offset *int `json:"offset"`
 }
 
 // runPath answers one day of the person's path: how many positions there are,
@@ -816,16 +826,53 @@ func runPath(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		answer["first_at"] = points[0].MeasuredAt.In(here.where).Format("15:04:05")
 		answer["last_at"] = points[len(points)-1].MeasuredAt.In(here.where).Format("15:04:05")
 		answer["distance_travelled_"+here.distanceUnit()] = roundTo(here.distanceIn(travelledMeters), 2)
-		sampled := make([]map[string]any, 0, pathPointsMost)
-		for _, index := range sampleIndexes(len(points), pathPointsMost) {
-			sampled = append(sampled, map[string]any{
+		pointRow := func(index int) map[string]any {
+			return map[string]any{
 				"time":              points[index].MeasuredAt.In(here.where).Format("15:04:05"),
 				"latitude_degrees":  roundTo(points[index].LatitudeDegrees, 5),
 				"longitude_degrees": roundTo(points[index].LongitudeDegrees, 5),
-			})
+			}
 		}
-		answer["points"] = sampled
-		answer["is_truncated"] = len(points) > pathPointsMost
+		if arguments.Offset == nil {
+			sampled := make([]map[string]any, 0, pathOverviewPoints)
+			for _, index := range sampleIndexes(len(points), pathOverviewPoints) {
+				sampled = append(sampled, pointRow(index))
+			}
+			answer["points"] = sampled
+			answer["is_sampled"] = len(points) > pathOverviewPoints
+			if len(points) > pathOverviewPoints {
+				answer["how_to_read_every_position"] = "path again with offset: 0"
+			}
+			return untrusted(tools.JSONResult(answer))
+		}
+		// Every position, in order, as many as fit in what the run keeps of a
+		// result, and where the next page starts.
+		run, err := tools.RunFrom(ctx)
+		if err != nil {
+			return nil, err
+		}
+		budget := tools.ResultCharactersOf(run) - pathReserve
+		start := min(max(*arguments.Offset, 0), len(points))
+		end, size := start, 0
+		page := []map[string]any{}
+		for end < len(points) {
+			row := pointRow(end)
+			encoded, err := json.Marshal(row)
+			if err != nil {
+				return nil, err
+			}
+			size += len(encoded) + 1
+			if size > budget && end > start {
+				break
+			}
+			page = append(page, row)
+			end++
+		}
+		answer["points"] = page
+		if end < len(points) {
+			answer["more_points"] = len(points) - end
+			answer["next_offset"] = end
+		}
 	}
 	return untrusted(tools.JSONResult(answer))
 }
@@ -1098,7 +1145,15 @@ type findAddressArguments struct {
 	LatitudeDegrees  *float64 `json:"latitude_degrees"`
 	LongitudeDegrees *float64 `json:"longitude_degrees"`
 	Limit            *int     `json:"limit"`
+	Offset           *int     `json:"offset"`
 }
+
+// addressMatchesMost is how many matches the server's address search gives
+// in all, however they are paged: its own bound on one lookup.
+const addressMatchesMost = 20
+
+// addressMatchesDefault is the page of matches when no limit is given.
+const addressMatchesDefault = 8
 
 // runFindAddress is the addresses matching words, nearest first, for a person who
 // says where a place is. The rows are the ones nearby and search give, so that
@@ -1117,8 +1172,17 @@ func runFindAddress(ctx context.Context, call *tools.Call) (*tools.Result, error
 		return nil, err
 	}
 	variables := map[string]any{"query": query}
+	// The search has no offset of its own: a later page asks for the matches
+	// up to its end and drops the ones before it.
+	limit, offset := addressMatchesDefault, 0
 	if arguments.Limit != nil {
-		variables["limitCount"] = *arguments.Limit
+		limit = *arguments.Limit
+	}
+	if arguments.Offset != nil {
+		offset = max(*arguments.Offset, 0)
+	}
+	if arguments.Limit != nil || offset > 0 {
+		variables["limitCount"] = min(offset+limit, addressMatchesMost)
 	}
 	switch {
 	case arguments.LatitudeDegrees != nil || arguments.LongitudeDegrees != nil:
@@ -1137,10 +1201,19 @@ func runFindAddress(ctx context.Context, call *tools.Call) (*tools.Result, error
 		return nil, err
 	}
 	rows := make([]map[string]any, 0, len(result.SearchAddresses))
-	for index := range result.SearchAddresses {
+	for index := offset; index < len(result.SearchAddresses); index++ {
 		rows = append(rows, here.foundRow(&result.SearchAddresses[index]))
 	}
-	return untrusted(tools.JSONResult(map[string]any{"addresses": rows}))
+	answer := map[string]any{"addresses": rows}
+	// A full page may be followed by more; the search stops at its own most.
+	if asked := min(offset+limit, addressMatchesMost); len(result.SearchAddresses) >= asked && limit > 0 {
+		if asked < addressMatchesMost {
+			answer["next_offset"] = asked
+		} else {
+			answer["note"] = fmt.Sprintf("an address search gives at most %d matches; narrow the words to find another", addressMatchesMost)
+		}
+	}
+	return untrusted(tools.JSONResult(answer))
 }
 
 func runSavePlace(ctx context.Context, call *tools.Call) (*tools.Result, error) {

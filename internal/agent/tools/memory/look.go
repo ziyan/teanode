@@ -31,13 +31,6 @@ import (
 // It is a read. Nothing moves and nothing is written, so a run held to
 // reading -- which is every unattended run of the graph -- may use it.
 
-// picturesLooked is how many pictures one look answers with.
-//
-// A fact usually cites one. The cap is for the fact that cites a thread's
-// worth, so that a single call cannot drag several megabytes each out of
-// the store; the turn itself bounds what reaches the model again.
-const picturesLooked = 4
-
 // lookAction shows the model the picture behind a fact, or one named file.
 func lookAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (*tools.Result, error) {
 	documents, subject, err := lookedAt(ctx, run, arguments)
@@ -64,9 +57,6 @@ func lookAction(ctx context.Context, run tools.Run, arguments *memoryArguments) 
 			continue
 		}
 		images = append(images, *picture)
-		if len(images) >= picturesLooked {
-			break
-		}
 	}
 	if len(lines) == 0 {
 		return tools.TextResult("%s", subject+" has no file kept behind it, so there is nothing to look at"), nil

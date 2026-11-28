@@ -75,16 +75,13 @@ func (self *transaction) ListAgentGraphShape(agentId string) ([]*AgentGraphShape
 }
 
 func (self *transaction) ListAgentThemesToReflect(agentId string, limit int) ([]*models.AgentNode, error) {
-	if limit <= 0 {
-		limit = 3
-	}
 	return self.nodesFrom(self.tx.Raw(`
 		SELECT n.* FROM "agent_node" n
 		WHERE n."agent_id" = ? AND NOT n."dormant" AND n."path" LIKE 'themes/%'
 		  AND n."overview" <> '' AND n."overview_written_at" IS NOT NULL
 		  AND (n."reflected_at" IS NULL OR n."overview_written_at" > n."reflected_at")
 		ORDER BY n."importance" DESC, n."path" ASC
-		LIMIT ?`, agentId, limit))
+		LIMIT ?`, agentId, limitOrAll(limit)))
 }
 
 func (self *transaction) AgentNodeReflectedAt(agentId, nodeId string) (*time.Time, error) {

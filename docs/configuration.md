@@ -1257,8 +1257,6 @@ caps is written in. Its own section below.
 **`skillSecrets`** — The values the installed skills need. Its own section
 below.
 
-**`retention`** — How long the agent's records are kept.
-
 **`search`** — The web search provider behind the `web_search` tool.
 
 **`tools`** — The operator's policy over the tool catalog.
@@ -1587,7 +1585,8 @@ the agent used to take as a setting is a fixed technical bound now, or gone
 operator may override for one person. At the limit, processing for that
 person is deferred to the next day with the reason on the run, and
 conversations answer that the budget is used up. Resets at midnight in the
-person's time zone. Zero means unlimited.
+person's time zone. Zero, which a new server starts with, means no token cap:
+the money limits below are the budget.
 
 **`monthlyTokensPerServer`** — A cap for the whole server. The same
 behaviour for everyone until the first of the month; a warning is logged at
@@ -1648,20 +1647,13 @@ The keys `maxBodyCharacters`, `maxRecordingMediaBytes`,
 `maxRoundsPerResearch`, `maxRoundsPerReply`, `maxRoundsPerTriage`,
 `maxRoundsPerDream`, `maxRoundsPerSubagent`, `maxToolCallsPerRun`,
 `goalShare`, `goalTurnsAlone`, `backgroundWakesAlone`, `dreamShare` and
-`embeddingTokensPerDay`, are gone. A configuration that still has them loads,
+`embeddingTokensPerDay`, are gone. So are `agent.retention.runs`,
+`agent.retention.corrections`, `agent.browser.idleTimeout` and
+`agent.browser.maxContexts`, which are fixed now (see
+`internal/config/agent.go`). A configuration that still has them loads,
 logs a warning for each, and loses them the next time it is saved. The
 settings GraphQL still answers them, as zero or empty, for one release so an
 older app's page loads, and ignores them when they are sent.
-
-### `agent.retention`
-
-**`runs`** — How long the record of work done without anybody watching is
-kept: run transcripts, finished and dead-lettered jobs, the replies the agent
-held or sent, and the files a run produced. Token and money usage is not swept
-by this, or by anything: those rows stay until the agent is deleted, because
-they are what a year's spending is added up from.
-
-**`corrections`** — How long a person's corrections are kept.
 
 ### `agent.search`
 
@@ -1784,10 +1776,6 @@ reaches this server at — its own connection says which that is, so it works
 whether Chrome runs on this machine or in a container beside it, without
 putting the proxy on every other network this machine is on. Set it when that guess is wrong, or to pin the port for a firewall.
 The proxy requires a password that only this server and its Chrome know.
-
-**`idleTimeout`** — How long a run's browser context outlives its last use.
-
-**`maxContexts`** — How many contexts may be open at once.
 
 ### `agent.voice`
 

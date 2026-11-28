@@ -1901,8 +1901,6 @@ export const ja: Catalog = {
   'agentSettings.recordingAccurateWords': '録音の言葉をより正確に',
   'agentSettings.recordingAccurateWordsDescription':
     '各話者の発言を音声文字起こしモデルでもう一度文字起こしします。利用者自身のデータにある名前や用語を渡すので、綴りがより正確になります。話者と時刻は変わらず、利用者の修正が引き続き優先されます。音声は利用者のエージェントにもう一度課金されます。',
-  'agentSettings.retentionRuns': '実行記録の保持期間',
-  'agentSettings.retentionCorrections': '修正の保持期間',
   'agent.runKind': '種類',
   'agent.runKinds.triage': '仕分け',
   'agent.runKinds.alert': 'アラート',
@@ -1990,8 +1988,6 @@ export const ja: Catalog = {
   'agentSettings.browserDescription':
     'サーバーの横で運用者が動かすヘッドレス Chrome。DevTools プロトコルで接続します。実行はいつも新規の訪問者として始まります。',
   'agentSettings.browserEndpoint': 'DevTools エンドポイント',
-  'agentSettings.browserIdleTimeout': 'アイドルタイムアウト',
-  'agentSettings.browserMaxContexts': '同時コンテキスト数',
   'agentSettings.allowPrivate': 'エージェントが到達してよい内部ネットワークの機器',
   'agentSettings.skipCertificates': '証明書を確認できない機器',
   'agentSettings.skipCertificatesHint':
@@ -2169,8 +2165,7 @@ export const ja: Catalog = {
   'agentSettings.modelInherit': '既定と同じ（仕分け・要約・圧縮は高速モデル）',
   'agentSettings.fewerModels': '閉じる',
   'agentSettings.addChoice': '選べるモデルを追加…',
-  'agentSettings.limitsDescription':
-    '一人あたり、サーバー全体の一日・一か月の上限（トークンまたは金額）。記録と訂正の保存期間。',
+  'agentSettings.limitsDescription': '一人あたり、サーバー全体の一日・一か月の上限（トークンまたは金額）。',
   'agentSettings.searchDescription': 'web_search が問い合わせるサービス。なくても、渡されたページの取得はできます。',
   'agentSettings.noServers': '接続サーバーはありません。追加すると、各エージェントがそのツールを使えます。',
   'agentSettings.authIs': '認証 {auth}',

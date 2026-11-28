@@ -104,7 +104,7 @@ func TestTheSurveyScopeFollowsTheThemesAndThePages(t *testing.T) {
 		var scope *surveyScope
 		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 			var err error
-			if scope, err = resolveSurveyScope(tx, agentId, scopePath, nil); err != nil {
+			if scope, err = resolveSurveyScope(tx, agentId, scopePath); err != nil {
 				t.Fatalf("resolveSurveyScope %q: %s", scopePath, err)
 			}
 		})
@@ -146,7 +146,7 @@ func TestTheSurveyScopeFollowsTheThemesAndThePages(t *testing.T) {
 	}
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		if _, err := resolveSurveyScope(tx, agentId, "projects/nowhere", nil); !errors.Is(err, errNoSuchScope) {
+		if _, err := resolveSurveyScope(tx, agentId, "projects/nowhere"); !errors.Is(err, errNoSuchScope) {
 			t.Errorf("a scope that names no page: %v", err)
 		}
 	})
@@ -163,7 +163,7 @@ func TestTheSurveyScopeFollowsTheThemesAndThePages(t *testing.T) {
 		}
 		surveyPageFor(t, tx, other.ID, "topics/kites", written, 0.4)
 		surveyPageFor(t, tx, other.ID, "topics/string", "", 0.9)
-		scope, err := resolveSurveyScope(tx, other.ID, "", nil)
+		scope, err := resolveSurveyScope(tx, other.ID, "")
 		if err != nil {
 			t.Fatalf("resolveSurveyScope: %s", err)
 		}
@@ -386,18 +386,19 @@ func TestTheSurveyToolAnswersWithTheReport(t *testing.T) {
 	}
 }
 
-// A survey says what in its scope it did not ask: the pages over its limit,
-// the least important, and the pages with no overview yet, counted by the
+// A survey asks every page in its scope that has an overview, however many,
+// and says what it did not ask: the pages with no overview yet, counted by the
 // code, so an answer from a selection does not read as one about everything.
-func TestASurveySaysWhatItLeftOut(t *testing.T) {
+func TestASurveyAsksEveryPageAndSaysWhatItLeftOut(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
 	_, run := digestSplitWorld(t, database, "http://127.0.0.1:1")
 	agentId := run.Agent.ID
 	written := "## What it is\n\nA part of the orchard."
+	const writtenCount = 60
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		surveyPageFor(t, tx, agentId, "projects/orchard", written, 0.9)
-		for index := 0; index < surveyPageCount+5; index++ {
+		for index := 0; index < writtenCount-1; index++ {
 			surveyPageFor(t, tx, agentId, fmt.Sprintf("projects/orchard/row-%02d", index), written, 0.5)
 		}
 		for index := 0; index < 3; index++ {
@@ -407,14 +408,12 @@ func TestASurveySaysWhatItLeftOut(t *testing.T) {
 	var scope *surveyScope
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		var err error
-		if scope, err = resolveSurveyScope(tx, agentId, "projects/orchard", nil); err != nil {
+		if scope, err = resolveSurveyScope(tx, agentId, "projects/orchard"); err != nil {
 			t.Fatal(err)
 		}
 	})
-	if len(scope.pages) != surveyPageCount || scope.eligiblePageCount != surveyPageCount+6 ||
-		scope.overLimitPageCount != 6 || scope.withoutOverviewPageCount != 3 {
-		t.Fatalf("asked %d, eligible %d, over the limit %d, without an overview %d",
-			len(scope.pages), scope.eligiblePageCount, scope.overLimitPageCount, scope.withoutOverviewPageCount)
+	if len(scope.pages) != writtenCount || scope.eligiblePageCount != writtenCount || scope.withoutOverviewPageCount != 3 {
+		t.Fatalf("asked %d, eligible %d, without an overview %d", len(scope.pages), scope.eligiblePageCount, scope.withoutOverviewPageCount)
 	}
 
 	coveredPaths := make([]string, 0, len(scope.pages))
@@ -422,11 +421,9 @@ func TestASurveySaysWhatItLeftOut(t *testing.T) {
 		coveredPaths = append(coveredPaths, page.page.Path)
 	}
 	coverage := surveyCoverage(&SurveyReport{CoveredPaths: coveredPaths[1:], FailedPaths: coveredPaths[:1],
-		EligiblePageCount: scope.eligiblePageCount, OverLimitPageCount: scope.overLimitPageCount,
-		WithoutOverviewPageCount: scope.withoutOverviewPageCount})
+		EligiblePageCount: scope.eligiblePageCount, WithoutOverviewPageCount: scope.withoutOverviewPageCount})
 	for _, said := range []string{
-		fmt.Sprintf("Asked %d of the %d pages in scope that have an overview.", surveyPageCount, surveyPageCount+6),
-		fmt.Sprintf("6 more were left out, the least important, over this survey's limit of %d pages.", surveyPageCount),
+		fmt.Sprintf("Asked all %d pages in scope that have an overview.", writtenCount),
 		"3 pages in scope have no overview yet and were not asked.",
 		"Not covered, the run did not finish:",
 	} {
@@ -438,33 +435,5 @@ func TestASurveySaysWhatItLeftOut(t *testing.T) {
 	// A survey that asked everything in scope says nothing more.
 	if full := surveyCoverage(&SurveyReport{CoveredPaths: coveredPaths, EligiblePageCount: len(coveredPaths)}); strings.Contains(full, "Asked") {
 		t.Errorf("a complete survey spoke of what it left out:\n%s", full)
-	}
-}
-
-// From more pages than it asks, a survey takes the most important few
-// whatever the question, then the ones nearest the question, then the most
-// important of the rest; without a question to compare with, the most
-// important alone.
-func TestASurveyChoosesThePagesNearestTheQuestion(t *testing.T) {
-	var pages []*models.AgentNode
-	for index := 0; index < 8; index++ {
-		pages = append(pages, &models.AgentNode{ID: fmt.Sprintf("page-%d", index)})
-	}
-	idsOf := func(chosen []*models.AgentNode) string {
-		var ids []string
-		for _, page := range chosen {
-			ids = append(ids, page.ID)
-		}
-		return strings.Join(ids, " ")
-	}
-	relevance := map[string]float64{"page-6": 0.9, "page-7": 0.8, "page-0": 0.95}
-	if got := idsOf(chooseSurveyPages(pages, relevance, 5, 2)); got != "page-0 page-1 page-6 page-7 page-2" {
-		t.Errorf("chose %s", got)
-	}
-	if got := idsOf(chooseSurveyPages(pages, nil, 5, 2)); got != "page-0 page-1 page-2 page-3 page-4" {
-		t.Errorf("without a question it chose %s", got)
-	}
-	if got := idsOf(chooseSurveyPages(pages[:3], relevance, 5, 2)); got != "page-0 page-1 page-2" {
-		t.Errorf("under the limit it chose %s", got)
 	}
 }

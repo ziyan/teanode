@@ -428,7 +428,8 @@ func init() {
 					"resource_id":   tools.StringProperty("one resource"),
 					"actor_user_id": tools.StringProperty("one person's doings"),
 					"since":         tools.StringProperty("an ISO date"),
-					"limit":         tools.IntegerProperty("how many, 30 by default"),
+					"limit":         tools.IntegerProperty("how many, 30 by default; the server gives at most 200 at a time"),
+					"offset":        tools.IntegerProperty("skip this many, to read on from a next_offset"),
 				}),
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					arguments, err := tools.DecodeArguments[struct {
@@ -437,11 +438,15 @@ func init() {
 						ActorUserID  string `json:"actor_user_id"`
 						Since        string `json:"since"`
 						Limit        int    `json:"limit"`
+						Offset       int    `json:"offset"`
 					}](call)
 					if err != nil {
 						return nil, err
 					}
 					variables := map[string]any{"first": 30}
+					if arguments.Offset > 0 {
+						variables["offset"] = arguments.Offset
+					}
 					if arguments.Limit > 0 {
 						variables["first"] = arguments.Limit
 					}
@@ -457,11 +462,21 @@ func init() {
 						}
 						variables["since"] = since.UTC().Format(time.RFC3339)
 					}
-					result, err := operator.Execute(ctx, `query ($resourceType: String, $resourceId: String, $actorUserId: String, $since: DateTime, $first: Int) { ListAuditEvents(resourceType: $resourceType, resourceId: $resourceId, actorUserId: $actorUserId, since: $since, first: $first) { total events { id createdAt actorKind actorLabel resourceType resourceId resourceLabel action } } }`, variables)
+					result, err := operator.Execute(ctx, `query ($resourceType: String, $resourceId: String, $actorUserId: String, $since: DateTime, $first: Int, $offset: Int) { ListAuditEvents(resourceType: $resourceType, resourceId: $resourceId, actorUserId: $actorUserId, since: $since, first: $first, offset: $offset) { total events { id createdAt actorKind actorLabel resourceType resourceId resourceLabel action } } }`, variables)
 					if err != nil {
 						return nil, err
 					}
-					return tools.JSONResult(result["ListAuditEvents"])
+					page, _ := result["ListAuditEvents"].(map[string]any)
+					if page == nil {
+						return tools.JSONResult(result["ListAuditEvents"])
+					}
+					// Where the next page starts, when the log has more.
+					events, _ := page["events"].([]any)
+					total, _ := page["total"].(float64)
+					if next := arguments.Offset + len(events); len(events) > 0 && float64(next) < total {
+						page["next_offset"] = next
+					}
+					return tools.JSONResult(page)
 				},
 			},
 		},

@@ -21,7 +21,12 @@ type fakeRun struct {
 	database     db.Database
 	agent        *models.Agent
 	conversation *models.AgentConversation
+
+	// resultCharacters is how much of a result the run keeps, when set.
+	resultCharacters int
 }
+
+func (self *fakeRun) ResultCharacters() int { return self.resultCharacters }
 
 func (self *fakeRun) Database() db.Database                   { return self.database }
 func (self *fakeRun) Agent() *models.Agent                    { return self.agent }
@@ -1408,5 +1413,98 @@ func TestConversationReadsAVoiceMessageAsItsLengthAndWords(t *testing.T) {
 		if entry["said"] != want.said || voiceMessage["transcript_state"] != want.transcriptState || voiceMessage["seconds"] != float64(7) {
 			t.Errorf("message %d reads %v, want %q and %q", index, entry, want.said, want.transcriptState)
 		}
+	}
+}
+
+// Earlier messages are reached with offset, a long message is read whole, and
+// a list says when there is another page.
+func TestConversationPagesBackAndReadsMessagesWhole(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	run := &fakeRun{database: database}
+	var elsewhere *models.AgentConversation
+	long := strings.TrimSpace(strings.Repeat("a long paragraph of words. ", 200))
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if run.agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if run.conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		if elsewhere, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: run.agent.ID, Kind: models.AgentConversationNamed, Title: "The regatta", LastAt: time.Now().Add(-time.Hour)}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+		for index := 0; index < 5; index++ {
+			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: elsewhere.ID, Role: "user", Content: fmt.Sprintf("message %d", index)}); err != nil {
+				t.Fatalf("AppendAgentMessage: %s", err)
+			}
+		}
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: elsewhere.ID, Role: "user", Content: long}); err != nil {
+			t.Fatalf("AppendAgentMessage: %s", err)
+		}
+	})
+	ctx := tools.WithRun(context.Background(), run)
+	tool := find(t, "conversation")
+	call := func(arguments string) map[string]any {
+		t.Helper()
+		result, err := tool.Run(ctx, &tools.Call{ID: "c1", Arguments: json.RawMessage(arguments)})
+		if err != nil {
+			t.Fatalf("%s: %s", arguments, err)
+		}
+		var answer map[string]any
+		if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
+			t.Fatalf("%s: %s", arguments, err)
+		}
+		return answer
+	}
+
+	first := call(`{"action":"read","conversation_id":"` + elsewhere.ID + `","limit":2}`)
+	shown := first["messages"].([]any)
+	if len(shown) != 2 || shown[1].(map[string]any)["said"] != long {
+		t.Fatalf("the long message is read whole: %d messages", len(shown))
+	}
+	if first["more"] != true || first["next_offset"] != float64(2) || first["earlier_messages"] != float64(4) {
+		t.Fatalf("it says there is more and where: %v", first)
+	}
+	second := call(`{"action":"read","conversation_id":"` + elsewhere.ID + `","limit":3,"offset":2}`)
+	shown = second["messages"].([]any)
+	if len(shown) != 3 || shown[0].(map[string]any)["said"] != "message 1" || shown[2].(map[string]any)["said"] != "message 3" {
+		t.Fatalf("the messages before them: %v", shown)
+	}
+	if second["next_offset"] != float64(5) || second["earlier_messages"] != float64(1) {
+		t.Fatalf("one more is left: %v", second)
+	}
+	third := call(`{"action":"read","conversation_id":"` + elsewhere.ID + `","limit":3,"offset":5}`)
+	if len(third["messages"].([]any)) != 1 || third["more"] != nil {
+		t.Fatalf("the first one, and nothing before it: %v", third)
+	}
+
+	// More than one answer holds is paged by the answer's size, not cut.
+	run.resultCharacters = 1500
+	everything := call(`{"action":"read","conversation_id":"` + elsewhere.ID + `","limit":6}`)
+	shown = everything["messages"].([]any)
+	only := shown[len(shown)-1].(map[string]any)
+	if len(shown) != 1 || only["next_text_offset"] == nil {
+		t.Fatalf("a message longer than an answer says where it goes on: %d messages, %v", len(shown), only["next_text_offset"])
+	}
+	rest := call(fmt.Sprintf(`{"action":"read","conversation_id":%q,"limit":1,"text_offset":%d}`, elsewhere.ID, int(only["next_text_offset"].(float64))))
+	piece := rest["messages"].([]any)[0].(map[string]any)["said"].(string)
+	if !strings.HasPrefix(long[len(only["said"].(string)):], piece[:20]) {
+		t.Fatalf("it goes on where the first part ended: %.40q", piece)
+	}
+
+	list := call(`{"action":"list","limit":1}`)
+	firstListed := list["conversations"].([]any)[0].(map[string]any)["conversation_id"]
+	if list["more"] != true || list["next_offset"] != float64(1) || len(list["conversations"].([]any)) != 1 {
+		t.Fatalf("a list says there is another page: %v", list)
+	}
+	list = call(`{"action":"list","limit":1,"offset":1}`)
+	if secondListed := list["conversations"].([]any)[0].(map[string]any)["conversation_id"]; list["more"] != false || secondListed == firstListed {
+		t.Fatalf("the last page: %v", list)
 	}
 }

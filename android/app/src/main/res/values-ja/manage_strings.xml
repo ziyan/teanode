@@ -44,7 +44,6 @@
     <string name="manage_check_prices_now">今すぐ価格を照合</string>
     <string name="manage_checking">確認中…</string>
     <string name="manage_connected_servers">接続済みサーバー</string>
-    <string name="manage_contexts_at_once">同時コンテキスト数</string>
     <string name="manage_copy">コピー</string>
     <string name="manage_created">作成</string>
     <string name="manage_currency">通貨</string>
@@ -84,7 +83,6 @@
     <string name="manage_headless_usable">無人でも使える</string>
     <string name="manage_house_instructions">サーバー共通の指示</string>
     <string name="manage_house_instructions_prompt">このサーバーのすべてのエージェントへの指示。例:「保護者には自動返信しない」</string>
-    <string name="manage_idle_timeout">アイドルタイムアウト</string>
     <string name="manage_inferred">自動判定</string>
     <string name="manage_install">インストール</string>
     <string name="manage_installed">インストール済み</string>
@@ -95,8 +93,6 @@
     <string name="manage_job_never_ran">このジョブは実行まで進みませんでした。</string>
     <string name="manage_jobs_footer">ジョブをタップすると試した内容を開きます。「実行記録」はその呼び出しを一覧し、「再試行」はもう一度キューに入れます。</string>
     <string name="manage_jobs_given_up">諦めたジョブ</string>
-    <string name="manage_keep_corrections">修正の保持期間</string>
-    <string name="manage_keep_runs">実行記録の保持期間</string>
     <string name="manage_kept_keys">%2$s の %1$s を保存しました</string>
     <string name="manage_key_set">キー設定済み</string>
     <string name="manage_keys_footer">このサーバーに保存され、全員のエージェントが使います。書き込まれると二度と表示されません。変えるには新しい値を入力し、空のままなら保持されます。</string>
@@ -109,7 +105,7 @@
     <string name="manage_limit_monthly_cost">サーバー全体の月額</string>
     <string name="manage_limit_monthly_tokens">サーバー全体の月間トークン(0 = 上限なし)</string>
     <string name="manage_limits">制限</string>
-    <string name="manage_limits_footer">一人あたり、サーバー全体の一日・一か月の上限。記録と訂正の保存期間。</string>
+    <string name="manage_limits_footer">一人あたり、サーバー全体の一日・一か月の上限。</string>
     <string name="manage_live_transcription">録音中のライブ文字起こし</string>
     <string name="manage_live_transcription_footer">録音している間、話した言葉をその場で表示します。音声はこのサーバーを通じて音声プロバイダーのリアルタイム文字起こしにも送られ、利用者のエージェントに分単位で課金されます。文字は、保存された音声の話者分離つき文字起こしが終わるまでだけ保持されます。</string>
     <string name="manage_local">ローカル</string>

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -23,13 +24,9 @@ import (
 const (
 	// compactChunkTokens is the most of the older conversation one call
 	// reads. A longer one is read in parts, each carrying the note so
-	// far, so that a small model writes the note as well as a large one.
+	// far, so that a small model writes the note as well as a large one;
+	// so is a single message longer than that.
 	compactChunkTokens = 12000
-
-	// compactMessageCharacters is the most of one message the note is
-	// written from: the shape of a long tool answer matters, its middle
-	// does not.
-	compactMessageCharacters = 6000
 
 	// compactTailTokens bounds the verbatim tail: fewer than
 	// askTailMessages messages stay when they are large.
@@ -159,12 +156,11 @@ func withReactionNote(content string, reactions []models.AgentMessageReaction) s
 
 // renderHistory is the history as text, for measuring.
 func renderHistory(history []llm.ChatMessage) string {
-	return renderMessages(history, 0)
+	return renderMessages(history)
 }
 
-// renderMessages is the history as text with each message cut to
-// characters, or whole when characters is zero.
-func renderMessages(history []llm.ChatMessage, characters int) string {
+// renderMessages is the history as text, every message whole.
+func renderMessages(history []llm.ChatMessage) string {
 	var builder strings.Builder
 	for _, message := range history {
 		builder.WriteString(string(message.Role))
@@ -173,9 +169,6 @@ func renderMessages(history []llm.ChatMessage, characters int) string {
 		}
 		builder.WriteString(": ")
 		content := message.Content
-		if characters > 0 && len(content) > characters {
-			content = content[:characters*2/3] + "\n[…]\n" + content[len(content)-characters/3:]
-		}
 		builder.WriteString(content)
 		for _, call := range message.ToolCalls {
 			builder.WriteString("\n  → " + call.Name + " " + call.Arguments)
@@ -213,14 +206,20 @@ func compactCut(history []llm.ChatMessage, tailMessages int) int {
 	return cut
 }
 
-// chunkHistory cuts the history into runs of at most tokens each, a
-// message never split.
+// chunkHistory cuts the history into runs of at most tokens each. A message
+// is kept whole in one run, unless it alone is longer than a run: then it is
+// read in parts, each marked as the part of a message it is, so no message is
+// shortened.
 func chunkHistory(history []llm.ChatMessage, tokens int) [][]llm.ChatMessage {
 	var chunks [][]llm.ChatMessage
 	var chunk []llm.ChatMessage
 	weight := 0
+	var whole []llm.ChatMessage
 	for _, message := range history {
-		size := llm.EstimateTokens(renderMessages([]llm.ChatMessage{message}, compactMessageCharacters))
+		whole = append(whole, partsOfMessage(message, tokens)...)
+	}
+	for _, message := range whole {
+		size := llm.EstimateTokens(renderMessages([]llm.ChatMessage{message}))
 		if len(chunk) > 0 && weight+size > tokens {
 			chunks = append(chunks, chunk)
 			chunk, weight = nil, 0
@@ -232,6 +231,55 @@ func chunkHistory(history []llm.ChatMessage, tokens int) [][]llm.ChatMessage {
 		chunks = append(chunks, chunk)
 	}
 	return chunks
+}
+
+// partsOfMessage is a message in as many parts as it takes for each to weigh
+// at most tokens when rendered, or the message itself when it fits. Only the
+// first part keeps the calls the message made; the rest say what part of the
+// message they are.
+func partsOfMessage(message llm.ChatMessage, tokens int) []llm.ChatMessage {
+	if llm.EstimateTokens(renderMessages([]llm.ChatMessage{message})) <= tokens {
+		return []llm.ChatMessage{message}
+	}
+	pieces := halvedText(message.Content, tokens)
+	if len(pieces) < 2 {
+		return []llm.ChatMessage{message}
+	}
+	parts := make([]llm.ChatMessage, 0, len(pieces))
+	for index, piece := range pieces {
+		part := message
+		part.Content = fmt.Sprintf("[part %d of %d of this message]\n%s", index+1, len(pieces), piece)
+		if index > 0 {
+			part.ToolCalls = nil
+		}
+		parts = append(parts, part)
+	}
+	return parts
+}
+
+// halvedText is the text cut in two, again and again, at a line end near the
+// middle where there is one, until each piece weighs at most tokens, in order.
+func halvedText(text string, tokens int) []string {
+	if llm.EstimateTokens(text) <= tokens {
+		return []string{text}
+	}
+	characters := []rune(text)
+	if len(characters) < 2 {
+		return []string{text}
+	}
+	middle := len(characters) / 2
+	cut := middle
+	for distance := 0; distance < middle/2; distance++ {
+		if characters[middle+distance] == '\n' {
+			cut = middle + distance + 1
+			break
+		}
+		if characters[middle-distance] == '\n' {
+			cut = middle - distance + 1
+			break
+		}
+	}
+	return append(halvedText(string(characters[:cut]), tokens), halvedText(string(characters[cut:]), tokens)...)
 }
 
 // compactWork is the kind of work a compaction is: the operator's compact
@@ -279,7 +327,7 @@ func (self *AskRun) compact(ctx context.Context, provider llm.Provider, model, m
 	}
 	note := ""
 	for _, chunk := range chunkHistory(older, compactChunkTokens) {
-		prompt, err := render("compact.txt", map[string]any{"Previous": note, "Conversation": renderMessages(chunk, compactMessageCharacters)})
+		prompt, err := render("compact.txt", map[string]any{"Previous": note, "Conversation": renderMessages(chunk)})
 		if err != nil {
 			return nil, err
 		}

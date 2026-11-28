@@ -49,14 +49,6 @@ const (
 	// making over a spread wide enough to compare within.
 	attachmentBatch = 40
 
-	// attachmentsANight is how many files one night decides about and
-	// picturesANight how many of those it opens. Pacing, like every other
-	// bound in a night: what is not decided tonight is decided tomorrow,
-	// and the allowance and the clock stop it well before these do on any
-	// night that has other work.
-	attachmentsANight = 400
-	picturesANight    = 100
-
 	// pictureLargest is the largest picture the night sends to a model.
 	// The same number the memory tool's `look` holds the person's own
 	// question to, so that what the night would not open is not opened
@@ -64,35 +56,11 @@ const (
 	pictureLargest = tools.PictureLargest
 )
 
-// attachmentsMost is how many of a batch of this size the night will
-// open. A quarter, because the archive holds far more pictures than
-// there is money to look at them, and a cap makes the decision a
-// comparative one: the model has to rank what it was shown and name only
-// the best of it rather than everything it could argue for.
-//
-// One function so that the number the prompt is rendered with and the
-// number the answer is measured against cannot drift apart. They must
-// agree, because a list that came back full means something different
-// from one that did not -- see declinedWhenFull.
-func attachmentsMost(count int) int { return max(1, count/4) }
-
 // declinedByDefault is what is recorded against a file the model was
 // shown, had room to choose, and did not choose. It is written in the
 // person's words rather than the model's because the model said nothing
 // about this one; what it said was which others it wanted.
 const declinedByDefault = "the agent looked at its name, size, kind and the words it came with, and judged it not worth opening"
-
-// declinedWhenFull is what is recorded instead against a file left over
-// from a batch whose list came back full. The model named as many files
-// as it was allowed to name, so this one was never weighed against the
-// ones it named, and declinedByDefault would tell a person that a
-// judgement was made about it that was not. All this row can honestly
-// say is how many the night could take and that this was not among them.
-func declinedWhenFull(count int) string {
-	return fmt.Sprintf("the agent could choose at most %d of the %d files it was shown at once, "+
-		"the %d it chose were others, and this one was passed over rather than judged",
-		attachmentsMost(count), count, attachmentsMost(count))
-}
 
 // dreamAttachments decides which of the files a record came with are
 // worth opening, and opens them.
@@ -105,13 +73,9 @@ func (self *Agent) dreamAttachments(ctx context.Context, run *Run, budget *dream
 	if ctx.Err() != nil || !budget.left() {
 		return
 	}
-	most, pictures := attachmentsANight, picturesANight
-	if run.Agent.DreamBootstrap {
-		most, pictures = most*2, pictures*2
-	}
 	var waiting []*models.AgentDocument
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		waiting, err = tx.ListAgentAttachmentsToDecide(run.Agent.ID, most)
+		waiting, err = tx.ListAgentAttachmentsToDecide(run.Agent.ID, 0)
 		return err
 	}); err != nil {
 		log.Warningf("cannot list the files waiting for a decision: %s", err)
@@ -141,7 +105,6 @@ func (self *Agent) dreamAttachments(ctx context.Context, run *Run, budget *dream
 		declineAttachments(ctx, run, documentIds, reason)
 	}
 
-	opened := 0
 	for start := 0; start < len(considered); {
 		if ctx.Err() != nil || !budget.left() {
 			return
@@ -172,35 +135,10 @@ func (self *Agent) dreamAttachments(ctx context.Context, run *Run, budget *dream
 			// it again, which costs the decision twice and is the right
 			// way round -- the alternative marks a file the night meant
 			// to open as one it passed over.
-			if opened >= pictures || ctx.Err() != nil || !budget.left() {
+			if ctx.Err() != nil || !budget.left() {
 				continue
 			}
-			if self.readPicture(ctx, run, budget, document, why) {
-				opened++
-			}
-		}
-		// A list that came back full is not the same answer as a list
-		// with room left in it. When the model named as many as it was
-		// allowed to, the rest of the batch never got a judgement, so
-		// they are not declined: they go behind every file not yet shown
-		// (ListAgentAttachmentsToDecide orders by how often a file was
-		// passed over), and come back in another batch, against other
-		// files. They were declined outright, so a useful screenshot
-		// beside three better ones was never opened. A file passed over
-		// attachmentPassOvers times is declined as passed over, so the
-		// queue cannot fill with files that never win.
-		if len(chosen) >= attachmentsMost(len(batch)) {
-			var again, settled []string
-			for _, documentId := range declined {
-				if passedOverOf(batch, documentId)+1 >= attachmentPassOvers {
-					settled = append(settled, documentId)
-				} else {
-					again = append(again, documentId)
-				}
-			}
-			passOverAttachments(ctx, run, again)
-			declineAttachments(ctx, run, settled, declinedWhenFull(len(batch)))
-			continue
+			self.readPicture(ctx, run, budget, document, why)
 		}
 		declineAttachments(ctx, run, declined, declinedByDefault)
 	}
@@ -290,7 +228,6 @@ func (self *Agent) chooseAttachments(ctx context.Context, run *Run, documents []
 	prompt, err := render("attachments.txt", map[string]any{
 		"PersonName": personName(run.Owner),
 		"Count":      len(documents),
-		"Most":       attachmentsMost(len(documents)),
 		"Items":      builder.String(),
 	})
 	if err != nil {
@@ -345,15 +282,10 @@ func (self *Agent) chooseAttachments(ctx context.Context, run *Run, documents []
 	for _, document := range documents {
 		shown[document.ID] = true
 	}
-	// And no more than it was allowed to ask for. The bound was in the
-	// prompt and in the sentence written against the files left over, and
-	// nowhere in the code: a model naming the whole batch had the whole
-	// batch opened, at a vision call each.
-	most := attachmentsMost(len(documents))
 	chosen := map[string]string{}
 	for _, wanted := range *answer.Open {
 		id := strings.TrimSpace(wanted.ID)
-		if !shown[id] || len(chosen) >= most {
+		if !shown[id] {
 			continue
 		}
 		chosen[id] = strings.TrimSpace(wanted.Reason)
@@ -434,36 +366,6 @@ func (self *Agent) readPicture(ctx context.Context, run *Run, budget *dreamBudge
 
 // declineAttachments records that the night decided against opening these
 // and why, so that no later night pays to decide again.
-// attachmentPassOvers is how many full lists a file may be left out of
-// before it is declined as passed over.
-const attachmentPassOvers = 3
-
-// passedOverOf is how many full lists a file was left out of before.
-func passedOverOf(batch []*models.AgentDocument, documentId string) int {
-	for _, document := range batch {
-		if document.ID == documentId {
-			switch count := document.Metadata["passedOver"].(type) {
-			case float64:
-				return int(count)
-			case int:
-				return count
-			}
-		}
-	}
-	return 0
-}
-
-func passOverAttachments(ctx context.Context, run *Run, documentIds []string) {
-	if len(documentIds) == 0 {
-		return
-	}
-	if err := dreamBookkeeping(ctx, run, func(tx db.Transaction) error {
-		return tx.MarkAgentDocumentsPassedOver(documentIds)
-	}); err != nil {
-		log.Warningf("cannot record what a dream passed over: %s", err)
-	}
-}
-
 func declineAttachments(ctx context.Context, run *Run, documentIds []string, reason string) {
 	if len(documentIds) == 0 {
 		return

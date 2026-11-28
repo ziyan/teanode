@@ -25,7 +25,6 @@ import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { useTranslation } from '../../i18n/i18n'
 import {
-  CORRECTION_MOST_CHARACTERS,
   CORRECTION_MOST_COUNT,
   CORRECT_JOURNAL_NARRATIVE,
   DELETE_JOURNAL_NARRATIVE,
@@ -354,7 +353,6 @@ function CorrectionDialog({
         {t('journal.correctionLabel')}
         <textarea
           rows={4}
-          maxLength={CORRECTION_MOST_CHARACTERS}
           value={correctionText}
           placeholder={t('journal.correctionPlaceholder')}
           onChange={(event) => setCorrectionText(event.target.value)}

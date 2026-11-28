@@ -21,13 +21,10 @@ import (
 
 // The bounds on starting goals.
 const (
-	// goalTitleCharacters is as long as a goal's title may be: what it is
-	// called in a list, a few words.
+	// goalTitleCharacters is as long as a goal's title is shown in a line of
+	// the prompt or a sentence, and as long as the title made from a
+	// description that was given none. The title itself is kept whole.
 	goalTitleCharacters = 80
-
-	// goalDescriptionCharacters is as long as its description may be: what
-	// it is for and what done looks like, a paragraph.
-	goalDescriptionCharacters = 2000
 
 	// goalSurfaceBatch is how many goals one sweep says in the
 	// main conversation, across every agent.
@@ -45,11 +42,6 @@ const (
 	// and a goal finished before finishing was said is never said.
 	goalDoneToldWithin = 24 * time.Hour
 )
-
-// goalsInPromptMost is how many goals in progress the main conversation's
-// prompt lists. Goals are bounded by what they spend, not by how many there
-// are, so this bounds only the prompt.
-const goalsInPromptMost = 50
 
 // GoalStart is what a goal is started with: what it is called and what it
 // is for, the conversation it was asked for in, and, for a goal on set
@@ -70,8 +62,8 @@ type GoalStart struct {
 // them, or when its mail comes. The origin is the conversation it was asked
 // for in, when there was one.
 func (self *Agent) StartGoal(tx db.Transaction, agent *models.Agent, owner *models.User, start *GoalStart) (*models.AgentConversation, error) {
-	goalTitle := cutRunes(strings.TrimSpace(strings.ReplaceAll(start.GoalTitle, "\n", " ")), goalTitleCharacters)
-	goalDescription := cutRunes(strings.TrimSpace(start.GoalDescription), goalDescriptionCharacters)
+	goalTitle := strings.TrimSpace(strings.ReplaceAll(start.GoalTitle, "\n", " "))
+	goalDescription := strings.TrimSpace(start.GoalDescription)
 	if goalDescription == "" {
 		return nil, fmt.Errorf("a goal needs a description: what it is for and what done looks like")
 	}
@@ -166,12 +158,12 @@ func (self *Agent) UpdateGoal(tx db.Transaction, agent *models.Agent, owner *mod
 	}
 	return tx.UpdateAgentConversation(goal.ID, func(changing *models.AgentConversation) error {
 		if change.GoalTitle != nil {
-			if title := cutRunes(strings.TrimSpace(strings.ReplaceAll(*change.GoalTitle, "\n", " ")), goalTitleCharacters); title != "" {
+			if title := strings.TrimSpace(strings.ReplaceAll(*change.GoalTitle, "\n", " ")); title != "" {
 				changing.GoalTitle, changing.Title = title, title
 			}
 		}
 		if change.GoalDescription != nil {
-			description := cutRunes(strings.TrimSpace(*change.GoalDescription), goalDescriptionCharacters)
+			description := strings.TrimSpace(*change.GoalDescription)
 			if description == "" {
 				return fmt.Errorf("a goal needs a description: what it is for and what done looks like")
 			}
@@ -553,11 +545,12 @@ func goalOutcome(goal *models.AgentConversation) string {
 	return "**" + goalTitleOf(goal) + "**: " + outcome
 }
 
-// goalTitleOf is what a goal is called: its title, or the start of its
-// description for one from before goals had titles.
+// goalTitleOf is what a goal is called in a sentence: its title, shortened on
+// a word when it is long, or the start of its description for one from before
+// goals had titles.
 func goalTitleOf(goal *models.AgentConversation) string {
 	if title := strings.TrimSpace(goal.GoalTitle); title != "" {
-		return title
+		return firstWords(title, goalTitleCharacters)
 	}
 	return firstWords(goal.Goal, goalTitleCharacters)
 }

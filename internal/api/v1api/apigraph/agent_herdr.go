@@ -23,7 +23,8 @@ type AgentHerdrQuery interface {
 	ListAgentHerdrSessions(ctx context.Context, arguments ListAgentHerdrSessionsArguments) (*AgentHerdrListView, error)
 
 	// The last turns of one session from its history file: turnCount of
-	// them, 10 by default, 100 at most. Needs agent:use.
+	// them, 10 by default, ending offset turns before the newest; the
+	// answer's nextOffset reads the turns before them. Needs agent:use.
 	ReadAgentHerdrSession(ctx context.Context, arguments ReadAgentHerdrSessionArguments) (*AgentHerdrReadView, error)
 
 	// The agents one Claude Code session started for its current request, as
@@ -96,6 +97,8 @@ type ReadAgentHerdrSessionArguments struct {
 	Computer  string `json:"computer" graphapi:"nullable"`
 	PaneID    string `json:"paneId"`
 	TurnCount int    `json:"turnCount" graphapi:"nullable"`
+	// Offset skips that many of the newest turns, to read older ones.
+	Offset int `json:"offset" graphapi:"nullable"`
 	// ShouldIncludeToolDetail gives each tool turn its whole input and what
 	// the tool answered, in toolInputText and toolResultText.
 	ShouldIncludeToolDetail bool `json:"shouldIncludeToolDetail" graphapi:"nullable"`
@@ -105,6 +108,8 @@ type ReadAgentHerdrSessionArguments struct {
 type ReadAgentHerdrSubagentsArguments struct {
 	Computer string `json:"computer" graphapi:"nullable"`
 	PaneID   string `json:"paneId"`
+	// Offset skips that many of the newest agents, to read older ones.
+	Offset int `json:"offset" graphapi:"nullable"`
 }
 
 // ReadAgentHerdrScreenArguments name a session, and how many lines.
@@ -271,6 +276,9 @@ type AgentHerdrReadView struct {
 	HerdrSession *AgentHerdrSessionView `json:"herdrSession"`
 	Turns        []*AgentHerdrTurnView  `json:"turns"`
 	IsTruncated  bool                   `json:"isTruncated"`
+	// NextOffset is the offset that reads the turns before these, when
+	// there are any.
+	NextOffset int `json:"nextOffset"`
 }
 
 // AgentHerdrSubagentView is one agent a session started, or one an agent
@@ -301,7 +309,7 @@ type AgentHerdrSubagentView struct {
 
 // AgentHerdrSubagentsView is the agents of a session's current request: those
 // started at or after the person's last turn, and those still running from
-// before it, the newest 100.
+// before it, the newest 100 to a page.
 type AgentHerdrSubagentsView struct {
 	HerdrSession     *AgentHerdrSessionView `json:"herdrSession"`
 	SessionModelName string                 `json:"sessionModelName"`
@@ -309,6 +317,10 @@ type AgentHerdrSubagentsView struct {
 	RequestStartedAt *time.Time                `json:"requestStartedAt" graphapi:"nullable"`
 	Subagents        []*AgentHerdrSubagentView `json:"subagents"`
 	IsTruncated      bool                      `json:"isTruncated"`
+	// LeftCount is how many older agents there are, and NextOffset the
+	// offset that reads them.
+	LeftCount  int `json:"leftCount"`
+	NextOffset int `json:"nextOffset"`
 }
 
 // AgentHerdrScreenView is a session's screen.
@@ -379,11 +391,11 @@ func (self *graph) ReadAgentHerdrSession(ctx context.Context, arguments ReadAgen
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	read, err := worker.ReadHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.TurnCount, arguments.ShouldIncludeToolDetail)
+	read, err := worker.ReadHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.TurnCount, arguments.Offset, arguments.ShouldIncludeToolDetail)
 	if err != nil {
 		return nil, err
 	}
-	view := &AgentHerdrReadView{HerdrSession: herdrSessionView(read.ComputerName, read.HerdrSession), Turns: []*AgentHerdrTurnView{}, IsTruncated: read.IsTruncated}
+	view := &AgentHerdrReadView{HerdrSession: herdrSessionView(read.ComputerName, read.HerdrSession), Turns: []*AgentHerdrTurnView{}, IsTruncated: read.IsTruncated, NextOffset: read.NextOffset}
 	for _, turn := range read.Turns {
 		view.Turns = append(view.Turns, &AgentHerdrTurnView{
 			HerdrTurnRole: turn.HerdrTurnRole, TurnText: turn.TurnText, TurnAt: turn.TurnAt,
@@ -402,13 +414,13 @@ func (self *graph) ReadAgentHerdrSubagents(ctx context.Context, arguments ReadAg
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	read, err := worker.ReadHerdrSubagents(ctx, found.ID, arguments.Computer, arguments.PaneID)
+	read, err := worker.ReadHerdrSubagents(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.Offset)
 	if err != nil {
 		return nil, err
 	}
 	view := &AgentHerdrSubagentsView{
 		HerdrSession: herdrSessionView(read.ComputerName, read.HerdrSession), SessionModelName: read.SessionModelName,
-		RequestStartedAt: read.RequestStartedAt, Subagents: []*AgentHerdrSubagentView{}, IsTruncated: read.IsTruncated,
+		RequestStartedAt: read.RequestStartedAt, Subagents: []*AgentHerdrSubagentView{}, IsTruncated: read.IsTruncated, LeftCount: read.LeftCount, NextOffset: read.NextOffset,
 	}
 	for _, subagent := range read.Subagents {
 		view.Subagents = append(view.Subagents, &AgentHerdrSubagentView{

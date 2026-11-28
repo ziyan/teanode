@@ -262,7 +262,7 @@ func TestSetLocationUsesTheBestMatchOrAPositionAndNeverBoth(test *testing.T) {
 		"neither":         {"operation": "set-location", "photo_id": "photo-one"},
 		"both":            {"operation": "set-location", "photo_id": "photo-one", "place": "harborview", "latitude": 10.5, "longitude": 20.25},
 		"half a position": {"operation": "set-location", "photo_id": "photo-one", "latitude": 10.5},
-		"too many photos": {"operation": "set-location", "photo_ids": make([]string, 101), "place": "harborview"},
+		"too many photos": {"operation": "set-location", "photo_ids": make([]string, 501), "place": "harborview"},
 	} {
 		if _, err := current.call(arguments); err == nil {
 			test.Fatalf("%s was accepted", name)

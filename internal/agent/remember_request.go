@@ -71,6 +71,5 @@ func buildRememberPrompt(owner *models.User, knowledgeLanguage string, unread []
 		"Pages":             material.PageBlocks,
 		"Unlearned":         material.UnlearnedStatements,
 		"Transcript":        transcript,
-		"Most":              factsAllowedFor(map[string]string{"": transcript}),
 	})
 }

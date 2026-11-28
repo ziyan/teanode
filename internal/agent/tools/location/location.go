@@ -56,12 +56,13 @@ func init() {
 			{
 				Name: "location_path", Family: tools.FamilyGeneral, Risk: tools.RiskRead, Permissions: locationPermissions,
 				Description: "The path of one day: how many positions the person's phone reported, the first and last time, how far they travelled (the distances between one position and the next, added up) in distance_travelled_kilometers, or distance_travelled_miles for a person whose account reads US units, " +
-					"and up to 60 of the positions, evenly spread, each with its time, latitude_degrees and longitude_degrees; 'is_truncated' says some were left out. " +
+					"and 60 of the positions, evenly spread, each with its time, latitude_degrees and longitude_degrees; 'is_sampled' says some were left out. With 'offset' every position is listed in order, a page at a time, and 'next_offset' reads on. " +
 					"'day' is YYYY-MM-DD in the person's own time zone, today by default. Use it for where they went through the day between their visits. " +
 					"With 'person', the path of somebody who shares their history with the person; not in a chat, where another person's location is not repeated.",
 				Parameters: tools.Object(map[string]any{
 					"day":    dayProperty,
 					"person": personProperty,
+					"offset": tools.IntegerProperty("list every position of the day in order from this many in (0 for the first), a page at a time, instead of the evenly spread 60; 'next_offset' reads on"),
 				}),
 				Run: runPath,
 			},
@@ -163,6 +164,7 @@ func init() {
 					"latitude_degrees":  latitudeProperty,
 					"longitude_degrees": longitudeProperty,
 					"limit":             limitProperty,
+					"offset":            offsetProperty,
 				}, "query"),
 				Run: runFindAddress,
 			},
@@ -431,7 +433,7 @@ var (
 	placeIdProperty     = tools.StringProperty("one of the person's places, by the place_id that places, visits, nearby or search gave")
 	placeLabelProperty  = tools.StringProperty("home, work, school, family or gym: the places the person has labeled so; for save_place an empty label takes it off")
 	queryProperty       = tools.StringProperty("words: for places, part of a name or address to look for; for search, what to find, such as playground; for find_address, the address as the person said it")
-	limitProperty       = tools.IntegerProperty("how many rows: for visits and places 50 by default and 200 at most, for search 20 and 50, for find_address 8 and 20")
+	limitProperty       = tools.IntegerProperty("how many rows: for visits and places 50 by default and 200 at most, for search 20 and 50, for find_address 8 by default and 20 matches in all")
 	addressTextProperty = tools.StringProperty("an address, as nearby, search or find_address gave it: for check_in the address of a found place; for save_place the address of the match the place moves to, given with that match's latitude_degrees and longitude_degrees, or, with place_id alone, an address typed by the person that stays as given and does not move the place, also when the place is moved later; an empty address_text with a place_id takes the typed address away")
 	offsetProperty      = tools.IntegerProperty("skip this many rows, for the next page: the next_offset of the page before")
 	latitudeProperty    = tools.NumberProperty("latitude in degrees; for nearby and search at the person's last reported position unless given")

@@ -136,7 +136,7 @@ speaker, whose name is then confirmed (the owner's own track as the account
 owner); no voice samples are cut from it. Each member who was on the call and
 shares a circle with the owner is given it at the transcript level. When all
 of it is transcribed, a summary is posted into the chat by the owner's agent,
-which pays for both, as for any recording. `ReadChatCall` gives the
+which pays for both, as for any recording (a transcript too long for one call is summarized a part at a time, then the parts' summaries into one). `ReadChatCall` gives the
 transcript, read from the recording, to its owner and to a member it is
 shared with, and names the recording to open. The sweep picks up a call a
 stopped server left with its files on disk, and a recording ready for its

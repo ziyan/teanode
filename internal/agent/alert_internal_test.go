@@ -348,8 +348,9 @@ func TestCleanAlertTextTakesOutAddresses(t *testing.T) {
 			t.Fatalf("%q\n  became %q\n  not    %q", written, got, want)
 		}
 	}
-	if len([]rune(cleanAlertText(strings.Repeat("word ", 200)))) > alertTextCharacters {
-		t.Fatal("an alert is at most 400 characters")
+	long := strings.TrimSpace(strings.Repeat("word ", 200))
+	if got := cleanAlertText(long); got != long {
+		t.Fatalf("an alert's words are kept whole, got %d characters of %d", len([]rune(got)), len([]rune(long)))
 	}
 }
 
@@ -378,7 +379,7 @@ func TestAlertPromptFencesTheMail(t *testing.T) {
 	if strings.Count(prompt, untrustedClose) != 1 || !strings.Contains(prompt, untrustedCloseSaid) {
 		t.Fatalf("the message's closing tag does not close the fence:\n%s", prompt)
 	}
-	for _, want := range []string{"Candidate c1", "bank new device", "The daycare is where Robin's son goes.", "Wednesday 4 March, 09:05", "at most 400 characters"} {
+	for _, want := range []string{"Candidate c1", "bank new device", "The daycare is where Robin's son goes.", "Wednesday 4 March, 09:05", "short: what happened"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("the prompt lacks %q:\n%s", want, prompt)
 		}

@@ -237,6 +237,12 @@ func TestAgentProfileAddInstructionNeedsThePerson(t *testing.T) {
 	if err != nil || len(operations.sent) != 1 || operations.sent[0].variables["instructions"] != "Always answer in one line" {
 		t.Fatalf("a conversation with the person adds it: %+v %v", operations.sent, err)
 	}
+	// The person's words are kept whole, however long.
+	long := strings.TrimSpace(strings.Repeat("Answer plainly and say what you did. ", 30))
+	operations, err = call(true, `{"action":"set","add_instruction":"`+long+`"}`)
+	if err != nil || len(operations.sent) != 1 || operations.sent[0].variables["instructions"] != long {
+		t.Fatalf("a long instruction is kept whole: %+v %v", operations.sent, err)
+	}
 	operations, err = call(false, `{"action":"set","language":"ja"}`)
 	if err != nil || len(operations.sent) != 1 {
 		t.Fatalf("the rest of set is not held to this: %+v %v", operations.sent, err)

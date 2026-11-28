@@ -271,9 +271,9 @@ func (self *AskRun) judgeDepth() depthJudgement {
 	ctx, cancel := context.WithTimeout(self.ctx, 15*time.Second)
 	defer cancel()
 	response, err := provider.Chat(ctx, &llm.ChatRequest{
-		// Room for a model that reasons before it writes: at two hundred
-		// the reasoning used it all and the answer came back empty.
-		Model: model, JSONObject: true, MaxTokens: 2000,
+		// No output limit: a model that reasons counts its thinking against one,
+		// and came back with an empty answer.
+		Model: model, JSONObject: true,
 		Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}},
 	})
 	if err != nil {

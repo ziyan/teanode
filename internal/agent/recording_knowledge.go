@@ -16,10 +16,6 @@ func (self *Agent) SyncRecordingKnowledge(ctx context.Context, userId, recording
 	return self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) error { return transaction.SyncRecordingKnowledge(userId, recordingId) })
 }
 
-// recordingKnowledgeRoundLimit is how many times in a row one job syncs again
-// because the recording changed while it was being read.
-const recordingKnowledgeRoundLimit = 5
-
 // runRecordingKnowledge is the handler of a recording knowledge job. Naming a
 // speaker only stores the naming and queues this, so a request on a long
 // recording does not wait for its passages to be rewritten.
@@ -28,7 +24,8 @@ const recordingKnowledgeRoundLimit = 5
 // that a naming made while it runs is not held up behind the recording's lock.
 // A naming that lands while the job is open finds it still queued or running
 // and queues nothing more, so the job compares the recording's generation
-// before and after and reads again when it moved. Every document is written
+// before and after and reads again when it moved, for as long as it does.
+// Every document is written
 // under a hash of its words, so reading twice leaves what did not change alone.
 func (self *Agent) runRecordingKnowledge(ctx context.Context, run *Run) error {
 	userId, recordingId := run.Agent.UserID, run.Job.SubjectID
@@ -43,7 +40,7 @@ func (self *Agent) runRecordingKnowledge(ctx context.Context, run *Run) error {
 		})
 		return generation, err
 	}
-	for round := 0; round < recordingKnowledgeRoundLimit; round++ {
+	for {
 		startGeneration, err := readGeneration()
 		if err != nil {
 			return ignoreDeletedRecording(err)
@@ -68,7 +65,6 @@ func (self *Agent) runRecordingKnowledge(ctx context.Context, run *Run) error {
 			return nil
 		}
 	}
-	return &Deferral{Until: time.Now().Add(time.Minute), Reason: "the recording changed while its knowledge was being updated"}
 }
 
 // queueRecordingKnowledgeSync asks again for the recordings whose knowledge is

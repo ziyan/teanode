@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/config"
@@ -76,9 +77,10 @@ var ErrAgentBusy = errors.New("agent: that agent is busy; ask again in a moment"
 // chat with (see HeldToChat).
 var memberTurnTools = map[string]bool{"web_search": true, "web_fetch": true, "datetime": true, "conversation": true, "tool_search": true}
 
-// chatHistoryRows is how much of a chat conversation a turn reads when no
-// compaction has folded the older part into a note.
-const chatHistoryRows = 400
+// memberTurnFirstRows is how many of the newest rows of a chat a turn
+// somebody else asked for reads first; it reads more while the rows read
+// still fit in memberTurnHistoryTokens.
+const memberTurnFirstRows = 100
 
 // isMemberTurn says somebody other than the owner asked.
 func (self *AskSettings) isMemberTurn() bool {
@@ -253,15 +255,30 @@ const memberTurnHistoryTokens = askHistoryTokens / 2
 // their mail, memory or files, and none of the compaction notes made from them.
 func (self *AskRun) loadChatHistory(tx db.Transaction) ([]llm.ChatMessage, error) {
 	settings := self.settings
-	rows, err := tx.ListChatTurnRows(settings.Conversation, chatHistoryRows, settings.isMemberTurn())
-	if err != nil {
-		return nil, err
+	if !settings.isMemberTurn() {
+		// Everything since the last compaction, which stands in for what
+		// came before it; a long chat is compacted like any other
+		// conversation.
+		rows, err := tx.ListChatTurnRows(settings.Conversation, 0, false)
+		if err != nil {
+			return nil, err
+		}
+		converted := chatTurnRows(rows, settings.Owner.ID, settings.Agent.ID, settings.Chat.MessageID)
+		return historyOf(converted, settings.Conversation.CompactedThrough), nil
 	}
-	converted := chatTurnRows(rows, settings.Owner.ID, settings.Agent.ID, settings.Chat.MessageID)
-	if settings.isMemberTurn() {
-		return trimmedHistory(historyOf(converted, ""), memberTurnHistoryTokens), nil
+	// The newest of the chat that fit: more rows are read until the rows
+	// already read fill the history, or there are no more.
+	for limit := memberTurnFirstRows; ; limit *= 2 {
+		rows, err := tx.ListChatTurnRows(settings.Conversation, limit, true)
+		if err != nil {
+			return nil, err
+		}
+		converted := chatTurnRows(rows, settings.Owner.ID, settings.Agent.ID, settings.Chat.MessageID)
+		history := historyOf(converted, "")
+		if len(rows) < limit || llm.EstimateTokens(renderHistory(history)) > memberTurnHistoryTokens {
+			return trimmedHistory(history, memberTurnHistoryTokens), nil
+		}
 	}
-	return historyOf(converted, settings.Conversation.CompactedThrough), nil
 }
 
 // trimmedHistory drops the oldest messages until the rest fit in the tokens
@@ -554,11 +571,12 @@ type postedChatMessage struct {
 	chat    *models.Chat
 }
 
-// postChatAnswer stores the words of a round as a message of the chat,
-// written by the owner's agent under its name. Nil for a round that said
-// nothing. The owner is still in the chat or it is an error: an agent speaks
-// for a member.
-func (self *AskRun) postChatAnswer(tx db.Transaction, content string) (*postedChatMessage, error) {
+// postChatAnswer stores the words of a round as messages of the chat,
+// written by the owner's agent under its name: one message, or several in
+// order when the words are longer than a message may be. Nil for a round that
+// said nothing. The owner is still in the chat or it is an error: an agent
+// speaks for a member.
+func (self *AskRun) postChatAnswer(tx db.Transaction, content string) ([]*postedChatMessage, error) {
 	content = strings.TrimSpace(models.StripHiddenMarkers(content))
 	if content == "" {
 		return nil, nil
@@ -571,37 +589,73 @@ func (self *AskRun) postChatAnswer(tx db.Transaction, content string) (*postedCh
 	if chat == nil || chat.Member(settings.Owner.ID) == nil || chat.Member(settings.Owner.ID).IsRemoved {
 		return nil, fmt.Errorf("the person is no longer in this chat")
 	}
-	body := cutRunes(content, models.ChatMessageMostCharacters)
-	// An agent writes with no composer to choose whom it mentions, so an @
-	// before a member's name in its words is the mention.
-	mentionedUserIds, isAllMentioned := models.ChatMentionsIn(body, chat.ActiveMembers())
-	stored, err := tx.AppendChatMessage(&models.ChatMessage{
-		ChatID:           chat.ID,
-		AuthorUserID:     settings.Owner.ID,
-		AuthorName:       settings.Agent.DisplayName(),
-		AuthorAgentID:    settings.Agent.ID,
-		AgentRunID:       self.ID,
-		Body:             body,
-		MentionedUserIDs: mentionedUserIds,
-		IsAllMentioned:   isAllMentioned,
-	})
-	if err != nil {
-		return nil, err
+	var posted []*postedChatMessage
+	for _, body := range splitChatBody(content, models.ChatMessageMostCharacters) {
+		// An agent writes with no composer to choose whom it mentions, so an @
+		// before a member's name in its words is the mention.
+		mentionedUserIds, isAllMentioned := models.ChatMentionsIn(body, chat.ActiveMembers())
+		stored, err := tx.AppendChatMessage(&models.ChatMessage{
+			ChatID:           chat.ID,
+			AuthorUserID:     settings.Owner.ID,
+			AuthorName:       settings.Agent.DisplayName(),
+			AuthorAgentID:    settings.Agent.ID,
+			AgentRunID:       self.ID,
+			Body:             body,
+			MentionedUserIDs: mentionedUserIds,
+			IsAllMentioned:   isAllMentioned,
+		})
+		if err != nil {
+			return nil, err
+		}
+		posted = append(posted, &postedChatMessage{message: stored, chat: chat})
 	}
-	return &postedChatMessage{message: stored, chat: chat}, nil
+	return posted, nil
+}
+
+// splitChatBody cuts words into parts of at most characters each, in order,
+// ending each at the last blank line, line end or space that fits, and in the
+// middle of a word only when there is none. Nothing is dropped: the parts,
+// joined, are the words, less the white space at the cuts.
+func splitChatBody(words string, characters int) []string {
+	var parts []string
+	remaining := []rune(strings.TrimSpace(words))
+	for len(remaining) > characters {
+		cut := characters
+		window := string(remaining[:characters])
+		for _, separator := range []string{"\n\n", "\n", " "} {
+			if index := strings.LastIndex(window, separator); index > 0 {
+				cut = utf8.RuneCountInString(window[:index])
+				break
+			}
+		}
+		parts = append(parts, strings.TrimSpace(string(remaining[:cut])))
+		remaining = []rune(strings.TrimSpace(string(remaining[cut:])))
+	}
+	if len(remaining) > 0 {
+		parts = append(parts, string(remaining))
+	}
+	return parts
 }
 
 // announceChatAnswer tells every member what the agent said, once it is
 // stored, and the phones of those who are not looking. A message an agent
 // wrote starts no turn of any agent.
-func (self *AskRun) announceChatAnswer(posted *postedChatMessage) {
-	if posted == nil {
+func (self *AskRun) announceChatAnswer(posted []*postedChatMessage) {
+	if len(posted) == 0 {
 		// A round that said nothing storable: words already streamed for it
 		// have no message to be replaced by.
 		self.retractChatText()
 		return
 	}
 	self.forgetChatText()
+	for _, each := range posted {
+		self.announcePostedChatMessage(each)
+	}
+}
+
+// announcePostedChatMessage tells every member of one message the agent
+// said.
+func (self *AskRun) announcePostedChatMessage(posted *postedChatMessage) {
 	settings := self.settings
 	shown := db.ChatMessageAsAgentMessage(posted.message, "", nil)
 	shown.AuthorAvatarColorIndex = avatar.InitialColorIndex(settings.Owner.ID)

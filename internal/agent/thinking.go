@@ -86,12 +86,12 @@ var replyTools = map[string]bool{
 // model and sorting on the triage one. The ask feature, which is the
 // person's own chat, does not gate this: the feature that owns the work
 // does, and the caller has checked it.
-// thinkResultCharacters bounds what one lookup brings back into a
-// headless run. A page of a hundred facts is twenty thousand characters,
-// and a run given twenty documents to read that fetched three such pages
-// overflowed a small model's window and lost the documents to the
-// compaction; a lookup is for checking what is known, and this much of a
-// page says it.
+// thinkResultCharacters is how much of one lookup's result a headless run
+// is shown at once. A page of a hundred facts is twenty thousand characters,
+// and a run given twenty documents to read that took three such pages
+// overflowed a small model's window and lost the documents to the compaction.
+// The rest of a longer result is held, and the run reads on with
+// result_more when what it has seen is not enough.
 const thinkResultCharacters = 6000
 
 func (self *Agent) think(ctx context.Context, run *Run, title, prompt string, allow map[string]bool, rounds int, kind models.AgentJobKind, work config.AgentWork) (*thought, error) {

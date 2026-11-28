@@ -35,9 +35,6 @@ const (
 	// thing from being said again, unless it changed.
 	alertRepeatWindow = 7 * 24 * time.Hour
 
-	// alertTextCharacters bounds what one alert says.
-	alertTextCharacters = 400
-
 	// alertCandidatesAtOnce bounds how many candidates one decision
 	// reads; the rest wait for the next.
 	alertCandidatesAtOnce = 30
@@ -838,7 +835,7 @@ const (
 )
 
 // cleanAlertText is what the model wrote with anything that leads
-// somewhere taken out, and cut to length: web addresses, host names with
+// somewhere taken out: web addresses, host names with
 // or without a path (a shortener's included), email addresses and
 // telephone numbers. A service named without its domain is left alone.
 // The prompt asks for none of them; this is the same rule where a model
@@ -852,8 +849,8 @@ func cleanAlertText(alertText string) string {
 // cleanAlertTextKeeping is cleanAlertText that leaves alone the web
 // addresses it is given: the page a follow-up the alert is about was found
 // on, which the server stored and the decision was shown. They are set
-// aside before the cleaning and put back after the cut, so that an address
-// is never cut in half, and no other address gets through.
+// aside before the cleaning and put back after it, and no other address gets
+// through.
 func cleanAlertTextKeeping(alertText string, keptLinks []string) string {
 	placeholders := map[string]string{}
 	for _, link := range keptLinks {
@@ -880,7 +877,7 @@ func cleanAlertTextKeeping(alertText string, keptLinks []string) string {
 		return found
 	})
 	alertText = extraSpace.ReplaceAllString(alertText, " ")
-	alertText = cutRunes(strings.TrimSpace(alertText), alertTextCharacters)
+	alertText = strings.TrimSpace(alertText)
 	for link, placeholder := range placeholders {
 		alertText = strings.ReplaceAll(alertText, placeholder, link)
 	}

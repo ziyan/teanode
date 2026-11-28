@@ -15,12 +15,6 @@ import (
 
 // The bounds of the overview phase.
 const (
-	// dreamOverviews is how many overviews of pages one night writes, and
-	// dreamThemeOverviews how many of the themes' before those, each
-	// within the night's budget like any call.
-	dreamOverviews      = 40
-	dreamThemeOverviews = 16
-
 	// overviewLeastFactCount is how many facts a page with nothing under
 	// it needs before it gets an overview. Below it the opening says all
 	// there is.
@@ -43,12 +37,6 @@ const (
 	overviewMemberFactCount  = 5
 	overviewMemberFactLength = 200
 
-	// overviewSectionCount is how many sections an overview usually has:
-	// its five headings and room for one more. A search over pages'
-	// sections asks for this many a page; nothing an overview says is
-	// cut to it.
-	overviewSectionCount = 6
-
 	// overviewEvidenceCount is how many cited pages and files are kept.
 	overviewEvidenceCount = 24
 )
@@ -68,10 +56,10 @@ func (self *Agent) dreamOverviews(ctx context.Context, run *Run, record *models.
 	}
 	var themes, pages []*models.AgentNode
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if themes, err = tx.ListAgentThemesForOverview(run.Agent.ID, dreamThemeOverviews); err != nil {
+		if themes, err = tx.ListAgentThemesForOverview(run.Agent.ID, 0); err != nil {
 			return err
 		}
-		pages, err = tx.ListAgentNodesForOverview(run.Agent.ID, overviewLeastFactCount, dreamOverviews)
+		pages, err = tx.ListAgentNodesForOverview(run.Agent.ID, overviewLeastFactCount, 0)
 		return err
 	}); err != nil {
 		log.Warningf("cannot list the pages due an overview: %s", err)
@@ -81,7 +69,7 @@ func (self *Agent) dreamOverviews(ctx context.Context, run *Run, record *models.
 		slots := make(chan struct{}, dreamRewriteConcurrency)
 		var group sync.WaitGroup
 		for _, page := range batch {
-			if ctx.Err() != nil || !budget.left() || !budget.overviewingTimeLeft() {
+			if ctx.Err() != nil || !budget.left() {
 				break
 			}
 			slots <- struct{}{}
@@ -97,7 +85,7 @@ func (self *Agent) dreamOverviews(ctx context.Context, run *Run, record *models.
 			}()
 		}
 		group.Wait()
-		if ctx.Err() != nil || !budget.left() || !budget.overviewingTimeLeft() {
+		if ctx.Err() != nil || !budget.left() {
 			return
 		}
 	}

@@ -808,6 +808,12 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		loose.Text = strings.Join(looseLines, "\n")
 		blocks = append(blocks, loose)
 	}
+	// What the search found and the overlay could not carry is said, so that
+	// nothing is left out without a word: how many, and the calls that read
+	// them.
+	if note := recallLeftOutNote(nodes, facts, expanded, shown, loose); note != "" {
+		blocks = append(blocks, &recalledBlock{Text: note})
+	}
 	if explanation != nil {
 		explanation.TokensSpent = spent
 		// A fact carried in its page's block, whether or not the loose
@@ -819,6 +825,36 @@ func (self *AskRun) chooseRecalled(tx db.Transaction, nodes []*models.AgentNode,
 		}
 	}
 	return blocks, nil
+}
+
+// recallLeftOutNote says how many of the pages and facts the search found are
+// not in the overlay, and how to read them with the memory tool, or is empty
+// when all of them are. A fact on a page the overlay carries is carried with
+// it, and one the memory no longer stands behind is not counted.
+func recallLeftOutNote(nodes []*models.AgentNode, facts []*models.AgentFact, expanded, shown map[string]bool, loose *recalledBlock) string {
+	isLooseFact := make(map[string]bool, len(loose.Facts))
+	for _, fact := range loose.Facts {
+		isLooseFact[fact.ID] = true
+	}
+	counted := map[string]bool{}
+	pageCount := 0
+	for _, node := range nodes {
+		if !expanded[node.ID] && !counted[node.ID] {
+			counted[node.ID] = true
+			pageCount++
+		}
+	}
+	factCount := 0
+	for _, fact := range facts {
+		if stillStands(fact) && !shown[fact.ID] && !isLooseFact[fact.ID] {
+			factCount++
+		}
+	}
+	if pageCount == 0 && factCount == 0 {
+		return ""
+	}
+	return fmt.Sprintf("(%d more pages and %d more facts matched this message and are not shown here: "+
+		"the memory tool's search with the same words lists them, and its get with a page's path reads the page)", pageCount, factCount)
 }
 
 // factsToShow picks which of a page's facts the overlay shows: the ones

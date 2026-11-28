@@ -9,16 +9,13 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// SpeakFirstMailOrganize is the weekly look at how the person's mail could be
+// SpeakFirstMailOrganize is the look at how the person's mail could be
 // filed: when the Inbox holds a pile of routine mail no rule files, the agent
 // reviews the last week and the folders and rules there are, and offers one
 // card with what it would do. It changes nothing until the person approves.
 const SpeakFirstMailOrganize = "mail_organize"
 
 const (
-	// mailOrganizeApart is how long after one look the next may be.
-	mailOrganizeApart = 7 * 24 * time.Hour
-
 	// mailOrganizePileLeast is how many routine messages the Inbox holds from
 	// the last week before a look is worth a model's turn.
 	mailOrganizePileLeast = 30
@@ -53,19 +50,25 @@ func (self *Agent) mailOrganizeReason() speakFirstReason {
 			if !agent.IsSuggestionsEnabled || agent.OnboardedAt == nil || idle < ideaIdle || !wantsFeed(agent) {
 				return false, nil
 			}
-			looked, err := tx.CountAgentJobs(&db.AgentJobFilter{
+			// Mail a look has already seen is not counted again, so a pile is
+			// raised once.
+			since := now.Add(-mailOrganizeLookBack)
+			looks, err := tx.ListAgentJobs(&db.AgentJobFilter{
 				AgentID: agent.ID, Kinds: []models.AgentJobKind{models.AgentJobSpeakFirst},
-				SubjectID: SpeakFirstMailOrganize, Since: now.Add(-mailOrganizeApart),
-			})
-			if err != nil || looked > 0 {
+				SubjectID: SpeakFirstMailOrganize,
+			}, &db.Options{Limit: 1})
+			if err != nil {
 				return false, err
 			}
-			pile, err := routineInboxCount(tx, agent, owner, now)
+			if len(looks) > 0 && looks[0].CreatedAt.After(since) {
+				since = looks[0].CreatedAt
+			}
+			pile, err := routineInboxCount(tx, agent, owner, since)
 			return pile >= mailOrganizePileLeast, err
 		},
 		checkIn: func(ctx context.Context, tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time, prepared map[string]string) (string, error) {
 			return strings.Join([]string{
-				models.SpeakFirstMarker + " A weekly look at how " + personName(owner) + "'s mail could be filed. Nobody asked for this turn.",
+				models.SpeakFirstMarker + " A look at how " + personName(owner) + "'s mail could be filed. Nobody asked for this turn.",
 				"",
 				"It is " + now.In(Location(owner)).Format("Monday 2 January, 15:04") + " where they are.",
 				"",
@@ -74,17 +77,17 @@ func (self *Agent) mailOrganizeReason() speakFirstReason {
 	}
 }
 
-// routineInboxCount is how many messages of the last week sit in the Inbox of
-// the mailboxes the agent was given, that nothing asks the person to act on:
+// routineInboxCount is how many messages that arrived since a moment sit in
+// the Inbox of the mailboxes the agent was given, that nothing asks the person
+// to act on:
 // not flagged, and not marked by the sorting as needing a reply. Whatever a
 // rule files does not reach the Inbox, so what is left there is what no rule
 // files.
-func routineInboxCount(tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time) (int, error) {
+func routineInboxCount(tx db.Transaction, agent *models.Agent, owner *models.User, since time.Time) (int, error) {
 	mailboxes, err := tx.ListMailboxes(owner.ID)
 	if err != nil {
 		return 0, err
 	}
-	since := now.Add(-mailOrganizeLookBack)
 	total := 0
 	for _, mailbox := range mailboxes {
 		if mailbox.Agent == nil || !mailbox.Agent.Granted {

@@ -50,7 +50,7 @@ type replyQueueArguments struct {
 func heldReplies(ctx context.Context, run tools.Run) ([]*models.AgentReply, error) {
 	var held []*models.AgentReply
 	err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		held, err = tx.ListAgentReplies(&db.AgentReplyFilter{AgentID: run.Agent().ID, Statuses: []models.AgentReplyStatus{models.AgentReplyHeld}}, &db.Options{Limit: 20})
+		held, err = tx.ListAgentReplies(&db.AgentReplyFilter{AgentID: run.Agent().ID, Statuses: []models.AgentReplyStatus{models.AgentReplyHeld}}, nil)
 		return err
 	})
 	return held, err

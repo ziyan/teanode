@@ -215,8 +215,8 @@ The server holds a few of them itself, in `NormalizeFeedItem`:
   Not now). Memory checks and trip notes run a turn in a run conversation of
   their own that is told to post one card with the feed tool. The introduction
   and the phone tour stay in the main conversation, since they are
-  conversations. `mail_organize` is a weekly look, only when the Inbox holds 30
-  or more routine messages from the last week: a turn that reads and changes
+  conversations. `mail_organize` is a look, only when the Inbox holds 30
+  or more routine messages from the last week that no earlier look has seen: a turn that reads and changes
   nothing and posts at most one decision card (Approve, Discuss, Not now).
 - **Goals** post with the tool during their turns, told how in their check-in.
   With `is_goal_notified_when_posted` the first card of a turn of a goal on set

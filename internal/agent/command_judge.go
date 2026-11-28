@@ -100,7 +100,7 @@ func (self *Agent) judgeCallText(ctx context.Context, agentName, person, call st
 	prompt, err := render("command_judge.txt", map[string]any{
 		"AgentName":  agentName,
 		"PersonName": person,
-		"Call":       cutRunes(call, 6000),
+		"Call":       call,
 	})
 	if err != nil {
 		return callRiskDestructive, "the judgement could not be written", llm.Usage{}, false
@@ -112,8 +112,9 @@ func (self *Agent) judgeCallText(ctx context.Context, agentName, person, call st
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	response, err := provider.Chat(ctx, &llm.ChatRequest{
-		// Room for a model that reasons before it writes; see judgeDepth.
-		Model: model, JSONObject: true, MaxTokens: 2000,
+		// No output limit: a model that reasons counts its thinking against one,
+		// and came back with an empty answer.
+		Model: model, JSONObject: true,
 		Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}},
 	})
 	if err != nil {

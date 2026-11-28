@@ -28,9 +28,7 @@ const (
 	// rememberEvery is how often the sweep looks.
 	rememberEvery = time.Minute
 
-	// rememberFacts is how many facts one run may file, and
-	// rememberMessages how many messages it reads.
-	rememberFacts    = 15
+	// rememberMessages is how many messages one run reads.
 	rememberMessages = 60
 
 	// rememberIndexTokens is how much of the index the run is shown, so
@@ -208,7 +206,7 @@ func (self *Agent) runRemember(ctx context.Context, run *Run) error {
 	//
 	// The loop wrote the transcript as it went; what is left is to say
 	// what the run turned out to be.
-	filed, err := self.fileWhatWasLearnedFrom(ctx, run, answer, theirWords, theirWords, models.EvidenceConversation, shown, sharedWordsIn(messages),
+	filed, err := self.fileWhatWasLearnedFrom(ctx, run, answer, theirWords, models.EvidenceConversation, shown, sharedWordsIn(messages),
 		func(tx db.Transaction, filed whatWasFiled) error {
 			note := "Filed nothing from this conversation"
 			if filed.Filed > 0 {

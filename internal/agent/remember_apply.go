@@ -117,8 +117,8 @@ type preparedFact struct {
 //
 // Facts, links, replacements and the read marker commit together. Page creation
 // and contact binding happen earlier and may remain after a later failure.
-func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *RememberAnswer, theirWords, askedBy map[string]bool, evidenceKind models.EvidenceKind, shown map[string]string, finish func(tx db.Transaction, filed whatWasFiled) error) (whatWasFiled, error) {
-	return self.fileWhatWasLearnedFrom(ctx, run, answer, theirWords, askedBy, evidenceKind, shown, nil, finish)
+func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, evidenceKind models.EvidenceKind, shown map[string]string, finish func(tx db.Transaction, filed whatWasFiled) error) (whatWasFiled, error) {
+	return self.fileWhatWasLearnedFrom(ctx, run, answer, theirWords, evidenceKind, shown, nil, finish)
 }
 
 // fileWhatWasLearnedFrom is fileWhatWasLearned for a reading that may have
@@ -126,7 +126,7 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 // (sharedPageRefusal). A conversation can have read such text; the dream
 // cannot, because it does not read shared pages at all, and so files through
 // the call above with nothing shared.
-func (self *Agent) fileWhatWasLearnedFrom(ctx context.Context, run *Run, answer *RememberAnswer, theirWords, askedBy map[string]bool, evidenceKind models.EvidenceKind, shown map[string]string, shared *sharedWords, finish func(tx db.Transaction, filed whatWasFiled) error) (whatWasFiled, error) {
+func (self *Agent) fileWhatWasLearnedFrom(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, evidenceKind models.EvidenceKind, shown map[string]string, shared *sharedWords, finish func(tx db.Transaction, filed whatWasFiled) error) (whatWasFiled, error) {
 	tally := whatWasFiled{}
 	if answer == nil {
 		answer = &RememberAnswer{}
@@ -143,14 +143,7 @@ func (self *Agent) fileWhatWasLearnedFrom(ctx context.Context, run *Run, answer 
 		return tally, err
 	}
 
-	// A reading may file as many facts as it was asked for, which grows
-	// with the text it was shown; a conversation's run, its own number.
-	most := rememberFacts
-	if shown != nil {
-		most = max(most, factsAllowedFor(shown))
-	}
-	asked := askedFrom{askedBy: askedBy, shown: shown, most: max(most, askedFactsAllowedFor(shown))}
-	prepared, refusedCount := self.prepareRememberedFacts(ctx, run, answer, theirWords, asked, selfPage, most, shared)
+	prepared, refusedCount := self.prepareRememberedFacts(ctx, run, answer, theirWords, shown, selfPage, shared)
 
 	if err := self.openRememberedPages(ctx, run, prepared); err != nil {
 		return tally, err

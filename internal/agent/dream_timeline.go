@@ -41,11 +41,7 @@ func (self *Agent) dreamTimeline(ctx context.Context, run *Run, record *models.A
 	// says what a count of threads "suggests" is not a diary.
 	var owed []string
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		months := timelineBackfill
-		if run.Agent.DreamBootstrap {
-			months = timelineBackfill * 2
-		}
-		owed, err = tx.ListAgentMonthsToWriteUp(run.Agent.ID, chatNamesOf(run.Owner), timelineLeast, months, guessedPattern, timelineRulesSince)
+		owed, err = tx.ListAgentMonthsToWriteUp(run.Agent.ID, chatNamesOf(run.Owner), timelineLeast, 0, guessedPattern, timelineRulesSince)
 		return err
 	}); err != nil {
 		log.Warningf("cannot list the months owed a page: %s", err)

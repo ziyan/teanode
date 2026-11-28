@@ -31,8 +31,8 @@ func init() {
 					"url":            tools.StringProperty("for navigate and open: the address"),
 					"tab":            tools.IntegerProperty("for switch and close: the tab, by the number tabs gives; or name a piece of its address in url; switch with neither goes back to the person's own tab, close with neither closes the current one you opened"),
 					"mode":           tools.EnumProperty("for snapshot: interactive with refs, or the page's text", "interactive", "text"),
-					"max_characters": tools.IntegerProperty("for snapshot and evaluate: a bound, 20000 by default"),
-					"offset":         tools.IntegerProperty("for snapshot: where in the page's text to start, the next_offset of the part before; a long page comes a part at a time"),
+					"max_characters": tools.IntegerProperty("for snapshot and evaluate: how long one part is, 20000 by default; a longer page or value comes a part at a time"),
+					"offset":         tools.IntegerProperty("for snapshot and evaluate: where in the page's text, or in the value, to start, the next_offset of the part before (evaluate runs the script again, so give the same one); for cdp_events: how many of the newest events to skip, the next_offset of the page before"),
 					"full_page":      tools.BooleanProperty("for screenshot: the whole page rather than the viewport"),
 					"show":           tools.BooleanProperty("for screenshot: also hand the picture to the person, in the conversation, when they would want to see it; you see it either way"),
 					"ref":            tools.IntegerProperty("the element, from the last snapshot; for fill_one_time_code, the field for the code"),
@@ -53,7 +53,7 @@ func init() {
 					"expression":     tools.StringProperty("for evaluate: a JavaScript expression; its JSON value comes back"),
 					"method":         tools.StringProperty("for cdp: the DevTools method, for example Input.dispatchMouseEvent, Input.dispatchKeyEvent, Network.enable or Page.getLayoutMetrics"),
 					"params":         map[string]any{"type": "object", "description": "for cdp: the method's own parameters"},
-					"limit":          tools.IntegerProperty("for cdp_events: how many of the newest to show, 100 by default"),
+					"limit":          tools.IntegerProperty("for cdp_events: how many events a page shows, the newest first to be counted, 100 by default; older ones are read with offset"),
 					"forget":         tools.BooleanProperty("for cdp_events: clear what has been kept after reading it"),
 					"steps":          tools.ArrayProperty("for steps: up to fifty of the above, run in order, stopping at the first failure", map[string]any{"type": "object"}),
 				}, "action"),
@@ -218,9 +218,6 @@ func runBrowser(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	if arguments.Action == "steps" {
 		var results []any
-		if len(arguments.Steps) > 50 {
-			return nil, fmt.Errorf("at most fifty steps")
-		}
 		// The risk of a steps call is read from the steps it lists, one
 		// level down, so a steps call inside one is refused before any step
 		// runs rather than run unjudged.
@@ -395,11 +392,11 @@ func runBrowserOnPage(ctx context.Context, run tools.Run, page *devtools.Context
 		}
 		return untrusted(location, "went back")
 	case "evaluate":
-		value, err := page.Evaluate(ctx, arguments.Expression, max(arguments.MaxCharacters, 8000))
+		value, err := page.Evaluate(ctx, arguments.Expression, 0)
 		if err != nil {
 			return nil, err
 		}
-		return &tools.Result{Content: value, Untrusted: true, Note: "ran a script"}, nil
+		return &tools.Result{Content: pagedValue(value, arguments.Offset, arguments.MaxCharacters), Untrusted: true, Note: "ran a script"}, nil
 	case "tabs":
 		attached := tabOf(run)
 		if attached == nil {
@@ -520,6 +517,7 @@ func runBrowserOnTabChecked(ctx context.Context, run tools.Run, arguments *brows
 		everything := *arguments
 		everything.Method = ""
 		everything.Limit = cdpEventsEverything
+		everything.Offset = 0
 		asked = &everything
 	}
 	data, err := askTab(ctx, run, tab, arguments.Action, asked)
@@ -536,7 +534,7 @@ func runBrowserOnTabChecked(ctx context.Context, run tools.Run, arguments *brows
 	noteCurrentTab(tab, arguments.Action, data)
 	switch arguments.Action {
 	case "cdp_events":
-		data, err = showForeignRequests(tab.WatchedRequests(), data, ownHostnames(run.Configuration(), tab), strings.TrimSpace(arguments.Method), arguments.Limit)
+		data, err = showForeignRequests(tab.WatchedRequests(), data, ownHostnames(run.Configuration(), tab), strings.TrimSpace(arguments.Method), arguments.Limit, arguments.Offset)
 		if err != nil {
 			return nil, err
 		}
@@ -547,6 +545,8 @@ func runBrowserOnTabChecked(ctx context.Context, run tools.Run, arguments *brows
 	case "snapshot":
 		// Hidden from the whole page before it is cut into parts.
 		data = part.cutTabAnswer(scrubbedAnswer(tab.Filled(), data))
+	case "evaluate":
+		data = pagedTabValue(data, arguments.Offset, arguments.MaxCharacters)
 	case "tabs":
 		data = tabsSaidWhose(data)
 	}
@@ -576,10 +576,6 @@ type snapshotPart struct {
 	maximum int
 }
 
-// snapshotMost is how far into a page a snapshot reads, however far on the
-// parts go: a page that long is not one to read through.
-const snapshotMost = 400000
-
 func snapshotPartOf(offset, maximum int) snapshotPart {
 	if maximum <= 0 {
 		maximum = 20000
@@ -593,7 +589,7 @@ func snapshotPartOf(offset, maximum int) snapshotPart {
 // readCharacters is how much of the page to read: up to the end of this
 // part and a little past it, so that whether there is more is known.
 func (self snapshotPart) readCharacters() int {
-	return min(self.offset+self.maximum+1, snapshotMost)
+	return self.offset + self.maximum + 1
 }
 
 // cut is this part of the text, and where the next one starts, zero at
@@ -605,7 +601,7 @@ func (self snapshotPart) cut(text string, isTruncated bool) (string, int) {
 	}
 	end := self.offset + self.maximum
 	if end >= len(characters) {
-		if isTruncated && len(characters) < snapshotMost {
+		if isTruncated {
 			return string(characters[self.offset:]), len(characters)
 		}
 		return string(characters[self.offset:]), 0
@@ -714,4 +710,36 @@ func askToTakeOver(ctx context.Context, run tools.Run, call *tools.Call, argumen
 		"note":         strings.TrimSpace(note),
 		"next":         "The page has changed: take a snapshot before you act.",
 	})
+}
+
+// pagedValue is the value a script returned, as the text it is: all of it
+// when it is no longer than a part, and else the part from offset, the
+// characters that follow it left for the next call.
+func pagedValue(value string, offset, maximum int) string {
+	if maximum <= 0 {
+		maximum = 20000
+	}
+	offset = max(offset, 0)
+	characters := []rune(value)
+	if offset == 0 && len(characters) <= maximum {
+		return value
+	}
+	offset = min(offset, len(characters))
+	end := min(offset+maximum, len(characters))
+	answer := map[string]any{"value_part": string(characters[offset:end]), "characters_in_all": len(characters)}
+	if end < len(characters) {
+		answer["next_offset"] = end
+		answer["note"] = fmt.Sprintf("the value is %d characters; this is the part from %d; read on by running the same script with offset %d", len(characters), offset, end)
+	}
+	return tools.EncodeJSON(answer)
+}
+
+// pagedTabValue is pagedValue for what the person's browser answered: the
+// value the script returned, as JSON.
+func pagedTabValue(data json.RawMessage, offset, maximum int) json.RawMessage {
+	paged := pagedValue(string(data), offset, maximum)
+	if paged == string(data) {
+		return data
+	}
+	return json.RawMessage(paged)
 }

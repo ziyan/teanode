@@ -553,8 +553,7 @@ that run is also how the next dream knows when the agent last looked.
 It comes first because a dream working through a backlog spends its whole
 share on the reading, and placed after it the look for ideas never ran; it
 is the one call let past a spent share, stopped only by a provider that
-will not bill the account. It does not run while the Suggestions switch is off
-or eight personal ideas are already waiting.
+will not bill the account. It does not run while the Suggestions switch is off.
 
 **Read what arrived.** Documents, by priority rather than by order: what
 the person wrote, then what they took part in, then the rest, newest
@@ -562,32 +561,30 @@ first, and a chat archive only where the person was in the thread: a
 thread they took part in, of two posts or more, is read before
 anything else, and a thread they were not in is never read on its own —
 it is searched when a question needs it. A quarter of a million other
-people's threads at four hundred a dream is years of reading and none of
-the person's business. Nothing is read coarsely any more: titles instead
+people's threads is a great deal of reading and none of the person's
+business. Nothing is read coarsely any more: titles instead
 of contents made pages and no facts — after the pass over what an older build wrote, which asks no
 model and runs first so a long reading cannot crowd it out — and among files, the ones written to be read (a readme, a note,
 a document) before source code. A checkout is mostly code, and code says
 almost nothing about the person: a dream that read four hundred files of
-Go filed two facts, with a hundred thousand more behind them. The code
+Go once filed two facts, with a hundred thousand more behind them. The code
 stays indexed for search and is read last. Each document is read whole:
 a call holds as many as fit in about forty thousand characters, twenty at
 most, and one longer than that is read in parts of that size, in order,
 each told which part it is, and marked read only with its last part. It
 used to be the first twelve hundred characters of each, which is a note
 and the first exchange of a conversation; what was said after that never
-became a fact. A call may file about one fact for each six hundred
-characters it read, ten at the least. In a thread the person took part
+became a fact. A call files every fact worth keeping, however many. In a thread the person took part
 in, what they say about their own life is kept even when said in passing
 (what they did, where they went, what they own, who is in their life, a
 number or a date they gave), and somebody else's general advice, an
 assistant's included, is not, unless they said they took it: reading a
 person's chats with an assistant once filed the assistant's tips and none
-of the person's own news. Every bound here is pacing,
-never truncation — what is not read
-in this dream is read in the next, the backlog is reported as a number the person
-can see, and when the backlog is larger than anybody would wait for the
-dream reads a stretch at a time instead of an item at a time and marks
-that it did, so a later dream can go back over it finely.
+of the person's own news. The reading has no count of its own: it lists
+what is waiting a page at a time and goes on until nothing is left, the
+allowance is spent, the model stops answering or the dream's deadline ends
+it. What is not read in this dream is read in the next, and the backlog is
+reported as a number the person can see.
 
 **Divide what has outgrown a page.** A page past forty facts is put to
 the model once — three to eight themed groups, a slug each, at least
@@ -597,8 +594,7 @@ identifiers and taking new numbers; both histories say so, and both
 pages are due a fresh opening. The model is shown the pages already
 under the one it divides, and a group that is one of them joins it
 rather than making a second page beside it. The person's own page divides the same
-way, into topics: who they are stays, their finances go under it. Five
-pages a dream. A turn reads twenty facts of a page and the tool shows
+way, into topics: who they are stays, their finances go under it. A turn reads twenty facts of a page and the tool shows
 sixty, most recently wanted or changed first — by number they were the
 oldest twenty, and the fact filed last week never reached a prompt. It
 then says how many more there are; `get` with `from` lists them all, in
@@ -610,7 +606,7 @@ the threads the person took part in by channel and by first words, their own
 notes, with the noise dropped). Other people's channels are not in it:
 a month written from a count of threads the person never opened is a
 month about somebody else. Then the months before, most recent first,
-six a dream, where the person's own record amounts to something. A
+where the person's own record amounts to something. A
 month whose page reads like a guess ("suggests", "likely", "must have")
 is owed again, after the months with no page at all, because a page
 that says what a count implies is not a diary.
@@ -793,11 +789,11 @@ background unless told to wait, and the conversation is woken with the report;
 `teanode agent survey` starts one with the `StartAgentSurvey` mutation and
 asks for it with `GetAgentBackgroundWork` until it is done, so no request is
 held open for the minutes it takes; the `SurveyAgentMemory` query still runs
-one in its request. Its runs are of kind survey. A survey asks at most forty
-pages, the most important first; the report ends with what it covered, what
-failed, and, counted by the code, how many pages in scope it left out over
-that limit and how many it did not ask because they have no overview yet, so
-an answer drawn from a selection does not read as one about everything.
+one in its request. Its runs are of kind survey. A survey asks every
+page in scope that has an overview, six at a time; the report ends with what
+it covered, what failed, and, counted by the code, how many pages in scope it
+did not ask because they have no overview yet, so an answer drawn from a
+selection does not read as one about everything.
 
 **What an overview covers.** An overview's prompt shows at most thirty of a
 page's children, of a theme's members and of its links, the most important
@@ -975,10 +971,9 @@ has `paid` or `paid_by` that transaction, with the same status. It
 other page's; a project whose name is a whole word run in the title of an
 event or reminder (`about`); an organization whose name is exactly a
 transaction's merchant (`paid`, the page being the one the money went to).
-Each dream makes at most three hundred new links and looks only at the newest
-records of each source (a hundred messages per folder, fifty recordings, two
-hundred transactions), so the cost does not grow with the history and the rest
-is covered by later dreams. A link already there is left alone and a
+A dream makes every link it finds, and looks at the newest records of each
+source (a hundred messages per folder, fifty recordings, two hundred
+transactions) and at every event of a granted calendar. A link already there is left alone and a
 statement is never turned into a proposal. Every record is checked with the
 same resolver the agent reads links with before the link is written, so a
 record the agent was not given is not linked. A link the person took off a
@@ -1262,8 +1257,7 @@ measure at this scale.
 | status half-life | 90 days |
 | event half-life | 1 year |
 | how-to half-life | 3 years |
-| a dream's share of the day | 30% |
-| how long a dream may run | 45 minutes, the reading at most half of what is left when it starts |
+| how long a dream may run | 45 minutes |
 | pages the index is sized for | 400 |
 | passages embedded per ingest run | 2000 |
 
@@ -1317,6 +1311,12 @@ decay and tomorrow's index. A page over the budget is passed over and the
 next one down is still tried, since a shorter page may fit where a long
 one did not; the scan stops only when what is left of the budget could
 not hold a page at all.
+
+Nothing the search found is left out without a word. After the blocks the
+overlay carries one more line saying how many more pages and facts matched
+the message and are not shown, and that the memory tool's `search` with the
+same words lists them and its `get` with a page's path reads the page
+(`recallLeftOutNote`).
 
 Being in the index is not being expanded. The index line says what a page
 is about, which is not what the page knows, so a page the prompt already

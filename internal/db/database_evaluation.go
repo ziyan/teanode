@@ -36,8 +36,8 @@ type EvaluationOperation interface {
 	ListAgentFactsToCheck(agentId, factsToCheck string, excludeFactIds []string, limit int) ([]*models.AgentFact, error)
 
 	// CountAgentFactsToCheck is how many stated facts the person's own
-	// pages hold.
-	CountAgentFactsToCheck(agentId string) (int64, error)
+	// pages hold, or only those filed after since when it is given.
+	CountAgentFactsToCheck(agentId string, since *time.Time) (int64, error)
 
 	// LastAgentMessageStartingWith is when a conversation's latest message
 	// that begins with the words given was written, or nil.
@@ -274,12 +274,16 @@ func (self *transaction) ListAgentFactsToCheck(agentId, factsToCheck string, exc
 
 // CountAgentFactsToCheck is how many stated facts a check may ask about:
 // whether memory knows enough about the person for one to be worth their
-// time.
-func (self *transaction) CountAgentFactsToCheck(agentId string) (int64, error) {
+// time, and with since, enough that is new since the last check.
+func (self *transaction) CountAgentFactsToCheck(agentId string, since *time.Time) (int64, error) {
 	var count int64
-	err := self.tx.Model(&agentFactModel{}).
+	query := self.tx.Model(&agentFactModel{}).
 		Where(`"agent_id" = ? AND NOT "dormant" AND NOT "inferred" AND "superseded_by" IS NULL`, agentId).
-		Where(checkableCondition, agentId, agentId).Count(&count).Error
+		Where(checkableCondition, agentId, agentId)
+	if since != nil {
+		query = query.Where(`"created_at" > ?`, *since)
+	}
+	err := query.Count(&count).Error
 	return count, err
 }
 

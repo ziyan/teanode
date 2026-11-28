@@ -98,8 +98,7 @@ func (self *alertFixture) backfill(t *testing.T, now time.Time, isForced bool) i
 // The messages chosen: those sorting flagged for an extract whatever they
 // say, and those whose category or subject looks like a bill, a parcel, a
 // form, an RSVP or a notice; never junk, phishing or promotions, never one
-// filed in Junk or Trash, never one older than 45 days, never one that was
-// not sorted, and not chatter.
+// filed in Junk or Trash, never one that was not sorted, and not chatter.
 func TestBackfillChoosesTheMessagesThatLookLikeFollowUps(t *testing.T) {
 	fixture := newAlertFixture(t)
 	inbox, junk, trash := models.MailboxFolderKindInbox, models.MailboxFolderKindJunk, models.MailboxFolderKindTrash
@@ -110,10 +109,10 @@ func TestBackfillChoosesTheMessagesThatLookLikeFollowUps(t *testing.T) {
 		"slip":    fixture.fileSorted(t, "Permission slip for the field trip", "other", false, 20, inbox),
 		"rsvp":    fixture.fileSorted(t, "RSVP: spring picnic", "invitation", false, 30, inbox),
 		"notice":  fixture.fileSorted(t, "Street fair on Maple Lane", "social", false, 44, inbox),
+		"older":   fixture.fileSorted(t, "Your gas bill is due", "notification", true, 120, inbox),
 	}
 	skipped := map[string]*models.Mail{
 		"chatter":        fixture.fileSorted(t, "Lunch on Thursday?", "personal", false, 2, inbox),
-		"too old":        fixture.fileSorted(t, "Your gas bill is due", "notification", true, 47, inbox),
 		"junk category":  fixture.fileSorted(t, "Payment due now", "junk", true, 1, inbox),
 		"phishing":       fixture.fileSorted(t, "Overdue invoice, open the attachment", "phishing", true, 1, inbox),
 		"promotion":      fixture.fileSorted(t, "Last chance: pay by Friday and save", "promotion", true, 1, inbox),
@@ -162,29 +161,19 @@ func TestBackfillChoosesTheMessagesThatLookLikeFollowUps(t *testing.T) {
 	}
 }
 
-// At most 150 messages, the newest first.
-func TestBackfillQueuesAtMost150TheNewestFirst(t *testing.T) {
+// Every message that looks like a follow-up is queued, however many and
+// however old, the newest first.
+func TestBackfillQueuesEveryMessageTheNewestFirst(t *testing.T) {
 	fixture := newAlertFixture(t)
-	oldest := []string{}
-	for index := 0; index < followUpBackfillMost+10; index++ {
-		mail := fixture.fileSorted(t, fmt.Sprintf("Your bill number %d", index), "notification", false, 1+index/10, models.MailboxFolderKindInbox)
-		if index >= followUpBackfillMost {
-			oldest = append(oldest, mail.ID)
-		}
+	const count = 160
+	for index := 0; index < count; index++ {
+		fixture.fileSorted(t, fmt.Sprintf("Your bill number %d", index), "notification", false, 1+index, models.MailboxFolderKindInbox)
 	}
-	if queued := fixture.backfill(t, time.Now(), false); queued != followUpBackfillMost {
-		t.Fatalf("queued %d, want %d", queued, followUpBackfillMost)
+	if queued := fixture.backfill(t, time.Now(), false); queued != count {
+		t.Fatalf("queued %d, want %d", queued, count)
 	}
-	jobs := fixture.extractJobs(t)
-	if len(jobs) != followUpBackfillMost {
-		t.Fatalf("%d jobs, want %d", len(jobs), followUpBackfillMost)
-	}
-	// Messages are one day apart in tens, so the last ten made are the
-	// oldest and are the ones left out.
-	for _, mailId := range oldest {
-		if jobs[mailId] != nil {
-			t.Fatalf("one of the oldest ten was queued: %s", mailId)
-		}
+	if jobs := fixture.extractJobs(t); len(jobs) != count {
+		t.Fatalf("%d jobs, want %d", len(jobs), count)
 	}
 }
 

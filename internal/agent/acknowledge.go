@@ -174,9 +174,9 @@ func (self *Agent) acknowledge(ctx context.Context, settings *AskSettings, messa
 		return err
 	}
 	response, err := provider.Chat(ctx, &llm.ChatRequest{
-		// Room for a model that reasons before it writes; the answer is a
-		// word.
-		Model: modelName, MaxTokens: 2000,
+		// No output limit: a model that reasons counts its thinking against one,
+		// and came back with an empty answer.
+		Model:    modelName,
 		Messages: []llm.ChatMessage{{Role: llm.RoleUser, Content: prompt}},
 	})
 	if err != nil {

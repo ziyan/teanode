@@ -36,12 +36,12 @@ class AgentServerSettingsTest {
          "features":{"triage":true,"autoReply":false,"browser":false},
          "limits":{"dailyTokensPerAgent":1000000,"monthlyTokensPerServer":0,"dailyCostPerAgent":2.5,"monthlyCostPerServer":0,
            "requestTimeout":"2m","concurrency":4,"maxBodyCharacters":20000},
-         "retention":{"runs":"720h","corrections":"2160h"},"currency":"USD","search":{"kind":"brave","hasApiKey":true},
+         "currency":"USD","search":{"kind":"brave","hasApiKey":true},
          "tools":{"disabled":["shell"],"confirm":["mail"],"catalog":[
            {"name":"mail_send","family":"mail","risk":"outward","description":"Sends mail.","confirms":true,"core":true,"actions":null},
            {"name":"shell","family":"computer","risk":"local","description":"Runs a command.","confirms":true,"core":false,"actions":["run","stop"]}]},
          "voice":{"enabled":false,"provider":"","transcriptionModel":"","silenceMS":0,"speechModel":"","speechVoice":"","askModel":""},
-         "browser":{"enabled":false,"cdpEndpoint":"","attachTabs":true,"allowPrivateAddresses":[],"idleTimeout":"5m","maxContexts":4},
+         "browser":{"enabled":false,"cdpEndpoint":"","attachTabs":true,"allowPrivateAddresses":[]},
          "mcpServers":[{"name":"tracker","transport":"","effectiveTransport":"http","url":"https://tracker.example.com/mcp","command":"","args":[],
            "envNames":["API_TOKEN"],"workingDir":"","auth":"static","effectiveAuth":"static","hasAuthorization":true,"oauthClientId":"",
            "hasOauthClientSecret":false,"oauthScopes":[],"oauthAuthorizationUrl":"","oauthTokenUrl":"","oauthRedirect":"server","headless":true,
@@ -311,7 +311,7 @@ class AgentServerSettingsTest {
         assertNull(section.text("limits", "requestTimeout"))
         assertNull(section.text("limits", "maxBodyCharacters"))
         assertEquals("EUR", section.text("currency"))
-        assertEquals("720h", section.text("retention", "runs"))
+        assertNull(section.text("retention", "runs"))
     }
 
     @Test

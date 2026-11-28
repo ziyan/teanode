@@ -67,7 +67,13 @@ type fakeRun struct {
 
 	// surface is where the person is, empty for the dashboard's drawer.
 	surface string
+
+	// isStartedByOther makes it a run something other than the person
+	// started: a mail, a goal the agent wrote, a dream.
+	isStartedByOther bool
 }
+
+func (self *fakeRun) IsStartedByPerson() bool { return !self.isStartedByOther }
 
 func (self *fakeRun) Surface() string { return self.surface }
 
@@ -527,9 +533,9 @@ func TestSamplesNameSleepStagesAndHoldTheLimits(t *testing.T) {
 // true.
 func TestARunNobodyIsWatchingNeverReadsHealth(t *testing.T) {
 	for name, run := range map[string]*fakeRun{
-		"a background run": {isUnattended: true},
-		"a headless run":   {isHeadless: true},
-		"both":             {isUnattended: true, isHeadless: true},
+		"a background run":       {isUnattended: true, isStartedByOther: true},
+		"a goal the agent wrote": {isHeadless: true, isStartedByOther: true},
+		"both":                   {isUnattended: true, isHeadless: true, isStartedByOther: true},
 		// Not headless and able to ask, as a turn woken by a background
 		// command or survey, and a subagent of a run that may ask, are.
 		"a turn woken by a background command": {surface: "background"},
@@ -563,6 +569,11 @@ func TestARunNobodyIsWatchingNeverReadsHealth(t *testing.T) {
 	content, _, err := act(t, runOf(operations), "summary", `{"health_type":"stepCount"}`)
 	if err != nil || strings.Contains(content, "nobody is watching") || !strings.Contains(content, "8,412 steps") {
 		t.Errorf("the person's own conversation reads: %q %v", content, err)
+	}
+	// A goal the person wrote has no one at the other end, and is theirs.
+	content, _, err = act(t, &fakeRun{operations: operations, isHeadless: true}, "summary", `{"health_type":"stepCount"}`)
+	if err != nil || strings.Contains(content, "nobody is watching") || !strings.Contains(content, "8,412 steps") {
+		t.Errorf("a goal the person wrote reads: %q %v", content, err)
 	}
 }
 

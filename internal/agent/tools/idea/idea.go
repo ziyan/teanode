@@ -50,8 +50,8 @@ func init() {
 					"offset":            tools.IntegerProperty("for list: how many to pass over, to read on from where a list stopped"),
 					"idea_category":     tools.EnumProperty("for propose: the area it is about", "money", "paperwork", "mail", "home", "family", "travel", "shopping", "health", "work", "fun", "assistant"),
 					"emoji":             tools.StringProperty("for propose: one of the area's emoji, the area's own (the first) when left out: " + strings.Join(areas, "; ")),
-					"headline":          tools.StringProperty("for propose: the offer in the first person, at most 80 characters: \"I can compare this month's charges with the last three.\""),
-					"body":              tools.StringProperty("for propose: at most 300 characters: what they give, what you do, and where you stop to ask"),
+					"headline":          tools.StringProperty("for propose: the offer in the first person, one short line: \"I can compare this month's charges with the last three.\""),
+					"body":              tools.StringProperty("for propose: what they give, what you do, and where you stop to ask"),
 					"opening_request":   tools.StringProperty("for propose: what they would say to start it, in their voice"),
 					"needed_tool_names": tools.ArrayProperty("for propose: the tools it needs, by name", tools.StringProperty("a tool's name")),
 					"evidence": tools.ArrayProperty("for propose: what prompted it, each a message (by item id), a memory page (by path) or a conversation (by id)", tools.Object(map[string]any{

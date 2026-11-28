@@ -640,9 +640,9 @@ func TestJournalNarrativeReplacesChoicesAndKeepsPinsAndHiddenOnes(t *testing.T) 
 	})
 }
 
-// A correction is kept with its time, at most 20 of at most 500 characters; one
+// A correction is kept with its time, however many and however long; one
 // is removed by its place; both ask for the narrative to be written again.
-func TestJournalCorrectionsAreLimitedAndAskForANewNarrative(t *testing.T) {
+func TestJournalCorrectionsAreKeptWholeAndAskForANewNarrative(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
@@ -656,33 +656,28 @@ func TestJournalCorrectionsAreLimitedAndAskForANewNarrative(t *testing.T) {
 		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "   ", journalTestAt(8)); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("an empty correction: %v", err)
 		}
-		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, strings.Repeat("é", models.JournalCorrectionCharactersMost+1), journalTestAt(8)); !errors.Is(err, db.ErrInvalidArguments) {
-			t.Errorf("a correction of 501 characters: %v", err)
+		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, strings.Repeat("é", 5000), journalTestAt(8)); err != nil {
+			t.Fatalf("a correction of 5000 characters: %v", err)
 		}
-		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, strings.Repeat("é", models.JournalCorrectionCharactersMost), journalTestAt(8)); err != nil {
-			t.Fatalf("a correction of 500 characters: %v", err)
-		}
-		for index := 1; index < models.JournalCorrectionsMost; index++ {
+		const correctionCount = 25
+		for index := 1; index < correctionCount; index++ {
 			if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "Correction "+strings.Repeat("x", index), journalTestAt(9)); err != nil {
 				t.Fatalf("correction %d: %v", index, err)
 			}
 		}
-		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "One too many.", journalTestAt(10)); !errors.Is(err, db.ErrLimitReached) {
-			t.Fatalf("the 21st correction: %v", err)
-		}
 		day, _ := tx.GetJournalDay(ada.ID, "2026-03-03")
-		if len(day.NarrativeCorrections) != models.JournalCorrectionsMost || !day.NarrativeCorrections[1].CreatedAt.Equal(journalTestAt(9)) || day.NarrativeRequestedAt == nil {
-			t.Fatalf("a day with 20 corrections: %d, %+v", len(day.NarrativeCorrections), day.NarrativeRequestedAt)
+		if len(day.NarrativeCorrections) != correctionCount || !day.NarrativeCorrections[1].CreatedAt.Equal(journalTestAt(9)) || day.NarrativeRequestedAt == nil {
+			t.Fatalf("a day with %d corrections: %d, %+v", correctionCount, len(day.NarrativeCorrections), day.NarrativeRequestedAt)
 		}
 
-		if err := tx.RemoveJournalCorrection(ada.ID, target, models.JournalCorrectionsMost, journalTestAt(11)); !errors.Is(err, db.ErrNotFound) {
-			t.Errorf("removing the 21st: %v", err)
+		if err := tx.RemoveJournalCorrection(ada.ID, target, correctionCount, journalTestAt(11)); !errors.Is(err, db.ErrNotFound) {
+			t.Errorf("removing one past the last: %v", err)
 		}
 		if err := tx.RemoveJournalCorrection(ada.ID, target, 1, journalTestAt(11)); err != nil {
 			t.Fatal(err)
 		}
 		day, _ = tx.GetJournalDay(ada.ID, "2026-03-03")
-		if len(day.NarrativeCorrections) != 19 || day.NarrativeCorrections[1].CorrectionText != "Correction xx" {
+		if len(day.NarrativeCorrections) != correctionCount-1 || day.NarrativeCorrections[1].CorrectionText != "Correction xx" {
 			t.Errorf("corrections after removing the second: %d", len(day.NarrativeCorrections))
 		}
 		if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "Room again.", journalTestAt(12)); err != nil {
@@ -719,7 +714,8 @@ func TestAJournalCorrectionAlreadyKeptAddsNothing(t *testing.T) {
 			t.Fatalf("a week told one thing three times: %d, %v", len(period.NarrativeCorrections), period.NarrativeRequestedAt)
 		}
 
-		for index := 1; index < models.JournalCorrectionsMost; index++ {
+		const correctionCount = 25
+		for index := 1; index < correctionCount; index++ {
 			if _, err := tx.AddJournalCorrection(ada.ID, target, journalTestZone, "Correction "+strings.Repeat("x", index), journalTestAt(10)); err != nil {
 				t.Fatalf("correction %d: %v", index, err)
 			}

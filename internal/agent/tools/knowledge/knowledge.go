@@ -28,13 +28,10 @@ import (
 	"github.com/ziyan/teanode/internal/sources"
 )
 
-// The bounds.
-const (
-	// readSlice is how much of a document one read returns. How many rows
-	// a search answers with is indexed.SearchLimit, shared with the other
-	// surfaces.
-	readSlice = 6000
-)
+// readReserve is the room a read keeps, in bytes, for the lines around the
+// text: the title, address and author before it, and the line that says
+// where to read on after it.
+const readReserve = 600
 
 func init() {
 	tools.Register(func() []*tools.Tool {
@@ -341,9 +338,23 @@ func readAction(ctx context.Context, run tools.Run, arguments *knowledgeArgument
 		return nil, fmt.Errorf("read which? give the identifier from a search result")
 	}
 	var extract *indexed.Extract
+	budget := tools.ResultCharactersOf(run)
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		extract, err = indexed.Read(tx, run.Agent().ID, id, arguments.From, readSlice)
-		return err
+		// As much as the run keeps of a result. The length is in
+		// characters and the budget in bytes, so a document in a script of
+		// longer characters is read again shorter until it fits.
+		length := max(budget-readReserve, readReserve)
+		for {
+			extract, err = indexed.Read(tx, run.Agent().ID, id, arguments.From, length)
+			if err != nil || extract == nil {
+				return err
+			}
+			size := len(extract.Title) + len(extract.URL) + len(extract.Author) + len(extract.Text) + readReserve
+			if size <= budget || length <= readReserve {
+				return nil
+			}
+			length = min(length-1, length*budget/size)
+		}
 	}); err != nil {
 		return nil, err
 	}

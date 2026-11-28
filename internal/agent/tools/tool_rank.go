@@ -24,10 +24,10 @@ import (
 // holds already, a weak match behind it is not worth a definition in every
 // request, so it is measured against that tool too.
 const (
-	// SearchLoadedLimit is how many tools one search loads when the model
-	// does not say, and SearchLoadedMost how many it may ask for.
+	// SearchLoadedLimit is how many tools a ranked search loads when the
+	// model does not say how many. A model that asks for more gets more,
+	// and one that names its tools gets every one it names.
 	SearchLoadedLimit = 5
-	SearchLoadedMost  = 10
 
 	// searchHeldLimit is how many of the tools the model holds a search
 	// names back.
@@ -80,15 +80,19 @@ type ToolSearchFound struct {
 }
 
 // SearchTools ranks the held and the deferred tools against the query.
-// Limit bounds what is loaded; zero is SearchLoadedLimit.
+// Limit is how many a ranked search loads when the model gave a number; zero
+// is SearchLoadedLimit. A select: query loads every tool it names, unless
+// the model gave a smaller number.
 func SearchTools(held, deferred []*Tool, query string, limit int) ToolSearchFound {
-	if limit <= 0 {
-		limit = SearchLoadedLimit
-	}
-	limit = min(limit, SearchLoadedMost)
 	query = strings.TrimSpace(query)
 	if names, isSelect := strings.CutPrefix(strings.ToLower(query), searchSelectPrefix); isSelect {
+		if limit <= 0 {
+			limit = strings.Count(names, ",") + 1
+		}
 		return selectTools(held, deferred, names, limit)
+	}
+	if limit <= 0 {
+		limit = SearchLoadedLimit
 	}
 	index := newToolIndex(append(append([]*Tool{}, held...), deferred...))
 	heldScores := index.rank(held, query)

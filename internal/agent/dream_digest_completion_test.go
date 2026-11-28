@@ -194,3 +194,26 @@ func TestDigestCompletionRequiresPersistedDream(test *testing.T) {
 		test.Fatal("failed progress write retained its read marker or memory count")
 	}
 }
+
+// The reading goes on past one page of what is waiting, until nothing is.
+func TestDreamDigestReadsEveryPageOfWhatIsWaiting(test *testing.T) {
+	database, release := dbtest.AcquireDatabase(test)
+	defer release()
+	provider, _ := authoringProvider("projects/fixture", "Fixture")
+	defer provider.Close()
+	worker, run := digestSplitWorld(test, database, provider.URL)
+	previous := dreamDigestPage
+	dreamDigestPage = 1
+	defer func() { dreamDigestPage = previous }()
+	fileAuthoredCommits(test, database, run, []authoredCommit{
+		{subject: "Record the fixture workspace as blue.", author: "Fixture Writer <writer@example.net>"},
+		{subject: "Record the fixture workspace as green.", author: "Fixture Writer <writer@example.net>"},
+		{subject: "Record the fixture workspace as red.", author: "Fixture Writer <writer@example.net>"},
+	})
+	record := startDigestRecord(test, database, run)
+	worker.dreamDigest(test.Context(), run, record, &dreamBudget{})
+	assertDigestProgress(test, database, record, 3)
+	if record.Backlog != 3 {
+		test.Errorf("the backlog is what was waiting at the start: %d", record.Backlog)
+	}
+}

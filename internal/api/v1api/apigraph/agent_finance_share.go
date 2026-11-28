@@ -382,7 +382,8 @@ const financeShareOnATap = api.TapRequiredPhrase + ": sharing a finance account,
 
 // requireFinanceNotAgent refuses the person's agent: it has no tool for
 // sharing finance or for reading what others share, and the API says the same
-// to an agent that reaches these operations some other way.
+// to an agent that reaches these operations some other way. Ending a share, or
+// declining one, discloses nothing, so those do not call it.
 func requireFinanceNotAgent(ctx context.Context) error {
 	if db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent {
 		return api.ErrNotFound
@@ -521,9 +522,6 @@ func isFinanceShareWider(earlier []*models.FinanceShare, saved *models.FinanceSh
 }
 
 func (self *graph) UnshareFinanceAccount(ctx context.Context, arguments UnshareFinanceAccountArguments) (bool, error) {
-	if err := requireFinanceNotAgent(ctx); err != nil {
-		return false, err
-	}
 	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err
@@ -733,9 +731,6 @@ func isAllFinanceShareWider(earlier []*models.AllFinanceShare, saved *models.All
 }
 
 func (self *graph) UnshareFinance(ctx context.Context, arguments UnshareFinanceArguments) (bool, error) {
-	if err := requireFinanceNotAgent(ctx); err != nil {
-		return false, err
-	}
 	principal, err := self.requireShareOwner(ctx)
 	if err != nil {
 		return false, err

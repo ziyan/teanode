@@ -115,14 +115,11 @@ func (self *Agent) releaseContext() {
 	}
 }
 
-// reserveContext takes a place under the operator's cap, or says there is
+// reserveContext takes a place under config.BrowserMaxContexts, or says there is
 // none: counted in the same breath as checked, so that several turns
 // opening their first page at once cannot all find room.
 func (self *Agent) reserveContext(configuration *config.Configuration) bool {
-	limit := configuration.Agent.Browser.MaxContexts
-	if limit <= 0 {
-		limit = 4
-	}
+	limit := config.BrowserMaxContexts
 	self.contextsMutex.Lock()
 	defer self.contextsMutex.Unlock()
 	if self.contextsOpen >= limit {
@@ -157,10 +154,7 @@ func (self *browserRunner) idle(timeout time.Duration) bool {
 
 // sweepBrowsers closes the browsers of turns that sat idle.
 func (self *Agent) sweepBrowsers() {
-	timeout := self.settings.Configuration().Agent.Browser.IdleTimeout.Duration()
-	if timeout <= 0 {
-		timeout = 10 * time.Minute
-	}
+	timeout := config.BrowserIdleTimeout
 	self.runsMutex.Lock()
 	runs := make([]*AskRun, 0, len(self.runs))
 	for _, run := range self.runs {

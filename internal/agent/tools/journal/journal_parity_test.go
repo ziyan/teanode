@@ -71,21 +71,11 @@ func TestEveryJournalOperationIsAnActionOrThePersonsAlone(t *testing.T) {
 		}
 	}
 
-	// The operations the tool has no action for, and why. The agent never
-	// erases the journal, changes its settings or stops a touch-up; those are
-	// the person's, on the Journal page, in the app or with the command line.
-	// Nor does it take back what the person or TeaNode put there: a pin, a
-	// correction or a narrative. Writing a narrative again is a model call the
-	// person did not ask the agent for; a correction already writes it again.
+	// The operations the tool has no action for, and why. The agent gets what
+	// the person gets, so these are few.
 	personsAlone := map[string]string{
-		"EraseJournal":            "erasing cannot be undone",
-		"ReadJournalSettings":     "the settings are the person's",
-		"UpdateJournalSettings":   "the settings are the person's, and what the agent reads goes to a model provider",
-		"StopJournalTouchUp":      "turning touching up off deletes the touched-up text, and is the person's choice about their words",
-		"RemoveJournalLink":       "a pin is taken off by the person who put it there",
-		"RemoveJournalCorrection": "a correction is the person's word, and is taken back by them",
-		"WriteJournalNarrative":   "a model call the person did not ask for; a correction writes it again",
-		"DeleteJournalNarrative":  "deleting what TeaNode wrote is the person's choice",
+		"ReadJournalSettings":   "update_settings answers with the settings it changed, and nothing else reads them",
+		"WriteJournalNarrative": "a model call the person did not ask for; a correction writes it again",
 	}
 
 	recorded := &recording{operations: map[string]bool{}}
@@ -96,6 +86,8 @@ func TestEveryJournalOperationIsAnActionOrThePersonsAlone(t *testing.T) {
 		{"add_words", `{"text":"More."}`}, {"add_words", `{"text":"More.","period_kind":"week"}`},
 		{"set_mood", `{"mood":"good"}`}, {"touch_up", `{}`},
 		{"correct", `{"correction_text":"It was Ben."}`}, {"pin", `{"record":"mail:m1"}`},
+		{"stop_touch_up", `{}`}, {"remove_correction", `{"correction_index":0}`}, {"delete_narrative", `{}`},
+		{"remove_pin", `{"link_id":"l1"}`}, {"update_settings", `{"is_weather_on":false}`}, {"erase", `{}`},
 	}
 	merged := tools.Build().Get("journal")
 	if merged == nil {

@@ -36,7 +36,8 @@ type HTTPSettings struct {
 	// that was refreshed is what is sent.
 	Headers func() (http.Header, error)
 
-	// Client is the HTTP client to use; nil means one with the timeout.
+	// Client is the HTTP client to use; nil means one with the timeout, or
+	// with none when Timeout is zero.
 	Client *http.Client
 }
 
@@ -44,11 +45,9 @@ type HTTPSettings struct {
 func NewHTTPTransport(settings *HTTPSettings) *HTTPTransport {
 	client := settings.Client
 	if client == nil {
-		timeout := settings.Timeout
-		if timeout <= 0 {
-			timeout = 60 * time.Second
-		}
-		client = &http.Client{Timeout: timeout, CheckRedirect: stayOnHost}
+		// No timeout means no total bound on a call: a tool may work as long
+		// as it needs, and the call's context ends it.
+		client = &http.Client{Timeout: settings.Timeout, CheckRedirect: stayOnHost}
 	}
 	return &HTTPTransport{url: settings.URL, client: client, headers: settings.Headers}
 }

@@ -548,7 +548,7 @@ func requestBodyRefusal(tab tools.Tab, method string, params map[string]any, own
 // many are chosen here, after the judgment, so that a request is learned
 // when the extension first has it rather than when the agent happens to ask
 // for the part of the window it is in.
-func showForeignRequests(ledger *tools.RequestLedger, answer json.RawMessage, ownHosts map[string]bool, methodPrefix string, limit int) (json.RawMessage, error) {
+func showForeignRequests(ledger *tools.RequestLedger, answer json.RawMessage, ownHosts map[string]bool, methodPrefix string, limit, offset int) (json.RawMessage, error) {
 	var decoded map[string]json.RawMessage
 	if err := json.Unmarshal(answer, &decoded); err != nil {
 		return nil, fmt.Errorf("the network events the browser sent could not be read, so none are shown: %w", err)
@@ -592,7 +592,13 @@ func showForeignRequests(ledger *tools.RequestLedger, answer json.RawMessage, ow
 			}
 		}
 	})
+	// The newest limit events, after skipping the newest offset of them, so
+	// that older ones can be read on.
+	offset = min(max(offset, 0), len(kept))
+	kept = kept[:len(kept)-offset]
+	earlierCount := 0
 	if len(kept) > limit {
+		earlierCount = len(kept) - limit
 		kept = kept[len(kept)-limit:]
 	}
 	if kept == nil {
@@ -603,6 +609,10 @@ func showForeignRequests(ledger *tools.RequestLedger, answer json.RawMessage, ow
 		return nil, fmt.Errorf("the network events the browser sent could not be read, so none are shown: %w", err)
 	}
 	decoded["events"] = shown
+	if earlierCount > 0 {
+		decoded["earlier_count"], _ = json.Marshal(earlierCount)
+		decoded["next_offset"], _ = json.Marshal(offset + len(kept))
+	}
 	filtered, err := json.Marshal(decoded)
 	if err != nil {
 		return nil, fmt.Errorf("the network events the browser sent could not be read, so none are shown: %w", err)

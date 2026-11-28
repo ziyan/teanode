@@ -621,3 +621,30 @@ func TestPlacesAreTheHostnamesAndMarks(t *testing.T) {
 		}
 	}
 }
+
+// The newest events come first to be counted, and older ones are read with
+// offset, each page saying where the next starts.
+func TestOlderEventsAreReadWithAnOffset(t *testing.T) {
+	var events []string
+	for index := 0; index < 5; index++ {
+		events = append(events, requestCreated(fmt.Sprintf("3.%d", index), fmt.Sprintf("https://cdn.example.net/%d.js", index)))
+	}
+	run := newReachRun("https://app.example.com/page")
+	run.first.answer = eventsAnswer("tab-1", events...)
+	first, err := runOnTab(t, run, `{"action":"cdp_events","target":"tab","limit":2}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(first.Content, "3.js") || !strings.Contains(first.Content, "4.js") || strings.Contains(first.Content, "2.js") ||
+		!strings.Contains(first.Content, `"next_offset":2`) || !strings.Contains(first.Content, `"earlier_count":3`) {
+		t.Errorf("the newest two, and where to read on: %s", first.Content)
+	}
+	run.first.answer = eventsAnswer("tab-1", events...)
+	older, err := runOnTab(t, run, `{"action":"cdp_events","target":"tab","limit":2,"offset":2}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(older.Content, "1.js") || !strings.Contains(older.Content, "2.js") || strings.Contains(older.Content, "3.js") || !strings.Contains(older.Content, `"next_offset":4`) {
+		t.Errorf("the two before them: %s", older.Content)
+	}
+}

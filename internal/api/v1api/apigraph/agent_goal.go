@@ -172,7 +172,7 @@ func (self *graph) ListAgentGoals(ctx context.Context, arguments ListAgentGoalsA
 		}
 		goalStates = append(goalStates, wanted)
 	}
-	goals, err := self.transaction(ctx).ListAgentGoals(found.ID, goalStates, 200)
+	goals, err := self.transaction(ctx).ListAgentGoals(found.ID, goalStates, 0)
 	if err != nil {
 		return nil, err
 	}

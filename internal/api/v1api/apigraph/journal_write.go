@@ -211,9 +211,6 @@ func (self *graph) StopJournalTouchUp(ctx context.Context, arguments JournalTarg
 	if err != nil {
 		return nil, err
 	}
-	if err := refuseJournalAgent(ctx); err != nil {
-		return nil, err
-	}
 	tx := self.transaction(ctx)
 	target, err := journalTargetOf(tx, principal.User, arguments.Day, arguments.PeriodKind, time.Now())
 	if err != nil {
@@ -236,8 +233,8 @@ func (self *graph) CorrectJournalNarrative(ctx context.Context, arguments Correc
 		return nil, err
 	}
 	correctionText := strings.TrimSpace(arguments.CorrectionText)
-	if correctionText == "" || utf8.RuneCountInString(correctionText) > models.JournalCorrectionCharactersMost {
-		return nil, fmt.Errorf("%w: a correction is 1 to %d characters", api.ErrInvalidArguments, models.JournalCorrectionCharactersMost)
+	if correctionText == "" {
+		return nil, fmt.Errorf("%w: a correction is at least one character", api.ErrInvalidArguments)
 	}
 	isAdded, err := tx.AddJournalCorrection(principal.User.ID, target, journal.Zone(principal.User).String(), correctionText, now)
 	if err != nil {
@@ -259,9 +256,6 @@ func (self *graph) CorrectJournalNarrative(ctx context.Context, arguments Correc
 func (self *graph) RemoveJournalCorrection(ctx context.Context, arguments RemoveJournalCorrectionArguments) (*JournalNarrativeView, error) {
 	principal, err := self.requireJournalPerson(ctx)
 	if err != nil {
-		return nil, err
-	}
-	if err := refuseJournalAgent(ctx); err != nil {
 		return nil, err
 	}
 	now, tx := time.Now(), self.transaction(ctx)
@@ -302,9 +296,6 @@ func (self *graph) WriteJournalNarrative(ctx context.Context, arguments JournalT
 func (self *graph) DeleteJournalNarrative(ctx context.Context, arguments JournalTargetArguments) (*JournalNarrativeView, error) {
 	principal, err := self.requireJournalPerson(ctx)
 	if err != nil {
-		return nil, err
-	}
-	if err := refuseJournalAgent(ctx); err != nil {
 		return nil, err
 	}
 	now, tx := time.Now(), self.transaction(ctx)
@@ -361,9 +352,6 @@ func (self *graph) RemoveJournalLink(ctx context.Context, arguments RemoveJourna
 	if err != nil {
 		return false, err
 	}
-	if err := refuseJournalAgent(ctx); err != nil {
-		return false, err
-	}
 	if err := self.transaction(ctx).RemoveJournalLink(principal.User.ID, strings.TrimSpace(arguments.LinkID)); err != nil {
 		return false, journalFailure(err)
 	}
@@ -373,9 +361,6 @@ func (self *graph) RemoveJournalLink(ctx context.Context, arguments RemoveJourna
 func (self *graph) UpdateJournalSettings(ctx context.Context, arguments UpdateJournalSettingsArguments) (*JournalSettingsView, error) {
 	principal, err := self.requireJournalPerson(ctx)
 	if err != nil {
-		return nil, err
-	}
-	if err := refuseJournalAgent(ctx); err != nil {
 		return nil, err
 	}
 	tx := self.transaction(ctx)
@@ -406,31 +391,11 @@ func (self *graph) EraseJournal(ctx context.Context) (*EraseJournalView, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := refuseJournalAgent(ctx); err != nil {
-		return nil, err
-	}
 	dayCount, periodCount, linkCount, err := self.transaction(ctx).EraseJournal(principal.User.ID)
 	if err != nil {
 		return nil, journalFailure(err)
 	}
 	return &EraseJournalView{DayCount: dayCount, PeriodCount: periodCount, LinkCount: linkCount}, nil
-}
-
-// journalTheAgentMayNot is why a command the agent runs on the person's
-// computer, which arrives with the person's own token, is refused what is the
-// person's alone: erasing the journal, changing what they decided about it,
-// and taking back what they asked for or kept (a correction, a pin, a
-// narrative, a touch-up).
-const journalTheAgentMayNot = "only the person can do this to their journal, not the agent: erase it, change its settings, " +
-	"or remove a correction, a pin, a narrative or a touch-up"
-
-// refuseJournalAgent refuses a call that is the person's alone when the agent
-// makes it.
-func refuseJournalAgent(ctx context.Context) error {
-	if isJournalReadByAgent(ctx) {
-		return fmt.Errorf("%w: %s", api.ErrPermissionDenied, journalTheAgentMayNot)
-	}
-	return nil
 }
 
 // refuseJournalWordsTheAgentWouldRemove keeps the rule that the person's words

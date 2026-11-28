@@ -511,11 +511,11 @@ func TestALargeHistoryIsReadFromItsEndOnly(t *testing.T) {
 	history.WriteString(`{"type":"user","message":{"content":"<system-reminder>injected</system-reminder>"}}` + "\n")
 	data := []byte(history.String())
 	reader := &countingReader{reader: strings.NewReader(string(data))}
-	turns, isTruncated, err := readTurnsFrom(reader, int64(len(data)), CodingAgentKindClaude, 3)
+	turns, isTruncated, err := readTurnsFrom(reader, int64(len(data)), CodingAgentKindClaude, 3, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader.byteCount > transcriptMostChunkBytes*2 {
+	if reader.byteCount > 4*transcriptFirstChunkBytes {
 		t.Errorf("read %d bytes of %d", reader.byteCount, len(data))
 	}
 	var said []string
@@ -524,6 +524,31 @@ func TestALargeHistoryIsReadFromItsEndOnly(t *testing.T) {
 	}
 	if got := strings.Join(said, " | "); got != "person: Add a test for the empty case. | agent: Adding it. | tool: Bash: go test ./..." || !isTruncated {
 		t.Errorf("%s (truncated %v)", got, isTruncated)
+	}
+}
+
+// A turn is kept whole, and the older turns are read with an offset.
+func TestTurnsAreWholeAndReadOnWithAnOffset(t *testing.T) {
+	long := strings.Repeat("word ", 5000)
+	var history strings.Builder
+	for index := 0; index < 6; index++ {
+		fmt.Fprintf(&history, `{"type":"user","message":{"content":"question %d"}}`+"\n", index)
+	}
+	fmt.Fprintf(&history, `{"type":"assistant","message":{"content":[{"type":"text","text":%q}]}}`+"\n", long)
+	data := []byte(history.String())
+	reader := strings.NewReader(string(data))
+
+	turns, isTruncated, err := readTurnsFrom(reader, int64(len(data)), CodingAgentKindClaude, 2, 0)
+	if err != nil || !isTruncated || len(turns) != 2 || turns[1].TurnText != strings.TrimSpace(long) {
+		t.Fatalf("the newest turn is whole: %d turns, truncated %v, %v", len(turns), isTruncated, err)
+	}
+	turns, isTruncated, err = readTurnsFrom(reader, int64(len(data)), CodingAgentKindClaude, 2, 2)
+	if err != nil || !isTruncated || len(turns) != 2 || turns[0].TurnText != "question 3" || turns[1].TurnText != "question 4" {
+		t.Fatalf("the two before them: %+v, truncated %v, %v", turns, isTruncated, err)
+	}
+	turns, isTruncated, err = readTurnsFrom(reader, int64(len(data)), CodingAgentKindClaude, 5, 4)
+	if err != nil || isTruncated || len(turns) != 3 || turns[0].TurnText != "question 0" {
+		t.Fatalf("the rest, with nothing before it: %+v, truncated %v, %v", turns, isTruncated, err)
 	}
 }
 
@@ -1191,7 +1216,7 @@ func TestAToolCallCarriesItsInputAndWhatItAnswered(t *testing.T) {
 		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"call-1","content":[{"type":"text","text":"4 passed"}]}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"All pass."}]}}`,
 	}, "\n")
-	turns, _, err := readTurnsFrom(strings.NewReader(claude), int64(len(claude)), CodingAgentKindClaude, 10)
+	turns, _, err := readTurnsFrom(strings.NewReader(claude), int64(len(claude)), CodingAgentKindClaude, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1205,7 +1230,7 @@ func TestAToolCallCarriesItsInputAndWhatItAnswered(t *testing.T) {
 		`{"type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"ls\"]}","call_id":"call-7"}}`,
 		`{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-7","output":"README.md"}}`,
 	}, "\n")
-	turns, _, err = readTurnsFrom(strings.NewReader(codex), int64(len(codex)), CodingAgentKindCodex, 10)
+	turns, _, err = readTurnsFrom(strings.NewReader(codex), int64(len(codex)), CodingAgentKindCodex, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

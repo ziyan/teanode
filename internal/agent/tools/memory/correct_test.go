@@ -87,25 +87,25 @@ func TestNotingWithANumberCorrectsTheFactWhereItStands(t *testing.T) {
 		return result.Content
 	}
 
-	first := call(`{"action":"note","path":"projects/portal","kind":"project","name":"Portal","text":"The portal ships on Fridays.","applies_to":["triage"],"fact_kind":"decision","happened":"2026-06-14"}`)
-	if !strings.Contains(first, "projects/portal#1") {
+	first := call(`{"action":"note","path":"projects/lighthouse","kind":"project","name":"Lighthouse","text":"The lighthouse ships on Fridays.","applies_to":["triage"],"fact_kind":"decision","happened":"2026-06-14"}`)
+	if !strings.Contains(first, "projects/lighthouse#1") {
 		t.Fatalf("a fact is answered with its reference: %q", first)
 	}
-	before, count := factOn(t, database, run.agent.ID, "projects/portal", 1)
+	before, count := factOn(t, database, run.agent.ID, "projects/lighthouse", 1)
 	if count != 1 {
 		t.Fatalf("one fact so far, got %d", count)
 	}
 
-	corrected := call(`{"action":"note","path":"projects/portal","number":1,"text":"The portal ships on Tuesdays."}`)
-	if !strings.Contains(corrected, "projects/portal#1") || !strings.Contains(corrected, "Tuesdays") {
+	corrected := call(`{"action":"note","path":"projects/lighthouse","number":1,"text":"The lighthouse ships on Tuesdays."}`)
+	if !strings.Contains(corrected, "projects/lighthouse#1") || !strings.Contains(corrected, "Tuesdays") {
 		t.Fatalf("the correction answers with the same reference, reworded: %q", corrected)
 	}
 
-	after, count := factOn(t, database, run.agent.ID, "projects/portal", 1)
+	after, count := factOn(t, database, run.agent.ID, "projects/lighthouse", 1)
 	if count != 1 {
 		t.Fatalf("correcting a fact does not add one: %d facts on the page", count)
 	}
-	if after.Text != "The portal ships on Tuesdays." {
+	if after.Text != "The lighthouse ships on Tuesdays." {
 		t.Fatalf("it says the new thing: %q", after.Text)
 	}
 	if !after.CreatedAt.Equal(before.CreatedAt) {
@@ -134,11 +134,11 @@ func TestNotingWithANumberCorrectsTheFactWhereItStands(t *testing.T) {
 
 	// And a number for a fact that is not there is a typo, not an
 	// invitation to write a new one.
-	_, err := tool.Run(ctx, &tools.Call{ID: "c2", Arguments: []byte(`{"action":"note","path":"projects/portal","number":9,"text":"Something else."}`)})
-	if err == nil || !strings.Contains(err.Error(), "projects/portal#9") {
+	_, err := tool.Run(ctx, &tools.Call{ID: "c2", Arguments: []byte(`{"action":"note","path":"projects/lighthouse","number":9,"text":"Something else."}`)})
+	if err == nil || !strings.Contains(err.Error(), "projects/lighthouse#9") {
 		t.Fatalf("a number nothing is filed under is refused: %v", err)
 	}
-	if _, count := factOn(t, database, run.agent.ID, "projects/portal", 1); count != 1 {
+	if _, count := factOn(t, database, run.agent.ID, "projects/lighthouse", 1); count != 1 {
 		t.Fatalf("and writes nothing: %d facts on the page", count)
 	}
 }
@@ -160,10 +160,10 @@ func TestHistorySaysWhatHappenedToAPage(t *testing.T) {
 		return result.Content
 	}
 
-	call(`{"action":"note","path":"projects/portal","kind":"project","name":"Portal","text":"The portal ships on Fridays."}`)
-	call(`{"action":"note","path":"projects/portal","number":1,"text":"The portal ships on Tuesdays."}`)
+	call(`{"action":"note","path":"projects/lighthouse","kind":"project","name":"Lighthouse","text":"The lighthouse ships on Fridays."}`)
+	call(`{"action":"note","path":"projects/lighthouse","number":1,"text":"The lighthouse ships on Tuesdays."}`)
 
-	history := call(`{"action":"history","path":"projects/portal"}`)
+	history := call(`{"action":"history","path":"projects/lighthouse"}`)
 	if !strings.Contains(history, "added a fact") {
 		t.Fatalf("the history has the fact being written: %q", history)
 	}
@@ -172,10 +172,10 @@ func TestHistorySaysWhatHappenedToAPage(t *testing.T) {
 	}
 	// What it used to say, which is the half somebody wants at the moment
 	// they go looking.
-	if !strings.Contains(history, "was: The portal ships on Fridays.") {
+	if !strings.Contains(history, "was: The lighthouse ships on Fridays.") {
 		t.Fatalf("with the words it moved: %q", history)
 	}
-	if !strings.Contains(history, "now: The portal ships on Tuesdays.") {
+	if !strings.Contains(history, "now: The lighthouse ships on Tuesdays.") {
 		t.Fatalf("and the words it moved to: %q", history)
 	}
 	// Newest first, the way the API and the command line give it.
@@ -183,9 +183,23 @@ func TestHistorySaysWhatHappenedToAPage(t *testing.T) {
 		t.Fatalf("newest first: %q", history)
 	}
 
+	// A short page says where to read on, and reading on gives the rest.
+	first := call(`{"action":"history","path":"projects/lighthouse","limit":1}`)
+	if !strings.Contains(first, "changed a fact") || !strings.Contains(first, "history again with offset: 1") {
+		t.Fatalf("the first page says how to read on: %q", first)
+	}
+	next := call(`{"action":"history","path":"projects/lighthouse","limit":1,"offset":1}`)
+	if !strings.Contains(next, "added a fact") || !strings.Contains(next, "history again with offset: 2") {
+		t.Fatalf("the next page is the earlier change: %q", next)
+	}
+	rest := call(`{"action":"history","path":"projects/lighthouse","offset":1}`)
+	if !strings.Contains(rest, "added a fact") || strings.Contains(rest, "history again") || strings.Contains(rest, "changed a fact") {
+		t.Fatalf("the rest is everything before the newest, with nothing to read on: %q", rest)
+	}
+
 	// A path that is not a page is answered the way a read of one is:
 	// what is near, so the next guess lands.
-	if missed := call(`{"action":"history","path":"projects/portals"}`); !strings.Contains(missed, "no page at projects/portals") {
+	if missed := call(`{"action":"history","path":"projects/lighthouses"}`); !strings.Contains(missed, "no page at projects/lighthouses") {
 		t.Fatalf("a history of nothing says so: %q", missed)
 	}
 }
@@ -196,7 +210,7 @@ func TestAFullFactCanBeCorrectedAndKeepsTheDatesPrecision(t *testing.T) {
 	run, database, closeDatabase := person(t, "alice")
 	defer closeDatabase()
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		page, err := tx.PutAgentNode(&models.AgentNode{AgentID: run.agent.ID, Path: "projects/portal", Kind: models.NodeProject, Name: "Portal"})
+		page, err := tx.PutAgentNode(&models.AgentNode{AgentID: run.agent.ID, Path: "projects/lighthouse", Kind: models.NodeProject, Name: "Lighthouse"})
 		if err != nil {
 			t.Fatalf("PutAgentNode: %s", err)
 		}
@@ -205,16 +219,16 @@ func TestAFullFactCanBeCorrectedAndKeepsTheDatesPrecision(t *testing.T) {
 			evidence = append(evidence, models.Evidence{Kind: models.EvidenceDocument, ID: "document-" + strings.Repeat("x", number+1), Quote: "a line"})
 		}
 		if _, err := tx.AddAgentFact(&models.AgentFact{
-			AgentID: run.agent.ID, NodeID: page.ID, Kind: models.FactPlain, Text: "The portal moved.", Confidence: 0.5, Inferred: true, Evidence: evidence,
+			AgentID: run.agent.ID, NodeID: page.ID, Kind: models.FactPlain, Text: "The lighthouse moved.", Confidence: 0.5, Inferred: true, Evidence: evidence,
 		}); err != nil {
 			t.Fatalf("AddAgentFact: %s", err)
 		}
 	})
 	ctx := tools.WithRun(context.Background(), run)
-	if _, err := find(t, "memory").Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"note","path":"projects/portal","number":1,"text":"The portal moved to the new host.","happened":"2026-06"}`)}); err != nil {
+	if _, err := find(t, "memory").Run(ctx, &tools.Call{ID: "c1", Arguments: []byte(`{"action":"note","path":"projects/lighthouse","number":1,"text":"The lighthouse moved to the new host.","happened":"2026-06"}`)}); err != nil {
 		t.Fatalf("correcting a full fact: %s", err)
 	}
-	after, _ := factOn(t, database, run.agent.ID, "projects/portal", 1)
+	after, _ := factOn(t, database, run.agent.ID, "projects/lighthouse", 1)
 	if len(after.Evidence) != models.EvidenceCount || after.Evidence[len(after.Evidence)-1].Kind != models.EvidenceConversation {
 		t.Errorf("the correction is not among the evidence: %v", after.Evidence)
 	}

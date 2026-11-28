@@ -203,7 +203,7 @@ func (self *gemini) Chat(ctx context.Context, request *ChatRequest) (*ChatRespon
 	nextCall := 0
 	response.apply(result, &text, &nextCall)
 	result.Message.Content = text.String()
-	if len(result.Message.ToolCalls) > 0 {
+	if len(result.Message.ToolCalls) > 0 && result.FinishReason != "length" {
 		result.FinishReason = "tool_calls"
 	}
 	return result, nil
@@ -253,7 +253,7 @@ func (self *gemini) ChatStream(ctx context.Context, request *ChatRequest) (<-cha
 			return
 		}
 		response.Message.Content = text.String()
-		if len(response.Message.ToolCalls) > 0 {
+		if len(response.Message.ToolCalls) > 0 && response.FinishReason != "length" {
 			response.FinishReason = "tool_calls"
 		}
 		events <- StreamEvent{Kind: StreamDone, Response: response}

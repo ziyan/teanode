@@ -110,8 +110,9 @@ func TestDeliveryHookAndWorker(t *testing.T) {
 		}
 	})
 
-	// The budget: a person over their daily limit has their work deferred
-	// to midnight in their own zone, not failed.
+	// The budget: a person over the daily limit the operator set has their
+	// work deferred to midnight in their own zone, not failed.
+	configuration.Agent.Limits.DailyTokensPerAgent = 200000
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		if _, err := tx.UpdateUser(owner.ID, func(user *models.User) error {
 			user.Timezone, user.TimezoneMode = "Asia/Tokyo", "fixed"

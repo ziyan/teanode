@@ -85,9 +85,8 @@ the world as well as one about them, on the page of the thing it is about,
 with its line quoted word for word. That the searchable copy is kept too
 does not change it: they asked for it to be known, not found. Where a
 later statement contradicts an earlier one, file the later one and name
-the earlier in `supersedes`. Mark each of these facts
-`"is_asked_to_remember": true`; they do not count against the most facts
-you may file, so a list they asked to have kept is filed whole.
+the earlier in `supersedes`. A list they asked to have kept is filed
+whole.
 
 **What is not.** Anything the pages above already say. Anything the page
 you are filing to already says by existing -- "Portal is a project",
@@ -115,7 +114,6 @@ retire anything: what the page says has to lose to something, and something
 is either the statement that replaces it or the person's own words. When
 you are not sure, leave the old line; two lines are better than a lost one.
 
-At most {{.Most}} facts, besides what they asked to be remembered.
-Fewer is normal; an empty list is a perfectly good answer for a
+File what is worth keeping and nothing else. Fewer is normal; an empty list is a perfectly good answer for a
 conversation that taught nothing, and is better than filing something
 you had to reach for.

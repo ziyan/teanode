@@ -56,4 +56,4 @@ the cost: what you expect is in it and what in the words around it made
 you think so.
 
 An empty list is the right answer for a batch of avatars, and most
-batches are. At most {{.Most}} of these {{.Count}}.
+batches are. Name only the files worth what a look costs, out of these {{.Count}}.

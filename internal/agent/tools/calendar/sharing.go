@@ -158,12 +158,7 @@ func runSharedAgenda(ctx context.Context, run tools.Run, arguments windowArgumen
 	for _, each := range entries {
 		rows = append(rows, each.row)
 	}
-	result, err := tools.JSONResult(map[string]any{
-		"timezone": where.String(),
-		"from":     from.Format("2006-01-02"),
-		"until":    until.Format("2006-01-02"),
-		"events":   rows,
-	})
+	result, err := tools.JSONResult(agendaPage(run, where, from, until, rows, arguments.Offset))
 	if err != nil {
 		return nil, err
 	}

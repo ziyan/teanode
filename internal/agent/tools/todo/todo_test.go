@@ -3,6 +3,7 @@ package todo_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -101,6 +102,24 @@ func TestTheAgentKeepsItsStepsInBatches(t *testing.T) {
 	// Deleting a step that is not there says so.
 	if missing := call(`{"action":"batch","items":[{"op":"delete","id":"no-such-step"}]}`); missing.FailedCount != 1 {
 		t.Fatalf("deleting a missing step was reported done: %+v", missing)
+	}
+	// No bound on a batch, on the length of a step, or on how many open
+	// steps the overlay lists.
+	var many []string
+	for index := 0; index < 60; index++ {
+		many = append(many, fmt.Sprintf(`{"op":"add","text":"Step number %d %s"}`, index, strings.Repeat("and more words ", 20)))
+	}
+	if big := call(`{"action":"batch","items":[` + strings.Join(many, ",") + `]}`); big.SucceededCount != 60 || big.FailedCount != 0 {
+		t.Fatalf("a batch of sixty long steps: %+v", big)
+	}
+	overlay = todo.Overlay(tools.WithRun(context.Background(), run))
+	if !strings.Contains(overlay, "Step number 59") || !strings.Contains(overlay, "61 open") || strings.Count(overlay, "- [ ]") != 61 {
+		t.Fatalf("every open step is listed: %d lines", strings.Count(overlay, "- [ ]"))
+	}
+	for _, each := range call(`{"action":"list"}`).Todo {
+		if strings.HasPrefix(each.Text, "Step number") {
+			call(`{"action":"batch","items":[{"op":"delete","id":"` + each.ID + `"}]}`)
+		}
 	}
 	pruned := call(`{"action":"prune"}`)
 	if pruned.PrunedCount != 1 || len(pruned.Todo) != 1 || pruned.Todo[0].ID != second {

@@ -27,10 +27,6 @@ import (
 // conversation on its own, for any reason.
 const NotNowLasts = 24 * time.Hour
 
-// instructionMostRuneCount is the longest line one call adds to the
-// standing instructions: a sentence the person said, not an essay.
-const instructionMostRuneCount = 500
-
 func init() {
 	tools.Register(func() []*tools.Tool {
 		return []*tools.Tool{
@@ -500,9 +496,6 @@ func set(ctx context.Context, current tools.Run, agent *models.Agent, asked argu
 		// stranger's mail or page, does not write them.
 		if !current.CanAsk() {
 			return nil, fmt.Errorf("only a conversation with the person adds to your standing instructions; say what you would have added, and they can add it when they are there")
-		}
-		if runes := []rune(line); len(runes) > instructionMostRuneCount {
-			line = string(runes[:instructionMostRuneCount])
 		}
 		// Added under what is there, never in its place: the instructions
 		// are the person's own words, and a line from one conversation is

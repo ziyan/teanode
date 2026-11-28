@@ -30,10 +30,6 @@ import (
 // offers an idea on its own: a pause, never the middle of something.
 const ideaIdle = 5 * time.Minute
 
-// ideaOfferApart is how long after one offer of an idea the next may be
-// made.
-const ideaOfferApart = 24 * time.Hour
-
 // ideaRefreshEvery is how often the catalog is read again for one agent:
 // its tools change when a skill is installed or a server connected, which
 // is not every minute.
@@ -686,9 +682,9 @@ var (
 )
 
 // ideaReason is the agent offering one idea to a person who has gone quiet,
-// no more often than ideaOfferApart. The idea is the
-// highest ranked one they have not been shown; offering it marks it shown,
-// and it stays on their list of ideas whatever they answer.
+// one in each quiet stretch. The idea is the highest ranked one they have not
+// been shown; offering it marks it shown, so each idea is offered once, and it
+// stays on their list of ideas whatever they answer.
 func (self *Agent) ideaReason() speakFirstReason {
 	return speakFirstReason{
 		name: SpeakFirstIdea,
@@ -696,9 +692,11 @@ func (self *Agent) ideaReason() speakFirstReason {
 			if !agent.IsSuggestionsEnabled || agent.OnboardedAt == nil || idle < ideaIdle {
 				return false, nil
 			}
+			// One idea in each quiet stretch: the next waits until the person
+			// has been back, so offers never pile up while they are away.
 			offered, err := tx.CountAgentJobs(&db.AgentJobFilter{
 				AgentID: agent.ID, Kinds: []models.AgentJobKind{models.AgentJobSpeakFirst},
-				SubjectID: SpeakFirstIdea, Since: now.Add(-ideaOfferApart),
+				SubjectID: SpeakFirstIdea, Since: now.Add(-idle),
 			})
 			if err != nil || offered > 0 {
 				return false, err

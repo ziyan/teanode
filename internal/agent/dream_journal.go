@@ -29,11 +29,6 @@ import (
 // out ends the phase quietly; what is not written is found stale again by the
 // next night.
 const (
-	// journalDaysMost is how many days one night tries to write, and
-	// journalPeriodsMost how many weeks, months and years.
-	journalDaysMost    = 10
-	journalPeriodsMost = 12
-
 	// journalPeriodEvery is the least time between two writings of a period.
 	journalPeriodEvery = 24 * time.Hour
 
@@ -104,8 +99,8 @@ func (self *Agent) dreamJournalDays(ctx context.Context, run *Run, budget *dream
 	if err != nil {
 		return false
 	}
-	attempts, olderRows := 0, 0
-	for offset := 0; attempts < journalDaysMost; {
+	olderRows := 0
+	for offset := 0; ; {
 		var rows []*models.JournalDay
 		var total int
 		if err := run.Database().TransactionContext(ctx, func(transaction db.Transaction) (err error) {
@@ -116,7 +111,7 @@ func (self *Agent) dreamJournalDays(ctx context.Context, run *Run, budget *dream
 			return false
 		}
 		for _, row := range rows {
-			if ctx.Err() != nil || !budget.left() || attempts == journalDaysMost {
+			if ctx.Err() != nil || !budget.left() {
 				return false
 			}
 			isBeyondDepth := journal.IsBeyondDepth(row.Day, today)
@@ -132,12 +127,8 @@ func (self *Agent) dreamJournalDays(ctx context.Context, run *Run, budget *dream
 			if isRecentlyRefused(row.NarrativeFailure, row.ModifiedAt, row.NarrativeRequestedAt, now) {
 				continue
 			}
-			isAsked, isStopped := self.dreamJournalDay(ctx, run, row, ask, counts)
-			if isStopped {
+			if _, isStopped := self.dreamJournalDay(ctx, run, row, ask, counts); isStopped {
 				return false
-			}
-			if isAsked {
-				attempts++
 			}
 		}
 		offset += len(rows)
@@ -229,11 +220,10 @@ func (self *Agent) dreamJournalPeriods(ctx context.Context, run *Run, budget *dr
 		return
 	}
 
-	attempts := 0
 	for _, kindTargets := range targets {
 		// Newest first within a kind: the rows were read newest first.
 		for _, target := range kindTargets {
-			if ctx.Err() != nil || !budget.left() || attempts == journalPeriodsMost {
+			if ctx.Err() != nil || !budget.left() {
 				return
 			}
 			var input *journalPeriodInput
@@ -258,7 +248,6 @@ func (self *Agent) dreamJournalPeriods(ctx context.Context, run *Run, budget *dr
 					continue
 				}
 			}
-			attempts++
 			if err := self.writeReadJournalPeriod(ctx, run, input, false, ask, counts); err != nil {
 				noteJournalStop(err)
 				return

@@ -24,10 +24,6 @@ const (
 	// defaultDayCount is how many days journal_days goes back when no range
 	// is given, counting the last day.
 	defaultDayCount = 30
-
-	// excerptCharacters is how much of a note from the person's notes folder
-	// is given.
-	excerptCharacters = 500
 )
 
 // elsewhereWords is the whole answer of every action in a run whose answer
@@ -40,7 +36,7 @@ const elsewhereWords = "The journal is read and written only in the person's own
 // schedule, a goal, a dream or a background task is steered by content the
 // person did not write, and the journal is theirs, to read as much as to
 // change.
-const unattendedWords = "The journal is read and changed only in a conversation the person started themselves, or by a program they connected over MCP, not in a run that a mail, a goal or a background task began. They can ask you directly."
+const unattendedWords = "The journal is read and changed only in a conversation the person started themselves, or by a program they connected over MCP, not in a run that a mail, a goal the agent wrote, a dream or a background task began. They can ask you directly."
 
 // scope is what every action needs: the run, the person's zone and now.
 type scope struct {
@@ -255,7 +251,7 @@ func wordsAnswer(words *client.JournalWordsView) map[string]any {
 		answer["modified_at"] = words.ModifiedAt.Format(time.RFC3339)
 	}
 	for _, note := range words.JournalNotes {
-		answer["notes_from_their_notes_folder"] = append(notesOf(answer), map[string]any{"title": note.Title, "text": cutText(note.Text, excerptCharacters)})
+		answer["notes_from_their_notes_folder"] = append(notesOf(answer), map[string]any{"title": note.Title, "text": note.Text})
 	}
 	return answer
 }
@@ -263,13 +259,6 @@ func wordsAnswer(words *client.JournalWordsView) map[string]any {
 func notesOf(answer map[string]any) []map[string]any {
 	notes, _ := answer["notes_from_their_notes_folder"].([]map[string]any)
 	return notes
-}
-
-func cutText(text string, characters int) string {
-	if utf8.RuneCountInString(text) <= characters {
-		return text
-	}
-	return string([]rune(text)[:characters]) + "..."
 }
 
 func recordAnswer(record *client.JournalRecordView) map[string]any {
@@ -292,6 +281,7 @@ func linksAnswer(links []*client.JournalLinkView) []map[string]any {
 		if row == nil {
 			continue
 		}
+		row["link_id"] = link.LinkID
 		if link.LinkReason != "" {
 			row["reason"] = link.LinkReason
 		}

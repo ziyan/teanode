@@ -66,7 +66,7 @@ func TestPagesAreRewrittenAsManyAtOnceAsTheNightAllows(t *testing.T) {
 	// is due beside them.
 	due := 0
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		listed, err := tx.ListAgentNodesToConsolidate(run.Agent.ID, dreamConsolidate)
+		listed, err := tx.ListAgentNodesToConsolidate(run.Agent.ID, 0)
 		if err != nil {
 			t.Fatalf("ListAgentNodesToConsolidate: %s", err)
 		}

@@ -32,11 +32,9 @@ const ResultCharacters = 8000
 // caller, not for a session: the HTTP transport keeps none, and the same
 // caller's next request is what reads on.
 const (
-	// resultsPerHolder is how many results one caller has held at once;
-	// the oldest goes when another comes.
-	resultsPerHolder = 8
 	// heldBytesPerHolder is how much one caller has held at once, so that
-	// one caller's long answers push out its own, not everybody's.
+	// one caller's long answers push out its own, not everybody's; the
+	// oldest goes first when another does not fit.
 	heldBytesPerHolder = 16 << 20
 	// resultHeldFor is how long a result is held after it was made.
 	resultHeldFor = 30 * time.Minute
@@ -110,10 +108,9 @@ func (self *ResultStore) keep(ctx context.Context, result *heldResult) string {
 			ID: id, Holder: result.holder, ResultText: result.text,
 			IsUntrusted: result.isUntrusted, IsError: result.isError,
 		}, db.McpHeldResultLimits{
-			HeldFor:              resultHeldFor,
-			ResultCountPerHolder: resultsPerHolder,
-			ByteCountPerHolder:   heldBytesPerHolder,
-			ByteCount:            heldBytes,
+			HeldFor:            resultHeldFor,
+			ByteCountPerHolder: heldBytesPerHolder,
+			ByteCount:          heldBytes,
 		}, self.now())
 	}); err != nil {
 		log.Warningf("cannot hold a long tool result for result_more: %s", err)
@@ -266,3 +263,28 @@ func (self *Server) resultMore(ctx context.Context, arguments []byte) (string, b
 	}
 	return self.page(resultId, result, offset), result.isError
 }
+
+// Hold keeps a result for holder and returns the id it is read back by with
+// Find, or "" when it is larger than one holder may hold, there is no
+// database, or the database could not hold it. It is for a caller that pages
+// a long result itself, as the agent does for its own tools.
+func (self *ResultStore) Hold(ctx context.Context, holder, text string, isUntrusted, isError bool) string {
+	return self.keep(ctx, &heldResult{holder: holder, text: text, isUntrusted: isUntrusted, isError: isError})
+}
+
+// Find is the text held under id for holder, whether it came from outside,
+// and whether it was a failure. ok is false for an id that is not held, has
+// expired, or is another holder's. The error is only for a database that
+// could not be asked.
+func (self *ResultStore) Find(ctx context.Context, holder, id string) (text string, isUntrusted, isError, ok bool, err error) {
+	found, ok, err := self.find(ctx, holder, id)
+	if err != nil || !ok {
+		return "", false, false, false, err
+	}
+	return found.text, found.isUntrusted, found.isError, true, nil
+}
+
+// PageEnd is where a page of text that starts at offset ends: within budget
+// bytes, never inside a character, and after a line break when one falls in
+// the second half of the page.
+func PageEnd(text string, offset, budget int) int { return pageEnd(text, offset, budget) }

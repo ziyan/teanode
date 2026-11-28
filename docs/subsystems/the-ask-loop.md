@@ -70,11 +70,11 @@ Each round:
    checkout) is never compacted: a compaction note would stand in for the
    very documents it was given, and the run would file nothing. Such a run
    is told to answer now instead, the way the last round is, once its
-   history passes `askReadThenAnswerTokens` (24000, lower than the
-   compaction line because the prompt and the tool definitions ride
-   beside the history), and each of its lookups is cut at
-   `ResultCharacters` (6000) rather than the usual 24000 so one long page
-   cannot fill the window.
+   history passes `readThenAnswerLimit` (three quarters of the model's
+   window, lower than the window because the prompt and the tool
+   definitions ride beside the history), and each of its lookups is shown
+   a page of `ResultCharacters` (6000) rather than the usual 24000 so one
+   long page cannot fill the window; the rest is read on with `result_more`.
 3. **Short or long.** A second, lower gate at `askHistoryTokens/2` (15000)
    sets `compact`, which switches the prompt to its short variant *and* forces
    tool deferral.
@@ -94,12 +94,16 @@ Each round:
 5. **The system prompt**, rebuilt each round (`context.md`).
 6. **Recall**, once per turn, after the prompt has said which memories it
    already carries (`memory.md`).
-7. **The call**: `[system] + history + [overlays]`, `MaxTokens: 4000`, under
+7. **The call**: `[system] + history + [overlays]`, with no output limit of its own (Anthropic, whose API requires one, is given the model's own maximum from its model list), under
    the provider request timeout. Streamed when the provider can stream, with a
    fall back to a single call when `ChatStream` errors.
 8. **Usage** is added to the run's total and recorded as an hourly row.
 9. **The answer** is appended to history and stored, with a usage note
-   carrying the model, the four token counts and the cost.
+   carrying the model, the four token counts and the cost. A round the
+   provider stopped at its output limit (`FinishReason` `length`) is
+   unfinished: its tool calls are dropped without being run (their arguments
+   may be cut), the log says so, and the model is told its answer was cut at the
+   provider's limit and goes on in the next round (`cutAtLimitNotice`).
 10. **Tool calls**, a batch at a time (below). No tool calls ends the turn.
 
 A turn that uses every round ends with `stopped after the most rounds a turn
@@ -180,7 +184,12 @@ back to the name where there are none, as on calls kept from before.
   the person sees a card and the run waits up to ten minutes. A decline answers
   `{"declined": true, …}`; an approval sets `Confirmed` on the call, which the
   tool itself can read.
-- **Run it**, then shape the answer: cut at `ResultCharacters` (24000), wrap in
+- **Run it**, then shape the answer: an answer longer than a page
+  (`ResultCharacters`, 24000) is held whole and shown as its first page, cut at
+  a line or a character, with a line saying how long the whole is and to call
+  `result_more` with the `result_id` and `offset` to read on (the same holder as
+  the MCP server's, `tools.PageResult`); a tool failure is paged the same way.
+  Then wrap in
   `<untrusted-data>` when the tool marked it so, prefix the relay instruction
   when it is a `show_verbatim` secret, and collect any pictures. A tool whose
   answer is JSON from outside (a computer, a tab) fits it first with
@@ -347,13 +356,11 @@ deliberately absent.
 | `confirmationWait` | 10 minutes | a card and an `ask_user` question |
 | `askHistoryTokens` | 30000 | history before a round compacts, when half the window is smaller or not known |
 | `askTailMessages` | 12 | messages kept verbatim by a compaction |
-| `askResultCharacters` | 24000 | one tool answer in the history |
+| `askResultCharacters` | 24000 | one page of a tool answer in the history; the rest is read on |
 | `concurrentToolCalls` | 6 | calls of one batch running at once |
-| `attachmentImagesPerTurn` | 8 | pictures in one turn |
 | `stopGrace` | 5 seconds | how long `Stop` lets the turns people are reading finish |
 | `resumeWindow` | 15 minutes | how old a cut turn may be and still be carried on |
 | `resumeMostPerAgent` | 3 | conversations carried on per agent at a start |
-| `MaxTokens` | 4000 | one answer |
 
 ## Caveats
 

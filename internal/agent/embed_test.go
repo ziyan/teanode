@@ -138,6 +138,13 @@ func TestEmbeddingsAndSearchByMeaning(t *testing.T) {
 			t.Fatalf("nothing should be missing a vector: %v", missing)
 		}
 	})
+	// A search reads every vector of the mailbox, a page at a time: with
+	// a page of one, the message on the second page is still found.
+	defer agent.SetEmbedPage(agent.SetEmbedPage(1))
+	paged, err := worker.MeaningSearch(context.Background(), found, mailbox.ID, "the invoice from the plumber", 5)
+	if err != nil || len(paged) != 1 || paged[0] != ids[0] {
+		t.Fatalf("a search over pages of one vector missed the plumbing bill: %v %v", paged, err)
+	}
 	// "the invoice from the plumber" never appears in either message.
 	hits, err := worker.MeaningSearch(context.Background(), found, mailbox.ID, "the invoice from the plumber", 5)
 	if err != nil {

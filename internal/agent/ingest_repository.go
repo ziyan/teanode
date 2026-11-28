@@ -301,7 +301,7 @@ func (self *Agent) fileRepository(ctx context.Context, run *Run, source *models.
 		// The person's own span on this project becomes an event on
 		// their work page: a career timeline nobody had to type, from
 		// dates that are already in git.
-		if own != nil && own.Commits >= ownCommitsWorthRecording && own.First != nil && own.Last != nil {
+		if own != nil && own.Commits > 0 && own.First != nil && own.Last != nil {
 			selfPage, err := tx.GetAgentNode(source.AgentID, models.PathSelf)
 			if err != nil || selfPage == nil {
 				return err

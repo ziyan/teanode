@@ -36,6 +36,9 @@ func newComputerBackgroundCommand() *cli.Command {
 				ArgsUsage: "<computer> <id>",
 				Flags: []cli.Flag{
 					&cli.IntFlag{Name: "tail", Usage: "how many bytes of the end of each stream to print; 64 KiB by default, 256 KiB at most"},
+					&cli.StringFlag{Name: "stream", Usage: "read all of one stream instead, stdout or stderr, from --offset"},
+					&cli.IntFlag{Name: "offset", Usage: "with --stream: the first byte to print; the next offset is printed to standard error"},
+					&cli.IntFlag{Name: "length", Usage: "with --stream: how many bytes; 32 KiB by default, 256 KiB at most"},
 					JSONFlag(),
 				},
 				Action: runComputerBackgroundRead,
@@ -86,11 +89,18 @@ func runComputerBackgroundRead(ctx context.Context, command *cli.Command) error 
 	if tailBytes < 0 {
 		return usage("--tail is a number of bytes, and not below zero")
 	}
+	stream := strings.ToLower(command.String("stream"))
+	if stream != "" && stream != "stdout" && stream != "stderr" {
+		return usage("--stream is stdout or stderr")
+	}
+	if command.Int("offset") < 0 || command.Int("length") < 0 {
+		return usage("--offset and --length are numbers of bytes, and not below zero")
+	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	background, err := client.ReadAgentBackgroundCommand(ctx, connection, command.Args().Get(0), command.Args().Get(1), tailBytes)
+	background, err := client.ReadAgentBackgroundCommand(ctx, connection, command.Args().Get(0), command.Args().Get(1), tailBytes, stream, int(command.Int("offset")), int(command.Int("length")))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -100,13 +110,22 @@ func runComputerBackgroundRead(ctx context.Context, command *cli.Command) error 
 	// The command's output goes to standard output as it was written, and
 	// its errors and what this program says about them to standard error,
 	// so that the output alone can be piped on.
+	if background.Stream != "" {
+		_, _ = fmt.Fprint(command.Writer, background.Stdout)
+		_, _ = fmt.Fprint(command.Writer, background.Stderr)
+		if background.IsStdoutTruncated || background.IsStderrTruncated {
+			_, _ = fmt.Fprintf(command.ErrWriter, "(more follows: read on with --stream %s --offset %d)\n", background.Stream, background.StreamNextOffset)
+		}
+		_, _ = fmt.Fprintf(command.ErrWriter, "%s on %s: %s\n", background.ID, background.Computer, backgroundCommandState(background))
+		return nil
+	}
 	_, _ = fmt.Fprint(command.Writer, background.Stdout)
 	if background.IsStdoutTruncated {
-		_, _ = fmt.Fprintf(command.ErrWriter, "(output cut: the last %d of %d bytes)\n", len(background.Stdout), background.StdoutByteCount)
+		_, _ = fmt.Fprintf(command.ErrWriter, "(output cut: the last %d of %d bytes; read it all with --stream stdout --offset 0)\n", len(background.Stdout), background.StdoutByteCount)
 	}
 	_, _ = fmt.Fprint(command.ErrWriter, background.Stderr)
 	if background.IsStderrTruncated {
-		_, _ = fmt.Fprintf(command.ErrWriter, "(errors cut: the last %d of %d bytes)\n", len(background.Stderr), background.StderrByteCount)
+		_, _ = fmt.Fprintf(command.ErrWriter, "(errors cut: the last %d of %d bytes; read it all with --stream stderr --offset 0)\n", len(background.Stderr), background.StderrByteCount)
 	}
 	_, _ = fmt.Fprintf(command.ErrWriter, "%s on %s: %s\n", background.ID, background.Computer, backgroundCommandState(background))
 	return nil
@@ -141,8 +160,6 @@ func backgroundCommandState(background *client.AgentBackgroundCommand) string {
 		return "stopped"
 	case background.StopReason == "shutdown":
 		return "stopped with teanode computer"
-	case background.StopReason == "lifetime":
-		return "stopped after 24 hours"
 	case strings.TrimSpace(background.StopReason) != "":
 		return "stopped (" + background.StopReason + ")"
 	default:

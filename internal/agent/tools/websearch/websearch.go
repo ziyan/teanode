@@ -30,7 +30,8 @@ func init() {
 				Guidance:    "web_search and web_fetch look things up in the world; mail_search searches only the person's mail. A search finds pages; a price, an opening hour or a detail is on the page, so read the page rather than searching again for the detail in the snippets. Set freshness only when the question is about recent news: most pages worth reading have not changed this month.",
 				Parameters: tools.Object(map[string]any{
 					"query":     tools.StringProperty("the search"),
-					"count":     tools.IntegerProperty("how many results, 5 by default, 20 at most"),
+					"count":     tools.IntegerProperty("how many results to a page, 5 by default; the search service (Brave) gives 20 at most to a page"),
+					"page":      tools.IntegerProperty("which page of results, 1 by default; the search service (Brave) gives pages 1 to 10, so ask for page 2 to read on from the first"),
 					"freshness": tools.EnumProperty("how recent the results must be", "day", "week", "month", "year"),
 					"site":      tools.StringProperty("limit to one site"),
 				}, "query"),
@@ -64,7 +65,25 @@ type ImageResult struct {
 // month, year, or anything when empty). The web_search tool and the server's
 // own jobs (finding a shopping item's picture) both ask through it.
 func Search(ctx context.Context, search config.AgentSearch, query string, count int, freshness string) ([]Result, error) {
+	return SearchPage(ctx, search, query, count, 1, freshness)
+}
+
+// maximumPage is the last page of results Brave's search gives: its offset
+// parameter is a page number from 0 to 9.
+const maximumPage = 10
+
+// SearchPage is Search for one page of results, counted from 1.
+func SearchPage(ctx context.Context, search config.AgentSearch, query string, count, page int, freshness string) ([]Result, error) {
+	if page < 1 {
+		page = 1
+	}
+	if page > maximumPage {
+		return nil, fmt.Errorf("the search service gives pages 1 to %d of results; search with other words to find more", maximumPage)
+	}
 	values := url.Values{}
+	if page > 1 {
+		values.Set("offset", strconv.Itoa(page-1))
+	}
 	if freshness := map[string]string{"day": "pd", "week": "pw", "month": "pm", "year": "py"}[freshness]; freshness != "" {
 		values.Set("freshness", freshness)
 	}
@@ -132,6 +151,7 @@ func ask(ctx context.Context, search config.AgentSearch, kind, query string, cou
 	if count <= 0 {
 		count = 5
 	}
+	// Brave's search gives at most 20 results to a page.
 	if count > 20 {
 		count = 20
 	}
@@ -160,6 +180,7 @@ type webSearchArguments struct {
 	Count     int    `json:"count"`
 	Freshness string `json:"freshness"`
 	Site      string `json:"site"`
+	Page      int    `json:"page"`
 }
 
 func runWebSearch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -179,7 +200,7 @@ func runWebSearch(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	if site := strings.TrimSpace(arguments.Site); site != "" {
 		query += " site:" + site
 	}
-	found, err := Search(ctx, configuration.Agent.Search, query, arguments.Count, arguments.Freshness)
+	found, err := SearchPage(ctx, configuration.Agent.Search, query, arguments.Count, arguments.Page, arguments.Freshness)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +210,11 @@ func runWebSearch(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	for _, entry := range decoded.Web.Results {
 		results = append(results, map[string]any{"title": entry.Title, "url": entry.URL, "description": entry.Description, "age": entry.Age})
 	}
-	result, err := tools.JSONResult(map[string]any{"query": query, "results": results})
+	answer := map[string]any{"query": query, "results": results}
+	if arguments.Page > 1 {
+		answer["page"] = arguments.Page
+	}
+	result, err := tools.JSONResult(answer)
 	if err != nil {
 		return nil, err
 	}

@@ -125,8 +125,8 @@ tokens and monthly cost. Every other field stops being a setting:
   are sizes the disk and the upload path are built for;
   `MaxScannedAttachmentBytes` is `computer.DefaultMaxAttachmentBytes` (25 MB);
   `messageBodyCharactersMost` (12,000), `recallTokens` (1,200),
-  `ingestChunksPerRun` (2,000), `dreamScanConcurrency` and
-  `dreamRewriteConcurrency` (one each) in the agent package; and
+  `ingestChunksPerRun` (2,000), `dreamScanConcurrency` (6) and
+  `dreamRewriteConcurrency` (4) in the agent package; and
   `WorkerConcurrency` (2).
 
 `requestTimeout` (60 seconds) cut a whole answer at a minute, and a long
@@ -167,7 +167,7 @@ None of these is a count of how often or how much work runs:
 - technical bounds: payload, attachment and prompt sizes, timeouts,
   concurrency and the browser's contexts, the loop guard that stops a turn
   calling the same failing tool three times, batch sizes, the push relay's
-  abuse limits, and `GoalTimesMost`.
+  abuse limits.
 
 ## Budget coverage
 
@@ -198,3 +198,17 @@ Reading the code for this decision found two places that did not, one of which w
   sets `dailyCostPerAgent` and `monthlyCostPerServer` instead.
 - A person who had set quiet hours or a daily most of alerts no longer has
   them. Their phone's Focus is the control.
+
+## Addendum: settings nobody sets, and what the agent may undo
+
+- A new server starts with no token cap (`agent.limits.dailyTokensPerAgent`
+  is 0), as production does. The money limits are the budget.
+- `agent.retention.runs` and `corrections` (30 and 90 days), and
+  `agent.browser.idleTimeout` and `maxContexts` (5 minutes and 4) are
+  constants in `internal/config/agent.go`, each with its reason. The keys
+  still load with one warning, and the settings GraphQL answers them empty for
+  one release and ignores them when sent.
+- The agent may end or decline a finance share, and stop a touch-up, remove a
+  correction or a pin, delete a narrative, change the journal's settings and
+  erase the journal. The last two are destructive, so the person's card comes
+  first. It still may not share finance or read what others share.

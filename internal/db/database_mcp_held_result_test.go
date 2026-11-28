@@ -11,10 +11,9 @@ import (
 )
 
 var testHeldLimits = db.McpHeldResultLimits{
-	HeldFor:              30 * time.Minute,
-	ResultCountPerHolder: 3,
-	ByteCountPerHolder:   100,
-	ByteCount:            250,
+	HeldFor:            30 * time.Minute,
+	ByteCountPerHolder: 100,
+	ByteCount:          250,
 }
 
 func keepHeld(test *testing.T, database db.Database, holder, id, text string, now time.Time) {
@@ -59,8 +58,8 @@ func TestAHeldResultIsFoundByItsHolderOnly(test *testing.T) {
 	}
 }
 
-// Keeping drops what is past its life, and the holder's oldest beyond the
-// count and the bytes, without touching another holder's.
+// Keeping drops what is past its life, and the holder's oldest beyond its
+// bytes, however many results it holds, without touching another holder's.
 func TestKeepingAHeldResultEnforcesTheBounds(test *testing.T) {
 	database, release := dbtest.AcquireDatabase(test)
 	defer release()
@@ -76,14 +75,11 @@ func TestKeepingAHeldResultEnforcesTheBounds(test *testing.T) {
 		test.Fatal("a result past its life was kept")
 	}
 
-	// By count: three at most, the oldest goes.
+	// No count: many small results are all kept while their bytes fit.
 	for index := 2; index <= 4; index++ {
 		keepHeld(test, database, "holder", fmt.Sprintf("new-%d", index), "x", later.Add(time.Duration(index)*time.Second))
 	}
-	if findHeld(test, database, "holder", "new-1", notBefore) != nil {
-		test.Fatal("the oldest of too many results was kept")
-	}
-	for index := 2; index <= 4; index++ {
+	for index := 1; index <= 4; index++ {
 		if findHeld(test, database, "holder", fmt.Sprintf("new-%d", index), notBefore) == nil {
 			test.Fatalf("new-%d was not kept", index)
 		}

@@ -29,11 +29,6 @@ import (
 
 // The bounds.
 const (
-	// batchItems is how many changes one call may make. Each write costs
-	// an embedding call and a read of what is already on the page, so an
-	// unbounded batch is an unbounded tool call.
-	batchItems = 25
-
 	// indexDepth is how deep the tree goes when nobody says.
 	indexDepth = 2
 
@@ -63,12 +58,9 @@ const (
 	// a word; the rest are read with link_offset.
 	linksShown = 40
 
-	// historyShown is how many changes a history answers with, and
-	// historyMost the ceiling on asking for more. The same numbers the
-	// API bounds it by, so the same question asked here and on the
-	// command line is answered with the same page of it.
+	// historyShown is how many changes a history answers with when nobody
+	// says; the rest is read with offset.
 	historyShown = 50
-	historyMost  = 200
 )
 
 func init() {
@@ -132,13 +124,13 @@ func init() {
 					"number":          tools.IntegerProperty("for note: the fact to rewrite where it stands, keeping its number, its evidence and the day it was learned, rather than adding another one. For forget: the fact's number on the page; without it the whole page goes. For move: the fact to move onto the page in to, rather than the page itself. For look: the fact whose picture to show you"),
 					"limit":           tools.IntegerProperty("for search, index and history: how many"),
 					"from":            tools.IntegerProperty("for get: list the page's facts in number order starting at this fact number, 60 at a time; 1 starts at the first. Without it get shows the 60 most recently used"),
-					"offset":          tools.IntegerProperty("for index: how many lines to skip, and for search: how many pages and facts of the ranking to pass over; to read on from where a listing stopped"),
+					"offset":          tools.IntegerProperty("for index and history: how many lines or changes to skip, and for search: how many pages and facts of the ranking to pass over; to read on from where a listing stopped"),
 					"link_offset":     tools.IntegerProperty("for get: how many of the page's links to pass over; a get with it answers with the next 40 links alone, to read on from where a get stopped listing them"),
 					"owner":           tools.StringProperty("for get, index and search: the username of someone who shared pages with the person, to read what they shared, read only; search without it also searches what is shared. Every write refuses an owner other than the person"),
 					"with":            tools.StringProperty("for share and preview: who to share the page with, the username of somebody the person shares a circle with, or a circle they are in by its name or id (a name that more than one circle has is refused with their ids)"),
 					"is_quote_shared": tools.BooleanProperty("for share and preview: show the words each fact was read in as well; only when the person said to, since they are quoted from their mail, chat and documents"),
 					"share_id":        tools.StringProperty("for unshare: the share to take back, from shares"),
-					"items":           tools.ArrayProperty("for batch: up to 25 of the above, each with its own action", map[string]any{"type": "object"}),
+					"items":           tools.ArrayProperty("for batch: several of the above, each with its own action", map[string]any{"type": "object"}),
 				}, "action"),
 				Guidance: "memory: what is known about the person lives on `self`; a people page about them is a duplicate to `merge` into self, never the other way. Correct a wrong fact with `note` and its number, and `move` one on the wrong page by number: both keep its evidence and the day it was learned, which forgetting and writing it again loses. A fact addressed to triage or to reply changes how mail is sorted or answered from the next message on; prefer a rule for anything rule-shaped.",
 				Preview: tools.PreviewOf(func(call struct {
@@ -1065,9 +1057,10 @@ func historyAction(ctx context.Context, run tools.Run, arguments *memoryArgument
 		return nil, fmt.Errorf("which page? give a path, like people/alice-chen")
 	}
 	limit := arguments.Limit
-	if limit <= 0 || limit > historyMost {
+	if limit <= 0 {
 		limit = historyShown
 	}
+	offset := max(arguments.Offset, 0)
 	agentId := run.Agent().ID
 	var node *models.AgentNode
 	var revisions []*models.AgentRevision
@@ -1075,7 +1068,8 @@ func historyAction(ctx context.Context, run tools.Run, arguments *memoryArgument
 		if node, err = tx.GetAgentNode(agentId, path); err != nil || node == nil {
 			return err
 		}
-		revisions, err = tx.ListAgentRevisions(agentId, node.ID, limit)
+		// One past the page, to know whether there is more.
+		revisions, err = tx.ListAgentRevisions(agentId, node.ID, offset+limit+1)
 		return err
 	}); err != nil {
 		return nil, err
@@ -1083,7 +1077,12 @@ func historyAction(ctx context.Context, run tools.Run, arguments *memoryArgument
 	if node == nil {
 		return notThere(ctx, run, path)
 	}
+	hasMore := len(revisions) > offset+limit
+	revisions = revisions[min(offset, len(revisions)):min(offset+limit, len(revisions))]
 	if len(revisions) == 0 {
+		if offset > 0 {
+			return tools.TextResult("%s has no changes after the first %d", node.Path, offset), nil
+		}
 		return tools.TextResult("nothing has happened to %s yet", node.Path), nil
 	}
 	location := tools.Location(run.Owner())
@@ -1102,13 +1101,8 @@ func historyAction(ctx context.Context, run tools.Run, arguments *memoryArgument
 			builder.WriteString("  now: " + tools.FirstWords(now, 25) + "\n")
 		}
 	}
-	// A full list may not be all of it: say so, and how to ask for more.
-	if len(revisions) == limit {
-		if limit < historyMost {
-			fmt.Fprintf(&builder, "… there may be earlier changes; history again with limit: %d\n", historyMost)
-		} else {
-			fmt.Fprintf(&builder, "… there may be changes earlier than these %d, which is as many as one history lists\n", limit)
-		}
+	if hasMore {
+		fmt.Fprintf(&builder, "… there are earlier changes; history again with offset: %d\n", offset+len(revisions))
 	}
 	return tools.WithRecordingRevisionEvidence(ctx, run, tools.TextResult("%s", strings.TrimRight(builder.String(), "\n")), node, revisions)
 }
@@ -1660,12 +1654,9 @@ func forgetAction(ctx context.Context, run tools.Run, arguments *memoryArguments
 	return result, nil
 }
 
-// batchAction runs several of the above. Bounded, and each answers for
-// itself, so one bad path does not lose the rest.
+// batchAction runs several of the above. Each answers for itself, so one bad
+// path does not lose the rest.
 func batchAction(ctx context.Context, run tools.Run, call *tools.Call, arguments *memoryArguments) (*tools.Result, error) {
-	if len(arguments.Items) > batchItems {
-		return nil, fmt.Errorf("a batch takes up to %d items at a time; send them in several calls", batchItems)
-	}
 	lines := make([]string, 0, len(arguments.Items))
 	hasRecordingEvidence, isUntrusted := false, false
 	for _, item := range arguments.Items {

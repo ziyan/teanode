@@ -89,8 +89,8 @@ type JournalMutation interface {
 
 	// Adds the caller's correction to a day's or a period's narrative and
 	// writes the narrative again now, in the background (narrativePending);
-	// every later writing keeps to it. At most 20 corrections of at most 500
-	// characters each. Words the narrative already keeps, but for case and
+	// every later writing keeps to it, however many there are and however
+	// long. Words the narrative already keeps, but for case and
 	// spacing, add nothing and write nothing (isCorrectionAlreadyKept).
 	// Needs journal:use.
 	CorrectJournalNarrative(ctx context.Context, arguments CorrectJournalNarrativeArguments) (*JournalNarrativeView, error)

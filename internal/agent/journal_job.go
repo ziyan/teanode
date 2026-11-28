@@ -27,9 +27,6 @@ const (
 	// was asked for while it worked, until nothing it has not tried is
 	// waiting.
 	journalLongest = 30 * time.Minute
-
-	// journalTouchUpCharactersMost is the longest a touched-up text is kept.
-	journalTouchUpCharactersMost = 60000
 )
 
 // journalJobAsk asks the model for the job: the person's budget is checked
@@ -209,7 +206,7 @@ func fencedIfAny(text string) string {
 
 // cleanTouchedUpWords is what a model answered for a touch-up, as the text
 // to keep: without the Markdown code fence a model sometimes wraps an answer
-// in, and cut at the longest a text is kept.
+// in.
 func cleanTouchedUpWords(said string) string {
 	text := strings.TrimSpace(said)
 	if strings.HasPrefix(text, "```") && strings.HasSuffix(text, "```") && len(text) >= 6 {
@@ -219,5 +216,5 @@ func cleanTouchedUpWords(said string) string {
 		}
 		text = strings.TrimSpace(inside)
 	}
-	return strings.TrimSpace(cutRunes(text, journalTouchUpCharactersMost))
+	return text
 }

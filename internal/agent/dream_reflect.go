@@ -16,22 +16,17 @@ import (
 
 // The bounds of the reflection phase.
 const (
-	// dreamReflections is how many themes one night reflects on.
-	dreamReflections = 3
-
-	// reflectionCount is how many observations one reflection keeps, and
-	// reflectionLeastCitations how many pages or facts each has to cite.
-	reflectionCount          = 5
+	// reflectionLeastCitations is how many pages or facts each observation
+	// has to cite.
 	reflectionLeastCitations = 2
 
 	// reflectionCitationCount is how many citations one observation
 	// keeps: with the night's own line, within models.EvidenceCount.
 	reflectionCitationCount = 8
 
-	// reflectionFactsSince is how far back the facts filed under a theme
-	// are shown, and reflectionFactCount how many at most.
-	reflectionFactsSince = 90 * 24 * time.Hour
-	reflectionFactCount  = 80
+	// reflectionFactCount is how many of the newest facts filed under a
+	// theme are shown at most.
+	reflectionFactCount = 80
 
 	// reflectionMemberCount is how many of a theme's members its prompt
 	// shows, the most important first.
@@ -41,7 +36,7 @@ const (
 	// at most: every one is shown to the next reflection, to keep, replace
 	// or retire, and past it the oldest gives way, with that said in its
 	// history. Without a bound a page reflected on every week would add
-	// up to reflectionCount a week, and what slid out of the prompt could
+	// up a few observations a week, and what slid out of the prompt could
 	// never be replaced or retired again.
 	standingReflectionCount = 20
 
@@ -118,7 +113,7 @@ func (self *Agent) dreamReflect(ctx context.Context, run *Run, record *models.Ag
 	}
 	var themes []*models.AgentNode
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		themes, err = tx.ListAgentThemesToReflect(run.Agent.ID, dreamReflections)
+		themes, err = tx.ListAgentThemesToReflect(run.Agent.ID, 0)
 		return err
 	}); err != nil {
 		log.Warningf("cannot list the themes to reflect on: %s", err)
@@ -186,7 +181,7 @@ func (self *Agent) reflectAcrossThemes(ctx context.Context, run *Run, budget *dr
 		if len(themes) < themeLeastThemes {
 			return nil
 		}
-		if inputs, err = readReflectionInputs(tx, run.Agent.ID, themes, time.Time{}); err != nil {
+		if inputs, err = readReflectionInputs(tx, run.Agent.ID, themes); err != nil {
 			return err
 		}
 		// Made without an opening: the night's consolidation writes one
@@ -240,12 +235,12 @@ func readThemeReflectionInputs(tx db.Transaction, agentId string, theme *models.
 			live = append(live, page)
 		}
 	}
-	return readReflectionInputs(tx, agentId, live, time.Now().Add(-reflectionFactsSince))
+	return readReflectionInputs(tx, agentId, live)
 }
 
 // readReflectionInputs shows the pages a reflection is over, the most
-// important first, and the live facts on them filed since a time.
-func readReflectionInputs(tx db.Transaction, agentId string, pages []*models.AgentNode, since time.Time) (*reflectionInputs, error) {
+// important first, and the newest live facts on them.
+func readReflectionInputs(tx db.Transaction, agentId string, pages []*models.AgentNode) (*reflectionInputs, error) {
 	sort.SliceStable(pages, func(left, right int) bool {
 		if pages[left].Importance != pages[right].Importance {
 			return pages[left].Importance > pages[right].Importance
@@ -264,7 +259,7 @@ func readReflectionInputs(tx db.Transaction, agentId string, pages []*models.Age
 		pathById[page.ID] = page.Path
 		pageIds = append(pageIds, page.ID)
 	}
-	facts, err := tx.ListAgentFactsOnNodesSince(agentId, pageIds, since, reflectionFactCount)
+	facts, err := tx.ListAgentFactsOnNodesSince(agentId, pageIds, time.Time{}, reflectionFactCount)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +297,6 @@ func (self *Agent) reflect(ctx context.Context, run *Run, budget *dreamBudget, p
 		"Members":           inputs.members,
 		"Facts":             inputs.facts,
 		"Standing":          inputs.standingLines,
-		"Most":              reflectionCount,
 	})
 	if err != nil {
 		return 0
@@ -340,10 +334,7 @@ func (self *Agent) reflect(ctx context.Context, run *Run, budget *dreamBudget, p
 func keptReflections(answer reflectionAnswer, inputs *reflectionInputs) []reflection {
 	var kept []reflection
 	for _, wanted := range answer.Reflections {
-		if len(kept) >= reflectionCount {
-			break
-		}
-		text := cutRunes(strings.TrimSpace(wanted.Text), 900)
+		text := strings.TrimSpace(wanted.Text)
 		reflectionKind := strings.ToLower(strings.TrimSpace(wanted.ReflectionKind))
 		if text == "" || !isReflectionKind(reflectionKind) {
 			continue
@@ -386,7 +377,7 @@ func retiredReflections(answer reflectionAnswer, inputs *reflectionInputs, kept 
 	var retired []retiredReflection
 	for _, wanted := range answer.RetiredObservations {
 		factId, isStanding := standingReflectionNamed(wanted.ObservationReference, inputs)
-		retiredReason := cutRunes(strings.TrimSpace(wanted.RetiredReason), 300)
+		retiredReason := strings.TrimSpace(wanted.RetiredReason)
 		if !isStanding || isTaken[factId] || retiredReason == "" {
 			continue
 		}

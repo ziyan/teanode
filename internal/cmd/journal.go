@@ -159,7 +159,7 @@ func NewJournalCommand() *cli.Command {
 				Usage:     "tell your agent what its story of a day got wrong",
 				ArgsUsage: "[day] <what was wrong>",
 				Description: "The correction is kept with the day and every later telling of it keeps to it. The\n" +
-					"story is written again at once. At most 20 corrections of 500 characters each.",
+					"story is written again at once.",
 				Flags:  []cli.Flag{JSONFlag(), periodFlag()},
 				Action: runJournalCorrect,
 			},

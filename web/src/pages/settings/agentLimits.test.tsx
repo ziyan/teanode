@@ -35,6 +35,7 @@ const removed = [
   'scanConcurrency',
   'rewriteConcurrency',
   'ingestChunksPerRun',
+  'retention',
 ]
 
 const settings = {
@@ -44,7 +45,6 @@ const settings = {
     monthlyCostPerServer: 500,
     monthlyTokensPerServer: 0,
   },
-  retention: { runs: '30d', corrections: '90d' },
   currency: 'USD',
 } as unknown as Agent
 

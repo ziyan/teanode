@@ -19,7 +19,10 @@ a finish reason and a usage. Nothing is constructed while the agent is off —
 - **anthropic** — system messages are hoisted out of the list, tool results
   become blocks inside a user message, and consecutive same-role messages are
   merged, because the API wants strict alternation. A cache breakpoint marks
-  the last block of its group. Tool calls are emitted as each completes.
+  the last block of its group. Tool calls are emitted as each completes. The API
+  requires `max_tokens`, so a request that sets none is sent the model's own
+  maximum answer from the model list (read a page at a time, every page), or
+  64000 when the list does not say. The other providers are sent no output limit.
 - **gemini** — the assistant role is called `model`, and there are no tool-call
   identifiers, so results are matched back by name and ids are invented per
   request. Usage is cumulative per chunk, so each chunk overwrites.

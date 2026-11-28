@@ -20,8 +20,6 @@ import (
 // person's tools do, and says where it stops to ask.
 
 const (
-	ideaHeadlineMostRuneCount = 80
-	ideaBodyMostRuneCount     = 300
 	ideaRequestMostRuneCount  = 300
 	ideaReasonMostRuneCount   = 200
 	ideaEvidenceMostRuneCount = 120
@@ -48,12 +46,8 @@ func checkIdea(idea *models.AgentIdea, toolRisks map[string]tools.Risk) string {
 	switch {
 	case headline == "":
 		return "an idea needs a headline"
-	case utf8.RuneCountInString(headline) > ideaHeadlineMostRuneCount:
-		return fmt.Sprintf("the headline is longer than %d characters", ideaHeadlineMostRuneCount)
 	case body == "":
 		return "an idea needs a body saying what happens"
-	case utf8.RuneCountInString(body) > ideaBodyMostRuneCount:
-		return fmt.Sprintf("the body is longer than %d characters", ideaBodyMostRuneCount)
 	case strings.TrimSpace(idea.OpeningRequest) == "":
 		return "an idea needs the request that starts it"
 	case utf8.RuneCountInString(idea.OpeningRequest) > ideaRequestMostRuneCount:

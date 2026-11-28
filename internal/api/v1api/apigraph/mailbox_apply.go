@@ -15,12 +15,22 @@ type ApplyMailboxRulesArguments struct {
 	// The folder to run over; the Inbox when not given
 	FolderID *string `json:"folderId"`
 
-	// How many of the newest messages to consider, at most 500; 200 when not given
+	// How many of the newest messages to consider in one call, at most 500;
+	// 200 when not given
 	First *int `json:"first"`
+
+	// How many of the newest messages to skip first. To go on over a folder
+	// larger than one call, give the sum of the Remaining of the calls
+	// before: the messages they looked at and left in the folder.
+	Offset *int `json:"offset"`
 }
 
 // MailboxRuleApplication is what applying the rules did.
 type MailboxRuleApplication struct {
+	// Messages read from the folder in this call, whether or not they could
+	// be looked at; fewer than were asked for means the folder ended
+	Listed int `json:"listed"`
+
 	// Messages looked at
 	Considered int `json:"considered"`
 
@@ -38,6 +48,10 @@ type MailboxRuleApplication struct {
 	// Forward actions that matched and were left alone: old mail is not
 	// resent
 	Skipped int `json:"skipped"`
+
+	// Messages of those looked at that are still in the folder, because no
+	// rule moved or deleted them.
+	Remaining int `json:"remaining"`
 
 	// Messages that could not be filed: the stored message could not be
 	// read, or a change to it failed. The rest were still filed.
@@ -95,7 +109,11 @@ func (self *graph) ApplyMailboxRules(ctx context.Context, arguments ApplyMailbox
 			}
 		}
 	}
-	items, err := tx.ListItems(folder.ID, &db.ItemOptions{Limit: limit})
+	offset := 0
+	if arguments.Offset != nil && *arguments.Offset > 0 {
+		offset = *arguments.Offset
+	}
+	items, err := tx.ListItems(folder.ID, &db.ItemOptions{Limit: limit, Offset: offset})
 	if err != nil {
 		return nil, err
 	}
@@ -111,9 +129,10 @@ func (self *graph) ApplyMailboxRules(ctx context.Context, arguments ApplyMailbox
 		return nil, err
 	}
 
-	result := &MailboxRuleApplication{}
+	result := &MailboxRuleApplication{Listed: len(items)}
 	for _, item := range items {
 		if item.Mail == nil {
+			result.Remaining++
 			continue
 		}
 		result.Considered++
@@ -126,6 +145,7 @@ func (self *graph) ApplyMailboxRules(ctx context.Context, arguments ApplyMailbox
 				log.Warningf("the stored message %q of mailbox %q could not be read, so the rules were not run over it: %s",
 					item.Mail.ID, mailbox.ID, err)
 				result.Failed++
+				result.Remaining++
 				continue
 			}
 			item.Mail.Headers = headers
@@ -145,6 +165,7 @@ func (self *graph) ApplyMailboxRules(ctx context.Context, arguments ApplyMailbox
 		}
 		fired := matchingRules(mailbox.Rules, item.Mail, senderKnown, insights[item.Mail.ID])
 		if len(fired) == 0 {
+			result.Remaining++
 			continue
 		}
 		result.Matched++
@@ -168,6 +189,9 @@ func (self *graph) ApplyMailboxRules(ctx context.Context, arguments ApplyMailbox
 				}
 				current = next
 			}
+		}
+		if current != nil && current.FolderID == folder.ID {
+			result.Remaining++
 		}
 		result.Moved += count(done, "move")
 		result.Marked += count(done, "markRead")

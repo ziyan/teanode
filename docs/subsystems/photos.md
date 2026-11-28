@@ -545,7 +545,7 @@ set-date` and the viewer's change of date do. `search-places` (`query`, and
 (`photo_ids`, and either `place`, whose best match is used, or `latitude` and
 `longitude`) and `remove-location` (`photo_ids`) change where photos were
 taken, as `teanode photo search-places`, `set-location` and `remove-location`
-do, for up to 100 photos at a time. `set-location` is a write like `set-date`;
+do, for up to 500 photos at a time, which is what the API takes in one request. `set-location` is a write like `set-date`;
 `remove-location` cannot be undone, so it is destructive and asks the person
 every time. `read` also says where a photo was taken: `location_place` (`id`,
 `place_name`, `place_label`) when it was inside one of the person's own

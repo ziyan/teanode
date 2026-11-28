@@ -47,7 +47,8 @@ func newComputerHerdrCommand() *cli.Command {
 				Name:      "read",
 				Usage:     "print the last turns of a session",
 				ArgsUsage: "<pane>",
-				Flags: []cli.Flag{computerFlag, &cli.IntFlag{Name: "turns", Usage: "how many of the last turns; 10 by default, 100 at most"},
+				Flags: []cli.Flag{computerFlag, &cli.IntFlag{Name: "turns", Usage: "how many of the last turns; 10 by default"},
+					&cli.IntFlag{Name: "offset", Usage: "skip this many of the newest turns, to read older ones"},
 					&cli.BoolFlag{Name: "detail", Usage: "print each tool call's whole input and what the tool answered"}, JSONFlag()},
 				Action: runComputerHerdrRead,
 			},
@@ -55,7 +56,7 @@ func newComputerHerdrCommand() *cli.Command {
 				Name:      "subagents",
 				Usage:     "print the agents a session started for its current request, as a tree",
 				ArgsUsage: "<pane>",
-				Flags:     []cli.Flag{computerFlag, JSONFlag()},
+				Flags:     []cli.Flag{computerFlag, &cli.IntFlag{Name: "offset", Usage: "skip this many of the newest agents, to read older ones"}, JSONFlag()},
 				Action:    runComputerHerdrSubagents,
 			},
 			{
@@ -293,7 +294,7 @@ func herdrPane(command *cli.Command, what string) (string, error) {
 	if command.Args().Len() < 1 || strings.TrimSpace(command.Args().Get(0)) == "" {
 		return "", usage("which pane? usage: teanode computer herdr " + what)
 	}
-	for _, name := range []string{"turns", "lines", "seconds"} {
+	for _, name := range []string{"turns", "lines", "seconds", "offset"} {
 		if command.Int(name) < 0 {
 			return "", usage("--" + name + " is a number, and not below zero")
 		}
@@ -310,7 +311,7 @@ func runComputerHerdrRead(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	read, err := client.ReadAgentHerdrSession(ctx, connection, command.String("computer"), paneId, int(command.Int("turns")), command.Bool("detail"))
+	read, err := client.ReadAgentHerdrSession(ctx, connection, command.String("computer"), paneId, int(command.Int("turns")), int(command.Int("offset")), command.Bool("detail"))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -318,7 +319,7 @@ func runComputerHerdrRead(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(read)
 	}
 	if read.IsTruncated {
-		_, _ = fmt.Fprintln(command.Writer, "(earlier turns not shown)")
+		_, _ = fmt.Fprintf(command.Writer, "(earlier turns not shown: read them with --offset %d)\n", read.NextOffset)
 	}
 	for _, turn := range read.Turns {
 		_, _ = fmt.Fprintf(command.Writer, "%s: %s\n", turn.HerdrTurnRole, forTerminal(turn.TurnText))
@@ -350,7 +351,7 @@ func runComputerHerdrSubagents(ctx context.Context, command *cli.Command) error 
 	if err != nil {
 		return err
 	}
-	read, err := client.ReadAgentHerdrSubagents(ctx, connection, command.String("computer"), paneId)
+	read, err := client.ReadAgentHerdrSubagents(ctx, connection, command.String("computer"), paneId, int(command.Int("offset")))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -417,7 +418,7 @@ func printHerdrSubagents(command *cli.Command, read *client.AgentHerdrSubagents,
 		}
 	}
 	if read.IsTruncated {
-		_, _ = fmt.Fprintln(command.Writer, "  (earlier agents not shown)")
+		_, _ = fmt.Fprintf(command.Writer, "  (%d earlier agents not shown: read them with --offset %d)\n", read.LeftCount, read.NextOffset)
 	}
 }
 

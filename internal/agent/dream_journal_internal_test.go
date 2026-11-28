@@ -83,20 +83,20 @@ func TestTheDreamWritesAStaleDayAgainAndNoOther(t *testing.T) {
 	}
 }
 
-// One dream tries at most ten days; the next carries on.
-func TestTheDreamWritesAtMostTenDays(t *testing.T) {
+// One dream writes every day that needs it, however many.
+func TestTheDreamWritesEveryDayThatNeedsIt(t *testing.T) {
 	fixture := newJournalFixture(t, nil)
 	for count := 1; count <= 12; count++ {
 		fixture.words(t, fixture.dayAgo(count), fmt.Sprintf("marker-%02d", count))
 	}
-	if record := fixture.dream(t); record.JournalDaysWritten != 10 || len(fixture.dayPrompts()) != 10 {
+	if record := fixture.dream(t); record.JournalDaysWritten != 12 || len(fixture.dayPrompts()) != 12 {
 		t.Fatalf("written %d days with %d prompts", record.JournalDaysWritten, len(fixture.dayPrompts()))
 	}
-	if row := fixture.day(t, fixture.dayAgo(12)); row.Narrative != "" {
-		t.Errorf("the oldest day was written in the first dream")
+	if row := fixture.day(t, fixture.dayAgo(12)); row.Narrative == "" {
+		t.Errorf("the oldest day was not written in the first dream")
 	}
-	if record := fixture.dream(t); record.JournalDaysWritten != 2 {
-		t.Errorf("the next dream wrote %d days, not the other two", record.JournalDaysWritten)
+	if record := fixture.dream(t); record.JournalDaysWritten != 0 {
+		t.Errorf("the next dream wrote %d days that were written already", record.JournalDaysWritten)
 	}
 }
 

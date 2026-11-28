@@ -565,9 +565,9 @@ dashboard to, no location asked of a browser, reactions drawn) and an
 message has committed, because it reads the message from the database; its run
 id is chosen first (`AskSettings.RunID`) so the request can answer it. The model
 reads the conversation as its owner reads it: `chat_message` rows interleaved
-with the owner's own agent rows (`ListChatTurnRows`; the newest 400 until a
-compaction folds the older part into a note, and then everything from the message
-the note stands in for). What the owner wrote is a user turn, what their agent
+with the owner's own agent rows (`ListChatTurnRows`; every row since the last compaction, which folds the older
+part into a note that stands for everything before the message it names; a chat
+is compacted while quiet like any other conversation). What the owner wrote is a user turn, what their agent
 said is an assistant turn, and what anybody else or any other agent said is a
 user turn under their name, one line and at most 60 characters, with their words
 inside `<untrusted-data>` (`fenced`: the closing tag in a message cannot end it).
@@ -583,7 +583,7 @@ question did not need.
 
 *What a turn posts.* The words of each round are stored as a `chat_message`
 (`author_agent_id` the agent, `author_user_id` its owner, `author_member_name`
-the agent's name, `agent_run_id` the run) and told to every member as `said`;
+the agent's name, `agent_run_id` the run) and told to every member as `said`; words longer than a message may be (16,000 characters) are posted as several messages in order, split at a blank line, a line end or a space (`splitChatBody`), never cut;
 phones are told too, the owner's included, whose answer it is. Its calls, their
 results, its notes and its cards stay rows of the owner's conversation: a round
 that called a tool leaves an assistant row with the calls and no words. No tool
@@ -728,13 +728,13 @@ read back into another conversation.
 
 ## Retention
 
-Once an hour the worker sweeps, using the two retention settings:
+Once an hour the worker sweeps, using two fixed times
+(`config.AgentRunRetention` and `config.AgentCorrectionRetention`):
 
-- `agent.retention.runs`, thirty days by default, removes **run transcripts**
+- thirty days removes **run transcripts**
   and their messages, every **finished job** row, and the agent's **reply
   records**.
-- `agent.retention.corrections`, ninety days by default, removes recorded
-  corrections.
+- ninety days removes recorded corrections.
 - Separately, uploaded files nobody claimed within a day are removed with their
   bytes.
 

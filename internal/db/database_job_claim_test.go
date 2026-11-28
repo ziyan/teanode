@@ -60,6 +60,48 @@ func TestOldJobClaimCannotFinishAReplacement(test *testing.T) {
 	}
 }
 
+// A job that renews its claim is not put back in the queue as a lost one, and
+// an old claim cannot renew a replacement.
+func TestRenewedJobClaimIsNotReleased(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		user, err := transaction.CreateUser(&models.User{Username: "renew-fixture"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		owner, err := transaction.CreateAgent(&models.Agent{UserID: user.ID, Enabled: true})
+		if err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.EnqueueAgentJob(&models.AgentJob{AgentID: owner.ID, Kind: models.AgentJobBackground}); err != nil {
+			test.Fatal(err)
+		}
+		now := time.Now()
+		claimed, err := transaction.ClaimAgentJobs("first-instance", 1, now.Add(-10*time.Minute))
+		if err != nil || len(claimed) != 1 {
+			test.Fatalf("claim: %v", err)
+		}
+		if _, err := transaction.RenewAgentJobClaim(claimed[0].ID, "", now); err == nil {
+			test.Fatal("empty claim identity was accepted")
+		}
+		if isRenewed, err := transaction.RenewAgentJobClaim(claimed[0].ID, "another-claim", now); err != nil || isRenewed {
+			test.Fatalf("a claim that is not the job's renewed it: %v", err)
+		}
+		if isRenewed, err := transaction.RenewAgentJobClaim(claimed[0].ID, claimed[0].ClaimID, now); err != nil || !isRenewed {
+			test.Fatalf("the job's claim did not renew: %v", err)
+		}
+		released, err := transaction.ReleaseStaleAgentJobsOfKind(models.AgentJobBackground, now.Add(-5*time.Minute))
+		if err != nil || released != 0 {
+			test.Fatalf("a job renewed a moment ago was put back: %d %v", released, err)
+		}
+		released, err = transaction.ReleaseStaleAgentJobsOfKind(models.AgentJobBackground, now.Add(time.Minute))
+		if err != nil || released != 1 {
+			test.Fatalf("a job that stopped renewing was not put back: %d %v", released, err)
+		}
+	})
+}
+
 func TestJobClaimMigrationCanBeReversedAndReapplied(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()

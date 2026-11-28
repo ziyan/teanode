@@ -489,9 +489,6 @@ type MailInsightHead struct {
 }
 
 func (self *transaction) ListMailInsightHeads(mailboxId string, since time.Time, leftOutCategories []string, limit int) ([]*MailInsightHead, error) {
-	if limit <= 0 {
-		limit = 200
-	}
 	// An empty list in IN is NULL to the database, which leaves nothing.
 	leftOutClause, leftOutArguments := "", []any{}
 	if len(leftOutCategories) > 0 {
@@ -515,7 +512,7 @@ func (self *transaction) ListMailInsightHeads(mailboxId string, since time.Time,
 			WHERE "mailbox_item"."mail_id" = "mail_insight"."mail_id" AND "mailbox_folder"."mailbox_id" = ? AND "mailbox_item"."deleted" = false)
 		  AND NOT EXISTS (SELECT 1 FROM "mailbox_item" JOIN "mailbox_folder" ON "mailbox_folder"."id" = "mailbox_item"."folder_id"
 			WHERE "mailbox_item"."mail_id" = "mail_insight"."mail_id" AND "mailbox_folder"."mailbox_id" = ? AND "mailbox_folder"."kind" IN ('junk', 'trash', 'drafts', 'sent'))
-		ORDER BY "mail"."received_at" DESC LIMIT ?`, append(append([]any{mailboxId, since}, leftOutArguments...), mailboxId, mailboxId, limit)...).Scan(&rows).Error
+		ORDER BY "mail"."received_at" DESC LIMIT ?`, append(append([]any{mailboxId, since}, leftOutArguments...), mailboxId, mailboxId, limitOrAll(limit))...).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
@@ -731,7 +728,7 @@ func (self *transaction) UpdateAgentConversation(conversationId string, modify f
 	if err := self.tx.Model(&agentConversationModel{}).Where("\"id\" = ?", conversationId).Updates(map[string]any{
 		"modified_at": time.Now(), "kind": string(after.Kind), "title": truncateRunes(after.Title, 200), "summary": truncateRunes(after.Summary, 1000), "titled_by": after.TitledBy, "archived_at": after.ArchivedAt, "described_at": after.DescribedAt,
 		"last_at": after.LastAt, "compacted_through": after.CompactedThrough, "surface": after.Surface,
-		"goal": after.Goal, "goal_title": truncateRunes(after.GoalTitle, 200), "goal_state": string(after.GoalState), "goal_note": truncateRunes(after.GoalNote, 1000), "goal_next_at": after.GoalNextAt, "goal_set_at": after.GoalSetAt, "goal_surfaced_at": after.GoalSurfacedAt,
+		"goal": after.Goal, "goal_title": truncateRunes(after.GoalTitle, 200), "goal_state": string(after.GoalState), "goal_note": after.GoalNote, "goal_next_at": after.GoalNextAt, "goal_set_at": after.GoalSetAt, "goal_surfaced_at": after.GoalSurfacedAt,
 		"goal_times": goalTimes, "goal_mail_conditions": goalMailConditions, "goal_mail_arrivals": goalMailArrivals,
 		"goal_written_by": after.GoalWrittenBy, "is_goal_notified_when_posted": after.IsGoalNotifiedWhenPosted,
 	}).Error; err != nil {
