@@ -25776,10 +25776,13 @@ button.voice-bubble-transcribe {
 /* A card nobody has looked at yet: a small dot in the corner, left of the
    dismiss button. The dot is drawn over the padding, so nothing in the card
    moves when it is seen. */
+/* Level with the dismiss button's cross, just left of it: the button is 32px
+   set var(--space-2) in from the top and right, so its middle is 16px below
+   that, and the 8px dot sits 4px above the middle. */
 .feed-fresh-dot {
   position: absolute;
-  top: var(--space-3);
-  right: calc(var(--space-3) + 32px);
+  top: calc(var(--space-2) + 12px);
+  right: calc(var(--space-2) + 32px + var(--space-1));
   width: 8px;
   height: 8px;
   border-radius: var(--radius-round);
