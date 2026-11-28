@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.242.1] - 2026-11-28
+
+### Changed
+
+- In the iPhone and Android apps, swiping a stack in the feed dismisses the whole stack, and swiping a dismissed stack restores it whole. Swipes show their action in color: red to dismiss, green to restore, and restoring works from either side. (#802)
+
 ## [0.242.0] - 2026-11-28
 
 ### Changed
