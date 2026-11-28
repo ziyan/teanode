@@ -312,10 +312,15 @@ func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 	}
 	today := time.Now().In(Location(run.Owner)).Format(time.DateOnly)
 	check, err := finance.CheckTransactionRows(answer.Value.transactionRowsInput(), today)
-	if err == nil && !isHandedIn {
+	if err == nil {
 		var plan *finance.TransactionRowsPlan
 		if plan, err = self.PreviewTransactionRows(ctx, run.Agent, run.Owner, check); err == nil && plan.FinanceAccountID == "" {
-			err = fmt.Errorf("%w: they are of an account not imported before; send the picture to your assistant to start one", finance.ErrTransactionRowsRefused)
+			switch {
+			case !isHandedIn:
+				err = fmt.Errorf("%w: they are of an account not imported before; send the picture to your assistant to start one", finance.ErrTransactionRowsRefused)
+			default:
+				err = self.refuseRowsOfASyncedAccount(ctx, run.Agent.ID, check)
+			}
 		}
 	}
 	var imported *models.FinanceStatementImport

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -21,6 +22,44 @@ import (
 // uploaded picture or PDF and imports them.
 func (self *Agent) QueueStatementReading(tx db.Transaction, agentId, attachmentId string) (*models.AgentJob, error) {
 	return self.Enqueue(tx, models.AgentJobStatementPhoto, agentId, "", attachmentId)
+}
+
+// refuseRowsOfASyncedAccount refuses rows that would start an account of
+// imported statements beside one a provider already syncs, which they are
+// likely of: the same transactions would be counted in both.
+func (self *Agent) refuseRowsOfASyncedAccount(ctx context.Context, agentId string, check *finance.TransactionRowsCheck) error {
+	var providerAccounts []finance.ExistingStatementAccount
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+		sources, err := tx.ListAgentSources(agentId)
+		if err != nil {
+			return err
+		}
+		sourceOf := map[string]*models.AgentKnowledgeSource{}
+		for _, source := range sources {
+			sourceOf[source.ID] = source
+		}
+		accounts, err := tx.ListFinanceAccounts(agentId, "")
+		if err != nil {
+			return err
+		}
+		for _, account := range accounts {
+			source := sourceOf[account.SourceID]
+			if source == nil || source.Kind != models.SourceFinance || IsStatementSource(source) {
+				continue
+			}
+			providerAccounts = append(providerAccounts, finance.ExistingStatementAccount{
+				FinanceAccountID: account.ID, AccountName: account.AccountName, AccountMask: account.AccountMask, AccountKind: string(account.AccountKind),
+				CurrencyCode: account.CurrencyCode, InstitutionName: account.InstitutionName(source), ProviderMetadata: account.ProviderMetadata,
+			})
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if names := finance.ProviderAccountsLikeRows(check, providerAccounts); len(names) > 0 {
+		return fmt.Errorf("%w: they look like %s, which is already synced from the bank, so importing them would count them twice", finance.ErrTransactionRowsRefused, strings.Join(names, " or "))
+	}
+	return nil
 }
 
 // postStatementReading posts to the person's feed what came of reading a

@@ -1268,3 +1268,27 @@ func LeaveOutStoredTransactionRows(statementImport *StatementImport, storedTrans
 	statementImport.SyncResult.Added = kept
 	return nil
 }
+
+// ProviderAccountsLikeRows names the accounts a provider syncs that rows
+// for a new account could be of: at the same institution, of the same kind
+// and currency, and not shown by their digits to be another account. Rows
+// imported beside such an account would count its spending twice, so an
+// import nobody chose the account of refuses them.
+func ProviderAccountsLikeRows(check *TransactionRowsCheck, providerAccounts []ExistingStatementAccount) []string {
+	shownMask := StatementAccountMask(check.AccountNumber)
+	var names []string
+	for index := range providerAccounts {
+		account := &providerAccounts[index]
+		if !strings.EqualFold(account.CurrencyCode, check.CurrencyCode) || account.isCardAccount() != (check.StatementAccountKind == StatementAccountKindCard) {
+			continue
+		}
+		if normalizeInstitutionName(account.InstitutionName) == "" || !isSameInstitution(account.InstitutionName, check.InstitutionName) {
+			continue
+		}
+		if account.AccountMask != "" && shownMask != "" && !isMaskMatch(account.AccountMask, shownMask) {
+			continue
+		}
+		names = append(names, account.displayName())
+	}
+	return names
+}

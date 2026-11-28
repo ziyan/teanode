@@ -647,3 +647,31 @@ func TestPlanTransactionRowsImportLeavesOutWhatIsStored(test *testing.T) {
 		test.Errorf("a new account %+v %v", fresh, err)
 	}
 }
+
+// Rows for a new account are taken for a synced account's when one at the
+// same institution, of the same kind and currency, could be theirs: its
+// digits match, or either side shows none. One whose digits differ, or of
+// another kind, institution or currency, is not named.
+func TestProviderAccountsLikeRows(test *testing.T) {
+	test.Parallel()
+	check := &TransactionRowsCheck{InstitutionName: "Example Bank", AccountNumber: "4821", StatementAccountKind: StatementAccountKindCard, CurrencyCode: "USD"}
+	card := func(name, mask string) ExistingStatementAccount {
+		return ExistingStatementAccount{AccountName: name, AccountMask: mask, AccountKind: AccountKindCredit, CurrencyCode: "USD", InstitutionName: "EXAMPLE BANK, N.A."}
+	}
+	checking := card("Everyday Checking", "4821")
+	checking.AccountKind = AccountKindDepository
+	otherBank := card("Travel Card", "4821")
+	otherBank.InstitutionName = "Another Bank"
+	euros := card("Euro Card", "4821")
+	euros.CurrencyCode = "EUR"
+	names := ProviderAccountsLikeRows(check, []ExistingStatementAccount{
+		card("Rewards Card", "4821"), card("Second Card", ""), card("Other Card", "7777"), checking, otherBank, euros,
+	})
+	if len(names) != 2 || names[0] != "Rewards Card ··4821" || names[1] != "Second Card" {
+		test.Errorf("named %q", names)
+	}
+	check.AccountNumber = ""
+	if names := ProviderAccountsLikeRows(check, []ExistingStatementAccount{card("Other Card", "7777")}); len(names) != 1 {
+		test.Errorf("rows that show no digits could be any card there: %q", names)
+	}
+}
