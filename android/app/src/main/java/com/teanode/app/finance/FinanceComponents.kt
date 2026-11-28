@@ -40,6 +40,7 @@ internal object FinanceRoutes {
     val savingsTargets = child("savings-targets")
     val receipts = child("receipts")
     val taxes = child("taxes")
+    val imports = child("imports")
     val sharing = child("sharing")
     val setup = child("setup")
     val sharedAll = child("shared-all")

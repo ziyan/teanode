@@ -184,4 +184,19 @@
     <string name="finance_manage_provider">Provider</string>
     <string name="finance_not_matched">Not matched</string>
     <string name="finance_matched_to_charges">Matched to %1$d charges</string>
+    <string name="finance_part_imports">Imports</string>
+    <string name="finance_no_imports">Nothing read yet</string>
+    <string name="finance_no_imports_description">Share a picture or PDF of your transactions to your agent as Import transactions, and what came of it shows here.</string>
+    <string name="finance_import_unnamed">Unnamed file</string>
+    <string name="finance_import_kind_tax_document">Read as a tax document</string>
+    <string name="finance_import_kind_statement">Read as a statement</string>
+    <string name="finance_import_kind_receipt">Read as a receipt</string>
+    <string name="finance_import_source_upload">Uploaded</string>
+    <string name="finance_import_source_photo">From a backed-up photo</string>
+    <string name="finance_import_source_mail">From mail</string>
+    <string name="finance_import_status_queued">Waiting</string>
+    <string name="finance_import_status_running">Reading</string>
+    <string name="finance_import_status_done">Done</string>
+    <string name="finance_import_status_dead">Failed</string>
+    <string name="finance_import_status_cancelled">Cancelled</string>
 </resources>

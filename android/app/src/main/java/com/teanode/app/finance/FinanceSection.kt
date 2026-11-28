@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.DonutLarge
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.People
@@ -46,6 +47,7 @@ internal enum class FinancePart(val icon: ImageVector) {
     SavingsTargets(Icons.Outlined.Flag),
     Receipts(Icons.Outlined.ReceiptLong),
     Taxes(Icons.Outlined.Description),
+    Imports(Icons.Outlined.Download),
     Sharing(Icons.Outlined.People),
     Setup(Icons.Outlined.Link),
     ;
@@ -60,6 +62,7 @@ internal enum class FinancePart(val icon: ImageVector) {
             SavingsTargets -> R.string.finance_part_savings_targets
             Receipts -> R.string.finance_part_receipts
             Taxes -> R.string.finance_part_taxes
+            Imports -> R.string.finance_part_imports
             Sharing -> R.string.finance_part_sharing
             Setup -> R.string.finance_part_setup
         }
@@ -74,6 +77,7 @@ internal enum class FinancePart(val icon: ImageVector) {
             SavingsTargets -> FinanceRoutes.savingsTargets
             Receipts -> FinanceRoutes.receipts
             Taxes -> FinanceRoutes.taxes
+            Imports -> FinanceRoutes.imports
             Sharing -> FinanceRoutes.sharing
             Setup -> FinanceRoutes.setup
         }

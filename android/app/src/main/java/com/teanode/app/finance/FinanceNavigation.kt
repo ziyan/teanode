@@ -46,6 +46,7 @@ fun NavGraphBuilder.financeRoutes(navigator: AppNavigator) {
     screen(FinanceRoutes.receipts) { FinanceReceiptsScreen() }
     screen(FinanceRoutes.receiptPattern, listOf("id")) { entry -> FinanceReceiptDetailScreen(entry.text("id")) }
     screen(FinanceRoutes.taxes) { FinanceTaxesScreen() }
+    screen(FinanceRoutes.imports) { FinanceImportsScreen() }
     screen(FinanceRoutes.paystubPattern, listOf("id")) { entry -> FinancePaystubDetailScreen(entry.text("id")) }
     screen(FinanceRoutes.taxFormPattern, listOf("id")) { entry -> FinanceTaxFormDetailScreen(entry.text("id")) }
     screen(FinanceRoutes.sharing) { FinanceSharingScreen() }

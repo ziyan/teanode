@@ -181,4 +181,19 @@
     <string name="finance_manage_provider">提供方</string>
     <string name="finance_not_matched">未匹配</string>
     <string name="finance_matched_to_charges">已匹配 %1$d 笔扣款</string>
+    <string name="finance_part_imports">导入</string>
+    <string name="finance_no_imports">还没有读取过文件</string>
+    <string name="finance_no_imports_description">把账户交易的图片或 PDF 以“导入交易”的方式分享给你的助手，结果会显示在这里。</string>
+    <string name="finance_import_unnamed">未命名文件</string>
+    <string name="finance_import_kind_tax_document">按税务文件读取</string>
+    <string name="finance_import_kind_statement">按对账单读取</string>
+    <string name="finance_import_kind_receipt">按收据读取</string>
+    <string name="finance_import_source_upload">已上传</string>
+    <string name="finance_import_source_photo">来自已备份的照片</string>
+    <string name="finance_import_source_mail">来自邮件</string>
+    <string name="finance_import_status_queued">等待中</string>
+    <string name="finance_import_status_running">读取中</string>
+    <string name="finance_import_status_done">已完成</string>
+    <string name="finance_import_status_dead">失败</string>
+    <string name="finance_import_status_cancelled">已取消</string>
 </resources>

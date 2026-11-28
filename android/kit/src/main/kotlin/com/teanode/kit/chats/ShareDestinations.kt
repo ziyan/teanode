@@ -47,6 +47,13 @@ object SharedFiles {
         return start.contains("OFXHEADER") || start.contains("<OFX>")
     }
 
+    /** A picture or a PDF of an account's transactions is read in the background; it fits what a tax document fits. */
+    fun isStatementPicture(contentType: String): Boolean = isTaxDocument(contentType)
+
+    /** What the statements destination takes: an OFX file, a picture or a PDF. */
+    fun isStatementOrPicture(name: String, contentType: String, startOfFile: ByteArray): Boolean =
+        isStatement(name, startOfFile) || isStatementPicture(contentType)
+
     /** A recording is made from sound or video. */
     fun isRecordingMedia(contentType: String): Boolean = contentType.startsWith("audio/") || contentType.startsWith("video/")
 
@@ -54,7 +61,7 @@ object SharedFiles {
     fun destinations(files: List<Triple<String, String, ByteArray>>, canRecord: Boolean): List<ShareDestination> {
         val offered = mutableListOf(ShareDestination.Agent)
         if (files.any { (_, contentType, _) -> isTaxDocument(contentType) }) offered.add(ShareDestination.TaxDocuments)
-        if (files.any { (name, _, data) -> isStatement(name, data) }) offered.add(ShareDestination.Statements)
+        if (files.any { (name, contentType, data) -> isStatementOrPicture(name, contentType, data) }) offered.add(ShareDestination.Statements)
         if (canRecord && files.any { (_, contentType, _) -> isRecordingMedia(contentType) }) offered.add(ShareDestination.Recording)
         return offered
     }

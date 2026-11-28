@@ -21,6 +21,7 @@ import com.teanode.kit.AppSection
 import com.teanode.kit.chats.ShareDestination
 import com.teanode.kit.chats.SharedFiles
 import com.teanode.kit.finance.importStatement
+import com.teanode.kit.finance.readStatement
 import com.teanode.kit.finance.readTaxDocumentOfAttachment
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -109,13 +110,14 @@ internal fun ShareSheet(intent: Intent, session: AppSession, connection: Connect
     val canSend = connection != null && !isSending && problemText != tooLarge && when (destination) {
         ShareDestination.Agent -> note.trim().isNotEmpty() || files.isNotEmpty()
         ShareDestination.TaxDocuments -> files.any { file -> SharedFiles.isTaxDocument(file.contentType) }
-        ShareDestination.Statements -> files.any { file -> SharedFiles.isStatement(file.name, file.data) }
+        ShareDestination.Statements -> files.any { file -> SharedFiles.isStatementOrPicture(file.name, file.contentType, file.data) }
         ShareDestination.Recording -> files.any { file -> SharedFiles.isRecordingMedia(file.contentType) }
     }
     val sentWords = stringResource(R.string.chats_share_sent)
     val taxOne = stringResource(R.string.chats_share_tax_read_one)
     val leftOutTax = stringResource(R.string.chats_share_left_out_tax)
     val leftOutStatements = stringResource(R.string.chats_share_left_out_statements)
+    val queuedOne = stringResource(R.string.chats_share_statement_queued_one)
     val summaryWords: (Int, Int, Int) -> String = { added, updated, unchanged -> activity.getString(R.string.chats_share_statement_summary, added, updated, unchanged) }
     ModalBottomSheet(onDismissRequest = onFinish, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.navigationBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -211,17 +213,28 @@ internal fun ShareSheet(intent: Intent, session: AppSession, connection: Connect
                                             resultText = said
                                         }
                                         ShareDestination.Statements -> {
-                                            val statements = files.filter { file -> SharedFiles.isStatement(file.name, file.data) }
+                                            val statements = files.filter { file -> SharedFiles.isStatementOrPicture(file.name, file.contentType, file.data) }
                                             val summaries = mutableListOf<String>()
+                                            var queuedCount = 0
                                             total = statements.size
                                             for (file in statements) {
                                                 currentName = file.name
-                                                val id = signedIn.upload(file.name, file.contentType, file.data)
-                                                val imported = signedIn.importStatement(id)
+                                                if (SharedFiles.isStatement(file.name, file.data)) {
+                                                    // An OFX file is imported at once.
+                                                    val id = signedIn.upload(file.name, file.contentType, file.data)
+                                                    val imported = signedIn.importStatement(id)
+                                                    summaries.add(imported?.importErrorMessage ?: summaryWords(imported?.addedTransactionCount ?: 0, imported?.updatedTransactionCount ?: 0, imported?.unchangedTransactionCount ?: 0))
+                                                } else {
+                                                    // A picture or a PDF is read in the background, and what came of it is posted to the feed.
+                                                    val id = signedIn.upload(file.name, file.contentType, file.data)
+                                                    signedIn.readStatement(id)
+                                                    queuedCount += 1
+                                                }
                                                 handled += 1
-                                                summaries.add(imported?.importErrorMessage ?: summaryWords(imported?.addedTransactionCount ?: 0, imported?.updatedTransactionCount ?: 0, imported?.unchangedTransactionCount ?: 0))
                                             }
-                                            if (files.any { file -> !SharedFiles.isStatement(file.name, file.data) }) summaries.add(leftOutStatements)
+                                            if (queuedCount == 1) summaries.add(queuedOne)
+                                            else if (queuedCount > 1) summaries.add(activity.getString(R.string.chats_share_statement_queued_several, queuedCount))
+                                            if (files.any { file -> !SharedFiles.isStatementOrPicture(file.name, file.contentType, file.data) }) summaries.add(leftOutStatements)
                                             resultText = summaries.joinToString("\n")
                                         }
                                         ShareDestination.Recording -> {
