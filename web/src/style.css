@@ -25776,10 +25776,13 @@ button.voice-bubble-transcribe {
 /* A card nobody has looked at yet: a small dot in the corner, left of the
    dismiss button. The dot is drawn over the padding, so nothing in the card
    moves when it is seen. */
+/* Level with the dismiss button's cross, just left of it: the button is 32px
+   set var(--space-2) in from the top and right, so its middle is 16px below
+   that, and the 8px dot sits 4px above the middle. */
 .feed-fresh-dot {
   position: absolute;
-  top: var(--space-3);
-  right: calc(var(--space-3) + 32px);
+  top: calc(var(--space-2) + 12px);
+  right: calc(var(--space-2) + 32px + var(--space-1));
   width: 8px;
   height: 8px;
   border-radius: var(--radius-round);
@@ -25804,33 +25807,57 @@ button.voice-bubble-transcribe {
   flex: 1;
   min-width: 0;
 }
-/* The headline with the card's dismiss button at its end. */
+/* The headline. The card's dismiss button is not in it: it sits in the card's
+   top right corner (.feed-dismiss), so the title wraps to the same width
+   whatever it says. A card with that button keeps the room for it free on
+   the right of its source line and its headline. */
 .feed-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-2);
   margin: 0 0 var(--space-1);
 }
 .feed-head .feed-title {
-  flex: 1;
-  min-width: 0;
   margin: 0;
 }
+.feed-card.has-dismiss .feed-kicker,
+.feed-card.has-dismiss .feed-head {
+  /* Clear of the 32px button, set 8px in from the card's edge, and of the
+     unread dot 6px left of it, with room to spare on a phone, whose card has
+     the narrower padding. */
+  padding-right: 56px;
+}
+/* One place on every card: a 32px target whose cross is centered on the
+   source line, 8px in from the top and right edges. Its place does not depend
+   on anything inside the card. */
 .feed-dismiss {
-  flex: none;
-  margin: -4px -4px 0 0;
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+}
+/* Over a picture the cross needs a ground of its own. */
+.feed-dismiss.is-over-media {
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
 }
 /* Dismissed and Dismiss read, above the first card, at the column's end. */
+/* The views at the column's start, Dismiss read at its end. */
 .feed-header {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
 }
-/* The way back from the Dismissed view, at the column's start. */
-.feed-header.is-dismissed-view {
-  justify-content: flex-start;
+/* A newer dashboard, offered as the first card of the feed. */
+.feed-update-card {
+  margin-bottom: var(--space-3);
+}
+.feed-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 /* A dismissed card follows a finger across; up and down stays a scroll. */
 .feed-card.is-swipeable {

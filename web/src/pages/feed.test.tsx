@@ -14,6 +14,8 @@ vi.mock('../api', async (importOriginal) => ({
   openAgentConversation: vi.fn(() => true),
   askAgentAbout: vi.fn(() => true),
 }))
+// The version check asks the server on its own; the feed's tests answer for the feed alone.
+vi.mock('../components/freshness', () => ({ useFreshness: () => ({ staleBundle: false, upgradeAvailable: false }) }))
 vi.mock('../components/toast', () => ({ useToast: () => notices }))
 const execute = vi.mocked(graphql)
 const openDrawer = vi.mocked(openAgentConversation)
@@ -278,6 +280,17 @@ function lastToast() {
   ]
   return { message, action }
 }
+
+it('keeps the dismiss button on the card itself, outside the title it must not move with', async () => {
+  execute.mockImplementation(async () => listing([feedItem('card-frost')]))
+  drawFeed()
+  const button = await screen.findByRole('button', { name: 'Frost tonight card-frost: Dismiss' })
+  const card = button.closest('article')
+  expect(card).not.toBeNull()
+  expect(button.closest('.feed-content')).toBeNull()
+  expect(button.closest('.feed-head')).toBeNull()
+  expect(card?.classList.contains('has-dismiss')).toBe(true)
+})
 
 it('dismisses a card with its own button and brings it back with Undo', async () => {
   let isDismissed = false

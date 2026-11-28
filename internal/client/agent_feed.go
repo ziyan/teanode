@@ -163,8 +163,8 @@ const (
 // The documents the command line and the feed tool send, exported so a test
 // can check them against the schema.
 const (
-	DocumentListAgentFeed = `query ($first: Int, $after: String, $includeDismissed: Boolean, $isDismissedOnly: Boolean) {
-		ListAgentFeed(first: $first, after: $after, includeDismissed: $includeDismissed, isDismissedOnly: $isDismissedOnly) {
+	DocumentListAgentFeed = `query ($first: Int, $after: String, $includeDismissed: Boolean, $isDismissedOnly: Boolean, $isUnreadOnly: Boolean) {
+		ListAgentFeed(first: $first, after: $after, includeDismissed: $includeDismissed, isDismissedOnly: $isDismissedOnly, isUnreadOnly: $isUnreadOnly) {
 			feedItems { ` + feedItemFields + ` } nextCursor unreadCount
 		}
 	}`
@@ -212,14 +212,18 @@ const (
 )
 
 // ListAgentFeed is a page of the feed, newest first, or with isDismissedOnly
-// a page of the dismissed cards, the most recently dismissed first.
-func ListAgentFeed(ctx context.Context, connection *Client, first int, after string, includeDismissed, isDismissedOnly bool) (*AgentFeedPage, error) {
+// a page of the dismissed cards, the most recently dismissed first, or with
+// isUnreadOnly only the cards not yet read.
+func ListAgentFeed(ctx context.Context, connection *Client, first int, after string, includeDismissed, isDismissedOnly, isUnreadOnly bool) (*AgentFeedPage, error) {
 	var result struct {
 		ListAgentFeed *AgentFeedPage `json:"ListAgentFeed"`
 	}
 	variables := map[string]any{"includeDismissed": includeDismissed}
 	if isDismissedOnly {
 		variables["isDismissedOnly"] = true
+	}
+	if isUnreadOnly {
+		variables["isUnreadOnly"] = true
 	}
 	if first > 0 {
 		variables["first"] = first

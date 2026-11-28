@@ -1099,7 +1099,11 @@ func (self *transaction) itemQuery(folderId string, options *ItemOptions) *gorm.
 		}
 	}
 	if options.Cursor != "" {
-		query = query.Where("\"mailbox_item\".\"uid\" < (SELECT \"uid\" FROM \"mailbox_item\" AS c WHERE c.\"id\" = ?)", options.Cursor)
+		if options.ByReceived {
+			query = query.Where(`("mail"."received_at", "mailbox_item"."id") < (SELECT m."received_at", c."id" FROM "mailbox_item" AS c JOIN "mail" AS m ON m."id" = c."mail_id" WHERE c."id" = ?)`, options.Cursor)
+		} else {
+			query = query.Where("\"mailbox_item\".\"uid\" < (SELECT \"uid\" FROM \"mailbox_item\" AS c WHERE c.\"id\" = ?)", options.Cursor)
+		}
 	}
 	return query
 }
@@ -1123,11 +1127,16 @@ func itemOrder(folderId string, options *ItemOptions, table string) string {
 	switch {
 	case options != nil && options.ByReceived:
 		// The message's own time, which is the same whichever folder its
-		// item happens to be in and whenever it was put there.
-		if options.Ascending {
-			return `"mail"."received_at" ASC, "` + table + `"."id" ASC`
+		// item happens to be in and whenever it was put there. A subquery
+		// of items carries it as its own received_at.
+		receivedAt := `"mail"."received_at"`
+		if table != "mailbox_item" {
+			receivedAt = `"` + table + `"."received_at"`
 		}
-		return `"mail"."received_at" DESC, "` + table + `"."id" DESC`
+		if options.Ascending {
+			return receivedAt + ` ASC, "` + table + `"."id" ASC`
+		}
+		return receivedAt + ` DESC, "` + table + `"."id" DESC`
 	case folderId == "" && options != nil && options.MailboxID != "":
 		return `"` + table + `"."added_at" DESC, "` + table + `"."id" DESC`
 	case options != nil && options.Ascending:
@@ -1201,7 +1210,7 @@ func (self *transaction) ListThreads(folderId string, options *ItemOptions) ([]*
 	order := itemOrder(folderId, options, "mailbox_item")
 	inner = inner.
 		Select("DISTINCT ON (\"mail\".\"thread_id\") \"mail\".\"thread_id\" AS thread_id, \"mailbox_item\".\"id\" AS item_id, " +
-			"\"mailbox_item\".\"id\" AS id, \"mailbox_item\".\"uid\" AS uid, \"mailbox_item\".\"added_at\" AS added_at").
+			"\"mailbox_item\".\"id\" AS id, \"mailbox_item\".\"uid\" AS uid, \"mailbox_item\".\"added_at\" AS added_at, \"mail\".\"received_at\" AS received_at").
 		Order("\"mail\".\"thread_id\", " + order)
 
 	// The conversations themselves, newest first, from the newest item of

@@ -272,6 +272,16 @@ func TestTheDismissedCardsAndAWithdrawnCard(t *testing.T) {
 			t.Fatal(err)
 		}
 		isTrue := true
+		// Only the open card is left unread; the dismissed stack is not listed.
+		if unread, err := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{IsUnreadOnly: &isTrue}); err != nil || len(unread.FeedItems) != 2 {
+			t.Fatalf("the unread cards: %+v %v", unread, err)
+		}
+		if _, err := world.resolver.MarkAgentFeedRead(ctx, MarkAgentFeedReadArguments{FeedItemIDs: []string{open.FeedItemID}}); err != nil {
+			t.Fatal(err)
+		}
+		if unread, err := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{IsUnreadOnly: &isTrue}); err != nil || len(unread.FeedItems) != 1 || unread.FeedItems[0].FeedItemID != withdrawn.FeedItemID {
+			t.Fatalf("a card read leaves the unread view: %+v %v", unread, err)
+		}
 		page, err := world.resolver.ListAgentFeed(ctx, ListAgentFeedArguments{IsDismissedOnly: &isTrue})
 		if err != nil || len(page.FeedItems) != 2 {
 			t.Fatalf("the dismissed cards: %+v %v", page, err)

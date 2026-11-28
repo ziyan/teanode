@@ -108,6 +108,7 @@ func init() {
 					"every_read":        tools.BooleanProperty("for dismiss: every card the person has read, except a decision still waiting for an answer"),
 					"include_dismissed": tools.BooleanProperty("for list: the dismissed cards too"),
 					"dismissed_only":    tools.BooleanProperty("for list: only the dismissed cards, the most recently dismissed first"),
+					"unread_only":       tools.BooleanProperty("for list: only the cards the person has not read, and the stacks that hold one"),
 				}, "action"),
 				Guidance: "feed: post to the feed what the person did not ask for (news, a report, an idea, something they should decide) and keep the main conversation for answering them. One card per subject; `list` first when you may have posted it already; `resolve` a card when its problem clears instead of posting an all clear. Write the card for them to read: plain words, no ids or tool names, links in the body. A choice is something you can carry out when pressed, not a way to end the card. When they ask you to tend their feed (answer, like, read, less, dismiss, restore), do it here.",
 				Run:      run,
@@ -180,6 +181,7 @@ type arguments struct {
 	Choices          []choice          `json:"choices"`
 	IsDismissedShown bool              `json:"include_dismissed"`
 	IsDismissedOnly  bool              `json:"dismissed_only"`
+	IsUnreadOnly     bool              `json:"unread_only"`
 	FeedItemIDs      []string          `json:"feed_item_ids"`
 	IsEveryRead      bool              `json:"every_read"`
 	ChoiceKey        string            `json:"choice_key"`
@@ -202,6 +204,9 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		variables := map[string]any{"first": 30, "includeDismissed": asked.IsDismissedShown}
 		if asked.IsDismissedOnly {
 			variables["isDismissedOnly"] = true
+		}
+		if asked.IsUnreadOnly {
+			variables["isUnreadOnly"] = true
 		}
 		if after := strings.TrimSpace(asked.After); after != "" {
 			variables["after"] = after
