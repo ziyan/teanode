@@ -13,6 +13,8 @@
     <string name="search_photos_explanation">Photos also finds pictures by what is in them.</string>
     <string name="search_prompt">Search everything</string>
     <string name="search_prompt_detail">Find a page of the app, or a name or a few words across your chats, mail, contacts, photos and more.</string>
+    <string name="search_recent">Recent</string>
+    <string name="search_shortcuts">Shortcuts</string>
     <string name="search_show_all">Show all in %s</string>
     <string name="settings_about">About</string>
     <string name="settings_access_chosen">%d chosen</string>
