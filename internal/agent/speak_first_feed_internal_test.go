@@ -109,7 +109,7 @@ func TestTheMailOrganizeLookIsDueOnlyAboveTheThresholdAndOnlyForNewMail(t *testi
 // with the three buttons and a pile's facts.
 func TestTheMailOrganizeLookIsToldToChangeNothingAndOfferOneCard(t *testing.T) {
 	lines := mailOrganizeLines
-	for _, wanted := range []string{"Change nothing", "ONE card", "decision", "tray.full", "mail-organize", "Approve", "Discuss", "Not now", "fact_rows", "Approve: <the title>"} {
+	for _, wanted := range []string{"Change nothing", "ONE card", "decision", "tray.full", "mail-organize", "Approve", "Discuss", "Not now", "fact_rows", "approving sends \"Approve\" as their message"} {
 		if !strings.Contains(lines, wanted) {
 			t.Errorf("the look is not told %q", wanted)
 		}

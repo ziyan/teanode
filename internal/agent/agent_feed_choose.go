@@ -130,7 +130,7 @@ func (self *Agent) chooseAction(ctx context.Context, settings *FeedChoiceSetting
 	}
 	run, err := self.Ask(&AskSettings{
 		Agent: settings.Agent, Owner: settings.Owner, Operations: settings.Operations, Conversation: conversation,
-		Message: feedChoiceMessage(choice, item), Surface: "drawer",
+		Message: feedChoiceMessage(choice), Surface: "drawer",
 		References:   []models.AgentReference{{FeedItemID: item.ID}},
 		IsPersonsTap: settings.IsPersonsTap, IsOperatorActingAsPerson: settings.IsOperatorActingAsPerson,
 	})
@@ -148,10 +148,12 @@ func (self *Agent) chooseAction(ctx context.Context, settings *FeedChoiceSetting
 	return settled, nil
 }
 
-// feedChoiceMessage is a choice as the person's own words: what they pressed
-// and what it was about, "Approve: Sort newsletters into a Newsletters folder".
-func feedChoiceMessage(choice *models.FeedChoice, item *models.AgentFeedItem) string {
-	return choice.ChoiceLabel + ": " + item.Title
+// feedChoiceMessage is a choice as the person's own words: the button they
+// pressed, "Approve". What it is about is the card attached to the message,
+// which the chat shows as a chip and the turn is told in full, so the title
+// is not said again in the words.
+func feedChoiceMessage(choice *models.FeedChoice) string {
+	return choice.ChoiceLabel
 }
 
 // followFeedOutcome waits for the turn a chosen action started, and writes the

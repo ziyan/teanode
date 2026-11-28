@@ -166,7 +166,7 @@ func TestAnActionChoiceSaysItInTheMainConversationWithTheCardAttached(t *testing
 			said = append(said, message)
 		}
 	}
-	if len(said) != 1 || !strings.Contains(said[0].Content, "Approve: Sort newsletters into a Newsletters folder") {
+	if len(said) != 1 || said[0].Content != "Approve" {
 		t.Fatalf("one message of the person's, worded as their choice: %+v", said)
 	}
 	if len(said[0].References) != 1 || said[0].References[0].FeedItemID != card.ID || said[0].References[0].FeedItemTitle != card.Title {
