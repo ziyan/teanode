@@ -68,3 +68,18 @@ func TestReadStatementQueuesAScreenshotThatTheImportsList(test *testing.T) {
 		}
 	})
 }
+
+// What came of an import is the reading's own words without the file's
+// name in front, which the list shows beside them.
+func TestImportOutcomeTakesTheFileNameOff(test *testing.T) {
+	for title, wanted := range map[string]string{
+		"Read picture-1.jpg: 2 transactions added to Example Bank ··4821":                   "2 transactions added to Example Bank ··4821",
+		"Read picture-1.jpg, and imported nothing: it shows no transactions of one account": "Imported nothing: it shows no transactions of one account",
+		"Did not read picture-1.jpg: it is not a PDF, a picture or a text file":             "Not read: it is not a PDF, a picture or a text file",
+		"Reading the statement picture-1.jpg":                                               "Reading the statement picture-1.jpg",
+	} {
+		if have := importOutcome(title, "picture-1.jpg"); have != wanted {
+			test.Errorf("%q: %q, not %q", title, have, wanted)
+		}
+	}
+}

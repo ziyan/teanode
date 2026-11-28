@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
@@ -182,10 +183,30 @@ func financeImportOf(tx db.Transaction, agentId string, job *models.AgentJob) (*
 	}
 	if len(runs) > 0 {
 		financeImport.RunConversationID = runs[0].ID
-		financeImport.OutcomeText = runs[0].Title
+		financeImport.OutcomeText = importOutcome(runs[0].Title, financeImport.FileName)
 	}
 	if job.Status == models.AgentJobDead && job.Error != "" {
 		financeImport.OutcomeText = job.Error
 	}
 	return financeImport, nil
+}
+
+// importOutcome is a run's title as what came of an import: the reading's
+// own words with the file's name taken off their front, since the list
+// shows the file beside them ("Read picture-1.jpg: 2 transactions added to
+// Example Bank" says "2 transactions added to Example Bank").
+func importOutcome(title, fileName string) string {
+	title = strings.TrimSpace(title)
+	if fileName == "" {
+		return title
+	}
+	for _, prefix := range []string{"Read " + fileName + ": ", "Read " + fileName + ", and ", "Did not read " + fileName + ": "} {
+		if rest, isCut := strings.CutPrefix(title, prefix); isCut && rest != "" {
+			if strings.HasPrefix(prefix, "Did not read") {
+				return "Not read: " + rest
+			}
+			return strings.ToUpper(rest[:1]) + rest[1:]
+		}
+	}
+	return title
 }
