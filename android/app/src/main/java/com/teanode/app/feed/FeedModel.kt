@@ -308,6 +308,16 @@ class FeedModel(
         if (isDismissedOnly) restoreCards(listOf(item.feedItemId)) else dismiss(item)
     }
 
+    /** What a swipe on a closed deck's top card does: the whole stack is dismissed, or on the dismissed screen restored. */
+    fun swipeAwayDeck(top: AgentFeedItemView) {
+        if (!isDismissedOnly) {
+            dismissStack(top)
+            return
+        }
+        val stackCardIds = (listOf(top) + deckCards[top.feedStackKey].orEmpty()).map { card -> card.feedItemId }.distinct()
+        restoreCards(stackCardIds)
+    }
+
     /**
      * When what the person just did left the list with no cards, the loading mark is shown and the list is read again, and
      * only that read can say the list is empty. The cards this model took off stay hidden from it.

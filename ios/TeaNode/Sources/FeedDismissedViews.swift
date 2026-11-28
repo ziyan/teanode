@@ -104,14 +104,10 @@ struct FeedDismissedList: View {
                             Task { await model.loadMore() }
                         }
                     }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button {
-                            Task { await model.restoreDismissed(deck.feedItems[0]) }
-                        } label: {
-                            Label("Restore", systemImage: "arrow.uturn.backward.circle")
-                        }
-                        .tint(Color.accentColor)
-                    }
+                    // A swipe either way restores, as dismissing was either way;
+                    // a deck comes back whole.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) { restoreButton(for: deck) }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) { restoreButton(for: deck) }
             }
             if model.isLoadingMore {
                 ProgressView()
@@ -144,6 +140,21 @@ struct FeedDismissedList: View {
     }
 
     // MARK: Rows
+
+    /// The swipe's Restore, in the accent green, for the card or the whole deck.
+    private func restoreButton(for deck: AgentFeedDeck) -> some View {
+        let isWholeDeck = deck.isDeck && stackKey == nil
+        return Button {
+            Task { await model.restoreDismissed(isWholeDeck ? deck.feedItems : [deck.feedItems[0]]) }
+        } label: {
+            if isWholeDeck {
+                Label("Restore All", systemImage: "arrow.uturn.backward.circle")
+            } else {
+                Label("Restore", systemImage: "arrow.uturn.backward.circle")
+            }
+        }
+        .tint(Color.accentColor)
+    }
 
     @ViewBuilder
     private func row(for deck: AgentFeedDeck) -> some View {

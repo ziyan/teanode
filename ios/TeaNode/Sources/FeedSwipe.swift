@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// FeedSwipeToDismiss lets a card be swiped away, either way, as a message
-/// is in Mail: the card follows the finger with "Dismiss" showing behind it,
-/// and past two fifths of its width, or flicked, it flies off and is
-/// dismissed. Anything shorter springs back. The feed is a ScrollView, not a
+/// is in Mail: the card follows the finger over the action's color with its
+/// word showing ("Dismiss", or "Dismiss All" on a stack's deck), and past two
+/// fifths of its width, or flicked, it flies off and is dismissed. Anything shorter springs back. The feed is a ScrollView, not a
 /// List, so the system's swipe actions are not there to use; a drag is told
 /// apart from a scroll by its direction, decided once at its start, so a
 /// scroll that wanders sideways stays a scroll.
@@ -14,6 +14,8 @@ import SwiftUI
 /// buttons are switched off and its links are not followed.
 struct FeedSwipeToDismiss: ViewModifier {
     let isEnabled: Bool
+    /// The word for what the swipe does, shown behind the card and read out.
+    var actionTitle: LocalizedStringKey = "Dismiss"
     let onDismiss: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -47,7 +49,7 @@ struct FeedSwipeToDismiss: ViewModifier {
                     return .handled
                 })
                 .offset(x: offset)
-                .background(alignment: offset < 0 ? .trailing : .leading) { swipeBackground }
+                .background { swipeBackground }
                 .onGeometryChange(for: CGFloat.self) { proxy in proxy.size.width } action: { width in cardWidth = width }
                 .simultaneousGesture(drag)
                 .onChange(of: isDragging) { _, isNowDragging in
@@ -64,20 +66,26 @@ struct FeedSwipeToDismiss: ViewModifier {
                         releaseSwipeHold()
                     }
                 }
-                .accessibilityAction(named: Text("Dismiss")) { onDismiss() }
+                .accessibilityAction(named: Text(actionTitle)) { onDismiss() }
         } else {
             content
         }
     }
 
-    /// What shows where the card was: the word and its symbol, stronger as
-    /// the card goes further.
+    /// What shows where the card was: the destructive red the system's own
+    /// swipe actions use, the card's shape, with the word and its symbol in
+    /// white, stronger as the card goes further.
     private var swipeBackground: some View {
-        Label("Dismiss", systemImage: "xmark.circle")
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 24)
-            .opacity(cardWidth > 0 ? min(1, abs(offset) / (cardWidth * Self.dismissShare)) : 0)
+        RoundedRectangle(cornerRadius: FeedCard.cornerRadius, style: .continuous)
+            .fill(Color(.systemRed))
+            .overlay(alignment: offset < 0 ? .trailing : .leading) {
+                Label(actionTitle, systemImage: "xmark.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 24)
+                    .opacity(cardWidth > 0 ? min(1, abs(offset) / (cardWidth * Self.dismissShare)) : 0)
+            }
+            .opacity(offset == 0 ? 0 : 1)
             .accessibilityHidden(true)
     }
 

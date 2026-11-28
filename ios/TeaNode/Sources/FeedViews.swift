@@ -343,14 +343,25 @@ final class FeedModel {
     /// Brings one card of the dismissed list back. The card leaves the list at
     /// once and stays off it for a read already on its way.
     func restoreDismissed(_ item: AgentFeedItem) async {
+        await restoreDismissed([item])
+    }
+
+    /// Brings cards of the dismissed list back, a whole deck at once.
+    func restoreDismissed(_ restoring: [AgentFeedItem]) async {
+        let feedItemIds = restoring.map(\.feedItemId)
+        guard !feedItemIds.isEmpty else { return }
         do {
-            let restoredFeedItemIds = try await connection.restoreAgentFeedItems([item.feedItemId])
-            withAnimation { remove(feedItemIds: [item.feedItemId]) }
-            if restoredFeedItemIds.contains(item.feedItemId) {
-                doneText = String(localized: "Card restored")
-            } else {
+            let restoredFeedItemIds = try await connection.restoreAgentFeedItems(feedItemIds)
+            withAnimation { remove(feedItemIds: Set(feedItemIds)) }
+            if restoredFeedItemIds.count == feedItemIds.count {
+                doneText = feedItemIds.count == 1
+                    ? String(localized: "Card restored")
+                    : String(localized: "\(feedItemIds.count) cards restored.")
+            } else if restoredFeedItemIds.isEmpty {
                 // The server leaves a card out when the feed holds a newer one like it, or it expired.
                 doneText = String(localized: "This card could not be restored.")
+            } else {
+                doneText = String(localized: "\(restoredFeedItemIds.count) of \(feedItemIds.count) cards restored.")
             }
         } catch is CancellationError {
         } catch {
@@ -688,8 +699,18 @@ struct FeedList: View {
                 Button("Dismiss All (\(item.stackItemCount))", systemImage: "xmark.circle.fill") { Task { await model.dismissStack(item) } }
             }
         }
-        // A swipe either way dismisses the card, as the long press does.
-        .modifier(FeedSwipeToDismiss(isEnabled: true) { Task { await model.dismiss(item) } })
+        // A swipe either way dismisses the card, as the long press does; on a
+        // stack's closed deck it dismisses the whole stack, as Dismiss All does.
+        .modifier(swipeToDismiss(item, isStackShown: isStackShown, isStackOpen: isStackOpen))
+    }
+
+    /// The swipe that takes a card away: the card alone, or the whole stack
+    /// when the card is a stack's top card with its deck closed.
+    private func swipeToDismiss(_ item: AgentFeedItem, isStackShown: Bool, isStackOpen: Bool) -> FeedSwipeToDismiss {
+        if model.feedStackKey == nil, isStackShown, item.isStack, !isStackOpen {
+            return FeedSwipeToDismiss(isEnabled: true, actionTitle: "Dismiss All") { Task { await model.dismissStack(item) } }
+        }
+        return FeedSwipeToDismiss(isEnabled: true) { Task { await model.dismiss(item) } }
     }
 
     /// Whether the entry is a stack of the feed that is open in place.

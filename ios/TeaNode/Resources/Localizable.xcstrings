@@ -16077,6 +16077,38 @@
         }
       }
     },
+    "Dismiss All": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて閉じる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部忽略"
+          }
+        }
+      }
+    },
+    "Restore All": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて戻す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部恢复"
+          }
+        }
+      }
+    },
     "Dismiss Read": {
       "localizations": {
         "ja": {
@@ -16121,6 +16153,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "已忽略 %lld 张卡片。"
+          }
+        }
+      }
+    },
+    "%lld cards restored.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 枚のカードを戻しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已恢复 %lld 张卡片。"
+          }
+        }
+      }
+    },
+    "%lld of %lld cards restored.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$lld 枚中 %1$lld 枚のカードを戻しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已恢复 %2$lld 张中的 %1$lld 张卡片。"
           }
         }
       }
