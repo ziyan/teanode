@@ -91,7 +91,7 @@ struct PersonCardLocationView: View {
                     PersonVisitsScreen(connection: connection, userId: location.userId)
                 } label: {
                     Label("Visits and places", systemImage: "clock")
-                        .foregroundStyle(.primary)
+                        .labelStyle(.pageRow)
                 }
             }
             PersonCardShowAllRow(title: AppSection.location.title) { showOnMap(location.userId) }

@@ -178,6 +178,7 @@ struct LocationScreen: View {
                     }
                     NavigationLink(value: LocationRoute.settings) {
                         Label("Location settings", systemImage: "gearshape")
+                            .labelStyle(.pageRow)
                     }
                 }
             }
@@ -559,7 +560,7 @@ struct LocationVisitsList: View {
             Section {
                 NavigationLink(value: LocationRoute.travel) {
                     Label("Travel", systemImage: "figure.walk")
-                        .foregroundStyle(.primary)
+                        .labelStyle(.pageRow)
                         .frame(minHeight: 44)
                 }
             }
@@ -602,6 +603,7 @@ struct LocationVisitsList: View {
                                     .accessibilityLabel("Map")
                             } else {
                                 Label("Map", systemImage: "map")
+                                    .labelStyle(.pageRow)
                                     .font(.subheadline)
                             }
                         }

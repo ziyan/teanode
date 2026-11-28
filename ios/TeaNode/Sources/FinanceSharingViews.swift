@@ -290,7 +290,7 @@ struct SharedFinanceAccountScreen: View {
                     NavigationLink {
                         SharedFinanceTransactionsScreen(account: account)
                     } label: {
-                        Label("Transactions", systemImage: "list.bullet.rectangle").foregroundStyle(.primary)
+                        Label("Transactions", systemImage: "list.bullet.rectangle").labelStyle(.pageRow)
                     }
                 }
             }

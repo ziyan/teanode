@@ -138,6 +138,7 @@ struct PasswordsScreen: View {
             case .locked, .notSetUp:
                 NavigationLink(value: PasswordsDestination.settings) {
                     Label("Passwords settings", systemImage: "gearshape")
+                        .labelStyle(.pageRow)
                 }
             default:
                 EmptyView()

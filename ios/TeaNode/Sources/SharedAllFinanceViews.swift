@@ -35,7 +35,7 @@ struct SharedAllFinanceView: View {
                     NavigationLink {
                         SharedFinanceTransactionsScreen(sharer: sharer)
                     } label: {
-                        Label("Transactions", systemImage: "list.bullet.rectangle").foregroundStyle(.primary)
+                        Label("Transactions", systemImage: "list.bullet.rectangle").labelStyle(.pageRow)
                     }
                 }
             }

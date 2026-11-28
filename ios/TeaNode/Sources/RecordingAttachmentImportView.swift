@@ -33,7 +33,7 @@ struct RecordingAttachmentImportView: View {
                         RecordingDetailScreen(connection: connection, recording: importedRecording)
                     } label: {
                         Label("Open recording", systemImage: "waveform")
-                            .foregroundStyle(.primary)
+                            .labelStyle(.pageRow)
                     }
                 } else {
                     Button(draft == nil ? "Import recording" : "Retry import") { Task { await importAttachment() } }.disabled(isImporting)

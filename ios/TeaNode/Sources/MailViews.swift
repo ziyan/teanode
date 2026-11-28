@@ -224,7 +224,7 @@ struct FolderLink: View {
                 }
             } label: {
                 Label(name, systemImage: systemImage)
-                    .foregroundStyle(.primary)
+                    .labelStyle(.pageRow)
             }
         }
     }

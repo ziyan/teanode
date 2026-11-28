@@ -170,7 +170,7 @@ struct PasswordsItemScreen: View {
                 if isUnchecked {
                     NavigationLink(value: PasswordsDestination.share(item.id)) {
                         Label("Set sharing again", systemImage: "person.badge.plus")
-                            .foregroundStyle(.primary)
+                            .labelStyle(.pageRow)
                     }
                 }
             }
@@ -182,7 +182,7 @@ struct PasswordsItemScreen: View {
             NavigationLink(value: PasswordsDestination.share(item.id)) {
                 HStack {
                     Label("Share", systemImage: "person.badge.plus")
-                        .foregroundStyle(.primary)
+                        .labelStyle(.pageRow)
                     Spacer()
                     PasswordsValueText(PasswordsWords.shareSummary(of: item), isProse: true)
                         .foregroundStyle(.secondary)
@@ -198,7 +198,7 @@ struct PasswordsItemScreen: View {
         Section {
             NavigationLink(value: PasswordsDestination.versions(item.id)) {
                 Label("Earlier versions", systemImage: "clock.arrow.circlepath")
-                    .foregroundStyle(.primary)
+                    .labelStyle(.pageRow)
             }
         } footer: {
             Text("The versions this item had before you changed it are kept for 30 days.")

@@ -471,7 +471,7 @@ struct RecordingDetailsSheet: View {
                                 RecordingTranscriptScreen(connection: connection, recording: model.recording, transcriptRun: run)
                             } label: {
                                 Label("Transcription details", systemImage: "doc.text.magnifyingglass")
-                                    .foregroundStyle(.primary)
+                                    .labelStyle(.pageRow)
                             }
                         } header: {
                             Text("Transcription")
@@ -490,15 +490,15 @@ struct RecordingDetailsSheet: View {
                             NavigationLink {
                                 RecordingSpeakersScreen(connection: connection, recording: model.recording, initial: speakers)
                             } label: {
-                                Label("Speakers and voice references", systemImage: "person.2.wave.2")
-                                    .foregroundStyle(.primary)
+                                Label("Speakers and voice references", systemImage: "person.wave.2")
+                                    .labelStyle(.pageRow)
                             }
                         }
                         NavigationLink {
                             RecordingTextHistoryScreen(connection: connection, recordingId: model.recording.id)
                         } label: {
                             Label("Transcript edit history", systemImage: "clock.arrow.circlepath")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     }
                     if !model.recording.captureGaps.isEmpty {
@@ -576,7 +576,7 @@ struct RecordingDetailsSheet: View {
                     KnowledgeSourcesView(connection: connection, highlightedSourceId: source.id)
                 } label: {
                     Label("Knowledge source", systemImage: "brain")
-                        .foregroundStyle(.primary)
+                        .labelStyle(.pageRow)
                 }
                 .fullWidthRowSeparator()
                 Button("Edit this source", systemImage: "pencil") { editingLearningSource = source }

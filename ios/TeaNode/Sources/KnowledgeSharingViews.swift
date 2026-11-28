@@ -272,6 +272,7 @@ struct KnowledgeShareSheet: View {
                             }
                         } label: {
                             Label("Share", systemImage: "square.and.arrow.up")
+                                .labelStyle(.pageRow)
                                 .actionColor()
                         }
                         .disabled(chosen == nil || isWorking)

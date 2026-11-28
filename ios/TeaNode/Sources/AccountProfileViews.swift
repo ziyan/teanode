@@ -346,7 +346,7 @@ struct DevicesView: View {
                     PhonesView(connection: connection)
                 } label: {
                     Label("Phones", systemImage: "iphone")
-                        .foregroundStyle(.primary)
+                        .labelStyle(.pageRow)
                 }
             } header: {
                 Text("TeaNode app")
@@ -356,11 +356,11 @@ struct DevicesView: View {
             Section {
                 NavigationLink { DeviceSetupView(connection: connection) } label: {
                     Label("Set up on this iPhone", systemImage: "iphone")
-                        .foregroundStyle(.primary)
+                        .labelStyle(.pageRow)
                 }
                 NavigationLink { SyncCredentialsView(connection: connection) } label: {
                     Label("Sync passwords", systemImage: "key")
-                        .foregroundStyle(.primary)
+                        .labelStyle(.pageRow)
                 }
             } header: {
                 Text("Built-in apps")

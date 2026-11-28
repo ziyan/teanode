@@ -2740,7 +2740,7 @@ struct ConnectionsView: View {
                 SkillSharingView(connection: connection)
             } label: {
                 Label("Shared skills", systemImage: "person.2")
-                    .foregroundStyle(.primary)
+                    .labelStyle(.pageRow)
             }
         } footer: {
             Text("Lend a skill to someone in a circle you share, and answer what they ask. Each use runs on your computer, as you.")

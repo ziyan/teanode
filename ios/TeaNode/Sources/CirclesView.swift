@@ -129,7 +129,7 @@ struct CirclesView: View {
                         SharingView(connection: directory.connection)
                     } label: {
                         Label("Sharing", systemImage: "square.and.arrow.up")
-                            .foregroundStyle(.primary)
+                            .labelStyle(.pageRow)
                     }
                 }
             }
@@ -711,7 +711,7 @@ struct OpenCirclesLink: View {
             CirclesView(connection: connection)
         } label: {
             Label("Open Circles", systemImage: "person.2")
-                .foregroundStyle(.primary)
+                .labelStyle(.pageRow)
         }
     }
 }
