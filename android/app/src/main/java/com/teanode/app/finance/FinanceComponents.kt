@@ -61,6 +61,7 @@ internal object FinanceRoutes {
     val sharedAccountPattern = child("shared-account/{id}")
     val sharedAllPattern = child("shared-all/{ownerUserId}")
     val tradesPattern = child("trades/{id}")
+    val financeImportPattern = child("import/{id}")
 
     fun transactions(filter: FinanceTransactionFilter = FinanceTransactionFilter()): String = child(
         "transactions?from=${Uri.encode(filter.from)}&to=${Uri.encode(filter.to)}&account=${Uri.encode(filter.financeAccountId)}" +
@@ -75,6 +76,7 @@ internal object FinanceRoutes {
     fun shared(ownerUserId: String) = child("shared/${Uri.encode(ownerUserId)}")
     fun sharedAccount(id: String) = child("shared-account/${Uri.encode(id)}")
     fun sharedAllOf(ownerUserId: String) = child("shared-all/${Uri.encode(ownerUserId)}")
+    fun financeImport(id: String) = child("import/${Uri.encode(id)}")
     fun trades(accountId: String) = child("trades/${Uri.encode(accountId)}")
 }
 

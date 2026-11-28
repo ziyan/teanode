@@ -36,6 +36,17 @@ extension FinanceImport {
         }
     }
 
+    /// The outcome without the words the status beside it already says:
+    /// "Imported nothing: it shows no account number" reads "It shows no
+    /// account number" under a status of Imported nothing.
+    var reasonSentence: String {
+        for prefix in ["Imported nothing: ", "Not read: "] where outcomeSentence.hasPrefix(prefix) {
+            let reason = String(outcomeSentence.dropFirst(prefix.count))
+            return reason.prefix(1).uppercased() + reason.dropFirst()
+        }
+        return outcomeSentence
+    }
+
     var hasAttachment: Bool { !(agentAttachmentId ?? "").isEmpty }
     var hasPicture: Bool { hasAttachment && isPicture }
     var hasOtherFile: Bool { hasAttachment && !isPicture }
@@ -413,7 +424,7 @@ struct FinanceImportDetailView: View {
         List {
             Section {
                 if financeImport.hasPicture {
-                    RemotePicture(path: financeImport.attachmentPath, name: financeImport.shownFileName, maxHeight: 360, originalFilePath: financeImport.attachmentPath)
+                    RemotePicture(path: financeImport.attachmentPath, name: financeImport.shownFileName, maxHeight: 220, originalFilePath: financeImport.attachmentPath)
                         .frame(maxWidth: .infinity)
                 } else {
                     VStack(spacing: 12) {
@@ -445,8 +456,8 @@ struct FinanceImportDetailView: View {
                     }
                 }
                 .foregroundStyle(.primary)
-                if !financeImport.outcomeSentence.isEmpty {
-                    Text(verbatim: financeImport.outcomeSentence)
+                if !financeImport.reasonSentence.isEmpty {
+                    Text(verbatim: financeImport.reasonSentence)
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

@@ -130,7 +130,7 @@
                     attachmentId: "demo-import-picture", contentType: "image/jpeg", mailboxItemId: ""),
                 row(id: "job-known", kind: "statement", source: "upload", status: "done", fileName: "picture-1.jpg",
                     queuedAt: time(startOfYesterday, hour: 18, minute: 40), finishedAt: time(startOfYesterday, hour: 18, minute: 41),
-                    outcome: "Nothing new in picture-1.jpg: Example Bank ··4821 has it all already",
+                    outcome: "Nothing new: Example Bank ··4821 has every transaction already",
                     attachmentId: "demo-import-picture", contentType: "image/jpeg", mailboxItemId: ""),
                 row(id: "job-mailed", kind: "tax_document", source: "mail", status: "done", fileName: "form-1099.pdf",
                     queuedAt: time(startOfYesterday, hour: 14, minute: 5), finishedAt: time(startOfYesterday, hour: 14, minute: 7),

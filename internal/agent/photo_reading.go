@@ -433,8 +433,12 @@ func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 	if imported.ImportErrorMessage != "" && len(imported.FinanceAccountIDs) == 0 {
 		return whyNothing(imported.ImportErrorMessage)
 	}
-	self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s: %s added to %s", attachment.Name,
-		countOf(imported.AddedTransactionCount, "transaction", "transactions"), strings.Join(imported.FinanceAccountNames, ", ")))
+	if imported.AddedTransactionCount == 0 {
+		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s: nothing new; %s has every transaction already", attachment.Name, strings.Join(imported.FinanceAccountNames, ", ")))
+	} else {
+		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s: %s added to %s", attachment.Name,
+			countOf(imported.AddedTransactionCount, "transaction", "transactions"), strings.Join(imported.FinanceAccountNames, ", ")))
+	}
 	if isHandedIn {
 		return self.postStatementReading(ctx, run, attachment, imported, "")
 	}

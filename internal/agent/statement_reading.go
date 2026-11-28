@@ -119,7 +119,7 @@ func (self *Agent) postStatementReading(ctx context.Context, run *Run, attachmen
 		card.Body = upperFirst(strings.TrimSuffix(strings.TrimSpace(whyNothing), ".")) + ". Or send it to your assistant in a chat, which can ask you about it."
 		card.FeedUrgency = models.FeedUrgencyNow
 	} else if imported.AddedTransactionCount == 0 {
-		card.Title = fmt.Sprintf("Nothing new in %s: %s has it all already", attachment.Name, strings.Join(imported.FinanceAccountNames, ", "))
+		card.Title = fmt.Sprintf("Nothing new: %s has every transaction already", strings.Join(imported.FinanceAccountNames, ", "))
 		card.Body = statementReadingDetails(imported)
 		card.FeedUrgency = models.FeedUrgencyToday
 	} else {
