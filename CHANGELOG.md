@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.243.1] - 2026-11-28
+
+### Fixed
+
+- On the iPhone, settings rows show their symbols in one column and in the text color, so titles line up and no symbol is wider or a different color than its neighbors. (#806)
+
 ## [0.243.0] - 2026-11-28
 
 ### Added
