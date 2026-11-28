@@ -338,6 +338,32 @@ func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 	}
 	whyNothing := func(why string) error { return whyNothingFor(why, why) }
 	answer := readModelAnswer[statementPhotoAnswer](thinking.Text, "isStatement")
+	today := time.Now().In(Location(run.Owner)).Format(time.DateOnly)
+	// A reading whose rows do not add up (to a month's total, to the
+	// running balances) is shown why and read once more: a quick model
+	// often copies the total of a month the picture cuts off, or puts a row
+	// under the wrong month, and sees it when told.
+	if answer.IsValid && answer.Value.IsStatement && len(answer.Value.TransactionRows) > 0 {
+		// Only the rows are checked here: the account is chosen after, and an
+		// account named stands in so a screenshot showing no number is not
+		// refused for it.
+		rowsOnly := answer.Value.transactionRowsInput()
+		rowsOnly.FinanceAccountID, rowsOnly.AccountNumber, rowsOnly.IsNewAccount = "the account chosen after", "", false
+		if _, checkErr := finance.CheckTransactionRows(rowsOnly, today); errors.Is(checkErr, finance.ErrTransactionRowsRefused) {
+			why := strings.TrimPrefix(checkErr.Error(), finance.ErrTransactionRowsRefused.Error()+": ")
+			again := prompt + "\n\nYou read it once already, and answered:\n" + thinking.Text + "\n\nThat reading does not add up: " + why +
+				". Look at the statement again. A month cut off at the top or the bottom of a picture has no total: leave its total out. " +
+				"Otherwise read that month's rows, their days and their amounts again. Answer with the whole JSON object again."
+			second, err := self.thinkAbout(ctx, run, "Reading the statement "+attachment.Name+" again", again, source.pictures, noTools, 1,
+				models.AgentJobStatementPhoto, config.AgentWorkScan)
+			if err != nil {
+				return err
+			}
+			if secondAnswer := readModelAnswer[statementPhotoAnswer](second.Text, "isStatement"); secondAnswer.IsValid {
+				thinking, answer = second, secondAnswer
+			}
+		}
+	}
 	if !answer.IsValid {
 		return whyNothing("the reading could not be understood: " + answer.Problem)
 	}
@@ -361,7 +387,6 @@ func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 			return whyNothing(personWhy)
 		}
 	}
-	today := time.Now().In(Location(run.Owner)).Format(time.DateOnly)
 	check, err := finance.CheckTransactionRows(input, today)
 	if err == nil {
 		var plan *finance.TransactionRowsPlan

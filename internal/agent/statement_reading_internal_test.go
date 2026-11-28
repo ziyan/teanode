@@ -191,3 +191,23 @@ func TestTheReadingNamesTheAccountAScreenshotIsOf(test *testing.T) {
 		test.Fatalf("the cards say where each went: %q", cards)
 	}
 }
+
+// A reading that copies the total of a month the picture cuts off is told
+// why and read once more, and the second reading is imported.
+func TestAReadingThatDoesNotAddUpIsReadOnceMore(test *testing.T) {
+	withCutOffTotal := strings.Replace(inventedCardScreenshotAnswer, `"transactionRows"`, `"monthlyTotals": [{"totalMonth": "2026-09", "totalAmount": "-90.00"}], "transactionRows"`, 1)
+	fixture, model := receiptJobFixture(test, withCutOffTotal, inventedCardScreenshotAnswer)
+	upload := fixture.statementUpload(test, "picture-1.jpg", "image/jpeg", []byte("\xff\xd8\xffan invented screenshot"))
+	if err := fixture.worker.runReadStatementPhoto(test.Context(), fixture.statementJobRun(upload.ID)); err != nil {
+		test.Fatalf("runReadStatementPhoto: %s", err)
+	}
+	model.mutex.Lock()
+	prompts := append([]string(nil), model.prompts...)
+	model.mutex.Unlock()
+	if len(prompts) != 2 || !strings.Contains(prompts[1], "That reading does not add up: ") || !strings.Contains(prompts[1], "-90.00") {
+		test.Fatalf("the second look is told why: %d prompts", len(prompts))
+	}
+	if cards := fixture.feedCards(test); len(cards) != 1 || !strings.HasPrefix(cards[0], "Imported 2 transactions into ") {
+		test.Fatalf("the second reading is imported: %q", cards)
+	}
+}
