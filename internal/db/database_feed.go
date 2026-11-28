@@ -43,6 +43,10 @@ type FeedOperation interface {
 	// asked for, and cards past their expiry never.
 	ListAgentFeedItems(userId string, cursor *models.FeedCursor, limit int, includeDismissed bool, now time.Time) ([]*models.AgentFeedItem, *models.FeedCursor, error)
 
+	// ListUnreadAgentFeedItems is the feed's entries the person has not
+	// read: a card not yet read, and a stack holding one, newest first.
+	ListUnreadAgentFeedItems(userId string, cursor *models.FeedCursor, limit int, now time.Time) ([]*models.AgentFeedItem, *models.FeedCursor, error)
+
 	// ListDismissedAgentFeedItems is a person's dismissed cards that have not
 	// expired, the most recently dismissed first, at most limit, after the
 	// cursor when there is one, and the cursor of the next page, nil on the
@@ -406,6 +410,17 @@ func DecodeFeedCursor(text string) (*models.FeedCursor, error) {
 }
 
 func (self *transaction) ListAgentFeedItems(userId string, cursor *models.FeedCursor, limit int, includeDismissed bool, now time.Time) ([]*models.AgentFeedItem, *models.FeedCursor, error) {
+	return self.listAgentFeedEntries(userId, cursor, limit, includeDismissed, false, now)
+}
+
+func (self *transaction) ListUnreadAgentFeedItems(userId string, cursor *models.FeedCursor, limit int, now time.Time) ([]*models.AgentFeedItem, *models.FeedCursor, error) {
+	return self.listAgentFeedEntries(userId, cursor, limit, false, true, now)
+}
+
+// listAgentFeedEntries is the feed's entries, a stack one entry under its
+// top card; with isUnreadOnly, only a card not yet read, and a stack that
+// holds one.
+func (self *transaction) listAgentFeedEntries(userId string, cursor *models.FeedCursor, limit int, includeDismissed, isUnreadOnly bool, now time.Time) ([]*models.AgentFeedItem, *models.FeedCursor, error) {
 	query := self.tx.Where(`"user_id" = ? AND ("expires_at" IS NULL OR "expires_at" > ?)`, userId, now)
 	// Only the newest card of a stack is an entry, the newest of those the
 	// list would show.
@@ -420,6 +435,11 @@ func (self *transaction) ListAgentFeedItems(userId string, cursor *models.FeedCu
 	// The top of a stack is its lowest position, else its newest card.
 	stackNewest += ` ORDER BY ("inner_item"."stack_position" IS NULL), "inner_item"."stack_position", "inner_item"."created_at" DESC, "inner_item"."id" DESC LIMIT 1`
 	query = query.Where(`("feed_stack_key" = '' OR "id" = (`+stackNewest+`))`, stackArguments...)
+	if isUnreadOnly {
+		query = query.Where(`(("feed_stack_key" = '' AND "read_at" IS NULL) OR ("feed_stack_key" <> '' AND EXISTS (SELECT 1 FROM "agent_feed_item" "unread_item"
+			WHERE "unread_item"."user_id" = "agent_feed_item"."user_id" AND "unread_item"."feed_stack_key" = "agent_feed_item"."feed_stack_key"
+			AND "unread_item"."read_at" IS NULL AND "unread_item"."dismissed_at" IS NULL AND ("unread_item"."expires_at" IS NULL OR "unread_item"."expires_at" > ?))))`, now)
+	}
 	return self.pageFeedItems(query, cursor, limit)
 }
 

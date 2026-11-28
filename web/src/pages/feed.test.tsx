@@ -14,6 +14,8 @@ vi.mock('../api', async (importOriginal) => ({
   openAgentConversation: vi.fn(() => true),
   askAgentAbout: vi.fn(() => true),
 }))
+// The version check asks the server on its own; the feed's tests answer for the feed alone.
+vi.mock('../components/freshness', () => ({ useFreshness: () => ({ staleBundle: false, upgradeAvailable: false }) }))
 vi.mock('../components/toast', () => ({ useToast: () => notices }))
 const execute = vi.mocked(graphql)
 const openDrawer = vi.mocked(openAgentConversation)

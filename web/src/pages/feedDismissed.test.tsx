@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { graphql, subscribe } from '../api'
 import { TranslationProvider } from '../i18n/i18n'
-import { DismissedFeedPage, FeedItem, FeedPage, groupDismissedItems } from './feed'
+import { DashboardUpdateCard, DismissedFeedPage, FeedItem, FeedPage, groupDismissedItems, UnreadFeedPage } from './feed'
 
 const notices = vi.hoisted(() => ({ done: vi.fn(), failed: vi.fn(), failure: vi.fn(), clear: vi.fn() }))
 vi.mock('../api', async (importOriginal) => ({
@@ -14,6 +14,8 @@ vi.mock('../api', async (importOriginal) => ({
   openAgentConversation: vi.fn(() => true),
   askAgentAbout: vi.fn(() => true),
 }))
+// The version check asks the server on its own; the feed's tests answer for the feed alone.
+vi.mock('../components/freshness', () => ({ useFreshness: () => ({ staleBundle: false, upgradeAvailable: false }) }))
 vi.mock('../components/toast', () => ({ useToast: () => notices }))
 const execute = vi.mocked(graphql)
 
@@ -72,6 +74,7 @@ function drawAt(path: string) {
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/feed" element={<FeedPage />} />
+          <Route path="/feed/unread" element={<UnreadFeedPage />} />
           <Route path="/feed/dismissed" element={<DismissedFeedPage />} />
         </Routes>
       </MemoryRouter>
@@ -104,7 +107,7 @@ it('opens the Dismissed view from the feed header, reads only dismissed cards th
   // Nothing is dimmed or disabled, and a dismissed card has no Dismiss button.
   expect(screen.queryByRole('button', { name: /: Dismiss$/ })).toBeNull()
   expect(screen.getByRole('button', { name: 'Frost tonight card-old: Restore' }).hasAttribute('disabled')).toBe(false)
-  fireEvent.click(screen.getByRole('button', { name: 'Back to feed' }))
+  fireEvent.click(screen.getByRole('button', { name: 'All' }))
   expect(await screen.findByText('Frost tonight card-new')).toBeTruthy()
 })
 
@@ -263,4 +266,34 @@ it('says the feed is empty when the read after the last dismissal is empty', asy
   drawAt('/feed')
   fireEvent.click(await screen.findByRole('button', { name: 'Frost tonight card-one: Dismiss' }))
   expect(await screen.findByText(/Goals and alerts post here/)).toBeTruthy()
+})
+
+it('reads only the cards not yet read in the Unread view, which the views name as current', async () => {
+  execute.mockImplementation(async (_document, variables) =>
+    (variables as { isUnreadOnly?: boolean } | undefined)?.isUnreadOnly
+      ? listing([dismissedItem('card-unread', { isDismissed: false, dismissedAt: null, isRead: false })])
+      : listing([dismissedItem('card-any', { isDismissed: false, dismissedAt: null })]),
+  )
+  drawAt('/feed')
+  await screen.findByText('Frost tonight card-any')
+  expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe('true')
+  fireEvent.click(screen.getByRole('button', { name: 'Unread' }))
+  expect(await screen.findByText('Frost tonight card-unread')).toBeTruthy()
+  expect(screen.queryByText('Frost tonight card-any')).toBeNull()
+  expect(screen.getByRole('button', { name: 'Unread' }).getAttribute('aria-pressed')).toBe('true')
+})
+
+it('offers a newer dashboard as a card that reloads, or is put off', () => {
+  const onReload = vi.fn()
+  const onSetAside = vi.fn()
+  render(
+    <TranslationProvider>
+      <DashboardUpdateCard onReload={onReload} onSetAside={onSetAside} />
+    </TranslationProvider>,
+  )
+  expect(screen.getByText('A new version of the dashboard is ready')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Not now' }))
+  expect(onReload).toHaveBeenCalledTimes(1)
+  expect(onSetAside).toHaveBeenCalledTimes(1)
 })

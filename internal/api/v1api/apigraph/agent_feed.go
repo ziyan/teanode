@@ -137,6 +137,10 @@ type ListAgentFeedArguments struct {
 	// dismissed first, each card an entry of its own (stacks are not
 	// folded). Wins over includeDismissed.
 	IsDismissedOnly *bool `json:"isDismissedOnly" graphapi:"nullable"`
+
+	// Only the cards not yet read, and the stacks that hold one, newest
+	// first; never a dismissed card.
+	IsUnreadOnly *bool `json:"isUnreadOnly" graphapi:"nullable"`
 }
 
 // ListAgentFeedStackArguments name a stack and page it.
@@ -618,9 +622,12 @@ func (self *graph) ListAgentFeed(ctx context.Context, arguments ListAgentFeedArg
 	isDismissedOnly := arguments.IsDismissedOnly != nil && *arguments.IsDismissedOnly
 	var items []*models.AgentFeedItem
 	var next *models.FeedCursor
-	if isDismissedOnly {
+	switch {
+	case isDismissedOnly:
 		items, next, err = tx.ListDismissedAgentFeedItems(found.UserID, cursor, limit, now)
-	} else {
+	case arguments.IsUnreadOnly != nil && *arguments.IsUnreadOnly:
+		items, next, err = tx.ListUnreadAgentFeedItems(found.UserID, cursor, limit, now)
+	default:
 		items, next, err = tx.ListAgentFeedItems(found.UserID, cursor, limit, arguments.IncludeDismissed != nil && *arguments.IncludeDismissed, now)
 	}
 	if err != nil {

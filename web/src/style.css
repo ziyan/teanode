@@ -25840,15 +25840,24 @@ button.voice-bubble-transcribe {
   background: color-mix(in srgb, var(--surface) 80%, transparent);
 }
 /* Dismissed and Dismiss read, above the first card, at the column's end. */
+/* The views at the column's start, Dismiss read at its end. */
 .feed-header {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
 }
-/* The way back from the Dismissed view, at the column's start. */
-.feed-header.is-dismissed-view {
-  justify-content: flex-start;
+/* A newer dashboard, offered as the first card of the feed. */
+.feed-update-card {
+  margin-bottom: var(--space-3);
+}
+.feed-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 /* A dismissed card follows a finger across; up and down stays a scroll. */
 .feed-card.is-swipeable {

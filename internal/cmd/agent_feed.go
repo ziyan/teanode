@@ -34,6 +34,7 @@ func newAgentFeedCommand() *cli.Command {
 				Flags: []cli.Flag{
 					&cli.BoolFlag{Name: "all", Usage: "include cards you dismissed"},
 					&cli.BoolFlag{Name: "dismissed", Usage: "only the cards you dismissed, the most recently dismissed first"},
+					&cli.BoolFlag{Name: "unread", Usage: "only the cards you have not read, and the stacks that hold one"},
 					&cli.IntFlag{Name: "limit", Usage: "how many cards, 30 by default"},
 					&cli.StringFlag{Name: "after", Usage: "the cursor a page printed, to read the next page"},
 					JSONFlag(),
@@ -196,7 +197,7 @@ func runAgentFeedList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	page, err := client.ListAgentFeed(ctx, connection, command.Int("limit"), command.String("after"), command.Bool("all"), command.Bool("dismissed"))
+	page, err := client.ListAgentFeed(ctx, connection, command.Int("limit"), command.String("after"), command.Bool("all"), command.Bool("dismissed"), command.Bool("unread"))
 	if err != nil {
 		return describeError(command, err)
 	}

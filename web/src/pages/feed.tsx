@@ -10,6 +10,7 @@ import {
   BellIcon,
   CalendarIcon,
   ChatIcon,
+  RefreshIcon,
   CarIcon,
   CartIcon,
   CloseIcon,
@@ -51,6 +52,7 @@ import { SettingsEmpty } from '../components/settingsList'
 import { SWIPE_ACTION_PX, SWIPE_STARTS_PX, swipeOffset } from '../components/swipeableLine'
 import { Tooltip } from '../components/tooltip'
 import { useToast } from '../components/toast'
+import { useFreshness } from '../components/freshness'
 import { Key, Trans, useTranslation } from '../i18n/i18n'
 
 // The Feed page: what the agent posted without being asked, newest first, as
@@ -164,8 +166,8 @@ const ITEM_FIELDS = `feedItemId feedItemKind feedSourceKind feedSourceId feedSou
   isResolved resolvedAt resolutionNote resolvedByKind
   chartBlocks { chartKind chartTitle unit provenance xLabels series { seriesName seriesRole values } markers { markerAt markerLabel } bars { barLabel barValue } }`
 
-const LIST_FEED = `query ($first: Int, $after: String, $isDismissedOnly: Boolean) {
-  ListAgentFeed(first: $first, after: $after, isDismissedOnly: $isDismissedOnly) { feedItems { ${ITEM_FIELDS} } nextCursor unreadCount }
+const LIST_FEED = `query ($first: Int, $after: String, $isDismissedOnly: Boolean, $isUnreadOnly: Boolean) {
+  ListAgentFeed(first: $first, after: $after, isDismissedOnly: $isDismissedOnly, isUnreadOnly: $isUnreadOnly) { feedItems { ${ITEM_FIELDS} } nextCursor unreadCount }
 }`
 const LIST_STACK = `query ($feedStackKey: String!, $first: Int, $after: String) {
   ListAgentFeedStack(feedStackKey: $feedStackKey, first: $first, after: $after) { feedItems { ${ITEM_FIELDS} } nextCursor unreadCount }
@@ -317,12 +319,23 @@ export function groupDismissedItems(feedItems: FeedItem[]): DismissedRow[] {
   }))
 }
 
-// The Dismissed view: the same page, reading the dismissed cards.
-export function DismissedFeedPage() {
-  return <FeedPage isDismissedView />
+// The feed's three views: every card, the cards not yet read, and the
+// dismissed ones; each its own address, so a reload or a link keeps it.
+export type FeedView = 'all' | 'unread' | 'dismissed'
+
+const FEED_VIEW_PATHS: Record<FeedView, string> = { all: '/feed', unread: '/feed/unread', dismissed: '/feed/dismissed' }
+
+// The Unread and Dismissed views: the same page, reading those cards.
+export function UnreadFeedPage() {
+  return <FeedPage feedView="unread" />
 }
 
-export function FeedPage({ isDismissedView = false }: { isDismissedView?: boolean }) {
+export function DismissedFeedPage() {
+  return <FeedPage feedView="dismissed" />
+}
+
+export function FeedPage({ feedView = 'all' }: { feedView?: FeedView }) {
+  const isDismissedView = feedView === 'dismissed'
   const { t, plural } = useTranslation()
   const toast = useToast()
   const navigate = useNavigate()
@@ -340,8 +353,13 @@ export function FeedPage({ isDismissedView = false }: { isDismissedView?: boolea
   const [readItemIds, setReadItemIds] = useState<Set<string>>(() => new Set())
   // Counted at every read of the list, so an open stack reads itself again too.
   const [loadCount, setLoadCount] = useState(0)
-  // The Dismissed view reads the dismissed cards; the feed asks for neither.
-  const dismissedVariables = useMemo(() => (isDismissedView ? { isDismissedOnly: true } : {}), [isDismissedView])
+  // The Dismissed and Unread views read those cards; All asks for neither.
+  const dismissedVariables = useMemo(
+    () => (feedView === 'dismissed' ? { isDismissedOnly: true } : feedView === 'unread' ? { isUnreadOnly: true } : {}),
+    [feedView],
+  )
+  const { staleBundle } = useFreshness()
+  const [isUpdateSetAside, setIsUpdateSetAside] = useState(() => readUpdateSetAside())
   const feedItemCountRef = useRef(0)
   // The list as last drawn, for the code that decides whether a removal left
   // it empty, and the ids this page took off the list with the number of the
@@ -680,23 +698,34 @@ export function FeedPage({ isDismissedView = false }: { isDismissedView?: boolea
     : feedItems.map((item) => ({ item, entries: [item] }))
   return (
     <div className="feed-page">
-      {isDismissedView ? (
-        <div className="feed-header is-dismissed-view">
-          <button type="button" onClick={() => navigate('/feed')}>
-            {t('feed.backToFeed')}
-          </button>
-        </div>
-      ) : (
-        <div className="feed-header">
-          <button type="button" onClick={() => navigate('/feed/dismissed')}>
-            {t('feed.dismissedView')}
-          </button>
-          {feedItems.length > 0 && (
-            <button type="button" onClick={() => void dismissItems({ isEveryReadCard: true })}>
-              {t('feed.dismissRead')}
+      <div className="feed-header">
+        <div className="segmented feed-views" role="group" aria-label={t('feed.views')}>
+          {(['all', 'unread', 'dismissed'] as FeedView[]).map((view) => (
+            <button
+              key={view}
+              type="button"
+              className={view === feedView ? 'active' : ''}
+              aria-pressed={view === feedView}
+              onClick={() => navigate(FEED_VIEW_PATHS[view])}
+            >
+              {t(`feed.view.${view}`)}
             </button>
-          )}
+          ))}
         </div>
+        {!isDismissedView && feedItems.length > 0 && (
+          <button type="button" onClick={() => void dismissItems({ isEveryReadCard: true })}>
+            {t('feed.dismissRead')}
+          </button>
+        )}
+      </div>
+      {!isDismissedView && staleBundle && !isUpdateSetAside && (
+        <DashboardUpdateCard
+          onReload={() => window.location.reload()}
+          onSetAside={() => {
+            setUpdateSetAside()
+            setIsUpdateSetAside(true)
+          }}
+        />
       )}
       {feedItems.length === 0 ? (
         isDismissedView ? (
@@ -704,6 +733,8 @@ export function FeedPage({ isDismissedView = false }: { isDismissedView?: boolea
             <SettingsEmpty>{t('feed.dismissedEmpty')}</SettingsEmpty>
             <SettingsEmpty>{t('feed.dismissedEmptyNote')}</SettingsEmpty>
           </>
+        ) : feedView === 'unread' ? (
+          <SettingsEmpty>{t('feed.unreadEmpty')}</SettingsEmpty>
         ) : (
           <SettingsEmpty>{t('feed.empty')}</SettingsEmpty>
         )
@@ -1591,5 +1622,51 @@ function FeedStack({
         </div>
       )}
     </div>
+  )
+}
+
+// Putting off a new dashboard lasts this tab's session: the card comes back
+// in another tab or after a reload, which is when the new one would load.
+const UPDATE_SET_ASIDE = 'teanode.feedUpdateSetAside'
+
+function readUpdateSetAside(): boolean {
+  try {
+    return window.sessionStorage.getItem(UPDATE_SET_ASIDE) === '1'
+  } catch {
+    return false
+  }
+}
+
+function setUpdateSetAside() {
+  try {
+    window.sessionStorage.setItem(UPDATE_SET_ASIDE, '1')
+  } catch {
+    // Without storage it is put off for as long as the page is open.
+  }
+}
+
+// DashboardUpdateCard says, at the top of the feed, that the server runs a
+// newer dashboard than the one in this tab, as the apps' feeds say a newer
+// app is ready: reload to use it, or not now.
+export function DashboardUpdateCard({ onReload, onSetAside }: { onReload: () => void; onSetAside: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <article className="feed-card feed-update-card" aria-label={t('feed.update.title')}>
+      <div className="feed-picture" aria-hidden="true">
+        <RefreshIcon size={20} />
+      </div>
+      <div className="feed-content">
+        <h3 className="feed-title">{t('feed.update.title')}</h3>
+        <p className="feed-body">{t('feed.update.body')}</p>
+        <div className="feed-update-actions">
+          <button type="button" className="primary" onClick={onReload}>
+            {t('feed.update.reload')}
+          </button>
+          <button type="button" onClick={onSetAside}>
+            {t('feed.update.notNow')}
+          </button>
+        </div>
+      </div>
+    </article>
   )
 }

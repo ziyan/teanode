@@ -148,6 +148,9 @@ const AgentPage = lazyPage(async () => ({
 const FeedPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/feed')).FeedPage,
 }))
+const UnreadFeedPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/feed')).UnreadFeedPage,
+}))
 const DismissedFeedPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/feed')).DismissedFeedPage,
 }))
@@ -629,6 +632,7 @@ export function App() {
                       {/* What the agent posted unasked, first in the rail. */}
                       <Route path="/feed" element={<FeedPage />} />
                       {/* The cards dismissed, put back by a swipe or a button. */}
+                      <Route path="/feed/unread" element={<UnreadFeedPage />} />
                       <Route path="/feed/dismissed" element={<DismissedFeedPage />} />
                       {/* The chats: the person's conversations with their agent
                       and with people, as tiles. /agent was its address before,
