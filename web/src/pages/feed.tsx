@@ -995,7 +995,7 @@ function FeedCard({
     'card',
     'feed-card',
     isFresh ? 'is-fresh' : '',
-    onRestore ? 'is-swipeable' : '',
+    onRestore ? 'is-swipeable' : 'has-dismiss',
     weatherGradient ? `is-weather is-${weatherGradient}` : '',
     item.isResolved ? 'is-resolved' : '',
   ]
@@ -1015,6 +1015,19 @@ function FeedCard({
       {...swipeHandlers}
     >
       {isFresh && <span className="feed-fresh-dot" role="img" aria-label={t('feed.unread')} />}
+      {!onRestore && (
+        <Tooltip label={t('feed.dismiss')}>
+          <button
+            type="button"
+            className={`icon-action feed-dismiss${hasCardMedia && !isFolded ? ' is-over-media' : ''}`}
+            aria-label={`${item.title}: ${t('feed.dismiss')}`}
+            disabled={isBusy}
+            onClick={() => void dismiss()}
+          >
+            <CloseIcon size={16} />
+          </button>
+        </Tooltip>
+      )}
       {hasCardMedia && !isFolded && <FeedMediaGallery cardMedia={cardMedia} />}
       {/* With pictures on top the symbol moves into the header line. */}
       {(!hasCardMedia || isFolded) && (
@@ -1035,19 +1048,6 @@ function FeedCard({
         )}
         <div className="feed-head">
           <h3 className="feed-title">{item.title}</h3>
-          {!onRestore && (
-            <Tooltip label={t('feed.dismiss')}>
-              <button
-                type="button"
-                className="icon-action feed-dismiss"
-                aria-label={`${item.title}: ${t('feed.dismiss')}`}
-                disabled={isBusy}
-                onClick={() => void dismiss()}
-              >
-                <CloseIcon size={16} />
-              </button>
-            </Tooltip>
-          )}
         </div>
         {isFolded ? (
           <div className="feed-folded">

@@ -229,3 +229,59 @@ func TestThreadItemsSpanFolders(t *testing.T) {
 		}
 	})
 }
+
+// Listed by when each message was written, a message moved into a folder
+// last is filed by its own date, not put on top; a page after a message
+// carries on from its date.
+func TestAFolderListedByDateFilesAMessageMovedInLastByItsDate(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		user, err := tx.CreateUser(&models.User{Username: "reader"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		mailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: user.ID, Name: "Personal"})
+		if err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+		inbox, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindInbox)
+		if err != nil || inbox == nil {
+			t.Fatalf("a new mailbox has no Inbox: %v", err)
+		}
+		start := time.Now().Add(-48 * time.Hour)
+		// Filed newest first, so the oldest message arrives in the folder last.
+		var mailIds []string
+		for index, hours := range []int{30, 20, 10, 0} {
+			mail, err := tx.CreateMail(&models.Mail{Subject: "message " + string(rune('a'+index)), From: "ada@example.com", ReceivedAt: start.Add(time.Duration(hours) * time.Hour), Kind: models.MailKindIncoming}, nil)
+			if err != nil {
+				t.Fatalf("CreateMail: %s", err)
+			}
+			if _, err := tx.ModifyMail(mail.ID, func(found *models.Mail) error { found.ThreadID = found.ID; return nil }, nil); err != nil {
+				t.Fatalf("ModifyMail: %s", err)
+			}
+			if _, err := tx.AddItem(inbox.ID, mail.ID, "", models.MailboxItemFlags{}); err != nil {
+				t.Fatalf("AddItem: %s", err)
+			}
+			mailIds = append(mailIds, mail.ID)
+		}
+		// Newest written first: a (30h), b (20h), c (10h), d (0h), though d
+		// was filed last.
+		threads, err := tx.ListThreads(inbox.ID, &db.ItemOptions{Limit: 50, ByReceived: true})
+		if err != nil {
+			t.Fatalf("ListThreads: %s", err)
+		}
+		if len(threads) != 4 || threads[0].Item.MailID != mailIds[0] || threads[3].Item.MailID != mailIds[3] {
+			t.Fatalf("conversations are not newest written first: %d", len(threads))
+		}
+		items, err := tx.ListItems(inbox.ID, &db.ItemOptions{Limit: 2, ByReceived: true})
+		if err != nil || len(items) != 2 || items[0].MailID != mailIds[0] || items[1].MailID != mailIds[1] {
+			t.Fatalf("the first page is not the two newest written: %v", err)
+		}
+		next, err := tx.ListItems(inbox.ID, &db.ItemOptions{Limit: 2, ByReceived: true, Cursor: items[1].ID})
+		if err != nil || len(next) != 2 || next[0].MailID != mailIds[2] || next[1].MailID != mailIds[3] {
+			t.Fatalf("the page after does not carry on by date: %v", err)
+		}
+	})
+}

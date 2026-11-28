@@ -279,6 +279,17 @@ function lastToast() {
   return { message, action }
 }
 
+it('keeps the dismiss button on the card itself, outside the title it must not move with', async () => {
+  execute.mockImplementation(async () => listing([feedItem('card-frost')]))
+  drawFeed()
+  const button = await screen.findByRole('button', { name: 'Frost tonight card-frost: Dismiss' })
+  const card = button.closest('article')
+  expect(card).not.toBeNull()
+  expect(button.closest('.feed-content')).toBeNull()
+  expect(button.closest('.feed-head')).toBeNull()
+  expect(card?.classList.contains('has-dismiss')).toBe(true)
+})
+
 it('dismisses a card with its own button and brings it back with Undo', async () => {
   let isDismissed = false
   execute.mockImplementation(async (document: string) => {

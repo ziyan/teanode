@@ -325,7 +325,11 @@ func (self *Agent) fileInsight(ctx context.Context, run *Run, mail *models.Mail,
 			if err != nil {
 				return err
 			}
-			if folder == nil || folder.MailboxID != run.Mailbox.ID || folder.Kind != models.MailboxFolderKindInbox {
+			isWaiting, err := isWaitingForInsightRules(tx, run.Mailbox.ID, folder, mail)
+			if err != nil {
+				return err
+			}
+			if !isWaiting {
 				continue
 			}
 			if self.settings.Exchange != nil {
@@ -453,6 +457,24 @@ func (self *Agent) filedAway(tx db.Transaction, mailboxId, mailId string) (bool,
 		case models.MailboxFolderKindJunk, models.MailboxFolderKindTrash:
 			return true, nil
 		}
+	}
+	return false, nil
+}
+
+// isWaitingForInsightRules says whether an item in a folder still waits for
+// the rules that read the agent's insight: one in the mailbox's Inbox, or in
+// the Archive a muted list's mail is filed in as it arrives. Muting says
+// where a list's mail waits when nothing else says; a rule the person keeps
+// for it says where it goes. Elsewhere it has been filed already.
+func isWaitingForInsightRules(tx db.Transaction, mailboxId string, folder *models.MailboxFolder, mail *models.Mail) (bool, error) {
+	if folder == nil || folder.MailboxID != mailboxId {
+		return false, nil
+	}
+	switch {
+	case folder.Kind == models.MailboxFolderKindInbox:
+		return true, nil
+	case folder.Kind == models.MailboxFolderKindArchive && mail.ListKey != "":
+		return tx.SubscriptionIsMuted(mailboxId, mail.ListKey)
 	}
 	return false, nil
 }

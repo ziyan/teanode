@@ -315,7 +315,10 @@ func (self *graph) ListMailboxItems(ctx context.Context, arguments ListMailboxIt
 	// What is flagged deleted is on its way out and is not listed here;
 	// IMAP lists it until a client expunges it.
 	isDeleted := false
-	options := &db.ItemOptions{Limit: 50, Flagged: arguments.Flagged, HasAttachment: arguments.HasAttachment, Deleted: &isDeleted}
+	// Newest first by when each message was written, in a folder too: a
+	// message moved into the folder is filed by its own date, not put on top
+	// for having arrived in the folder last.
+	options := &db.ItemOptions{Limit: 50, Flagged: arguments.Flagged, HasAttachment: arguments.HasAttachment, Deleted: &isDeleted, ByReceived: true}
 	folderId := arguments.FolderID
 	if folderId != "" {
 		_, folder, err := self.requireFolder(ctx, models.PermissionMailRead, folderId)
@@ -537,7 +540,10 @@ type MailboxThreadPage struct {
 // one row for each, carrying the newest of its messages in that folder.
 func (self *graph) ListMailboxThreads(ctx context.Context, arguments ListMailboxThreadsArguments) (*MailboxThreadPage, error) {
 	isDeleted := false
-	options := &db.ItemOptions{Limit: 50, Flagged: arguments.Flagged, HasAttachment: arguments.HasAttachment, Deleted: &isDeleted}
+	// Newest first by when each message was written, in a folder too: a
+	// message moved into the folder is filed by its own date, not put on top
+	// for having arrived in the folder last.
+	options := &db.ItemOptions{Limit: 50, Flagged: arguments.Flagged, HasAttachment: arguments.HasAttachment, Deleted: &isDeleted, ByReceived: true}
 	folderId := arguments.FolderID
 	if folderId != "" {
 		_, folder, err := self.requireFolder(ctx, models.PermissionMailRead, folderId)

@@ -25804,22 +25804,36 @@ button.voice-bubble-transcribe {
   flex: 1;
   min-width: 0;
 }
-/* The headline with the card's dismiss button at its end. */
+/* The headline. The card's dismiss button is not in it: it sits in the card's
+   top right corner (.feed-dismiss), so the title wraps to the same width
+   whatever it says. A card with that button keeps the room for it free on
+   the right of its source line and its headline. */
 .feed-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-2);
   margin: 0 0 var(--space-1);
 }
 .feed-head .feed-title {
-  flex: 1;
-  min-width: 0;
   margin: 0;
 }
+.feed-card.has-dismiss .feed-kicker,
+.feed-card.has-dismiss .feed-head {
+  /* Clear of the 32px button, which is set 8px in from the card's edge, and of
+     the unread dot beside it. */
+  padding-right: 40px;
+}
+/* One place on every card: a 32px target whose cross is centered on the
+   source line, 8px in from the top and right edges. Its place does not depend
+   on anything inside the card. */
 .feed-dismiss {
-  flex: none;
-  margin: -4px -4px 0 0;
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+}
+/* Over a picture the cross needs a ground of its own. */
+.feed-dismiss.is-over-media {
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
 }
 /* Dismissed and Dismiss read, above the first card, at the column's end. */
 .feed-header {
