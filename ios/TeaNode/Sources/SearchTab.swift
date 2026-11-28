@@ -356,6 +356,7 @@ struct SearchHomeList: View {
                                     Image(systemName: result.area?.systemImage ?? "magnifyingglass")
                                 }
                                 .labelStyle(.pageRow)
+                                .foregroundStyle(Color.primary)
                             }
                             .disabled(result.opening == .nowhere)
                         }
@@ -396,6 +397,8 @@ struct SearchPlaceRow: View {
             // In the text's colors: a place is somewhere to go, not an action (ios/DESIGN.md).
             Label(place.shownTitle, systemImage: place.systemImage)
                 .labelStyle(.pageRow)
+                // The text's own color: `.primary` inside a button is the button's green.
+                .foregroundStyle(Color.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(.rect)
         }
