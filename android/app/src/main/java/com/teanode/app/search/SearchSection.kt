@@ -19,8 +19,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Search
@@ -30,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -74,6 +77,8 @@ import com.teanode.kit.search.SearchArea
 import com.teanode.kit.search.SearchAreaResults
 import com.teanode.kit.search.SearchEverythingResults
 import com.teanode.kit.search.SearchOpening
+import com.teanode.kit.search.SearchRecent
+import com.teanode.kit.search.SearchRecents
 import com.teanode.kit.search.SearchResult
 import com.teanode.kit.search.SearchWords
 import com.teanode.kit.search.searchEverything
@@ -171,11 +176,45 @@ fun SearchSection() {
             .flatMap { area -> runCatching { area.dynamicPlaces(context, connection) }.getOrDefault(emptyList()) }
     }
     val offered = remember(offeredSections, access, accountPlaces) { offeredPlaces(context, offeredSections, accountPlaces) }
+    // What was opened from here lately, kept on the phone for each account; demo mode shows invented ones.
+    val accountKey = session.accounts.collectAsState().value.active?.accountKey
+    val preferences = remember { context.getSharedPreferences("search", Context.MODE_PRIVATE) }
+    var recents by remember(accountKey) {
+        mutableStateOf(
+            when {
+                session.isDemo -> searchDemoRecents
+                accountKey == null -> emptyList()
+                else -> SearchRecents.decode(preferences.getString(SearchRecents.preferenceKey(accountKey), null))
+            },
+        )
+    }
+    val keepRecent: (SearchRecent) -> Unit = { recent ->
+        recents = SearchRecents.adding(recent, recents)
+        if (!session.isDemo && accountKey != null) preferences.edit().putString(SearchRecents.preferenceKey(accountKey), SearchRecents.encode(recents)).apply()
+    }
+    val clearRecents: () -> Unit = {
+        recents = emptyList()
+        if (!session.isDemo && accountKey != null) preferences.edit().remove(SearchRecents.preferenceKey(accountKey)).apply()
+    }
+    val offeredById = remember(offered) { offered.associateBy { entry -> entry.place.id } }
+    val shortcuts = remember(offeredById) { shortcutPlaceIds.mapNotNull { id -> offeredById[id] } }
+    // A place the account can no longer open is left out.
+    val recentEntries = remember(recents, offeredById) { recents.filter { recent -> recent.placeId == null || offeredById.containsKey(recent.placeId) } }
     val places = remember(offered, typedText) {
         val byId = offered.associateBy { entry -> entry.place.id }
         PlaceSearch.matchingPlaceIds(offered.map { entry -> entry.placeName }, typedText).mapNotNull { id -> byId[id] }
     }
     val isPhotosOffered = facts.isAvailable(AppSection.Photos)
+    val openPlace: (OfferedPlace) -> Unit = { entry ->
+        keepRecent(SearchRecent.place(entry.place.id))
+        // The part opens first, so back from the page goes to the part.
+        val section = Routes.sectionOf(entry.place.route)
+        when {
+            section == null -> navigator.navigate(entry.place.route)
+            Routes.isHome(entry.place.route) -> navigator.openSection(section)
+            else -> navigator.openInSection(section, entry.place.route)
+        }
+    }
     val open: (SearchDestination) -> Unit = { destination ->
         when (destination) {
             is SearchDestination.Item -> navigator.openInSection(destination.section, destination.route)
@@ -199,25 +238,51 @@ fun SearchSection() {
                 )
             }
             if (words == null) {
-                item { Box(Modifier.fillMaxWidth()) { EmptyState(Icons.Outlined.Search, stringResource(R.string.search_prompt), description = stringResource(R.string.search_prompt_detail)) } }
+                if (recentEntries.isEmpty() && shortcuts.isEmpty()) {
+                    item { Box(Modifier.fillMaxWidth()) { EmptyState(Icons.Outlined.Search, stringResource(R.string.search_prompt), description = stringResource(R.string.search_prompt_detail)) } }
+                    return@LazyColumn
+                }
+                if (recentEntries.isNotEmpty()) {
+                    item {
+                        SectionTitle(stringResource(R.string.search_recent), Icons.Outlined.History) {
+                            TextButton(onClick = clearRecents) { Text(stringResource(R.string.search_clear)) }
+                        }
+                    }
+                    items(recentEntries.size, key = { index -> recentEntries[index].identity }) { index ->
+                        val recent = recentEntries[index]
+                        val place = recent.placeId?.let { id -> offeredById[id] }
+                        val result = recent.result
+                        when {
+                            place != null -> TeaNodeRow(headline = place.shownTitle, leadingIcon = place.place.icon, onClick = { openPlace(place) })
+                            result != null -> {
+                                val destination = SearchDestinations.of(result, recent.words)
+                                TeaNodeRow(
+                                    headline = if (result.isMain) stringResource(R.string.search_main_chat) else result.titleText.ifEmpty { result.detailText },
+                                    supporting = result.detailText.takeIf { detail -> detail.isNotEmpty() && (result.isMain || result.titleText.isNotEmpty()) },
+                                    leadingIcon = result.area?.let { area -> areaIcon(area) } ?: Icons.Outlined.Search,
+                                    onClick = if (destination == SearchDestination.Nowhere) null else ({
+                                        keepRecent(SearchRecent.found(result, recent.words))
+                                        open(destination)
+                                    }),
+                                )
+                            }
+                        }
+                    }
+                }
+                if (shortcuts.isNotEmpty()) {
+                    item { SectionTitle(stringResource(R.string.search_shortcuts), Icons.Outlined.Bolt) }
+                    items(shortcuts.size) { index ->
+                        val entry = shortcuts[index]
+                        TeaNodeRow(headline = entry.shownTitle, leadingIcon = entry.place.icon, onClick = { openPlace(entry) })
+                    }
+                }
                 return@LazyColumn
             }
             if (places.isNotEmpty()) {
                 item { SectionTitle(stringResource(R.string.search_go_to), Icons.AutoMirrored.Outlined.ArrowForward) }
                 items(places.size) { index ->
                     val entry = places[index]
-                    TeaNodeRow(
-                        headline = entry.shownTitle, leadingIcon = entry.place.icon,
-                        onClick = {
-                            // The part opens first, so back from the page goes to the part.
-                            val section = Routes.sectionOf(entry.place.route)
-                            when {
-                                section == null -> navigator.navigate(entry.place.route)
-                                Routes.isHome(entry.place.route) -> navigator.openSection(section)
-                                else -> navigator.openInSection(section, entry.place.route)
-                            }
-                        },
-                    )
+                    TeaNodeRow(headline = entry.shownTitle, leadingIcon = entry.place.icon, onClick = { openPlace(entry) })
                 }
             }
             val answer = found
@@ -233,7 +298,9 @@ fun SearchSection() {
                             )
                         }
                     } else {
-                        answer.areas.forEach { areaResults -> areaResults.area?.let { area -> searchAreaSection(area, areaResults, words, open) } }
+                        answer.areas.forEach { areaResults ->
+                            areaResults.area?.let { area -> searchAreaSection(area, areaResults, words, open, onOpened = { result -> keepRecent(SearchRecent.found(result, words)) }) }
+                        }
                         if (isPhotosOffered && !answer.areas.any { areaResults -> areaResults.area == SearchArea.Photos && areaResults.hasMore && areaResults.results.isNotEmpty() }) {
                             item {
                                 TeaNodeRow(headline = stringResource(R.string.search_photos), leadingIcon = Icons.Outlined.PhotoLibrary, onClick = { navigator.openSection(AppSection.Photos) }, supporting = stringResource(R.string.search_photos_explanation))
@@ -269,24 +336,40 @@ private fun areaTitleText(context: Context, area: SearchArea): String = context.
     },
 )
 
+/** The pages the empty Search screen offers as shortcuts, by the ids its places are named by; those the account does not have are left out. */
+private val shortcutPlaceIds = listOf(
+    "section-calendar", "calendar-view-reminders", "section-contacts", "section-photos",
+    "finance-Transactions", "finance-Imports", "section-passwords", "section-settings",
+)
+
+/** A heading over a group of rows, with an action at its end when it has one (the recents' Clear). */
 @Composable
-private fun SectionTitle(text: String, icon: ImageVector) {
-    androidx.compose.foundation.layout.Row(Modifier.semantics { heading() }.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-        Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+private fun SectionTitle(text: String, icon: ImageVector, action: (@Composable () -> Unit)? = null) {
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = if (action == null) 16.dp else 4.dp, top = 16.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        androidx.compose.foundation.layout.Row(Modifier.weight(1f).semantics { heading() }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Text(text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+        }
+        action?.invoke()
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 private fun androidx.compose.foundation.lazy.LazyListScope.searchAreaSection(
-    area: SearchArea, areaResults: SearchAreaResults, words: String, open: (SearchDestination) -> Unit,
+    area: SearchArea, areaResults: SearchAreaResults, words: String, open: (SearchDestination) -> Unit, onOpened: (SearchResult) -> Unit,
 ) {
     item { SectionTitle(areaTitle(area), areaIcon(area)) }
     if (area == SearchArea.Photos) {
         item {
             FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 areaResults.results.filter { result -> result.targetId.isNotEmpty() }.forEach { result ->
-                    SearchPhotoThumbnail(result.targetId, onClick = { open(SearchDestinations.of(result, words)) })
+                    SearchPhotoThumbnail(result.targetId, onClick = {
+                        onOpened(result)
+                        open(SearchDestinations.of(result, words))
+                    })
                 }
             }
         }
@@ -298,7 +381,10 @@ private fun androidx.compose.foundation.lazy.LazyListScope.searchAreaSection(
             val destination = SearchDestinations.of(result, words)
             TeaNodeRow(
                 headline = title, supporting = detail, overline = result.happenedInstant?.let { instant -> relativeTimeText(instant.toEpochMilli()) },
-                onClick = if (destination == SearchDestination.Nowhere) null else ({ open(destination) }),
+                onClick = if (destination == SearchDestination.Nowhere) null else ({
+                    onOpened(result)
+                    open(destination)
+                }),
             )
         }
     }

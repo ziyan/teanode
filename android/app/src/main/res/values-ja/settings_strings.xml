@@ -13,6 +13,8 @@
     <string name="search_photos_explanation">「写真」は写っている内容からも写真を見つけます。</string>
     <string name="search_prompt">すべてを検索</string>
     <string name="search_prompt_detail">アプリのページや、チャット、メール、連絡先、写真などにある名前や言葉を探します。</string>
+    <string name="search_recent">最近</string>
+    <string name="search_shortcuts">ショートカット</string>
     <string name="search_show_all">%1$sのすべてを表示</string>
     <string name="settings_about">このアプリについて</string>
     <string name="settings_access_chosen">%1$d 件選択中</string>

@@ -818,6 +818,14 @@
         /// part, five photos (shown as pictures), with more to be found in
         /// mail, photos and finance. Nothing is found for words the demo has no
         /// results for ("nothing").
+        /// What the empty Search tab lists as opened lately in demo mode: a
+        /// page of Finance, a chat found by its words, and a contact.
+        static let searchRecents: [SearchRecent] = [
+            .place("finance-imports"),
+            .found(SearchResult(searchArea: "chats", targetId: "trip", titleText: "Weekend trip", detailText: "We could walk along the harbor on Saturday."), words: "harbor"),
+            .found(SearchResult(searchArea: "contacts", targetId: "shop", titleText: "Orders", detailText: "orders@bookshop.example"), words: "orders"),
+        ]
+
         static func searchEverything(answering body: Data?) -> String {
             let words = requestVariables(body)["words"] as? String ?? ""
             if words.lowercased().contains("nothing") {

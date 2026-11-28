@@ -25,7 +25,7 @@ public enum SearchOpening: Hashable, Sendable {
 
 /// SearchResult is one thing found: what it is, how to open it, and what to
 /// show for it.
-public struct SearchResult: Decodable, Identifiable, Hashable, Sendable {
+public struct SearchResult: Codable, Identifiable, Hashable, Sendable {
     public let searchArea: String
     /// The conversation, mail item, contact, photo, page path, document,
     /// recording, place or transaction to open, as the area says.
