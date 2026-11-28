@@ -379,7 +379,7 @@ class Transcript(
                         }
                     }
                     val pointedAt = mutableListOf<AgentReference>()
-                    for (reference in message.references ?: emptyList()) {
+                    for (reference in message.references.orEmpty().map { reference -> reference.withoutEmptyFields() }) {
                         if (reference.isReply) {
                             line = line.copy(quotedText = reference.quotedText.orEmpty(), quotedRole = reference.quotedRole.orEmpty())
                         } else {
@@ -888,7 +888,7 @@ class Transcript(
             var replyText = ""
             var replyRole = ""
             val pointedAt = mutableListOf<AgentReference>()
-            for (reference in message.references ?: emptyList()) {
+            for (reference in message.references.orEmpty().map { reference -> reference.withoutEmptyFields() }) {
                 if (reference.isReply) {
                     replyText = reference.quotedText.orEmpty()
                     replyRole = reference.quotedRole.orEmpty()

@@ -142,6 +142,40 @@ public struct AgentReference: Codable, Hashable, Sendable {
         self.quotedText = quotedText
     }
 
+    /// Reads a reference as the server writes it, where a field the reference
+    /// does not use is an empty string rather than missing: that field is nil
+    /// here, so what a reference points at is the field that is set. A card's
+    /// reference arrives with `recordingId` and `photoId` empty, and was drawn
+    /// as a recording called "Photo" while they read as set.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func read(_ key: CodingKeys) throws -> String? {
+            guard let text = try container.decodeIfPresent(String.self, forKey: key), !text.isEmpty else { return nil }
+            return text
+        }
+        itemId = try read(.itemId)
+        threadId = try read(.threadId)
+        subject = try read(.subject)
+        from = try read(.from)
+        path = try read(.path)
+        name = try read(.name)
+        recordingId = try read(.recordingId)
+        recordingTitle = try read(.recordingTitle)
+        photoId = try read(.photoId)
+        photoTitle = try read(.photoTitle)
+        feedItemId = try read(.feedItemId)
+        feedItemTitle = try read(.feedItemTitle)
+        financeTransactionId = try read(.financeTransactionId)
+        postedOn = try read(.postedOn)
+        amount = try read(.amount)
+        currencyCode = try read(.currencyCode)
+        merchantName = try read(.merchantName)
+        description = try read(.description)
+        agentMessageId = try read(.agentMessageId)
+        quotedRole = try read(.quotedRole)
+        quotedText = try read(.quotedText)
+    }
+
     /// Whether this is a reply to an earlier message, not a thing pointed at.
     public var isReply: Bool { !(agentMessageId ?? "").isEmpty }
 

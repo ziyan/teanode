@@ -36,7 +36,7 @@ const mailOrganizeLines = "Review the last 7 days of their mail, archived mail i
 	"If a few new folders and rules would file a meaningful pile of routine mail (newsletters, notifications, receipts, anything from a sender that always says the same sort of thing), post ONE card with the feed tool: " +
 	"feed_item_kind decision, a title with the real numbers such as \"File 60 routine messages into 6 folders\", a body of a few lines saying what you would do, fact_rows with one row per folder (fact_label the folder, fact_value how many messages), picture_symbol tray.full, coalesce_key mail-organize, " +
 	"and three choices in their language: Approve (choice_key approve, action), Discuss (choice_key discuss, discuss) and Not now (choice_key not_now, dismiss). " +
-	"The body must say exactly what approving does, because approving sends \"Approve: <the title>\" as their message in the main conversation with this card attached, and the turn that follows creates the folders and the rules and files the mail as the card says, and nothing more. " +
+	"The body must say exactly what approving does, because approving sends \"Approve\" as their message in the main conversation with this card attached, and the turn that follows creates the folders and the rules and files the mail as the card says, and nothing more. " +
 	"If it would not be worth their time, post nothing and write nothing: a week with nothing to tidy is a good week."
 
 // mailOrganizeReason offers to file a pile of routine mail.

@@ -83,6 +83,19 @@ data class AgentReference(
     /** Whether this is a reply to an earlier message, not a thing pointed at. */
     val isReply: Boolean get() = !agentMessageId.isNullOrEmpty()
 
+    /**
+     * The reference with the fields it does not use as null. The server writes those as empty strings, and what a
+     * reference points at is the field that is set: a card's reference arrives with `recordingId` and `photoId` empty.
+     */
+    fun withoutEmptyFields(): AgentReference = AgentReference(
+        itemId = itemId?.ifEmpty { null }, threadId = threadId?.ifEmpty { null }, subject = subject?.ifEmpty { null }, from = from?.ifEmpty { null },
+        path = path?.ifEmpty { null }, name = name?.ifEmpty { null }, recordingId = recordingId?.ifEmpty { null }, recordingTitle = recordingTitle?.ifEmpty { null },
+        photoId = photoId?.ifEmpty { null }, photoTitle = photoTitle?.ifEmpty { null }, feedItemId = feedItemId?.ifEmpty { null }, feedItemTitle = feedItemTitle?.ifEmpty { null },
+        financeTransactionId = financeTransactionId?.ifEmpty { null }, postedOn = postedOn?.ifEmpty { null }, amount = amount?.ifEmpty { null },
+        currencyCode = currencyCode?.ifEmpty { null }, merchantName = merchantName?.ifEmpty { null }, description = description?.ifEmpty { null },
+        agentMessageId = agentMessageId?.ifEmpty { null }, quotedRole = quotedRole?.ifEmpty { null }, quotedText = quotedText?.ifEmpty { null },
+    )
+
     /** What the reference's chip says. */
     val label: String
         get() {

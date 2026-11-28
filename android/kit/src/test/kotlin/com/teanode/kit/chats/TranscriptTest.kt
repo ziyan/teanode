@@ -368,6 +368,17 @@ class TranscriptTest {
     }
 
     @Test
+    fun aStoredReferenceReadsTheFieldsTheServerSendsEmptyAsMissing() {
+        val card = AgentReference(feedItemId = "card-1", feedItemTitle = "Two payments are due", recordingId = "", photoId = "", subject = "")
+        val stored = message("1", "2026-10-10T09:00:00Z", "user", "Do it").copy(references = listOf(card))
+        val shown = Transcript(messages = listOf(stored)).lines.first().references.single()
+        assertEquals("card-1", shown.feedItemId)
+        assertNull(shown.recordingId)
+        assertNull(shown.photoId)
+        assertNull(shown.subject)
+    }
+
+    @Test
     fun aRefusedRequestRemovesOnlyItsPendingMessage() {
         val transcript = Transcript()
         val firstLineId = transcript.addSent("First request")

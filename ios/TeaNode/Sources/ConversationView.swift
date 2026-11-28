@@ -1497,7 +1497,9 @@ struct PersonBubble: View {
             }
             ForEach(line.references, id: \.self) { reference in
                 let label = Label(
-                    reference.label.isEmpty && reference.photoId != nil ? String(localized: "Photo") : reference.label,
+                    reference.feedItemId != nil
+                        ? String(localized: "Card: \(reference.label)")
+                        : reference.label.isEmpty && reference.photoId != nil ? String(localized: "Photo") : reference.label,
                     systemImage: reference.recordingId != nil ? "waveform" : reference.photoId != nil ? "photo" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : reference.feedItemId != nil ? "newspaper" : "envelope"
                 )
                 .font(.footnote)

@@ -25,4 +25,15 @@ final class AgentReferenceTests: XCTestCase {
         XCTAssertEqual(object?["feedItemId"] as? String, "card-1")
         XCTAssertEqual(object?["feedItemTitle"] as? String, "Morning brief")
     }
+
+    func testFieldsTheServerSendsEmptyReadAsMissing() throws {
+        let written = #"{"feedItemId":"card-1","feedItemTitle":"Two payments are due","recordingId":"","photoId":"","subject":"","merchantName":""}"#
+        let reference = try JSONDecoder().decode(AgentReference.self, from: Data(written.utf8))
+        XCTAssertEqual(reference.feedItemId, "card-1")
+        XCTAssertNil(reference.recordingId)
+        XCTAssertNil(reference.photoId)
+        XCTAssertNil(reference.subject)
+        XCTAssertNil(reference.merchantName)
+        XCTAssertEqual(reference.label, "Two payments are due")
+    }
 }
