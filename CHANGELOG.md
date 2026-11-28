@@ -6,6 +6,20 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.243.0] - 2026-11-28
+
+### Added
+
+- Share a screenshot, a photo or a PDF of a statement and choose Import transactions: its transactions are read and imported into the account they are of, and the feed says what came of it. The dashboard's statement upload and `teanode finance read-statement` take pictures and PDFs too. (#804)
+- Finance, Imports lists every file read into finance in the background (tax documents, statements, receipts) with its status and what came of it, on the dashboard, the apps and `teanode finance imports`. (#804)
+
+### Fixed
+
+- Mail folders list mail newest first by its date, so a message moved into a folder is filed by when it was written rather than put on top. (#805)
+- Mail from a muted list is filed by the mailbox's rules that read its sorting (such as a promotions folder) instead of staying in the Archive. (#805)
+- The dismiss button on a dashboard feed card stays in the card's corner whatever the title says. (#805)
+- A picture handed in as a tax document that is not one now says so in the feed, and a statement handed in that way is imported as a statement. (#804)
+
 ## [0.242.1] - 2026-11-28
 
 ### Changed
