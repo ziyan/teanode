@@ -25819,9 +25819,10 @@ button.voice-bubble-transcribe {
 }
 .feed-card.has-dismiss .feed-kicker,
 .feed-card.has-dismiss .feed-head {
-  /* Clear of the 32px button, which is set 8px in from the card's edge, and of
-     the unread dot beside it. */
-  padding-right: 40px;
+  /* Clear of the 32px button, set 8px in from the card's edge, and of the
+     unread dot 6px left of it, with room to spare on a phone, whose card has
+     the narrower padding. */
+  padding-right: 56px;
 }
 /* One place on every card: a 32px target whose cross is centered on the
    source line, 8px in from the top and right edges. Its place does not depend
