@@ -277,7 +277,7 @@ struct RecordingsScreen: View {
                             SharedRecordingsScreen(connection: model.connection)
                         } label: {
                             Label("Recordings shared with you", systemImage: "person.2")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     }
                 }

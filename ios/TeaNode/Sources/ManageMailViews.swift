@@ -30,7 +30,7 @@ struct ManageOverviewView: View {
                                 AllMailView(connection: connection)
                             } label: {
                                 Label("Mail", systemImage: "tray.full")
-                                    .foregroundStyle(.primary)
+                                    .labelStyle(.pageRow)
                             }
                         }
                         if access.canManageQueue {
@@ -38,7 +38,7 @@ struct ManageOverviewView: View {
                                 DeliveryQueueView(connection: connection)
                             } label: {
                                 Label("Queue", systemImage: "clock.arrow.circlepath")
-                                    .foregroundStyle(.primary)
+                                    .labelStyle(.pageRow)
                             }
                         }
                         if access.canReadReports {
@@ -46,7 +46,7 @@ struct ManageOverviewView: View {
                                 ReportsView(connection: connection)
                             } label: {
                                 Label("Reports", systemImage: "checkmark.shield")
-                                    .foregroundStyle(.primary)
+                                    .labelStyle(.pageRow)
                             }
                         }
                     } footer: {
@@ -58,7 +58,7 @@ struct ManageOverviewView: View {
                                 DomainsView(connection: connection)
                             } label: {
                                 Label("Domains", systemImage: "globe")
-                                    .foregroundStyle(.primary)
+                                    .labelStyle(.pageRow)
                             }
                         } footer: {
                             Text("What it arrives for, and how each domain is set up.")
@@ -73,25 +73,25 @@ struct ManageOverviewView: View {
                             PeopleView(connection: connection)
                         } label: {
                             Label("People", systemImage: "person.2")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             GroupsView(connection: connection)
                         } label: {
                             Label("Groups", systemImage: "person.3")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             RolesView(connection: connection)
                         } label: {
                             Label("Roles", systemImage: "checkmark.seal")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             AuditLogView(connection: connection)
                         } label: {
                             Label("Audit log", systemImage: "list.bullet.clipboard")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     } header: {
                         Text("People and access")
@@ -100,20 +100,20 @@ struct ManageOverviewView: View {
                 if access.canManageServer || access.canOpenAgentAdmin {
                     Section {
                         if access.canManageServer {
-                            NavigationLink { ServerServicesView(connection: connection) } label: { Label("Services", systemImage: "switch.2").foregroundStyle(.primary) }
+                            NavigationLink { ServerServicesView(connection: connection) } label: { Label("Services", systemImage: "switch.2").labelStyle(.pageRow) }
                             NavigationLink {
                                 ServerSettingsView(connection: connection)
                             } label: {
                                 Label("Server", systemImage: "server.rack")
-                                    .foregroundStyle(.primary)
+                                    .labelStyle(.pageRow)
                             }
                         }
                         if access.canOpenAgentAdmin {
                             NavigationLink {
                                 AgentAdminView(connection: connection)
                             } label: {
-                                Label("Agents", systemImage: "person.2.wave.2")
-                                    .foregroundStyle(.primary)
+                                Label("Agents", systemImage: "person.wave.2")
+                                    .labelStyle(.pageRow)
                             }
                         }
                     } header: {
@@ -1970,7 +1970,7 @@ struct DomainView: View {
                         DomainSettingsView(model: model)
                     } label: {
                         Label("Settings", systemImage: "gearshape")
-                            .foregroundStyle(.primary)
+                            .labelStyle(.pageRow)
                     }
                     NavigationLink {
                         DomainAliasesView(model: model)
@@ -1979,7 +1979,7 @@ struct DomainView: View {
                             Text(domain.aliases?.count ?? 0, format: .number).monospacedDigit()
                         } label: {
                             Label("Aliases", systemImage: "at")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     }
                     NavigationLink {
@@ -1989,14 +1989,14 @@ struct DomainView: View {
                             Text(domain.credentials?.count ?? 0, format: .number).monospacedDigit()
                         } label: {
                             Label("Credentials", systemImage: "key")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     }
                     NavigationLink {
                         DomainTemplatesView(connection: model.connection, domainId: domain.id)
                     } label: {
                         Label("Templates", systemImage: "doc.richtext")
-                            .foregroundStyle(.primary)
+                            .labelStyle(.pageRow)
                     }
                 }
             }

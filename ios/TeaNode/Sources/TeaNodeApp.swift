@@ -541,7 +541,7 @@ struct SettingsForm: View {
                             PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
                         } label: {
                             Label("Profile", systemImage: "person.crop.circle")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         // Next to the profile, as on the dashboard's account menu: it is about who
                         // the person is among other people.
@@ -553,7 +553,7 @@ struct SettingsForm: View {
                                 // badge on the link itself is drawn after the chevron.
                                 HStack {
                                     Label("Circles", systemImage: "person.2")
-                                        .foregroundStyle(.primary)
+                                        .labelStyle(.pageRow)
                                     Spacer()
                                     if openCircleInvitationCount > 0 {
                                         Text(openCircleInvitationCount, format: .number)
@@ -567,45 +567,45 @@ struct SettingsForm: View {
                                 SharingView(connection: connection)
                             } label: {
                                 Label("Sharing", systemImage: "square.and.arrow.up")
-                                    .foregroundStyle(.primary)
+                                    .labelStyle(.pageRow)
                             }
                         }
                         NavigationLink {
                             ChangePasswordView(connection: connection)
                         } label: {
                             Label("Password", systemImage: "key")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             PasskeysView(connection: connection)
                         } label: {
-                            Label("Passkeys", systemImage: "person.badge.key")
-                                .foregroundStyle(.primary)
+                            Label("Passkeys", systemImage: "key.horizontal")
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             TokensView(connection: connection)
                         } label: {
                             Label("API tokens", systemImage: "terminal")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             DevicesView(connection: connection)
                         } label: {
                             Label("Devices", systemImage: "iphone")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             ConnectedAppsView(connection: connection)
                         } label: {
                             Label("Apps", systemImage: "app.badge.checkmark")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         // Last, as on the dashboard's menu: the account's pages keep one order.
                         NavigationLink {
                             SessionsView(connection: connection)
                         } label: {
-                            Label("Sessions", systemImage: "macbook.and.iphone")
-                                .foregroundStyle(.primary)
+                            Label("Sessions", systemImage: "desktopcomputer")
+                                .labelStyle(.pageRow)
                         }
                     }
                 }
@@ -621,7 +621,7 @@ struct SettingsForm: View {
                             PhotoFacesSettingsView(connection: connection)
                         } label: {
                             Label("People in Photos", systemImage: "person.crop.circle")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     }
                 }
@@ -649,43 +649,43 @@ struct SettingsForm: View {
                             AgentSettingsView(connection: connection)
                         } label: {
                             Label("Agent settings", systemImage: "slider.horizontal.3")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             KnowledgeSourcesView(connection: connection)
                         } label: {
                             Label("Sources", systemImage: "tray.2")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             AgentMemorySettingsView(connection: connection)
                         } label: {
                             Label("Memory", systemImage: "brain")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             DreamsView(connection: connection)
                         } label: {
                             Label("Dreams", systemImage: "moon.zzz")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             MutedAlertsView(connection: connection)
                         } label: {
                             Label("Alerts", systemImage: "bell.badge")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             ConnectionsView(connection: connection)
                         } label: {
-                            Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
-                                .foregroundStyle(.primary)
+                            Label("Connections", systemImage: "arrow.triangle.branch")
+                                .labelStyle(.pageRow)
                         }
                         NavigationLink {
                             AgentActivityView(connection: connection)
                         } label: {
                             Label("Activity", systemImage: "list.bullet.rectangle")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     }
                 }
@@ -695,7 +695,7 @@ struct SettingsForm: View {
                             ManageOverviewView(connection: connection)
                         } label: {
                             Label("Manage", systemImage: "server.rack")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     } footer: {
                         Text("The server: its mail, domains, people and settings.")
@@ -708,7 +708,7 @@ struct SettingsForm: View {
                             MailboxSettingsView(mail: mail)
                         } label: {
                             Label("Mailbox", systemImage: "tray")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     }
                 }

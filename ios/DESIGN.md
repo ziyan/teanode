@@ -176,6 +176,8 @@ its pull request is opened.
   greens its symbol whatever its words are, so in a form or list a button's
   label takes `.actionColor()` and any other label with a symbol
   `.foregroundStyle(.primary)` (`make check-button-colors` checks both).
+  Page rows use `.labelStyle(.pageRow)`, which keeps every row's symbol in one
+  column and in the text color, and `make check-row-symbols` checks it.
 - Show content, do not fold it. Lines of a receipt, a quoted message, a
   summary: show them whole, in body text, one row each. A long list moves to
   a screen of its own behind a row, as iOS Settings does; it does not open in

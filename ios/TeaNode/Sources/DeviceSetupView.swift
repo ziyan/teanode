@@ -62,7 +62,7 @@ struct DeviceSetupView: View {
                                 DeviceMailPasswordsScreen(connection: connection, username: app.account?.username ?? "", mailboxId: mailboxId)
                             } label: {
                                 Label("Manage mail passwords", systemImage: "key")
-                                    .foregroundStyle(.primary)
+                                    .labelStyle(.pageRow)
                             }
                         }
                     }
@@ -73,7 +73,7 @@ struct DeviceSetupView: View {
                             SyncCredentialsView(connection: connection)
                         } label: {
                             Label("Manage sync passwords", systemImage: "key")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     }
                 }

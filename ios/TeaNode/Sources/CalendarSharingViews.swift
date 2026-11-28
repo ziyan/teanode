@@ -60,14 +60,14 @@ struct CalendarListSheet: View {
                             CalendarShareScreen(model: model, calendar: own)
                         } label: {
                             Label("Share my calendar", systemImage: "person.2")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                         if let ownUserId = own.ownerUserId {
                             NavigationLink {
                                 FindATimeScreen(connection: model.connection, ownUserId: ownUserId)
                             } label: {
                                 Label("Find a time", systemImage: "calendar.badge.clock")
-                                    .foregroundStyle(.primary)
+                                    .labelStyle(.pageRow)
                             }
                         }
                     } footer: {

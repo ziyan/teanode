@@ -15,7 +15,7 @@ struct MailboxSettingsView: View {
                         MailboxGeneralView(mail: mail, mailbox: mailbox)
                     } label: {
                         Label("Name and signature", systemImage: "signature")
-                            .foregroundStyle(.primary)
+                            .labelStyle(.pageRow)
                     }
                     NavigationLink {
                         AutoReplyView(mail: mail, mailbox: mailbox)
@@ -24,14 +24,14 @@ struct MailboxSettingsView: View {
                             Text(mailbox.autoReply?.enabled == true ? String(localized: "On") : String(localized: "Off"))
                         } label: {
                             Label("Auto-reply", systemImage: "arrowshape.turn.up.left.2")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     }
                     NavigationLink {
                         MailFoldersView(mail: mail)
                     } label: {
                         Label("Folders", systemImage: "folder")
-                            .foregroundStyle(.primary)
+                            .labelStyle(.pageRow)
                     }
                     NavigationLink {
                         MailRulesView(mail: mail, mailboxId: mailbox.id)
@@ -40,14 +40,14 @@ struct MailboxSettingsView: View {
                             Text(mailbox.rules?.count ?? 0, format: .number)
                         } label: {
                             Label("Rules", systemImage: "line.3.horizontal.decrease.circle")
-                                .foregroundStyle(.primary)
+                                .labelStyle(.pageRow)
                         }
                     }
                     NavigationLink {
                         MailAppPasswordsView(mail: mail, mailboxId: mailbox.id)
                     } label: {
-                        Label("Mail programs", systemImage: "laptopcomputer.and.iphone")
-                            .foregroundStyle(.primary)
+                        Label("Mail programs", systemImage: "laptopcomputer")
+                            .labelStyle(.pageRow)
                     }
                 } footer: {
                     Text("Addresses: \(mailbox.sendingAddresses.joined(separator: ", "))")
@@ -260,7 +260,7 @@ struct MailAppPasswordsView: View {
                     DeviceSetupView(connection: mail.connection, preselectedMailboxId: mailboxId)
                 } label: {
                     Label("Set up on this iPhone", systemImage: "iphone")
-                        .foregroundStyle(.primary)
+                        .labelStyle(.pageRow)
                 }
             } footer: {
                 Text("Choose Mail, Calendar, Reminders and Contacts, then install one profile. A mailbox is optional.")

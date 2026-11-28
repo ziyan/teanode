@@ -1046,7 +1046,7 @@ struct PhotoInfoView: View {
                                 PhotoAlbumScreen(model: model, albumId: album.id)
                             } label: {
                                 Label(album.albumTitle, systemImage: "rectangle.stack")
-                                    .foregroundStyle(.primary)
+                                    .labelStyle(.pageRow)
                             }
                         }
                     }

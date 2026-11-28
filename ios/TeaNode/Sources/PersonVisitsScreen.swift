@@ -167,7 +167,7 @@ struct PersonVisitsList: View {
                     LocationTravelScreen(connection: model.connection, userId: model.userId)
                 } label: {
                     Label("Travel", systemImage: "figure.walk")
-                        .foregroundStyle(.primary)
+                        .labelStyle(.pageRow)
                         .frame(minHeight: 44)
                 }
             }

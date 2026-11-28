@@ -136,7 +136,7 @@ struct AccountTradesLink: View {
             TradesView(account: account)
         } label: {
             Label("Trades", systemImage: "chart.line.uptrend.xyaxis")
-                .foregroundStyle(.primary)
+                .labelStyle(.pageRow)
         }
     }
 }
@@ -825,7 +825,7 @@ struct ImportTransactionRowsLink: View {
             ImportTransactionRowsView(onImported: onImported)
         } label: {
             Label("Import transaction rows", systemImage: "square.and.arrow.down")
-                .foregroundStyle(.primary)
+                .labelStyle(.pageRow)
         }
     }
 }

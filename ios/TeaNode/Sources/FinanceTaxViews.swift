@@ -530,7 +530,7 @@ struct TaxEstimateSection: View {
                 TaxYearSettingView(taxYear: taxYear, setting: setting, onSaved: onSettingsSaved)
             } label: {
                 Label("Year settings", systemImage: "slider.horizontal.3")
-                    .foregroundStyle(.primary)
+                    .labelStyle(.pageRow)
             }
         } header: {
             if estimate.isProjected == true {

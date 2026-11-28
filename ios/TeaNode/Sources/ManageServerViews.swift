@@ -121,7 +121,7 @@ private struct RestartNote: View {
                 ServerAboutView(connection: connection)
             } label: {
                 Label("Restart it on the About page", systemImage: "arrow.clockwise")
-                    .foregroundStyle(.primary)
+                    .labelStyle(.pageRow)
             }
         } footer: {
             Text("These are read once, when the server starts. Saving stores the change; the server goes on using what it read until it is restarted.")
@@ -302,7 +302,7 @@ private struct ServerSettingsRows: View {
                         ServerAboutView(connection: model.connection)
                     } label: {
                         Label("About", systemImage: "info.circle")
-                            .foregroundStyle(.primary)
+                            .labelStyle(.pageRow)
                     }
                 }
                 if tabs.contains(.setup) {
@@ -310,7 +310,7 @@ private struct ServerSettingsRows: View {
                         ServerSetupView(connection: model.connection)
                     } label: {
                         Label("Setup", systemImage: "checklist")
-                            .foregroundStyle(.primary)
+                            .labelStyle(.pageRow)
                     }
                 }
             } footer: {
@@ -329,8 +329,8 @@ private struct ServerSettingsRows: View {
                         NavigationLink {
                             StorageUsageView(connection: model.connection)
                         } label: {
-                            Label("Disk usage", systemImage: "internaldrive")
-                                .foregroundStyle(.primary)
+                            Label("Disk usage", systemImage: "cylinder")
+                                .labelStyle(.pageRow)
                         }
                     }
                     ForEach(shownRows, id: \.self) { settingsRow in
@@ -347,39 +347,39 @@ private struct ServerSettingsRows: View {
     private func row(_ settingsRow: SettingsRow) -> some View {
         switch settingsRow {
         case .identity:
-            NavigationLink { IdentityFormView(model: model) } label: { Label("This server", systemImage: "server.rack") }
+            NavigationLink { IdentityFormView(model: model) } label: { Label("This server", systemImage: "server.rack").labelStyle(.pageRow) }
         case .listeners:
-            NavigationLink { ListenFormView(model: model) } label: { Label("Listeners", systemImage: "antenna.radiowaves.left.and.right") }
+            NavigationLink { ListenFormView(model: model) } label: { Label("Listeners", systemImage: "antenna.radiowaves.left.and.right").labelStyle(.pageRow) }
         case .certificates:
-            NavigationLink { CertificatesFormView(model: model) } label: { Label("Certificates", systemImage: "lock.shield") }
+            NavigationLink { CertificatesFormView(model: model) } label: { Label("Certificates", systemImage: "lock.shield").labelStyle(.pageRow) }
         case .route53:
-            NavigationLink { Route53FormView(model: model) } label: { Label("Route53", systemImage: "globe") }
+            NavigationLink { Route53FormView(model: model) } label: { Label("Route53", systemImage: "globe").labelStyle(.pageRow) }
         case .resolver:
-            NavigationLink { ResolverFormView(model: model) } label: { Label("Resolver", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
+            NavigationLink { ResolverFormView(model: model) } label: { Label("Resolver", systemImage: "signpost.right").labelStyle(.pageRow) }
         case .limits:
-            NavigationLink { SMTPLimitsFormView(model: model) } label: { Label("Limits", systemImage: "gauge.with.dots.needle.33percent") }
+            NavigationLink { SMTPLimitsFormView(model: model) } label: { Label("Limits", systemImage: "gauge.with.dots.needle.33percent").labelStyle(.pageRow) }
         case .relay:
-            NavigationLink { RelayFormView(model: model) } label: { Label("Outgoing relay", systemImage: "paperplane") }
+            NavigationLink { RelayFormView(model: model) } label: { Label("Outgoing relay", systemImage: "paperplane").labelStyle(.pageRow) }
         case .proxy:
-            NavigationLink { ProxyFormView(model: model) } label: { Label("Outgoing proxy", systemImage: "point.3.connected.trianglepath.dotted") }
+            NavigationLink { ProxyFormView(model: model) } label: { Label("Outgoing proxy", systemImage: "arrow.triangle.branch").labelStyle(.pageRow) }
         case .scanner:
-            NavigationLink { ScannerFormView(model: model) } label: { Label("Virus scanning", systemImage: "cross.case") }
+            NavigationLink { ScannerFormView(model: model) } label: { Label("Virus scanning", systemImage: "cross.case").labelStyle(.pageRow) }
         case .antispam:
-            NavigationLink { AntispamFormView(model: model) } label: { Label("Spam scoring", systemImage: "xmark.bin") }
+            NavigationLink { AntispamFormView(model: model) } label: { Label("Spam scoring", systemImage: "xmark.bin").labelStyle(.pageRow) }
         case .geoIP:
-            NavigationLink { GeoIPFormView(model: model) } label: { Label("Where senders connect from", systemImage: "mappin.and.ellipse") }
+            NavigationLink { GeoIPFormView(model: model) } label: { Label("Where senders connect from", systemImage: "mappin").labelStyle(.pageRow) }
         case .places:
-            NavigationLink { PlacesFormView(model: model) } label: { Label("Places and maps", systemImage: "map") }
+            NavigationLink { PlacesFormView(model: model) } label: { Label("Places and maps", systemImage: "map").labelStyle(.pageRow) }
         case .messageStorage:
-            NavigationLink { MessageStorageFormView(model: model) } label: { Label("On this machine", systemImage: "internaldrive") }
+            NavigationLink { MessageStorageFormView(model: model) } label: { Label("On this machine", systemImage: "cylinder").labelStyle(.pageRow) }
         case .objectStore:
-            NavigationLink { ObjectStoreFormView(model: model) } label: { Label("Object store", systemImage: "externaldrive.connected.to.line.below") }
+            NavigationLink { ObjectStoreFormView(model: model) } label: { Label("Object store", systemImage: "cylinder.split.1x2").labelStyle(.pageRow) }
         case .sessions:
-            NavigationLink { SessionFormView(model: model) } label: { Label("Sessions", systemImage: "clock") }
+            NavigationLink { SessionFormView(model: model) } label: { Label("Sessions", systemImage: "clock").labelStyle(.pageRow) }
         case .passkeys:
-            NavigationLink { PasskeyFormView(model: model) } label: { Label("Passkeys", systemImage: "person.badge.key") }
+            NavigationLink { PasskeyFormView(model: model) } label: { Label("Passkeys", systemImage: "key.horizontal").labelStyle(.pageRow) }
         case .identityProviders:
-            NavigationLink { SSOFormView(model: model) } label: { Label("Identity providers", systemImage: "person.crop.circle.badge.checkmark") }
+            NavigationLink { SSOFormView(model: model) } label: { Label("Identity providers", systemImage: "checkmark.shield").labelStyle(.pageRow) }
         }
     }
 }
@@ -1243,7 +1243,7 @@ struct ServerAboutView: View {
                     ReleaseNotesView(notes: notes, version: latestText)
                 } label: {
                     Label("What changed in \(latestText)", systemImage: "doc.text")
-                        .foregroundStyle(.primary)
+                        .labelStyle(.pageRow)
                 }
                 .fullWidthRowSeparator()
             }
@@ -1952,41 +1952,41 @@ struct AgentAdminView: View {
         switch tab {
         case .general:
             Section("General") {
-                NavigationLink { AgentListView(connection: connection) } label: { Label("Agents", systemImage: "person.2").foregroundStyle(.primary) }
-                NavigationLink { AgentHouseSettingsView(model: model) } label: { Label("Personal agents", systemImage: "sparkles").foregroundStyle(.primary) }
+                NavigationLink { AgentListView(connection: connection) } label: { Label("Agents", systemImage: "person.2").labelStyle(.pageRow) }
+                NavigationLink { AgentHouseSettingsView(model: model) } label: { Label("Personal agents", systemImage: "sparkles").labelStyle(.pageRow) }
             }
         case .usage:
             Section {
-                NavigationLink { AgentUsageView(connection: connection) } label: { Label("Use and cost", systemImage: "chart.bar").foregroundStyle(.primary) }
+                NavigationLink { AgentUsageView(connection: connection) } label: { Label("Use and cost", systemImage: "chart.bar").labelStyle(.pageRow) }
             }
         case .oversight:
             Section {
-                NavigationLink { OversightView(connection: connection) } label: { Label("Oversight", systemImage: "eye").foregroundStyle(.primary) }
+                NavigationLink { OversightView(connection: connection) } label: { Label("Oversight", systemImage: "eye").labelStyle(.pageRow) }
             }
         case .models:
             Section("Models") {
-                NavigationLink { AgentProvidersView(model: model) } label: { Label("Providers", systemImage: "cpu").foregroundStyle(.primary) }
-                NavigationLink { AgentModelsFormView(model: model) } label: { Label("Models", systemImage: "square.stack.3d.up").foregroundStyle(.primary) }
-                NavigationLink { AgentVoiceFormView(model: model) } label: { Label("Voice", systemImage: "waveform").foregroundStyle(.primary) }
-                NavigationLink { AgentRecordingFormView(model: model) } label: { Label("Recording", systemImage: "record.circle").foregroundStyle(.primary) }
-                NavigationLink { AgentFeaturesFormView(model: model) } label: { Label("What people may turn on", systemImage: "switch.2").foregroundStyle(.primary) }
-                NavigationLink { AgentLimitsFormView(model: model) } label: { Label("Limits", systemImage: "gauge.with.dots.needle.67percent").foregroundStyle(.primary) }
+                NavigationLink { AgentProvidersView(model: model) } label: { Label("Providers", systemImage: "cpu").labelStyle(.pageRow) }
+                NavigationLink { AgentModelsFormView(model: model) } label: { Label("Models", systemImage: "square.stack.3d.up").labelStyle(.pageRow) }
+                NavigationLink { AgentVoiceFormView(model: model) } label: { Label("Voice", systemImage: "waveform").labelStyle(.pageRow) }
+                NavigationLink { AgentRecordingFormView(model: model) } label: { Label("Recording", systemImage: "record.circle").labelStyle(.pageRow) }
+                NavigationLink { AgentFeaturesFormView(model: model) } label: { Label("What people may turn on", systemImage: "switch.2").labelStyle(.pageRow) }
+                NavigationLink { AgentLimitsFormView(model: model) } label: { Label("Limits", systemImage: "gauge.with.dots.needle.67percent").labelStyle(.pageRow) }
             }
         case .tools:
             Section("Tools") {
-                NavigationLink { AgentToolPolicyFormView(model: model) } label: { Label("Tool policy", systemImage: "wrench.and.screwdriver").foregroundStyle(.primary) }
-                NavigationLink { AgentWebSearchFormView(model: model) } label: { Label("Web search", systemImage: "magnifyingglass").foregroundStyle(.primary) }
-                NavigationLink { AgentBrowserFormView(model: model) } label: { Label("Browser", systemImage: "safari").foregroundStyle(.primary) }
-                NavigationLink { ConnectedServersView(model: model) } label: { Label("Connected servers", systemImage: "server.rack").foregroundStyle(.primary) }
+                NavigationLink { AgentToolPolicyFormView(model: model) } label: { Label("Tool policy", systemImage: "wrench.and.screwdriver").labelStyle(.pageRow) }
+                NavigationLink { AgentWebSearchFormView(model: model) } label: { Label("Web search", systemImage: "magnifyingglass").labelStyle(.pageRow) }
+                NavigationLink { AgentBrowserFormView(model: model) } label: { Label("Browser", systemImage: "safari").labelStyle(.pageRow) }
+                NavigationLink { ConnectedServersView(model: model) } label: { Label("Connected servers", systemImage: "server.rack").labelStyle(.pageRow) }
             }
         case .skills:
             Section {
-                NavigationLink { AgentSkillsView(connection: connection) } label: { Label("Skills", systemImage: "puzzlepiece.extension").foregroundStyle(.primary) }
+                NavigationLink { AgentSkillsView(connection: connection) } label: { Label("Skills", systemImage: "puzzlepiece.extension").labelStyle(.pageRow) }
             }
         case .sources:
             Section("Sources") {
-                NavigationLink { AgentSourceTypesView(connection: connection) } label: { Label("Source types", systemImage: "books.vertical").foregroundStyle(.primary) }
-                NavigationLink { AgentFinanceFormView(model: model) } label: { Label("Finance", systemImage: "banknote").foregroundStyle(.primary) }
+                NavigationLink { AgentSourceTypesView(connection: connection) } label: { Label("Source types", systemImage: "books.vertical").labelStyle(.pageRow) }
+                NavigationLink { AgentFinanceFormView(model: model) } label: { Label("Finance", systemImage: "banknote").labelStyle(.pageRow) }
             }
         }
     }
@@ -2901,7 +2901,7 @@ private struct AgentModelAddView: View {
                 NavigationLink {
                     pickedPage(PickedProviderModel(modelID: trimmedID, reportedContextWindow: 0))
                 } label: {
-                    Label("Use this id", systemImage: "plus").foregroundStyle(.primary)
+                    Label("Use this id", systemImage: "plus").labelStyle(.pageRow)
                 }
                 .disabled(trimmedID.isEmpty)
             } footer: {
@@ -3587,7 +3587,7 @@ private struct AgentModelsFormView: View {
                             }))
                 } label: {
                     Label("Add a model people may pick", systemImage: "plus")
-                        .foregroundStyle(.primary)
+                        .labelStyle(.pageRow)
                 }
             } header: {
                 Text("Models a person may pick")

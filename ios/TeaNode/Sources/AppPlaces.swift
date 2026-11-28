@@ -199,11 +199,11 @@ enum AppPlaces {
             add("sharing", "Sharing", "square.and.arrow.up", [.sharing])
         }
         add("password", "Password", "key", [.password])
-        add("passkeys", "Passkeys", "person.badge.key", [.passkeys])
+        add("passkeys", "Passkeys", "key.horizontal", [.passkeys])
         add("api-tokens", "API tokens", "terminal", [.apiTokens])
         add("devices", "Devices", "iphone", [.devices])
         add("apps", "Apps", "app.badge.checkmark", [.apps])
-        add("sessions", "Sessions", "macbook.and.iphone", [.sessions])
+        add("sessions", "Sessions", "desktopcomputer", [.sessions])
         if app.isPhotosOffered {
             add("photo-backup", "Photo backup", "icloud.and.arrow.up", [.photoBackup])
             add("photo-faces", "People in Photos", "person.crop.circle", [.photoFaces])
@@ -223,7 +223,7 @@ enum AppPlaces {
             ("agent-reach", "What it may reach", "tray.2", .reach),
             ("agent-categories", "Your own categories", "tag", .categories),
             ("agent-model", "Model for conversations", "cpu", .model),
-            ("agent-speaking-first", "Speaking first", "bubble.left.and.text.bubble.right", .speakingFirst),
+            ("agent-speaking-first", "Speaking first", "bubble.left", .speakingFirst),
             ("agent-ask-first", "Ask me first", "hand.raised", .askFirst),
             ("agent-when-away", "When you are not there", "moon", .whenAway),
         ]
@@ -234,7 +234,7 @@ enum AppPlaces {
         add("memory", "Memory", "brain", [.memory])
         add("dreams", "Dreams", "moon.zzz", [.dreams])
         add("alerts", "Alerts", "bell.badge", [.alerts])
-        add("connections", "Connections", "point.3.connected.trianglepath.dotted", [.connections])
+        add("connections", "Connections", "arrow.triangle.branch", [.connections])
         add("activity", "Activity", "list.bullet.rectangle", [.activity])
 
         if let access, access.isOperator || access.canOpenMailDelivery || access.canManageServer || access.canOpenAgentAdmin {
@@ -259,7 +259,7 @@ enum AppPlaces {
                 addManaged("manage-services", "Services", "switch.2", .manageServices)
                 addManaged("manage-server", "Server", "server.rack", .manageServer)
             }
-            if access.canOpenAgentAdmin { addManaged("manage-agents", "Agents", "person.2.wave.2", .manageAgents) }
+            if access.canOpenAgentAdmin { addManaged("manage-agents", "Agents", "person.wave.2", .manageAgents) }
         }
 
         if app.services?.isMailboxEnabled != false, let mail, mail.mailbox != nil {
@@ -269,7 +269,7 @@ enum AppPlaces {
             add("mailbox-auto-reply", "Auto-reply", "arrowshape.turn.up.left.2", [.mailbox, .mailboxAutoReply], inside: [mailbox])
             add("mailbox-folders", "Folders", "folder", [.mailbox, .mailboxFolders], inside: [mailbox])
             add("mailbox-rules", "Rules", "line.3.horizontal.decrease.circle", [.mailbox, .mailboxRules], inside: [mailbox])
-            add("mailbox-programs", "Mail programs", "laptopcomputer.and.iphone", [.mailbox, .mailboxPrograms], inside: [mailbox])
+            add("mailbox-programs", "Mail programs", "laptopcomputer", [.mailbox, .mailboxPrograms], inside: [mailbox])
         }
         return places
     }

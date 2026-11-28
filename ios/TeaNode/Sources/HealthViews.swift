@@ -64,6 +64,7 @@ struct HealthScreen: View {
                         }
                         NavigationLink(value: HealthDestination.settings) {
                             Label("Health settings", systemImage: "gearshape")
+                                .labelStyle(.pageRow)
                         }
                     }
                 }

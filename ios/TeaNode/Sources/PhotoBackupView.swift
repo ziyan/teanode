@@ -383,6 +383,7 @@ struct PhotoBackupContent: View {
                     PhotoBackupRefusedFilesView()
                 } label: {
                     Label("\(status.skippedFileCount) files skipped", systemImage: "forward")
+                        .labelStyle(.pageRow)
                         .foregroundStyle(.secondary)
                 }
                 .fullWidthRowSeparator()
