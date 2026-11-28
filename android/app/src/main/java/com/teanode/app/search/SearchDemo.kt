@@ -17,3 +17,12 @@ val searchDemoAnswerers: List<DemoAnswerer> = listOf(
         ],"failedAreas":["finance"]}""",
     ),
 )
+
+/** What the empty Search screen lists as opened lately in demo mode: a page of Finance, a chat found by its words, and a mail. */
+val searchDemoRecents: List<com.teanode.kit.search.SearchRecent> = listOf(
+    com.teanode.kit.search.SearchRecent.place("finance-Imports"),
+    com.teanode.kit.search.SearchRecent.found(
+        com.teanode.kit.search.SearchResult("chats", "c1", "Weekend trip", "We could walk along the harbor on Saturday."), "harbor",
+    ),
+    com.teanode.kit.search.SearchRecent.found(com.teanode.kit.search.SearchResult("mail", "m1", "Harbor festival tickets", "Alex Sample"), "harbor"),
+)

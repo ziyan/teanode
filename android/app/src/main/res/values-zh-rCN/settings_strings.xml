@@ -13,6 +13,8 @@
     <string name="search_photos_explanation">“照片”还能按画面内容找到图片。</string>
     <string name="search_prompt">搜索所有内容</string>
     <string name="search_prompt_detail">查找应用里的页面，或在对话、邮件、联系人、照片等所有内容中查找名字或几个词。</string>
+    <string name="search_recent">最近</string>
+    <string name="search_shortcuts">快捷方式</string>
     <string name="search_show_all">显示%1$s中的全部结果</string>
     <string name="settings_about">关于</string>
     <string name="settings_access_chosen">已选 %1$d 项</string>

@@ -319,6 +319,7 @@ jobs:
           # Search: before anything is typed, and with the words typed, grouped by part.
           shoot search-light light large -TeaNodeDemo -TeaNodeTab search
           shoot search-dark dark large -TeaNodeDemo -TeaNodeTab search
+          shoot search-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab search
           shoot search-results-light light large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
           shoot search-results-dark dark large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results
           shoot search-results-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab search -TeaNodeScreen search-results

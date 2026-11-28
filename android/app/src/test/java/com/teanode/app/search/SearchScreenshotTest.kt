@@ -16,7 +16,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** Pictures of the Search screen: empty, with words that name places, and with what the invented server finds. */
+/** Pictures of the Search screen: empty (what was opened lately and the shortcuts), with words that name places, and with what the invented server finds. */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], qualifiers = PHONE_QUALIFIERS)
@@ -36,6 +36,7 @@ class SearchScreenshotTest {
 
     @Test fun `empty light`() = shoot("search-empty-light")
     @Test fun `empty dark`() = shoot("search-empty-dark", appearance = AppearanceChoice.Dark)
+    @Test fun `empty largest text`() = shoot("search-empty-largest-text", fontScale = 2f)
     @Test fun `results light`() = shoot("search-results-light", "harbor")
     @Test fun `results dark`() = shoot("search-results-dark", "harbor", AppearanceChoice.Dark)
     @Test fun `results largest text`() = shoot("search-results-largest-text", "harbor", fontScale = 2f)
