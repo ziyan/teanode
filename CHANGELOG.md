@@ -6,6 +6,18 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.242.0] - 2026-11-28
+
+### Changed
+
+- The agent has no hidden limits left on how much it writes, reads or does. Long tool results, files, mail, messages and lists are read page by page instead of being cut, the agent is told when a provider cut its answer and carries on, and your own words (standing instructions, goal notes, journal corrections) are kept whole. (#803)
+- A goal can manage other goals and, when you wrote it, read your Health data; the agent can end or decline a finance share and manage your journal, asking you before erasing it or deleting a story. (#803)
+- A new server no longer has a hidden 200,000-token daily limit; only the money limits you set apply. (#803)
+
+### Removed
+
+- The `agent.retention`, `agent.browser.idleTimeout` and `agent.browser.maxContexts` settings: they are fixed now. A configuration that sets them still loads, with a warning. (#803)
+
 ## [0.241.0] - 2026-11-27
 
 ### Added
