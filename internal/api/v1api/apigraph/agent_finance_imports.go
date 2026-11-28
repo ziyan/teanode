@@ -66,6 +66,15 @@ type FinanceImport struct {
 	// in; empty when the file or the message is gone.
 	FileName string `json:"fileName"`
 
+	// AgentAttachmentID is the file read, to show or open it, with its
+	// type; empty for a message, or when the file is gone.
+	AgentAttachmentID     string `json:"agentAttachmentId"`
+	AttachmentContentType string `json:"attachmentContentType"`
+
+	// MailboxItemID is the message the file came in, to open it; empty for
+	// an upload, or when the message is gone from the mailbox.
+	MailboxItemID string `json:"mailboxItemId"`
+
 	QueuedAt   time.Time  `json:"queuedAt"`
 	FinishedAt *time.Time `json:"finishedAt" graphapi:"nullable"`
 
@@ -143,6 +152,16 @@ func financeImportOf(tx db.Transaction, agentId string, job *models.AgentJob) (*
 		}
 		if mail != nil {
 			financeImport.FileName = mail.Subject
+			items, err := tx.ListItemsByMail(mail.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, item := range items {
+				if !item.Deleted {
+					financeImport.MailboxItemID = item.ID
+					break
+				}
+			}
 		}
 	} else {
 		attachment, err := tx.GetAgentAttachment(job.SubjectID)
@@ -151,6 +170,7 @@ func financeImportOf(tx db.Transaction, agentId string, job *models.AgentJob) (*
 		}
 		if attachment != nil && attachment.AgentID == agentId {
 			financeImport.FileName = attachment.Name
+			financeImport.AgentAttachmentID, financeImport.AttachmentContentType = attachment.ID, attachment.ContentType
 			if attachment.PhotoID != "" {
 				financeImport.FinanceImportSource = FinanceImportSourcePhoto
 			}

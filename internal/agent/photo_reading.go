@@ -249,7 +249,7 @@ func accountOf(accounts []finance.ExistingStatementAccount, financeAccountId str
 func (self *statementPhotoAnswer) transactionRowsInput() *finance.TransactionRowsInput {
 	input := &finance.TransactionRowsInput{
 		InstitutionName: self.InstitutionName, AccountName: self.AccountName, AccountNumber: strings.TrimSpace(self.AccountNumber),
-		IsAccountNumberPartial: self.IsAccountNumberPartial, StatementAccountKind: finance.StatementAccountKind(strings.ToLower(strings.TrimSpace(self.StatementAccountKind))),
+		AreEdgeMonthsPartial: true, IsAccountNumberPartial: self.IsAccountNumberPartial, StatementAccountKind: finance.StatementAccountKind(strings.ToLower(strings.TrimSpace(self.StatementAccountKind))),
 		CurrencyCode: strings.ToUpper(strings.TrimSpace(self.CurrencyCode)), LedgerBalanceAmount: string(self.LedgerBalanceAmount), LedgerBalanceOn: strings.TrimSpace(self.LedgerBalanceOn),
 	}
 	for _, row := range self.TransactionRows {
@@ -354,8 +354,8 @@ func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 		if _, checkErr := finance.CheckTransactionRows(rowsOnly, today); errors.Is(checkErr, finance.ErrTransactionRowsRefused) {
 			why := strings.TrimPrefix(checkErr.Error(), finance.ErrTransactionRowsRefused.Error()+": ")
 			again := prompt + "\n\nYou read it once already, and answered:\n" + thinking.Text + "\n\nThat reading does not add up: " + why +
-				". Look at the statement again. A month cut off at the top or the bottom of a picture is left out whole, its rows and its total, when the list shows totals. " +
-				"Otherwise read that month's rows, their days and their amounts again. Answer with the whole JSON object again."
+				". Look at the statement again, and read that month's rows, their days and their amounts again: each row under the month it is listed in. " +
+				"Answer with the whole JSON object again."
 			second, err := self.thinkAbout(ctx, run, "Reading the statement "+attachment.Name+" again", again, source.pictures, noTools, 1,
 				models.AgentJobStatementPhoto, config.AgentWorkResearch)
 			if err != nil {

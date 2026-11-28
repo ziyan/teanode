@@ -192,11 +192,16 @@ func TestTheReadingNamesTheAccountAScreenshotIsOf(test *testing.T) {
 	}
 }
 
-// A reading that copies the total of a month the picture cuts off is told
-// why and read once more, and the second reading is imported.
+// A reading whose whole month does not come to its total is told why and
+// read once more, and the second reading is imported.
 func TestAReadingThatDoesNotAddUpIsReadOnceMore(test *testing.T) {
-	withCutOffTotal := strings.Replace(inventedCardScreenshotAnswer, `"transactionRows"`, `"monthlyTotals": [{"totalMonth": "2026-09", "totalAmount": "-90.00"}], "transactionRows"`, 1)
-	fixture, model := receiptJobFixture(test, withCutOffTotal, inventedCardScreenshotAnswer)
+	// September lies between August and October, so it is whole, and its
+	// rows do not come to its total.
+	misread := `{"isStatement": true, "institutionName": "Example Bank", "accountNumber": "****4821", "isAccountNumberPartial": true,
+"statementAccountKind": "card", "currencyCode": "USD", "monthlyTotals": [{"totalMonth": "2026-09", "totalAmount": "-90.00"}],
+"transactionRows": [{"postedOn": "2026-08-30", "description": "TEA HOUSE", "amount": "-3.00"}, {"postedOn": "2026-09-12", "description": "CORNER CAFE", "amount": "-4.50"},
+ {"postedOn": "2026-09-14", "description": "BOOK SHOP", "amount": "-12.00"}, {"postedOn": "2026-10-01", "description": "SHOE SHOP", "amount": "-40.00"}]}`
+	fixture, model := receiptJobFixture(test, misread, inventedCardScreenshotAnswer)
 	upload := fixture.statementUpload(test, "picture-1.jpg", "image/jpeg", []byte("\xff\xd8\xffan invented screenshot"))
 	if err := fixture.worker.runReadStatementPhoto(test.Context(), fixture.statementJobRun(upload.ID)); err != nil {
 		test.Fatalf("runReadStatementPhoto: %s", err)

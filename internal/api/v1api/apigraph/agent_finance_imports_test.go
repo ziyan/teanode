@@ -56,7 +56,8 @@ func TestReadStatementQueuesAScreenshotThatTheImportsList(test *testing.T) {
 		}
 		listed := page.FinanceImports[0]
 		if listed.AgentJobID != reading.AgentJobID || listed.FinanceImportKind != FinanceImportStatement || listed.FinanceImportSource != FinanceImportSourceUpload ||
-			listed.AgentJobStatus != models.AgentJobQueued || listed.FileName != "picture-1.jpg" || listed.OutcomeText != "" {
+			listed.AgentJobStatus != models.AgentJobQueued || listed.FileName != "picture-1.jpg" || listed.OutcomeText != "" ||
+			listed.AgentAttachmentID != screenshot.ID || listed.AttachmentContentType != "image/jpeg" || listed.MailboxItemID != "" {
 			test.Errorf("listed %+v", listed)
 		}
 	})

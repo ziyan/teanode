@@ -951,7 +951,7 @@ const (
 
 	DocumentFinanceImports = `query ($limit: Int, $offset: Int) {
   FinanceImports(limit: $limit, offset: $offset) {
-    financeImports { agentJobId financeImportKind financeImportSource agentJobStatus fileName queuedAt finishedAt outcomeText runConversationId }
+    financeImports { agentJobId financeImportKind financeImportSource agentJobStatus fileName agentAttachmentId attachmentContentType mailboxItemId queuedAt finishedAt outcomeText runConversationId }
     hasMore totalCount
   }
 }`
@@ -1226,15 +1226,18 @@ type StatementReading struct {
 
 // FinanceImport is one file read into finance in the background.
 type FinanceImport struct {
-	AgentJobID          string     `json:"agentJobId"`
-	FinanceImportKind   string     `json:"financeImportKind"`
-	FinanceImportSource string     `json:"financeImportSource"`
-	AgentJobStatus      string     `json:"agentJobStatus"`
-	FileName            string     `json:"fileName"`
-	QueuedAt            time.Time  `json:"queuedAt"`
-	FinishedAt          *time.Time `json:"finishedAt"`
-	OutcomeText         string     `json:"outcomeText"`
-	RunConversationID   string     `json:"runConversationId"`
+	AgentJobID            string     `json:"agentJobId"`
+	FinanceImportKind     string     `json:"financeImportKind"`
+	FinanceImportSource   string     `json:"financeImportSource"`
+	AgentJobStatus        string     `json:"agentJobStatus"`
+	FileName              string     `json:"fileName"`
+	AgentAttachmentID     string     `json:"agentAttachmentId"`
+	AttachmentContentType string     `json:"attachmentContentType"`
+	MailboxItemID         string     `json:"mailboxItemId"`
+	QueuedAt              time.Time  `json:"queuedAt"`
+	FinishedAt            *time.Time `json:"finishedAt"`
+	OutcomeText           string     `json:"outcomeText"`
+	RunConversationID     string     `json:"runConversationId"`
 }
 
 // FinanceImportPage is one page of imports.

@@ -675,3 +675,38 @@ func TestAccountsLikeRows(test *testing.T) {
 		test.Errorf("rows that show no digits could be any card there: %d", len(like))
 	}
 }
+
+// Rows read off screenshots may cut off their oldest and newest month:
+// neither is held to its total nor refused for lacking one, while a month
+// between them still has to come to its total.
+func TestEdgeMonthsOfScreenshotsAreNotHeldToTheirTotals(test *testing.T) {
+	test.Parallel()
+	input := func(totals []MonthlyTotal, isPartial bool) *TransactionRowsInput {
+		return &TransactionRowsInput{
+			InstitutionName: "Example Bank", AccountNumber: "4821", StatementAccountKind: StatementAccountKindCard, CurrencyCode: "USD",
+			AreEdgeMonthsPartial: isPartial, MonthlyTotals: totals,
+			TransactionRows: []TransactionRow{
+				{PostedOn: "2026-07-30", Description: "TEA HOUSE", Amount: "-3.00"},
+				{PostedOn: "2026-08-02", Description: "BOOK SHOP", Amount: "-12.00"},
+				{PostedOn: "2026-08-20", Description: "CORNER CAFE", Amount: "-4.50"},
+				{PostedOn: "2026-09-01", Description: "SHOE SHOP", Amount: "-40.00"},
+			},
+		}
+	}
+	// July and September are cut off: their totals are more than their rows.
+	totals := []MonthlyTotal{{TotalMonth: "2026-07", TotalAmount: "-90.00"}, {TotalMonth: "2026-08", TotalAmount: "-16.50"}}
+	check, err := CheckTransactionRows(input(totals, true), "")
+	if err != nil {
+		test.Fatalf("cut-off edge months are refused: %s", err)
+	}
+	if len(check.MatchedTotalMonths) != 1 || check.MatchedTotalMonths[0] != "2026-08" || len(check.TransactionRows) != 4 {
+		test.Errorf("matched %q of %d rows", check.MatchedTotalMonths, len(check.TransactionRows))
+	}
+	if _, err := CheckTransactionRows(input(totals, false), ""); err == nil {
+		test.Error("a list read whole is not held to its edge months' totals")
+	}
+	misread := []MonthlyTotal{{TotalMonth: "2026-08", TotalAmount: "-20.00"}}
+	if _, err := CheckTransactionRows(input(misread, true), ""); err == nil || !strings.Contains(err.Error(), "2026-08") {
+		test.Errorf("a month between the edges that does not add up is not refused: %v", err)
+	}
+}
