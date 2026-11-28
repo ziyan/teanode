@@ -652,7 +652,7 @@ func TestPlanTransactionRowsImportLeavesOutWhatIsStored(test *testing.T) {
 // same institution, of the same kind and currency, could be theirs: its
 // digits match, or either side shows none. One whose digits differ, or of
 // another kind, institution or currency, is not named.
-func TestProviderAccountsLikeRows(test *testing.T) {
+func TestAccountsLikeRows(test *testing.T) {
 	test.Parallel()
 	check := &TransactionRowsCheck{InstitutionName: "Example Bank", AccountNumber: "4821", StatementAccountKind: StatementAccountKindCard, CurrencyCode: "USD"}
 	card := func(name, mask string) ExistingStatementAccount {
@@ -664,14 +664,14 @@ func TestProviderAccountsLikeRows(test *testing.T) {
 	otherBank.InstitutionName = "Another Bank"
 	euros := card("Euro Card", "4821")
 	euros.CurrencyCode = "EUR"
-	names := ProviderAccountsLikeRows(check, []ExistingStatementAccount{
+	names := AccountNames(AccountsLikeRows(check.InstitutionName, check.StatementAccountKind, check.CurrencyCode, check.AccountNumber, []ExistingStatementAccount{
 		card("Rewards Card", "4821"), card("Second Card", ""), card("Other Card", "7777"), checking, otherBank, euros,
-	})
+	}))
 	if len(names) != 2 || names[0] != "Rewards Card ··4821" || names[1] != "Second Card" {
 		test.Errorf("named %q", names)
 	}
 	check.AccountNumber = ""
-	if names := ProviderAccountsLikeRows(check, []ExistingStatementAccount{card("Other Card", "7777")}); len(names) != 1 {
-		test.Errorf("rows that show no digits could be any card there: %q", names)
+	if like := AccountsLikeRows(check.InstitutionName, check.StatementAccountKind, check.CurrencyCode, check.AccountNumber, []ExistingStatementAccount{card("Other Card", "7777")}); len(like) != 1 {
+		test.Errorf("rows that show no digits could be any card there: %d", len(like))
 	}
 }

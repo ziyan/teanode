@@ -26599,3 +26599,29 @@ a.feed-agenda-body:hover .feed-agenda-title {
 .feed-chart-bar-fill {
   fill: var(--feed-chart-measured);
 }
+
+/* The Imports table keeps its three columns on a phone. What came of a file
+   is a sentence or two and is shown whole: it wraps in its cell, and the
+   run's button sits under it. */
+.finance-imports-table .table-surface td {
+  white-space: normal;
+  vertical-align: top;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.finance-imports-table .table-surface td:last-child {
+  min-width: 12rem;
+}
+
+.finance-imports-table .table-surface td:last-child .button {
+  margin-top: 6px;
+}
+
+@media (max-width: 600px) {
+  .finance-imports-table .table-surface th,
+  .finance-imports-table .table-surface td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+}

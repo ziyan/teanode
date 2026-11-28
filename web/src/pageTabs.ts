@@ -103,6 +103,7 @@ export const FINANCE_TABS: PageTab[] = [
   { id: 'receipts', label: 'finance.tabReceipts' },
   { id: 'taxes', label: 'finance.tabTaxes' },
   { id: 'accounts', label: 'finance.tabAccounts' },
+  { id: 'imports', label: 'finance.tabImports' },
   { id: 'budgets', label: 'finance.tabBudgets' },
   { id: 'net-worth', label: 'finance.tabNetWorth' },
   { id: 'savings-targets', label: 'finance.tabSavingsTargets' },

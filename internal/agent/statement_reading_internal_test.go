@@ -7,6 +7,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -110,5 +111,83 @@ func TestATaxDocumentThatIsAStatementIsImportedAndOneThatIsNeitherIsTold(t *test
 	cards := fixture.feedCards(t)
 	if len(cards) != 1 || !strings.HasPrefix(cards[0], "Nothing was recorded from picture-2.jpg | It is not a paystub, a W-2, a 1099 or a 1098: a holiday card.") {
 		t.Fatalf("the feed says why nothing was recorded: %q", cards)
+	}
+}
+
+// A screenshot that shows no account number goes into the one account of
+// imported statements at its bank, of its kind and currency; with none
+// there, nothing is imported and the card says what to share instead.
+func TestAHandedInScreenshotWithNoNumberGoesIntoTheOneAccountThere(test *testing.T) {
+	numberless := strings.Replace(inventedCardScreenshotAnswer, `"accountNumber": "****4821", "isAccountNumberPartial": true,`, ``, 1)
+	later := strings.NewReplacer("2026-09-12", "2026-09-20", "2026-09-14", "2026-09-21", "CORNER CAFE", "TEA HOUSE", "BOOK SHOP", "SHOE SHOP").Replace(numberless)
+	fixture, _ := receiptJobFixture(test, numberless, inventedCardScreenshotAnswer, later)
+	first := fixture.statementUpload(test, "picture-1.jpg", "image/jpeg", []byte("\xff\xd8\xffan invented screenshot"))
+	if err := fixture.worker.runReadStatementPhoto(test.Context(), fixture.statementJobRun(first.ID)); err != nil {
+		test.Fatalf("runReadStatementPhoto: %s", err)
+	}
+	cards := fixture.feedCards(test)
+	if len(cards) != 1 || !strings.Contains(cards[0], "It shows no account number, and no account at Example Bank was imported before") {
+		test.Fatalf("the feed says the screenshot shows no number: %q", cards)
+	}
+
+	// A screenshot with the card's last digits starts its account; one of
+	// the same card without them then goes into it.
+	numbered := fixture.statementUpload(test, "picture-2.jpg", "image/jpeg", []byte("\xff\xd8\xffanother invented screenshot"))
+	if err := fixture.worker.runReadStatementPhoto(test.Context(), fixture.statementJobRun(numbered.ID)); err != nil {
+		test.Fatalf("runReadStatementPhoto: %s", err)
+	}
+	again := fixture.statementUpload(test, "picture-3.jpg", "image/jpeg", []byte("\xff\xd8\xffa third invented screenshot"))
+	if err := fixture.worker.runReadStatementPhoto(test.Context(), fixture.statementJobRun(again.ID)); err != nil {
+		test.Fatalf("runReadStatementPhoto: %s", err)
+	}
+	cards = fixture.feedCards(test)
+	if len(cards) != 3 || !strings.HasPrefix(cards[2], "Imported 2 transactions into ") || !strings.Contains(cards[2], "4821") {
+		test.Fatalf("the screenshot without the number goes into the card's account: %q", cards)
+	}
+}
+
+// The reading is shown the person's accounts: a screenshot naming its bank
+// another way and showing no number goes into the account the reading
+// says it is of, and one of an account the bank syncs is never imported.
+func TestTheReadingNamesTheAccountAScreenshotIsOf(test *testing.T) {
+	fixture, model := receiptJobFixture(test)
+	check, err := finance.CheckTransactionRows(&finance.TransactionRowsInput{
+		InstitutionName: "Example Bank", AccountNumber: "****4821", IsAccountNumberPartial: true, StatementAccountKind: finance.StatementAccountKindCard, CurrencyCode: "USD",
+		TransactionRows: []finance.TransactionRow{{PostedOn: "2026-09-01", Description: "TEA HOUSE", Amount: "-3.00"}},
+	}, "")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if _, err := fixture.worker.ImportTransactionRows(test.Context(), fixture.agent, fixture.owner, check); err != nil {
+		test.Fatalf("ImportTransactionRows: %s", err)
+	}
+	cardId := dbtest.QueryString(test, fixture.database, `SELECT "id" FROM "agent_finance_account" WHERE "currency_code" = 'USD' AND "account_kind" = 'credit'`)
+	syncedId := dbtest.QueryString(test, fixture.database, `SELECT "id" FROM "agent_finance_account" WHERE "account_name" = 'Everyday Checking'`)
+	model.mutex.Lock()
+	model.answers = append(model.answers,
+		`{"isStatement": true, "financeAccountId": "`+cardId+`", "institutionName": "Banco de Ejemplo", "statementAccountKind": "card", "currencyCode": "USD",
+ "transactionRows": [{"postedOn": "2026-09-12", "description": "BOOK SHOP", "amount": "-12.00"}]}`,
+		`{"isStatement": true, "syncedFinanceAccountId": "`+syncedId+`", "institutionName": "Another Bank", "statementAccountKind": "bank", "currencyCode": "USD",
+ "transactionRows": [{"postedOn": "2026-09-12", "description": "CORNER CAFE", "amount": "-4.50"}]}`)
+	model.mutex.Unlock()
+
+	other := fixture.statementUpload(test, "picture-1.jpg", "image/jpeg", []byte("\xff\xd8\xffan invented screenshot"))
+	if err := fixture.worker.runReadStatementPhoto(test.Context(), fixture.statementJobRun(other.ID)); err != nil {
+		test.Fatalf("runReadStatementPhoto: %s", err)
+	}
+	model.mutex.Lock()
+	prompt := model.prompts[len(model.prompts)-1]
+	model.mutex.Unlock()
+	if !strings.Contains(prompt, cardId+": ") || !strings.Contains(prompt, syncedId+": Everyday Checking") {
+		test.Fatalf("the reading is shown the accounts: %s", prompt)
+	}
+	synced := fixture.statementUpload(test, "picture-2.jpg", "image/jpeg", []byte("\xff\xd8\xffanother invented screenshot"))
+	if err := fixture.worker.runReadStatementPhoto(test.Context(), fixture.statementJobRun(synced.ID)); err != nil {
+		test.Fatalf("runReadStatementPhoto: %s", err)
+	}
+	cards := fixture.feedCards(test)
+	if len(cards) != 2 || !strings.HasPrefix(cards[0], "Imported 1 transaction into ") || !strings.Contains(cards[0], "4821") ||
+		!strings.Contains(cards[1], "Everyday Checking, which is already synced from the bank") {
+		test.Fatalf("the cards say where each went: %q", cards)
 	}
 }

@@ -1269,25 +1269,51 @@ func LeaveOutStoredTransactionRows(statementImport *StatementImport, storedTrans
 	return nil
 }
 
-// ProviderAccountsLikeRows names the accounts a provider syncs that rows
-// for a new account could be of: at the same institution, of the same kind
-// and currency, and not shown by their digits to be another account. Rows
-// imported beside such an account would count its spending twice, so an
-// import nobody chose the account of refuses them.
-func ProviderAccountsLikeRows(check *TransactionRowsCheck, providerAccounts []ExistingStatementAccount) []string {
-	shownMask := StatementAccountMask(check.AccountNumber)
-	var names []string
-	for index := range providerAccounts {
-		account := &providerAccounts[index]
-		if !strings.EqualFold(account.CurrencyCode, check.CurrencyCode) || account.isCardAccount() != (check.StatementAccountKind == StatementAccountKindCard) {
+// AccountsLikeRows are the accounts rows could be of when nothing else
+// says which: at the institution the rows name, of their kind and
+// currency, and not shown by their digits to be another account. Among the
+// accounts a provider syncs, rows imported beside one of these would count
+// its spending twice; among the accounts of imported statements, one alone
+// is the account rows that show no number are of.
+func AccountsLikeRows(institutionName string, accountKind StatementAccountKind, currencyCode, accountNumber string, accounts []ExistingStatementAccount) []*ExistingStatementAccount {
+	shownMask := StatementAccountMask(accountNumber)
+	var like []*ExistingStatementAccount
+	for index := range accounts {
+		account := &accounts[index]
+		if !strings.EqualFold(account.CurrencyCode, currencyCode) || account.isCardAccount() != (accountKind == StatementAccountKindCard) {
 			continue
 		}
-		if normalizeInstitutionName(account.InstitutionName) == "" || !isSameInstitution(account.InstitutionName, check.InstitutionName) {
+		if normalizeInstitutionName(account.InstitutionName) == "" || !isSameInstitution(account.InstitutionName, institutionName) {
 			continue
 		}
 		if account.AccountMask != "" && shownMask != "" && !isMaskMatch(account.AccountMask, shownMask) {
 			continue
 		}
+		like = append(like, account)
+	}
+	return like
+}
+
+// AccountLine is an account as a model choosing among them is shown it:
+// its id, name and the end of its identifier, institution, kind and
+// currency.
+func AccountLine(account *ExistingStatementAccount) string {
+	kind := "bank"
+	if account.isCardAccount() {
+		kind = "card"
+	}
+	institution := account.InstitutionName
+	if institution == "" {
+		institution = "institution not known"
+	}
+	return fmt.Sprintf("%s: %s at %s, %s, %s", account.FinanceAccountID, account.displayName(), institution, kind, account.CurrencyCode)
+}
+
+// AccountNames are accounts as a refusal names them, each by its name and
+// the end of its identifier.
+func AccountNames(accounts []*ExistingStatementAccount) []string {
+	names := make([]string, 0, len(accounts))
+	for _, account := range accounts {
 		names = append(names, account.displayName())
 	}
 	return names

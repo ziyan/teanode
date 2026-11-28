@@ -24,12 +24,11 @@ func (self *Agent) QueueStatementReading(tx db.Transaction, agentId, attachmentI
 	return self.Enqueue(tx, models.AgentJobStatementPhoto, agentId, "", attachmentId)
 }
 
-// refuseRowsOfASyncedAccount refuses rows that would start an account of
-// imported statements beside one a provider already syncs, which they are
-// likely of: the same transactions would be counted in both.
-func (self *Agent) refuseRowsOfASyncedAccount(ctx context.Context, agentId string, check *finance.TransactionRowsCheck) error {
-	var providerAccounts []finance.ExistingStatementAccount
-	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+// rowAccounts are the agent's accounts rows are matched against when
+// nobody says which they are of: those of imported statements, and those a
+// provider syncs.
+func (self *Agent) rowAccounts(ctx context.Context, agentId string) (statementAccounts, providerAccounts []finance.ExistingStatementAccount, err error) {
+	err = self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		sources, err := tx.ListAgentSources(agentId)
 		if err != nil {
 			return err
@@ -37,6 +36,11 @@ func (self *Agent) refuseRowsOfASyncedAccount(ctx context.Context, agentId strin
 		sourceOf := map[string]*models.AgentKnowledgeSource{}
 		for _, source := range sources {
 			sourceOf[source.ID] = source
+			if IsStatementSource(source) {
+				if statementAccounts, err = existingStatementAccountsOf(tx, agentId, source); err != nil {
+					return err
+				}
+			}
 		}
 		accounts, err := tx.ListFinanceAccounts(agentId, "")
 		if err != nil {
@@ -53,11 +57,52 @@ func (self *Agent) refuseRowsOfASyncedAccount(ctx context.Context, agentId strin
 			})
 		}
 		return nil
-	}); err != nil {
+	})
+	return statementAccounts, providerAccounts, err
+}
+
+// syncedAccountWhy says why rows were not imported beside the synced
+// accounts they look like.
+func syncedAccountWhy(like []*finance.ExistingStatementAccount) string {
+	return fmt.Sprintf("it looks like %s, which is already synced from the bank, so importing it would count its transactions twice", strings.Join(finance.AccountNames(like), " or "))
+}
+
+// chooseHandedInAccount picks the account for rows handed in that show no
+// account number, which an account of imported statements cannot be
+// started from: the one account of imported statements at the
+// institution, of the kind and currency. Otherwise it says, for the
+// person, why nothing is imported.
+func (self *Agent) chooseHandedInAccount(ctx context.Context, agentId string, input *finance.TransactionRowsInput) (string, error) {
+	statementAccounts, providerAccounts, err := self.rowAccounts(ctx, agentId)
+	if err != nil {
+		return "", err
+	}
+	kind := finance.StatementAccountKind(input.StatementAccountKind)
+	if like := finance.AccountsLikeRows(input.InstitutionName, kind, input.CurrencyCode, "", providerAccounts); len(like) > 0 {
+		return syncedAccountWhy(like), nil
+	}
+	like := finance.AccountsLikeRows(input.InstitutionName, kind, input.CurrencyCode, "", statementAccounts)
+	switch len(like) {
+	case 1:
+		input.FinanceAccountID = like[0].FinanceAccountID
+		return "", nil
+	case 0:
+		return fmt.Sprintf("it shows no account number, and no account at %s was imported before, so it is not clear which account it is. "+
+			"Share a screenshot that shows the account's number or its last digits", strings.TrimSpace(input.InstitutionName)), nil
+	}
+	return fmt.Sprintf("it shows no account number, and it could be %s", strings.Join(finance.AccountNames(like), " or ")), nil
+}
+
+// refuseRowsOfASyncedAccount refuses rows that would start an account of
+// imported statements beside one a provider already syncs, which they are
+// likely of: the same transactions would be counted in both.
+func (self *Agent) refuseRowsOfASyncedAccount(ctx context.Context, agentId string, check *finance.TransactionRowsCheck) error {
+	_, providerAccounts, err := self.rowAccounts(ctx, agentId)
+	if err != nil {
 		return err
 	}
-	if names := finance.ProviderAccountsLikeRows(check, providerAccounts); len(names) > 0 {
-		return fmt.Errorf("%w: they look like %s, which is already synced from the bank, so importing them would count them twice", finance.ErrTransactionRowsRefused, strings.Join(names, " or "))
+	if like := finance.AccountsLikeRows(check.InstitutionName, check.StatementAccountKind, check.CurrencyCode, check.AccountNumber, providerAccounts); len(like) > 0 {
+		return fmt.Errorf("%w: %s", finance.ErrTransactionRowsRefused, syncedAccountWhy(like))
 	}
 	return nil
 }
@@ -71,7 +116,7 @@ func (self *Agent) postStatementReading(ctx context.Context, run *Run, attachmen
 	}
 	if imported == nil {
 		card.Title = "Nothing was imported from " + attachment.Name
-		card.Body = upperFirst(strings.TrimSuffix(strings.TrimSpace(whyNothing), ".")) + ". Send it to your assistant in a chat to import it with its help."
+		card.Body = upperFirst(strings.TrimSuffix(strings.TrimSpace(whyNothing), ".")) + ". Or send it to your assistant in a chat, which can ask you about it."
 		card.FeedUrgency = models.FeedUrgencyNow
 	} else {
 		card.Title = fmt.Sprintf("Imported %s into %s", countOf(imported.AddedTransactionCount, "transaction", "transactions"), strings.Join(imported.FinanceAccountNames, ", "))

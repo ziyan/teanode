@@ -14,7 +14,9 @@ import {
   AGENT_ATTACHMENTS_PATH,
   FinanceStatementImport,
   IMPORT_STATEMENT,
+  READ_STATEMENT,
   REGENERATE_STATEMENT_IMPORT_ADDRESS,
+  ReadStatementQueued,
   STATEMENT_IMPORT,
   StatementImport,
 } from './financeApi'
@@ -24,8 +26,17 @@ import { statementImportSummary } from './statementImportSummary'
 // The statement import: for an account no provider reaches, such as a card
 // whose wallet only exports OFX files. Its address is the person's own
 // mailbox address with a token after a plus; mailing the exported file to
-// it imports it. A file can be uploaded here too. The address is made the
+// it imports it. A file can be uploaded here too, and so can a picture or a
+// PDF (a screenshot of a bank app, a photo of a statement), which is read in
+// the background and not imported on the spot. The address is made the
 // first time this panel is shown, and regenerating it ends the old one.
+// isPictureOrPdf is whether a file is read by the agent rather than parsed as
+// OFX. The type is the browser's; a file with none is judged by its name.
+export function isPictureOrPdf(file: Pick<File, 'name' | 'type'>): boolean {
+  if (file.type) return file.type.startsWith('image/') || file.type === 'application/pdf'
+  return /\.(pdf|png|jpe?g|heic|heif|webp|gif)$/i.test(file.name)
+}
+
 export function FinanceStatementImportSection({ onImported }: { onImported?: () => void }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -42,7 +53,7 @@ export function FinanceStatementImportSection({ onImported }: { onImported?: () 
   const last = statementImport?.lastStatementImport
 
   const upload = async (file: File) => {
-    if (statementImport && file.size > statementImport.maximumStatementBytes) {
+    if (statementImport && !isPictureOrPdf(file) && file.size > statementImport.maximumStatementBytes) {
       toast.failure(new Error(t('finance.statementTooLarge', { name: file.name })), t('finance.failed'))
       return
     }
@@ -53,6 +64,12 @@ export function FinanceStatementImportSection({ onImported }: { onImported?: () 
       }
       const attachmentId = uploaded?.attachments?.[0]?.id
       if (!attachmentId) throw new Error(t('finance.statementNotStored'))
+      if (isPictureOrPdf(file)) {
+        await graphql<{ ReadStatement: ReadStatementQueued }>(READ_STATEMENT, { agentAttachmentId: attachmentId })
+        toast.done(t('finance.statementReading', { name: file.name }))
+        await reload()
+        return
+      }
       const answer = await graphql<{ ImportStatement: FinanceStatementImport }>(IMPORT_STATEMENT, {
         agentAttachmentId: attachmentId,
       })
@@ -105,7 +122,7 @@ export function FinanceStatementImportSection({ onImported }: { onImported?: () 
         <input
           ref={picker}
           type="file"
-          accept=".ofx,.qfx,.qbo,application/x-ofx,application/vnd.intu.qfx"
+          accept=".ofx,.qfx,.qbo,application/x-ofx,application/vnd.intu.qfx,image/*,application/pdf,.pdf"
           hidden
           onChange={(event) => {
             const file = event.target.files?.[0]
