@@ -99738,6 +99738,22 @@
           }
         }
       }
+    },
+    "Shortcuts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ショートカット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "快捷方式"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

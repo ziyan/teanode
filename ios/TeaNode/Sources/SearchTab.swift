@@ -71,6 +71,9 @@ struct SearchTabScreen: View {
     /// What the account may open on the management side, which decides the
     /// pages of Manage offered.
     @State private var access: OperatorAccess?
+    /// What was opened from here lately, newest first, for the empty field.
+    @State private var recents: [SearchRecent] = []
+    private let recentStore = SearchRecents()
 
     var body: some View {
         NavigationStack {
@@ -79,6 +82,7 @@ struct SearchTabScreen: View {
                 .searchable(text: $typedText, prompt: Text("Search everything"))
                 .task(id: typedText) { await search() }
                 .task { access = try? await connection.operatorAccess() }
+                .task(id: app.account?.accountKey) { loadRecents() }
                 .onAppear {
                     #if DEBUG
                         // `-TeaNodeTab search -TeaNodeScreen search-results`: words typed already.
@@ -97,14 +101,20 @@ struct SearchTabScreen: View {
     @ViewBuilder
     private var content: some View {
         if SearchWords.normalized(typedText) == nil {
-            ContentUnavailableView(
-                "Search everything", systemImage: "magnifyingglass",
-                description: Text("Find a page of the app, or a name or a few words across your chats, mail, contacts, photos and more."))
+            if recentEntries.isEmpty && shortcuts.isEmpty {
+                ContentUnavailableView(
+                    "Search everything", systemImage: "magnifyingglass",
+                    description: Text("Find a page of the app, or a name or a few words across your chats, mail, contacts, photos and more."))
+            } else {
+                SearchHomeList(
+                    recents: recentEntries, shortcuts: shortcuts, onOpenPlace: open(_:), onOpen: open(_:_:),
+                    onClearRecents: clearRecents)
+            }
         } else if !places.isEmpty {
             // The places are known at once; what the server finds follows them.
             SearchResultsList(
                 found: found, places: places, failedText: failedText, isPhotosOffered: isPhotosOffered,
-                onOpen: onOpen, onShowAll: onShowAll, onRetry: { await run() })
+                onOpenPlace: open(_:), onOpen: open(_:_:), onShowAll: onShowAll, onRetry: { await run() })
         } else if let found {
             if found.isEmpty, found.failedAreas.isEmpty, isPhotosOffered {
                 // Nothing has the words, but a picture may show them.
@@ -118,7 +128,7 @@ struct SearchTabScreen: View {
             } else if found.isEmpty, found.failedAreas.isEmpty {
                 ContentUnavailableView.search(text: typedText)
             } else {
-                SearchResultsList(found: found, isPhotosOffered: isPhotosOffered, onOpen: onOpen, onShowAll: onShowAll)
+                SearchResultsList(found: found, isPhotosOffered: isPhotosOffered, onOpenPlace: open(_:), onOpen: open(_:_:), onShowAll: onShowAll)
             }
         } else if let failedText {
             LoadFailedView(problemText: failedText) { await run() }
@@ -136,6 +146,69 @@ struct SearchTabScreen: View {
         let all = AppPlaces.all(app: app, mail: mail, access: access)
         let byId = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return PlaceSearch.matchingPlaceIds(all.map(\.placeName), words: typedText).compactMap { byId[$0] }
+    }
+
+    /// Every place the account can open, by id.
+    private var placesById: [String: AppPlace] {
+        Dictionary(AppPlaces.all(app: app, mail: mail, access: access).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// What was opened lately, with each place read again from what the
+    /// account has now: one it can no longer open is left out.
+    private var recentEntries: [SearchHomeList.Recent] {
+        let byId = placesById
+        return recents.compactMap { recent in
+            if let placeId = recent.placeId {
+                return byId[placeId].map { SearchHomeList.Recent.place($0) }
+            }
+            return recent.result.map { SearchHomeList.Recent.found($0, words: recent.words) }
+        }
+    }
+
+    /// The pages offered under the field before anything is typed, those of
+    /// them the account has, in this order.
+    private var shortcuts: [AppPlace] {
+        let byId = placesById
+        return SearchHomeList.shortcutPlaceIds.compactMap { byId[$0] }
+    }
+
+    private func open(_ place: AppPlace) {
+        remember(.place(place.id))
+        app.openPlace(place.target)
+    }
+
+    private func open(_ result: SearchResult, _ words: String) {
+        remember(.found(result, words: words))
+        onOpen(result, words)
+    }
+
+    private func loadRecents() {
+        #if DEBUG
+            // `-TeaNodeTab search` in demo mode: a page and a contact opened before.
+            if DemoServer.isRequested {
+                recents = DemoServer.searchRecents
+                return
+            }
+        #endif
+        guard let accountKey = app.account?.accountKey else { return }
+        recents = recentStore.load(accountKey: accountKey)
+    }
+
+    private func remember(_ recent: SearchRecent) {
+        #if DEBUG
+            if DemoServer.isRequested {
+                recents = SearchRecents.adding(recent, to: recents)
+                return
+            }
+        #endif
+        guard let accountKey = app.account?.accountKey else { return }
+        recents = recentStore.remember(recent, accountKey: accountKey)
+    }
+
+    private func clearRecents() {
+        recents = []
+        guard let accountKey = app.account?.accountKey else { return }
+        recentStore.clear(accountKey: accountKey)
     }
 
     /// Asks a moment after the last key, as the other searches do.
@@ -174,6 +247,7 @@ struct SearchResultsList: View {
     var places: [AppPlace] = []
     var failedText: String? = nil
     let isPhotosOffered: Bool
+    let onOpenPlace: (AppPlace) -> Void
     let onOpen: (SearchResult, String) -> Void
     let onShowAll: (SearchArea, String) -> Void
     var onRetry: (() async -> Void)? = nil
@@ -184,15 +258,7 @@ struct SearchResultsList: View {
             if !places.isEmpty {
                 Section {
                     ForEach(places) { place in
-                        Button {
-                            app.openPlace(place.target)
-                        } label: {
-                            // In the text's colors: a place is somewhere to go, not an action (ios/DESIGN.md).
-                            Label(place.shownTitle, systemImage: place.systemImage)
-                                .foregroundStyle(Color.primary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(.rect)
-                        }
+                        SearchPlaceRow(place: place, onOpen: onOpenPlace)
                     }
                 } header: {
                     Text("Go to")
@@ -239,6 +305,100 @@ struct SearchResultsList: View {
     /// The parts that did not answer, by name.
     private func failedNames(_ found: SearchEverythingResults) -> String {
         found.failedAreas.map { name in SearchArea(rawValue: name)?.title ?? name }.joined(separator: ", ")
+    }
+}
+
+/// SearchHomeList is the Search tab before anything is typed: what was opened
+/// from it lately, with a way to clear them, and the pages people go to most,
+/// each a tap away.
+struct SearchHomeList: View {
+    /// Something opened lately: a place of the app, or a thing found.
+    enum Recent: Identifiable {
+        case place(AppPlace)
+        case found(SearchResult, words: String)
+
+        var id: String {
+            switch self {
+            case .place(let place): "place:\(place.id)"
+            case .found(let result, _): "found:\(result.id)"
+            }
+        }
+    }
+
+    /// The pages offered as shortcuts, by the ids the Search tab names its
+    /// places by; those the account does not have are left out.
+    static let shortcutPlaceIds = [
+        "section-calendar", "calendar-view-reminders", "section-contacts", "section-photos",
+        "finance-transactions", "finance-imports", "section-passwords", "section-settings",
+    ]
+
+    let recents: [Recent]
+    let shortcuts: [AppPlace]
+    let onOpenPlace: (AppPlace) -> Void
+    let onOpen: (SearchResult, String) -> Void
+    let onClearRecents: () -> Void
+
+    var body: some View {
+        List {
+            if !recents.isEmpty {
+                Section {
+                    ForEach(recents) { recent in
+                        switch recent {
+                        case .place(let place):
+                            SearchPlaceRow(place: place, onOpen: onOpenPlace)
+                        case .found(let result, let words):
+                            Button {
+                                onOpen(result, words)
+                            } label: {
+                                Label {
+                                    SearchResultRow(result: result)
+                                } icon: {
+                                    Image(systemName: result.area?.systemImage ?? "magnifyingglass")
+                                }
+                                .labelStyle(.pageRow)
+                            }
+                            .disabled(result.opening == .nowhere)
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("Recent")
+                        Spacer()
+                        Button("Clear", action: onClearRecents)
+                            .font(.subheadline)
+                            .textCase(nil)
+                    }
+                }
+            }
+            if !shortcuts.isEmpty {
+                Section("Shortcuts") {
+                    ForEach(shortcuts) { place in
+                        SearchPlaceRow(place: place, onOpen: onOpen(place:))
+                    }
+                }
+            }
+        }
+    }
+
+    private func onOpen(place: AppPlace) { onOpenPlace(place) }
+}
+
+/// SearchPlaceRow is a place of the app the Search tab offers: its symbol,
+/// and the places it is inside before its name.
+struct SearchPlaceRow: View {
+    let place: AppPlace
+    let onOpen: (AppPlace) -> Void
+
+    var body: some View {
+        Button {
+            onOpen(place)
+        } label: {
+            // In the text's colors: a place is somewhere to go, not an action (ios/DESIGN.md).
+            Label(place.shownTitle, systemImage: place.systemImage)
+                .labelStyle(.pageRow)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+        }
     }
 }
 
