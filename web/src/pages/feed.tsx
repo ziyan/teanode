@@ -1651,7 +1651,7 @@ function setUpdateSetAside() {
 export function DashboardUpdateCard({ onReload, onSetAside }: { onReload: () => void; onSetAside: () => void }) {
   const { t } = useTranslation()
   return (
-    <article className="feed-card feed-update-card" aria-label={t('feed.update.title')}>
+    <article className="card feed-card feed-update-card" aria-label={t('feed.update.title')}>
       <div className="feed-picture" aria-hidden="true">
         <RefreshIcon size={20} />
       </div>
