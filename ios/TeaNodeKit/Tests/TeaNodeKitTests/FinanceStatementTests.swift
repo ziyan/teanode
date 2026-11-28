@@ -33,4 +33,29 @@ final class FinanceStatementTests: XCTestCase {
         let sent = try JSONSerialization.jsonObject(with: try XCTUnwrap(fake.sent.last?.httpBody)) as? [String: Any]
         XCTAssertEqual((sent?["variables"] as? [String: Any])?["agentAttachmentId"] as? String, "attachment-1")
     }
+
+    func testAPictureOfAStatementIsQueuedToBeRead() async throws {
+        let (connection, fake) = try connection(answering: #"{"data":{"ReadStatement":{"agentAttachmentId":"attachment-1","agentJobId":"job-1"}}}"#)
+        let reading = try await connection.readStatement(attachmentId: "attachment-1")
+        XCTAssertEqual(reading?.agentJobId, "job-1")
+        let sent = try JSONSerialization.jsonObject(with: try XCTUnwrap(fake.sent.last?.httpBody)) as? [String: Any]
+        XCTAssertTrue((sent?["query"] as? String)?.contains("ReadStatement") == true)
+        XCTAssertEqual((sent?["variables"] as? [String: Any])?["agentAttachmentId"] as? String, "attachment-1")
+    }
+
+    func testTheFilesReadIntoFinanceArePagedNewestFirst() async throws {
+        let body = #"{"data":{"FinanceImports":{"financeImports":[{"agentJobId":"job-2","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"picture-1.jpg","queuedAt":"2026-10-14T12:00:00Z","finishedAt":"2026-10-14T12:02:30.123456789Z","outcomeText":"Added 12 transactions to Example Bank Checking.","runConversationId":"conversation-1"},{"agentJobId":"job-1","financeImportKind":"receipt","financeImportSource":"photo","agentJobStatus":"queued","fileName":"","queuedAt":"2026-10-13T08:00:00Z","finishedAt":"","outcomeText":"","runConversationId":""}],"hasMore":true,"totalCount":7}}}"#
+        let (connection, fake) = try connection(answering: body)
+        let page = try await connection.financeImports(limit: 2, offset: 4)
+        XCTAssertEqual(page.shownImports.map(\.id), ["job-2", "job-1"])
+        XCTAssertEqual(page.hasMore, true)
+        XCTAssertEqual(page.totalCount, 7)
+        let first = try XCTUnwrap(page.shownImports.first)
+        XCTAssertEqual(first.financeImportKind, "statement")
+        XCTAssertEqual(first.agentJobStatus, "done")
+        XCTAssertEqual(first.shownAt, ServerTime.date("2026-10-14T12:02:30Z"))
+        XCTAssertEqual(page.shownImports.last?.shownAt, ServerTime.date("2026-10-13T08:00:00Z"))
+        let sent = try JSONSerialization.jsonObject(with: try XCTUnwrap(fake.sent.last?.httpBody)) as? [String: Any]
+        XCTAssertEqual((sent?["variables"] as? [String: Any])?["offset"] as? Int, 4)
+    }
 }

@@ -38,6 +38,15 @@ struct SharedFile: Identifiable {
     /// Whether it can be read as a paystub or a W-2: a PDF or a picture.
     var isTaxDocument: Bool { contentType == "application/pdf" || contentType.hasPrefix("image/") }
 
+    /// Whether it is a picture or a PDF of a statement (a screenshot of a
+    /// bank app, a photo of a paper statement), which the server reads in
+    /// the background. An OFX file is never one: it is imported at once.
+    var isStatementPicture: Bool { isTaxDocument && !isStatement }
+
+    /// Whether finance can take it as transactions: an OFX statement, or a
+    /// picture or a PDF to read.
+    var isTransactionSource: Bool { isStatement || isStatementPicture }
+
     /// Whether it is an OFX statement: named .ofx, .qfx or .qbo, or OFX
     /// inside whatever it is called, as a wallet's export often is.
     var isStatement: Bool {
@@ -66,6 +75,8 @@ final class ShareModel: ObservableObject {
     /// failure sends only the rest, and what each import said.
     private var handledFileIds = Set<UUID>()
     private var statementSummaries: [String] = []
+    /// How many pictures and PDFs are queued to be read, across tries.
+    private var queuedPictureCount = 0
     @Published var isReading = true
     @Published var isSending = false
     @Published var problemText: String?
@@ -94,7 +105,7 @@ final class ShareModel: ObservableObject {
         guard isConnected, !isSending else { return false }
         switch effectiveFileDestination {
         case .taxDocuments: return files.contains(where: \.isTaxDocument)
-        case .statements: return files.contains(where: \.isStatement)
+        case .statements: return files.contains(where: \.isTransactionSource)
         case .agent: return !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty || !recordingFiles.isEmpty
         }
     }
@@ -102,7 +113,7 @@ final class ShareModel: ObservableObject {
     /// Whether the files can go to finance at all, as paystubs and W-2s or
     /// as statements.
     var canReadTaxDocuments: Bool { files.contains(where: \.isTaxDocument) }
-    var canImportStatements: Bool { files.contains(where: \.isStatement) }
+    var canImportStatements: Bool { files.contains(where: \.isTransactionSource) }
 
     /// Where the files go: the agent while audio or video is saved as
     /// recordings, or when finance cannot take them.
@@ -231,23 +242,36 @@ final class ShareModel: ObservableObject {
         resultText = said
     }
 
-    /// Uploads each OFX statement and imports it, saying what each import
-    /// did.
+    /// Imports each OFX statement at once, saying what each import did, and
+    /// uploads each picture or PDF and has the server read it in the
+    /// background. A failure says how many went before it; trying again
+    /// sends only the rest.
     private func importStatements(_ connection: Connection) async throws {
-        let statements = files.filter(\.isStatement)
-        for file in statements where !handledFileIds.contains(file.id) {
+        let sources = files.filter(\.isTransactionSource)
+        for file in sources where !handledFileIds.contains(file.id) {
             do {
                 let attachmentId = try await connection.upload(name: file.name, contentType: file.contentType, data: file.data)
-                let imported = try await connection.importStatement(attachmentId: attachmentId)
+                if file.isStatement {
+                    let imported = try await connection.importStatement(attachmentId: attachmentId)
+                    statementSummaries.append(StatementImportWords.summary(imported))
+                } else {
+                    _ = try await connection.readStatement(attachmentId: attachmentId)
+                    queuedPictureCount += 1
+                }
                 handledFileIds.insert(file.id)
-                statementSummaries.append(StatementImportWords.summary(imported))
             } catch {
-                throw partialFailure(error, handledCount: handledFileIds.count, totalCount: statements.count, fileName: file.name)
+                throw partialFailure(error, handledCount: handledFileIds.count, totalCount: sources.count, fileName: file.name)
             }
         }
         var summaries = statementSummaries
-        if files.contains(where: { !$0.isStatement }) {
-            summaries.append(String(localized: "Files that are not OFX statements were left out."))
+        if queuedPictureCount == 1 {
+            summaries.append(String(localized: "Reading 1 picture or PDF. What came of it shows in your feed and under Finance, Imports."))
+        } else if queuedPictureCount > 1 {
+            summaries.append(
+                String(localized: "Reading \(queuedPictureCount) pictures and PDFs. What came of each shows in your feed and under Finance, Imports."))
+        }
+        if sources.count < files.count {
+            summaries.append(String(localized: "Files that are not OFX statements, pictures or PDFs were left out."))
         }
         resultText = summaries.joined(separator: "\n")
     }
@@ -396,7 +420,7 @@ struct ShareView: View {
                                     Text("Read as tax documents").tag(ShareFileDestination.taxDocuments)
                                 }
                                 if model.canImportStatements {
-                                    Text("Import as statements").tag(ShareFileDestination.statements)
+                                    Text("Import transactions").tag(ShareFileDestination.statements)
                                 }
                             }
                             .pickerStyle(.inline)
@@ -409,7 +433,7 @@ struct ShareView: View {
                             case .taxDocuments:
                                 Text("Each PDF or picture is read as a paystub, W-2, 1099 or 1098 on its own, and the server keeps no text of it. No note goes with them.")
                             case .statements:
-                                Text("Each OFX, QFX or QBO file is imported into your accounts; a transaction imported twice is kept once. No note goes with them.")
+                                Text("Each OFX, QFX or QBO file is imported into your accounts at once; a transaction imported twice is kept once. Each picture or PDF of a statement or a bank app is read in the background, and what came of it shows in your feed and under Finance, Imports. No note goes with them.")
                             case .agent:
                                 EmptyView()
                             }

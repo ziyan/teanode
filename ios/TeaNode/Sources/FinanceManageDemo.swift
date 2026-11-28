@@ -34,6 +34,12 @@
             if query.contains("ImportFinanceCredential") {
                 return #"{"data":{"ImportFinanceCredential":{"id":"source-imported"}}}"#
             }
+            if query.contains("ReadStatement") {
+                return #"{"data":{"ReadStatement":{"agentAttachmentId":"attachment-demo","agentJobId":"job-demo"}}}"#
+            }
+            if query.contains("FinanceImports") {
+                return demoFinanceImportsJSON
+            }
             if query.contains("StatementImport") {
                 return #"{"data":{"StatementImport":{"sourceId":"source-statements","importAddress":"robin+statements-demo0token01@example.com","isEnabled":true,"lastStatementImport":{"importedAt":"2026-10-12T09:30:00Z","statementImportOrigin":"mail","addedTransactionCount":3,"updatedTransactionCount":0,"unchangedTransactionCount":1,"financeAccountNames":["Everyday card ··4321"],"importErrorMessage":""}}}}"#
             }
@@ -47,6 +53,10 @@
             }
             return nil
         }
+
+        /// The files read into finance in the background, as the Imports screen
+        /// shows them (`-TeaNodeScreen finance-imports`): one of each status.
+        private static let demoFinanceImportsJSON = #"{"data":{"FinanceImports":{"financeImports":[{"agentJobId":"job-1","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"queued","fileName":"picture-1.jpg","queuedAt":"2026-10-14T12:00:00Z","finishedAt":"","outcomeText":"","runConversationId":""},{"agentJobId":"job-2","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"running","fileName":"picture-2.jpg","queuedAt":"2026-10-14T11:50:00Z","finishedAt":"","outcomeText":"","runConversationId":"conversation-2"},{"agentJobId":"job-3","financeImportKind":"statement","financeImportSource":"upload","agentJobStatus":"done","fileName":"statement-october.pdf","queuedAt":"2026-10-13T08:00:00Z","finishedAt":"2026-10-13T08:02:10Z","outcomeText":"Added 14 transactions to Example Bank Checking ending 4321, and skipped 2 that were already there.","runConversationId":"conversation-3"},{"agentJobId":"job-4","financeImportKind":"receipt","financeImportSource":"photo","agentJobStatus":"done","fileName":"","queuedAt":"2026-10-12T17:20:00Z","finishedAt":"2026-10-12T17:21:00Z","outcomeText":"Read a receipt from Corner Market for 24.10 and matched it to a charge.","runConversationId":"conversation-4"},{"agentJobId":"job-5","financeImportKind":"statement","financeImportSource":"mail","agentJobStatus":"dead","fileName":"picture-3.jpg","queuedAt":"2026-10-11T09:00:00Z","finishedAt":"2026-10-11T09:01:00Z","outcomeText":"The picture was too blurry to read the amounts. Send a sharper one.","runConversationId":"conversation-5"},{"agentJobId":"job-6","financeImportKind":"tax_document","financeImportSource":"upload","agentJobStatus":"cancelled","fileName":"paystub.pdf","queuedAt":"2026-10-10T10:00:00Z","finishedAt":"2026-10-10T10:05:00Z","outcomeText":"","runConversationId":""}],"hasMore":false,"totalCount":6}}}"#
 
         private static func demoAccountJSON(id: String, institution: String, name: String, mask: String, kind: String, provider: String, balance: String) -> String {
             #"{"id":"\#(id)","sourceId":"source-\#(provider)","providerKind":"\#(provider)","institutionName":"\#(institution)","accountName":"\#(name)","accountMask":"\#(mask)","accountKind":"\#(kind)","currencyCode":"USD","currentBalance":"\#(balance)","availableBalance":null,"balanceAt":null,"isSignInRequired":false,"reportingCurrencyCode":"USD","convertedCurrentBalance":"\#(balance)"}"#
