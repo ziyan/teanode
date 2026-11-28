@@ -450,6 +450,16 @@ var operations = map[string]*financeOperation{
 			return "Import the OFX statements attached to a message into their finance accounts"
 		},
 	},
+	// ReadStatement with a picture or a PDF the person hands over in
+	// conversation: the reading job reads it and imports it, as the share
+	// sheet's Import transactions does.
+	"read_statement": {
+		graphqlOperation: "ReadStatement", risk: tools.RiskWrite, arguments: []string{"agent_attachment_id"}, required: []string{"agent_attachment_id"},
+		preview: func(_ *previewLookup, _ map[string]any) string {
+			return "Have the reading job read the transactions in the picture or PDF and import them"
+		},
+	},
+	"imports": {graphqlOperation: "FinanceImports", risk: tools.RiskRead, isUntrusted: true, arguments: []string{"limit", "offset"}},
 	// ImportTransactions with what the agent read off pictures, checked
 	// here first (transaction_rows.go) so the card says what was checked,
 	// and previewed by the server so it says which account and which rows
@@ -713,7 +723,9 @@ const description = "The person's money: their finance sources (logins at banks,
 	"A SimpleFIN setup token, or the credential of an existing provider connection (a Plaid access token, a SimpleFIN access URL), is never taken in conversation: `link_simplefin` and `import_credential` say where to give it.`sync`, `disable_source`, `enable_source` and `delete_source` act on a finance source by source_id; a switched-off source is switched on with enable_source before it syncs.\n" +
 	"Statements: for an account no provider reaches (a card that only exports OFX, .ofx, .qfx or .qbo), `statement_import` gives the person's statement import address, where mailing the exported file imports it (from a phone's wallet: Export Transactions, then share to Mail), and what the last import did. `import_statement` imports an OFX file the person sends in the chat (agent_attachment_id, as the conversation names the file) or the OFX attachments of a message in their mailbox (mailbox_item_id), one of the two; a transaction already imported is updated, never added twice. `regenerate_statement_import_address` ends the old address and makes a new one, only when the person asks.\n" +
 	"Pictures of transactions: when the person shares screenshots of a bank's or card issuer's app (or a photo of a statement), `import_transactions` imports what you read, one account per call. " +
-	"You see pictures only in the turn they are sent, at most eight of them, so read and import in that turn, and ask for more than eight in another message. " +
+	"`read_statement` has the reading job read one account's transactions out of a picture or a PDF the person sent (agent_attachment_id) and import them in the background, as the share sheet's Import transactions does, posting what came of it to their feed; it starts an account when the transactions are of one not imported before. Read and import them yourself instead when they need your judgement: one account's rows spread over several screenshots, or an account the person must choose. " +
+	"`imports` lists what was read into finance in the background, newest first (tax documents, statements, receipts), each with where it came from, how far it is and what came of it: the place to look when the person asks what happened to a file. " +
+	"You see pictures only in the turn they are sent, so read and import in that turn. " +
 	"Read every row of every picture yourself and send each transaction once, even where two screenshots overlap. " +
 	"Choose the account first, every time: call `accounts`, and when one of the person's imported accounts (providerKind statement) is the account the pictures show, pass its id as finance_account_id. " +
 	"A card's export often knows the card by an identifier that is not the card number, so its mask need not match the digits a picture shows; same institution, kind and currency is the sign. " +
@@ -789,7 +801,7 @@ func init() {
 					"source_id":               tools.StringProperty("a finance source, by the id sources gives"),
 					"mailbox_item_id":         tools.StringProperty("for import_statement: the message whose OFX attachments (.ofx, .qfx, .qbo) to import; for record_receipt and preview_record_receipt: the message the receipt was read from; for read_receipt: the message to read it from; for read_tax_document: the message whose PDFs and pictures to read as paystubs, W-2s, 1099s or 1098s; by the item_id mail_search or mail_read gives"),
 					"gmail_message_id":        tools.StringProperty("for record_receipt and preview_record_receipt: the Gmail message the receipt was read from, by the id the Gmail skill gives"),
-					"agent_attachment_id":     tools.StringProperty("for import_statement: the OFX file (.ofx, .qfx, .qbo) the person sent in the chat; for record_receipt and preview_record_receipt: the uploaded photo or PDF the receipt was read from; for read_tax_document: the paystub, W-2, 1099 or 1098 to read; for record_paystub and record_tax_form: the uploaded file, which the reading job reads instead of the fields; by the agent_attachment_id the conversation names the file with, never invented"),
+					"agent_attachment_id":     tools.StringProperty("for import_statement: the OFX file (.ofx, .qfx, .qbo) the person sent in the chat; for record_receipt and preview_record_receipt: the uploaded photo or PDF the receipt was read from; for read_tax_document: the paystub, W-2, 1099 or 1098 to read; for read_statement: the picture or PDF of one account's transactions to read and import; for record_paystub and record_tax_form: the uploaded file, which the reading job reads instead of the fields; by the agent_attachment_id the conversation names the file with, never invented"),
 					"annotation":              tools.StringProperty("for annotate_transaction: what the transaction was for, in the person's words; empty takes it away"),
 					"receipt_id":              tools.StringProperty("a receipt, by the id receipts gives"),
 					"is_unmatched":            tools.BooleanProperty("for receipts: only those matched to no transaction"),
@@ -885,8 +897,8 @@ func init() {
 					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones that need a spending category, not decided yet (a transfer has the transfer category, one that fits nothing the other category)"),
 					"duplicate_of_transaction_id": tools.StringProperty("for transactions: only the mirrored copies of this finance transaction, its duplicates"),
 					"is_duplicate_included":       tools.BooleanProperty("for transactions: list the mirrored copies too; left out, they are left out (and counted in leftOutDuplicateCount), as every total leaves them out"),
-					"limit":                       tools.IntegerProperty("for transactions, trades and receipts: how many, 15 when left out and at most 200; for paystubs and tax_forms, 60 when left out"),
-					"offset":                      tools.IntegerProperty("for transactions, trades, receipts, paystubs and tax_forms: how many to skip, for the next page (the offset of the page before plus the rows it gave)"),
+					"limit":                       tools.IntegerProperty("for transactions, trades and receipts: how many, 15 when left out and at most 200; for paystubs and tax_forms, 60 when left out; for imports, 50 when left out"),
+					"offset":                      tools.IntegerProperty("for transactions, trades, receipts, paystubs, tax_forms and imports: how many to skip, for the next page (the offset of the page before plus the rows it gave)"),
 					"after":                       tools.StringProperty("for transactions, trades and receipts: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
 					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, credit_usage, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in. For import_transactions: the account's currency. For record_receipt: the receipt's currency. For record_paystub: the paystub's currency, USD when left out"),

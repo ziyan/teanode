@@ -136,6 +136,12 @@ type FinanceQuery interface {
 	// this is asked.
 	StatementImport(ctx context.Context) (*StatementImportView, error)
 
+	// The files read into finance in the background, newest first: tax
+	// documents, statements read from pictures, PDFs or mailed OFX files,
+	// and receipts, each with where it came from, how far its job is, and
+	// what its run said came of it.
+	FinanceImports(ctx context.Context, arguments FinanceImportsArguments) (*FinanceImportPage, error)
+
 	// What ImportTransactions would do with the same arguments, writing
 	// nothing: the account the rows would go into (an existing one with
 	// its id, or a new one), the rows it does not hold yet and those it
@@ -247,6 +253,14 @@ type FinanceMutation interface {
 	// caller's mailbox. A transaction already imported, by its account and
 	// FITID, is updated rather than added again.
 	ImportStatement(ctx context.Context, arguments ImportStatementArguments) (*models.FinanceStatementImport, error)
+
+	// Queue the job that reads one account's transactions out of a picture
+	// or a PDF uploaded to the agent's attachments (a screenshot of a bank's
+	// or a card's app, a photo of a paper statement, a PDF statement) and
+	// imports them the way importTransactions does, starting an account
+	// when they are of one not imported before. What came of it is posted
+	// to the person's feed.
+	ReadStatement(ctx context.Context, arguments ReadStatementArguments) (*StatementReadingView, error)
 
 	// Give the statement import address a new token. The old address stops
 	// taking mail at once.

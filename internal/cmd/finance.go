@@ -338,6 +338,7 @@ func NewFinanceCommand() *cli.Command {
 	}
 	finance.Commands = append(finance.Commands, financeReceiptCommands()...)
 	finance.Commands = append(finance.Commands, financeTaxCommands()...)
+	finance.Commands = append(finance.Commands, financeImportCommands()...)
 	finance.Commands = append(finance.Commands, financeShareCommands()...)
 	for _, subcommand := range finance.Commands {
 		if operation := financeSubcommandOperations[subcommand.Name]; operation != "" {
@@ -378,7 +379,7 @@ var financeSubcommandOperations = map[string]string{
 	"annotate-transaction": "AnnotateTransaction", "receipts": "FinanceReceipts", "receipt": "FinanceReceipt",
 	"record-receipt": "RecordReceipt", "propose-receipt-matches": "ProposeReceiptMatches", "match-receipt": "MatchReceipt",
 	"unmatch-receipt": "UnmatchReceipt", "delete-receipt": "DeleteReceipt", "read-receipt": "ReadReceipt",
-	"read-tax-document": "ReadTaxDocument", "paystubs": "FinancePaystubs", "paystub": "FinancePaystub",
+	"read-tax-document": "ReadTaxDocument", "read-statement": "ReadStatement", "imports": "FinanceImports", "paystubs": "FinancePaystubs", "paystub": "FinancePaystub",
 	"record-paystub": "RecordPaystub", "delete-paystub": "DeletePaystub", "tax-forms": "FinanceTaxForms",
 	"tax-form": "FinanceTaxForm", "record-tax-form": "RecordTaxForm", "delete-tax-form": "DeleteTaxForm", "tax-year": "TaxYear",
 }

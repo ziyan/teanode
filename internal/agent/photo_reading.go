@@ -11,7 +11,6 @@ import (
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/finance"
-	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -251,61 +250,69 @@ func (self *statementPhotoAnswer) transactionRowsInput() *finance.TransactionRow
 	return input
 }
 
-// runReadStatementPhoto is the handler for a statement photo job: the
-// picture's rows are read and imported into the account of imported
-// statements they are of. Nobody is there to say which account a picture
-// shows, so rows the server cannot place in an account the person imported
-// before are not imported, and the run says why; the person can send the
-// picture to their agent, which asks.
+// runReadStatementPhoto is the handler for a statement job: the rows of a
+// picture or a PDF are read and imported into the account of imported
+// statements they are of.
+//
+// A copy of a backed-up photo was read because its description said it is
+// a statement, and nobody is there to say which account it shows: rows the
+// server cannot place in an account the person imported before are not
+// imported, and the run says why. A file the person handed in to be
+// imported (QueueStatementReading) is theirs to import: rows of an account
+// not imported before start one, and what came of it is posted to their
+// feed, since they are waiting to hear.
 func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 	if unreadableWhy := self.receiptModelReady(run.Configuration()); unreadableWhy != "" {
 		return noteReceiptRun(ctx, run, "the statement", unreadableWhy)
 	}
-	var attachment *models.AgentAttachment
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		attachment, err = tx.GetAgentAttachment(run.Job.SubjectID)
-		return err
-	}); err != nil {
+	source, err := self.readDocumentSource(ctx, run, run.Job.SubjectID, everyPDFPage)
+	if err != nil {
 		return err
 	}
-	if attachment == nil || attachment.AgentID != run.Agent.ID {
+	if source == nil {
 		return nil // the copy is gone
 	}
-	if !IsImageAttachment(attachment.ContentType) || attachment.Size > attachmentImageBytes {
-		return noteReceiptRun(ctx, run, attachment.Name, "it is not a picture a model can be shown")
-	}
-	if run.Storage() == nil {
-		return fmt.Errorf("there is no storage to read the picture of the statement from")
-	}
-	content, err := run.Storage().GetFile(ctx, attachment.ID)
-	if err != nil {
-		return fmt.Errorf("the picture of the statement cannot be read yet: %w", err)
+	attachment := source.attachment
+	isHandedIn := attachment.PhotoID == ""
+	if source.unreadableWhy != "" {
+		if isHandedIn {
+			return self.postStatementReading(ctx, run, attachment, nil, source.unreadableWhy)
+		}
+		return noteReceiptRun(ctx, run, attachment.Name, source.unreadableWhy)
 	}
 	prompt, err := render("read_statement_photo.txt", map[string]any{
 		"PersonName":       personName(run.Owner),
 		"TransactionKinds": strings.Join(finance.TransactionKinds(), ", "),
+		"IsPicture":        len(source.pictures) > 0,
+		"Document":         fenced(source.documentText),
 	})
 	if err != nil {
 		return err
 	}
-	thinking, err := self.thinkAbout(ctx, run, "Reading the statement "+attachment.Name, prompt,
-		[]llm.ContentPart{{Type: "image", MediaType: attachment.ContentType, Data: content}}, noTools, 1,
+	thinking, err := self.thinkAbout(ctx, run, "Reading the statement "+attachment.Name, prompt, source.pictures, noTools, 1,
 		models.AgentJobStatementPhoto, config.AgentWorkScan)
 	if err != nil {
 		return err
 	}
-	answer := readModelAnswer[statementPhotoAnswer](thinking.Text, "isStatement")
-	if !answer.IsValid {
-		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s, and could not tell what the answer said: %s", attachment.Name, answer.Problem))
+	// whyNothing is said when nothing was imported, to the person when they
+	// handed the file in, else in the run's title.
+	whyNothing := func(why string) error {
+		if isHandedIn {
+			return self.postStatementReading(ctx, run, attachment, nil, why)
+		}
+		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s, and imported nothing: %s", attachment.Name, why))
 		return nil
 	}
+	answer := readModelAnswer[statementPhotoAnswer](thinking.Text, "isStatement")
+	if !answer.IsValid {
+		return whyNothing("the reading could not be understood: " + answer.Problem)
+	}
 	if !answer.Value.IsStatement || len(answer.Value.TransactionRows) == 0 {
-		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s: no transactions of an account, so nothing was imported", attachment.Name))
-		return nil
+		return whyNothing("it shows no transactions of one account")
 	}
 	today := time.Now().In(Location(run.Owner)).Format(time.DateOnly)
 	check, err := finance.CheckTransactionRows(answer.Value.transactionRowsInput(), today)
-	if err == nil {
+	if err == nil && !isHandedIn {
 		var plan *finance.TransactionRowsPlan
 		if plan, err = self.PreviewTransactionRows(ctx, run.Agent, run.Owner, check); err == nil && plan.FinanceAccountID == "" {
 			err = fmt.Errorf("%w: they are of an account not imported before; send the picture to your assistant to start one", finance.ErrTransactionRowsRefused)
@@ -316,18 +323,19 @@ func (self *Agent) runReadStatementPhoto(ctx context.Context, run *Run) error {
 		imported, err = self.ImportTransactionRows(ctx, run.Agent, run.Owner, check)
 	}
 	if errors.Is(err, finance.ErrTransactionRowsRefused) {
-		// Reading the picture again would read the same.
-		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s, and imported nothing: %s", attachment.Name, err))
-		return nil
+		// Reading the file again would read the same.
+		return whyNothing(strings.TrimPrefix(err.Error(), finance.ErrTransactionRowsRefused.Error()+": "))
 	}
 	if err != nil {
 		return err
 	}
-	if imported.ImportErrorMessage != "" {
-		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s, and imported nothing: %s", attachment.Name, imported.ImportErrorMessage))
-		return nil
+	if imported.ImportErrorMessage != "" && len(imported.FinanceAccountIDs) == 0 {
+		return whyNothing(imported.ImportErrorMessage)
 	}
 	self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s: %s added to %s", attachment.Name,
 		countOf(imported.AddedTransactionCount, "transaction", "transactions"), strings.Join(imported.FinanceAccountNames, ", ")))
+	if isHandedIn {
+		return self.postStatementReading(ctx, run, attachment, imported, "")
+	}
 	return nil
 }
